@@ -38,6 +38,12 @@ public:
     bool RebuildTile(float wx, float wz,
                      const float* obs_verts, int nobs_verts,
                      const int*   obs_tris,  int nobs_tris);
+    // Build NavMesh from a tile-map walkable mesh (replaces current navmesh).
+    // Called by md::flare::BuildNavMeshFromTileMap() at map load time.
+    bool BuildForTileMap(const float* verts, int nverts,
+                         const int*   tris,  int ntris,
+                         float cs = 0.5f, float ch = 0.2f);
+
     bool EnqueueRebuild(float wx, float wz,
                         const float* obs_verts, int nv,
                         const int*   obs_tris,  int nt);

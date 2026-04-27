@@ -56,12 +56,22 @@ public:
                      const float* obs_verts, int nobs_verts,
                      const int*   obs_tris,  int nobs_tris);
 
+    // Build from a large tile-map walkable mesh.
+    // Unlike Build(), does not store geometry for RebuildTile (tile maps
+    // require a full rebuild on map change, not incremental tile updates).
+    // cs=0.5f, ch=0.2f good default for 1-world-unit tiles.
+    bool BuildTileMap(const float* verts, int nverts,
+                      const int*   tris,  int ntris,
+                      float cs = 0.5f, float ch = 0.2f);
+
     bool IsValid() const { return nav_mesh_ != nullptr; }
     dtNavMesh* Raw() { return nav_mesh_; }
 
 private:
     void Destroy();
     bool BuildInternal();  // перезбудова з terrain_verts_ + obstacles_
+    bool BuildFromExternal(const float* v, int nv, const int* t, int nt,
+                           float cs, float ch);
 
     rcContext*      ctx_       = nullptr;
     dtNavMesh*      nav_mesh_  = nullptr;

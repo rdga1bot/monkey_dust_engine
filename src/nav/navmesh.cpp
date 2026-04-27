@@ -337,6 +337,138 @@ bool NavMesh::LoadFromFile(const char* path)
     return true;
 }
 
+// ── BuildFromExternal — Recast pipeline on caller-supplied geometry ────────────
+// Identical pipeline to BuildInternal() but takes geometry as parameters
+// instead of reading from terrain_* members.  Used by BuildTileMap().
+bool NavMesh::BuildFromExternal(const float* verts, int nverts,
+                                 const int*   tris,  int ntris,
+                                 float cs, float ch)
+{
+    Destroy();
+    ctx_ = new rcContext(false);
+
+    rcConfig cfg = {};
+    cfg.cs                     = cs;
+    cfg.ch                     = ch;
+    cfg.walkableSlopeAngle     = 45.0f;
+    cfg.walkableHeight         = (int)ceilf(1.8f  / ch);
+    cfg.walkableClimb          = (int)floorf(0.3f / ch);
+    cfg.walkableRadius         = (int)ceilf(0.4f  / cs);
+    cfg.maxEdgeLen             = (int)(12.0f / cs);
+    cfg.maxSimplificationError = 1.3f;
+    cfg.minRegionArea          = 1;               // preserve single-tile corridors
+    cfg.mergeRegionArea        = (int)rcSqr(5);
+    cfg.maxVertsPerPoly        = 6;
+    cfg.detailSampleDist       = 6.0f;
+    cfg.detailSampleMaxError   = 1.0f;
+
+    rcCalcBounds(verts, nverts, cfg.bmin, cfg.bmax);
+    rcCalcGridSize(cfg.bmin, cfg.bmax, cfg.cs, &cfg.width, &cfg.height);
+
+    rcHeightfield* solid = rcAllocHeightfield();
+    if (!rcCreateHeightfield(ctx_, *solid, cfg.width, cfg.height,
+                             cfg.bmin, cfg.bmax, cfg.cs, cfg.ch)) {
+        rcFreeHeightField(solid);
+        fprintf(stderr, "[NavMesh] BuildFromExternal: createHeightfield failed\n");
+        return false;
+    }
+
+    unsigned char* triAreas = new unsigned char[ntris]();
+    rcMarkWalkableTriangles(ctx_, cfg.walkableSlopeAngle,
+                            verts, nverts, tris, ntris, triAreas);
+    rcRasterizeTriangles(ctx_, verts, nverts, tris, triAreas, ntris,
+                         *solid, cfg.walkableClimb);
+    delete[] triAreas;
+
+    rcFilterLowHangingWalkableObstacles(ctx_, cfg.walkableClimb, *solid);
+    rcFilterLedgeSpans(ctx_, cfg.walkableHeight, cfg.walkableClimb, *solid);
+    rcFilterWalkableLowHeightSpans(ctx_, cfg.walkableHeight, *solid);
+
+    rcCompactHeightfield* chf = rcAllocCompactHeightfield();
+    rcBuildCompactHeightfield(ctx_, cfg.walkableHeight, cfg.walkableClimb,
+                              *solid, *chf);
+    rcFreeHeightField(solid);
+
+    rcErodeWalkableArea(ctx_, cfg.walkableRadius, *chf);
+    rcBuildDistanceField(ctx_, *chf);
+    rcBuildRegions(ctx_, *chf, 0, cfg.minRegionArea, cfg.mergeRegionArea);
+
+    rcContourSet* cset = rcAllocContourSet();
+    rcBuildContours(ctx_, *chf, cfg.maxSimplificationError,
+                    cfg.maxEdgeLen, *cset);
+
+    rcPolyMesh* pmesh = rcAllocPolyMesh();
+    rcBuildPolyMesh(ctx_, *cset, cfg.maxVertsPerPoly, *pmesh);
+
+    rcPolyMeshDetail* dmesh = rcAllocPolyMeshDetail();
+    rcBuildPolyMeshDetail(ctx_, *pmesh, *chf,
+                          cfg.detailSampleDist, cfg.detailSampleMaxError, *dmesh);
+
+    rcFreeCompactHeightfield(chf);
+    rcFreeContourSet(cset);
+
+    for (int i = 0; i < pmesh->npolys; ++i)
+        if (pmesh->areas[i] == RC_WALKABLE_AREA)
+            pmesh->flags[i] = 0x01;
+
+    dtNavMeshCreateParams params = {};
+    params.verts            = pmesh->verts;
+    params.vertCount        = pmesh->nverts;
+    params.polys            = pmesh->polys;
+    params.polyAreas        = pmesh->areas;
+    params.polyFlags        = pmesh->flags;
+    params.polyCount        = pmesh->npolys;
+    params.nvp              = pmesh->nvp;
+    params.detailMeshes     = dmesh->meshes;
+    params.detailVerts      = dmesh->verts;
+    params.detailVertsCount = dmesh->nverts;
+    params.detailTris       = dmesh->tris;
+    params.detailTriCount   = dmesh->ntris;
+    params.walkableHeight   = 1.8f;
+    params.walkableRadius   = 0.4f;
+    params.walkableClimb    = 0.3f;
+    rcVcopy(params.bmin, pmesh->bmin);
+    rcVcopy(params.bmax, pmesh->bmax);
+    params.cs               = cs;
+    params.ch               = ch;
+    params.buildBvTree      = true;
+
+    unsigned char* navData     = nullptr;
+    int            navDataSize = 0;
+    if (!dtCreateNavMeshData(&params, &navData, &navDataSize)) {
+        rcFreePolyMesh(pmesh);
+        rcFreePolyMeshDetail(dmesh);
+        fprintf(stderr, "[NavMesh] BuildFromExternal: dtCreateNavMeshData failed\n");
+        return false;
+    }
+    rcFreePolyMesh(pmesh);
+    rcFreePolyMeshDetail(dmesh);
+
+    nav_mesh_ = dtAllocNavMesh();
+    if (nav_mesh_->init(navData, navDataSize, DT_TILE_FREE_DATA) != DT_SUCCESS) {
+        dtFreeNavMesh(nav_mesh_);
+        nav_mesh_ = nullptr;
+        fprintf(stderr, "[NavMesh] BuildFromExternal: dtNavMesh::init failed\n");
+        return false;
+    }
+    nav_query_ = dtAllocNavMeshQuery();
+    nav_query_->init(nav_mesh_, 2048);
+    return true;
+}
+
+bool NavMesh::BuildTileMap(const float* verts, int nverts,
+                            const int*   tris,  int ntris,
+                            float cs, float ch)
+{
+    // Don't store terrain — tile maps rebuild the full mesh on map change.
+    terrain_nverts_ = 0;
+    terrain_ntris_  = 0;
+    rebuild_cs_     = cs;
+    rebuild_ch_     = ch;
+    for (auto& o : obstacles_) o.valid = false;
+    return BuildFromExternal(verts, nverts, tris, ntris, cs, ch);
+}
+
 // ─────────────────────────────────────────────────────────
 void NavMesh::Destroy()
 {

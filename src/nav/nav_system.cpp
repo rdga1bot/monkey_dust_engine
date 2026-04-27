@@ -53,6 +53,20 @@ int NavSystem::QueryPath(float sx, float sz,
     return pts;
 }
 
+bool NavSystem::BuildForTileMap(const float* verts, int nverts,
+                                 const int*   tris,  int ntris,
+                                 float cs, float ch)
+{
+    pathcache_.Clear();
+    bool ok = navmesh_.BuildTileMap(verts, nverts, tris, ntris, cs, ch);
+    if (ok)
+        fprintf(stdout, "[NavSystem] Tile NavMesh built (%d verts, %d tris)\n",
+                nverts, ntris);
+    else
+        fprintf(stderr, "[NavSystem] Tile NavMesh build FAILED\n");
+    return ok;
+}
+
 bool NavSystem::RebuildTile(float wx, float wz,
                              const float* obs_verts, int nobs_verts,
                              const int*   obs_tris,  int nobs_tris)

@@ -39,8 +39,11 @@ static int ReadRequires(const char* settings_path,
             S* s2 = (S*)ud;
             if (strcmp(l.key, "requires") != 0) return;
             if (s2->count < s2->max) {
+                // Strip optional version suffix: "fantasycore:1.14" → "fantasycore"
                 strncpy(s2->arr[s2->count], l.value, MAX_MOD_ID - 1);
                 s2->arr[s2->count][MAX_MOD_ID - 1] = '\0';
+                char* colon = strchr(s2->arr[s2->count], ':');
+                if (colon) *colon = '\0';
                 ++s2->count;
             }
         }, &s, nullptr);

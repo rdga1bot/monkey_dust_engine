@@ -36,6 +36,9 @@ public:
     // Number of mods in active chain.
     int Count() const;
 
+    // Access chain[i] mod id (nullptr if out of range).
+    const char* GetModId(int i) const;
+
     // Base root for all mods (default: "game/data/mods").
     // Override for unit testing.
     void SetModsRoot(const char* root);

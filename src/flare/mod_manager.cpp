@@ -99,6 +99,10 @@ void ModManager::SetModsRoot(const char* root) {
 
 int ModManager::Count() const { return count_; }
 
+const char* ModManager::GetModId(int i) const {
+    return (i >= 0 && i < count_) ? chain_[i] : nullptr;
+}
+
 bool ModManager::ResolveAsset(const char* relative_path,
                                char*       out,
                                int         out_size) const

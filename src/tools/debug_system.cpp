@@ -59,8 +59,8 @@ void DebugSystem::DrawEntityList() {
     ImGui::InputText("Filter", entity_filter_, sizeof(entity_filter_));
     auto& reg = Registry::Get();
     int shown = 0;
-    reg.each([&](entt::entity e) {
-        if (shown >= 512) return;
+    for (auto e : reg.storage<entt::entity>()) {
+        if (shown >= 512) break;
         char label[32];
         snprintf(label, sizeof(label), "Entity %u", (uint32_t)e);
         if (entity_filter_[0] != '\0' &&
@@ -69,7 +69,7 @@ void DebugSystem::DrawEntityList() {
         if (ImGui::Selectable(label, selected))
             selected_entity = e;
         ++shown;
-    });
+    }
     ImGui::End();
 }
 

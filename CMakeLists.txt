@@ -49,7 +49,7 @@ if(MD_OPENGL43)
     target_compile_definitions(monkey_dust_engine PUBLIC
         GRAPHICS_API_OPENGL_43 MD_OPENGL43_ENABLED)
 endif()
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR MONKEY_DUST_EDITOR)
     target_compile_definitions(monkey_dust_engine PUBLIC DEBUG)
 endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")

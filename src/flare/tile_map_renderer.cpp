@@ -63,8 +63,7 @@ void TileMapRenderer::Init() {
     MdShader sh = MdLoadShader("shaders/tile_map.vert", "shaders/tile_map.frag");
     prog_ = sh.id;
     if (prog_) {
-        loc_view_      = MdGetLoc(sh, "u_view");
-        loc_proj_      = MdGetLoc(sh, "u_proj");
+        loc_vp_        = MdGetLoc(sh, "u_vp");
         loc_tile_size_ = MdGetLoc(sh, "u_tile_size");
         loc_y_         = MdGetLoc(sh, "u_y");
     } else {
@@ -103,19 +102,27 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
         if (map.layers[i].type == LayerType::BACKGROUND) { bg = &map.layers[i]; break; }
     if (!bg) bg = &map.layers[0];
 
-    // Identify the main visual tileset (lowest firstgid ≥ 2, i.e. not collision).
-    int ref_ts = 0;
-    for (int i = 0; i < map.tileset_count; ++i) {
-        if (map.tilesets[i].firstgid >= 2) { ref_ts = i; break; }
-    }
-    const TileSet& ts = map.tilesets[ref_ts];
-    int cols = ts.columns > 0 ? ts.columns : 16;
+    // Detect .txt format: all tilesets have firstgid==0.
+    // In that case, tileset[0] is collision and tileset[1] is the first visual set.
+    // Tile IDs in .txt background layers are 1-based indices into the visual tileset.
+    bool txt_fmt = true;
+    for (int i = 0; i < map.tileset_count; ++i)
+        if (map.tilesets[i].firstgid > 0) { txt_fmt = false; break; }
 
-    // Atlas UV step (normalized).
-    float inv_aw = (atlas_.w > 0 && ts.tile_w > 0)
-                   ? (float)ts.tile_w / (float)atlas_.w : 1.0f / (float)cols;
-    float inv_ah = (atlas_.h > 0 && ts.tile_h > 0)
-                   ? (float)ts.tile_h / (float)atlas_.h : inv_aw;
+    // Visual tileset: index 1 for .txt (skip collision at 0), else firstgid≥2 for TMX.
+    int vis_ts_idx = (txt_fmt && map.tileset_count > 1) ? 1 : 0;
+    if (!txt_fmt) {
+        for (int i = 0; i < map.tileset_count; ++i)
+            if (map.tilesets[i].firstgid >= 2) { vis_ts_idx = i; break; }
+    }
+    const TileSet& vis = map.tilesets[vis_ts_idx];
+
+    // Atlas columns: derive from atlas width if not stored (common for .txt).
+    int vis_cols = vis.columns > 0 ? vis.columns :
+                   (atlas_.w > 0 && vis.tile_w > 0) ? atlas_.w / vis.tile_w : 16;
+
+    float iaw = (atlas_.w > 0 && vis.tile_w > 0) ? (float)vis.tile_w / atlas_.w : 1.0f / vis_cols;
+    float iah = (atlas_.h > 0 && vis.tile_h > 0) ? (float)vis.tile_h / atlas_.h : iaw;
 
     // Pack instance buffer.
     static uint8_t ibuf[MAX_VISIBLE_TILES * TINST_STRIDE];
@@ -126,19 +133,19 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
             uint16_t tid = bg->tiles[row * MAX_MAP_WIDTH + col];
             if (tid == 0) continue;
 
-            int ts_idx = 0, local_idx = 0;
-            if (!ResolveTile(map, tid, &ts_idx, &local_idx)) continue;
+            int local_idx;
+            if (txt_fmt) {
+                // 1-based into the visual tileset.
+                local_idx = (int)tid - 1;
+            } else {
+                int ts_idx = 0;
+                if (!ResolveTile(map, tid, &ts_idx, &local_idx)) continue;
+                if (map.tilesets[ts_idx].firstgid < 2) continue; // skip collision
+            }
+            if (local_idx < 0) continue;
 
-            // Skip collision tileset (firstgid=1) for visual rendering.
-            if (map.tilesets[ts_idx].firstgid == 1) continue;
-
-            const TileSet& cur = map.tilesets[ts_idx];
-            int c = cur.columns > 0 ? cur.columns : cols;
-            float iaw = (atlas_.w > 0 && cur.tile_w > 0) ? (float)cur.tile_w / atlas_.w : inv_aw;
-            float iah = (atlas_.h > 0 && cur.tile_h > 0) ? (float)cur.tile_h / atlas_.h : inv_ah;
-
-            int tc = local_idx % c;
-            int tr = local_idx / c;
+            int tc = local_idx % vis_cols;
+            int tr = local_idx / vis_cols;
             float u0 = tc * iaw;
             float v0 = tr * iah;
             float u1 = u0 + iaw;
@@ -163,20 +170,18 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(n * TINST_STRIDE), ibuf);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-#ifdef USE_GLM
-    Matrix view = GlmToRaylibMat(cam.ViewMatrix());
-    Matrix proj = GlmToRaylibMat(cam.ProjMatrix(aspect));
-#else
-    Matrix view = cam.ViewMatrix();
-    Matrix proj = cam.ProjMatrix(aspect);
-#endif
-
+    glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
     glDepthMask(GL_TRUE);
     glUseProgram(prog_);
 
-    glUniformMatrix4fv(loc_view_, 1, GL_FALSE, &view.m0);
-    glUniformMatrix4fv(loc_proj_, 1, GL_FALSE, &proj.m0);
+    // Use Raylib's own matrix functions — avoids GLM row/column ordering issues.
+    Camera3D rl = cam.ToRaylib();
+    Matrix V  = MatrixLookAt(rl.position, rl.target, rl.up);
+    Matrix P  = MatrixPerspective((double)rl.fovy * 0.01745329251844, (double)aspect, 0.1, 300.0);
+    Matrix vp = MatrixMultiply(V, P);   // Raylib MM(A,B)=P*V mathematically → correct
+    glUniformMatrix4fv(loc_vp_, 1, GL_FALSE, &vp.m0);
 
     float tsz[2] = { tile_world_size, tile_world_size };
     glUniform2fv(loc_tile_size_, 1, tsz);
@@ -188,6 +193,7 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, n);
     glBindVertexArray(0);
 
+    glEnable(GL_CULL_FACE);
     glUseProgram(0);
 }
 

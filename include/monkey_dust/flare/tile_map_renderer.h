@@ -38,8 +38,7 @@ private:
     uint32_t inst_vbo_ = 0;
     uint32_t prog_     = 0;
 
-    int loc_view_      = -1;
-    int loc_proj_      = -1;
+    int loc_vp_        = -1;
     int loc_tile_size_ = -1;
     int loc_y_         = -1;
 

@@ -3,11 +3,11 @@
 #include "raymath.h"
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/compute_shader.h>
+#include <monkey_dust/render/md_camera.h>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
 #ifdef USE_SDL3
-#  include "render/MdCamera.h"
 #  include "render/MdShader.h"
 #  include "render/MdMesh.h"
 #  include "math_types.h"
@@ -119,12 +119,10 @@ public:
     }
 
     // Recompute light-space VP matrices from camera frustum corners.
-#ifdef USE_SDL3
     void Update(const MdCamera& camera, Vector3 sun_dir) {
         Camera3D rc = camera.ToRaylib();
         Update(rc, sun_dir);
     }
-#endif
     void Update(const Camera3D& camera, Vector3 sun_dir) {
 #ifdef MD_OPENGL43_ENABLED
         if (!init_) return;

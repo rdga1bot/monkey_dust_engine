@@ -46,6 +46,11 @@ public:
                            Matrix* out_matrices, int max_out) const;
     Matrix   BuildSingleMatrix(uint32_t slot) const;
 
+    // Save v5 accessors (БОРГ-6)
+    int      SlotCount() const { return active_count; }
+    uint32_t GetSlotForEntity(entt::entity e) const;
+    void     AssignSlot(entt::entity e, uint32_t slot, float x, float z, uint8_t faction_id);
+
 private:
     TransformSoA() = default;
 };

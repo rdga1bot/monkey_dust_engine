@@ -152,3 +152,26 @@ Matrix TransformSoA::BuildSingleMatrix(uint32_t slot) const {
     return MatrixMultiply(MatrixRotateY(rot_y[slot]),
                           MatrixTranslate(px[slot], py[slot] + 0.9f, pz[slot]));
 }
+
+// Save v5 accessors (БОРГ-6)
+uint32_t TransformSoA::GetSlotForEntity(entt::entity e) const {
+    for (int i = 0; i < active_count; ++i)
+        if (slot_to_entity[i] == e) return (uint32_t)i;
+    return INVALID_SLOT;
+}
+
+void TransformSoA::AssignSlot(entt::entity e, uint32_t slot,
+                               float x, float z, uint8_t faction_id) {
+    if (slot >= MAX_SLOTS) {
+        TraceLog(LOG_WARNING, "[TransformSoA] AssignSlot: slot %u out of range", slot);
+        return;
+    }
+    px[slot]    = x;
+    pz[slot]    = z;
+    py[slot]    = 0.0f;
+    rot_y[slot] = 0.0f;
+    dist_sq[slot] = 1e18f;
+    faction[slot] = faction_id;
+    slot_to_entity[slot] = e;
+    if ((int)slot >= active_count) active_count = (int)slot + 1;
+}

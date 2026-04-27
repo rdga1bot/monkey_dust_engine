@@ -6,9 +6,7 @@
 #include <monkey_dust/flare/faction_loader.h>
 #include <monkey_dust/flare/mod_manager.h>
 
-namespace md {
-struct MdCamera;
-}
+struct MdCamera;  // global namespace (md_camera.h)
 
 namespace md::flare {
 

@@ -15,9 +15,9 @@ void ParticleRenderer::Init() {
     rlEnableVertexAttribute(2);
     rlDisableVertexBuffer();
     rlDisableVertexArray();
-    particle_shader_ = LoadShader("shaders/particle.vert", "shaders/particle.frag");
-    loc_viewProj_ = GetShaderLocation(particle_shader_, "viewProj");
-    loc_camPos_   = GetShaderLocation(particle_shader_, "cameraPos");
+    particle_shader_ = MdLoadShader("shaders/particle.vert", "shaders/particle.frag");
+    loc_viewProj_ = MdGetLoc(particle_shader_, "viewProj");
+    loc_camPos_   = MdGetLoc(particle_shader_, "cameraPos");
 }
 
 void ParticleRenderer::Draw(Matrix viewProj, Vector3 cam_pos) {
@@ -26,21 +26,21 @@ void ParticleRenderer::Draw(Matrix viewProj, Vector3 cam_pos) {
     if (count <= 0) return;
     rlUpdateVertexBuffer(particle_vbo_, verts, count * 20, 0);
     glEnable(GL_PROGRAM_POINT_SIZE);
-    rlEnableShader(particle_shader_.id);
-    SetShaderValueMatrix(particle_shader_, loc_viewProj_, viewProj);
+    MdUseShader(particle_shader_);
+    MdSetMat4(loc_viewProj_, &viewProj.m0);
     float cp[3] = { cam_pos.x, cam_pos.y, cam_pos.z };
-    rlSetUniform(loc_camPos_, cp, SHADER_UNIFORM_VEC3, 1);
+    MdSetVec3(loc_camPos_, cp);
     rlEnableVertexArray(particle_vao_);
     rlEnableVertexBuffer(particle_vbo_);
     glDrawArrays(GL_POINTS, 0, count);
     rlDisableVertexBuffer();
     rlDisableVertexArray();
-    rlDisableShader();
+    MdStopShader();
     glDisable(GL_PROGRAM_POINT_SIZE);
 }
 
 void ParticleRenderer::Shutdown() {
-    UnloadShader(particle_shader_);
+    MdUnloadShader(particle_shader_);
     rlUnloadVertexArray(particle_vao_);
     rlUnloadVertexBuffer(particle_vbo_);
 }

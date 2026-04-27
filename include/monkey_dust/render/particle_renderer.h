@@ -1,5 +1,6 @@
 #pragma once
 #include <monkey_dust/render/particle_soa.h>
+#include <monkey_dust/render/md_shader.h>
 #include "raylib.h"
 #include "rlgl.h"
 #ifdef MD_OPENGL43_ENABLED
@@ -24,7 +25,7 @@ private:
 
     unsigned int particle_vbo_ = 0;
     unsigned int particle_vao_ = 0;
-    Shader       particle_shader_ = {};
+    MdShader     particle_shader_;
     int          loc_viewProj_ = -1;
     int          loc_camPos_   = -1;
 };

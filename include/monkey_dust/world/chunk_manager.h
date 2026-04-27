@@ -1,0 +1,74 @@
+#pragma once
+#include <monkey_dust/world/chunk_def.h>
+#include <monkey_dust/world/chunk_load_staging.h>
+#include <entt/entt.hpp>
+#include <thread>
+#include <atomic>
+
+// Callbacks registered by game to spawn/save/destroy entities.
+// Engine only handles IO scheduling and chunk lifecycle — no game components.
+using ChunkSpawnTreeFn    = void(*)(entt::registry&, const StagedTree& t);
+using ChunkSpawnNpcFn     = void(*)(entt::registry&, const StagedNpc& n);
+using ChunkDestroyEntityFn= void(*)(entt::registry&, entt::entity e);
+using ChunkSaveEntityFn   = void(*)(entt::registry&, entt::entity e, void* file);
+
+class ChunkManager {
+public:
+    static ChunkManager& Get() { static ChunkManager inst; return inst; }
+
+    void Init(const char* chunks_dir);
+    void Update(float player_x, float player_z);
+    void UnloadAll();
+
+    void StartIOWorker();
+    void StopIOWorker();
+    bool IsIOWorkerRunning() const { return io_running_.load(); }
+
+    void ApplyStagedChunks();
+
+    // Game registers these before Init()
+    void SetSpawnCallbacks(ChunkSpawnTreeFn tree_fn, ChunkSpawnNpcFn npc_fn,
+                           ChunkDestroyEntityFn destroy_fn, ChunkSaveEntityFn save_fn) {
+        spawn_tree_fn_    = tree_fn;
+        spawn_npc_fn_     = npc_fn;
+        destroy_entity_fn_= destroy_fn;
+        save_entity_fn_   = save_fn;
+    }
+
+private:
+    ChunkManager() : active_count_(0), last_player_chunk_({9999, 9999}) {
+        chunks_dir_[0] = '\0';
+        for (int i = 0; i < MAX_CHUNKS_ACTIVE; ++i) {
+            active_[i].loaded       = false;
+            active_[i].entity_count = 0;
+        }
+        for (int i = 0; i < MAX_STAGING; ++i)
+            staging_[i].consumed = true;
+    }
+
+    ChunkData  active_[MAX_CHUNKS_ACTIVE];
+    int        active_count_;
+    char       chunks_dir_[128];
+    ChunkCoord last_player_chunk_;
+
+    ChunkLoadStaging  staging_[MAX_STAGING];
+    std::thread       io_worker_;
+    std::atomic<bool> io_running_{false};
+
+    struct PendingCoord { int x, z; bool valid; };
+    PendingCoord     pending_[MAX_STAGING];
+    std::atomic<int> pending_head_{0}, pending_tail_{0};
+
+    ChunkSpawnTreeFn     spawn_tree_fn_     = nullptr;
+    ChunkSpawnNpcFn      spawn_npc_fn_      = nullptr;
+    ChunkDestroyEntityFn destroy_entity_fn_ = nullptr;
+    ChunkSaveEntityFn    save_entity_fn_    = nullptr;
+
+    bool TryEnqueuePending(ChunkCoord c);
+    bool TryDequeuePending(ChunkCoord& out);
+    void IOWorkerLoop();
+    void LoadChunkFromStaging(ChunkLoadStaging& stg);
+    void UnloadChunk(int idx);
+    bool SaveChunk(int idx);
+    int  FindActive(ChunkCoord coord) const;
+};

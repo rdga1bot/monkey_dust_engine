@@ -1,0 +1,56 @@
+#version 430 core
+layout(local_size_x = 64) in;
+
+#define MAX_ANIMATED_NPC 500
+#define MAX_BONES        128
+
+struct AnimState {
+    uint  slot;
+    uint  clip_id;
+    float time_s;
+    float _pad;
+};
+
+layout(std430, binding = 5) readonly buffer AnimStateBuf {
+    AnimState anim_states[MAX_ANIMATED_NPC];
+};
+
+layout(std430, binding = 4) writeonly buffer FinalBonesBuf {
+    mat4 final_bones[/* MAX_ANIMATED_NPC * MAX_BONES */];
+};
+
+// Rotation around X-axis (limb swing)
+mat4 rotX(float a) {
+    float c = cos(a), s = sin(a);
+    return mat4(
+        1.0, 0.0, 0.0, 0.0,
+        0.0,   c,   s, 0.0,
+        0.0,  -s,   c, 0.0,
+        0.0, 0.0, 0.0, 1.0
+    );
+}
+
+// Procedural bone matrix: bone 0=root, 1=body, 2=L-arm, 3=R-arm, 4=L-leg, 5=R-leg
+mat4 boneMatrix(uint bone, uint clip, float t) {
+    if (clip == 1u) {          // WALK — limb swing
+        if (bone == 2u) return rotX( sin(t * 6.283 / 0.8) * 0.5);
+        if (bone == 3u) return rotX(-sin(t * 6.283 / 0.8) * 0.5);
+        if (bone == 4u) return rotX(-sin(t * 6.283 / 0.8) * 0.4);
+        if (bone == 5u) return rotX( sin(t * 6.283 / 0.8) * 0.4);
+    } else if (clip == 2u) {   // ATTACK — arm strike
+        if (bone == 2u) return rotX( sin(t * 6.283 / 0.5) * 1.2);
+        if (bone == 3u) return rotX( sin(t * 6.283 / 0.5 + 1.0) * 0.3);
+    }
+    return mat4(1.0);          // IDLE or root/body → identity
+}
+
+void main() {
+    uint npc_idx = gl_GlobalInvocationID.x;
+    if (npc_idx >= uint(MAX_ANIMATED_NPC)) return;
+
+    AnimState state = anim_states[npc_idx];
+    uint base = npc_idx * uint(MAX_BONES);
+
+    for (uint b = 0u; b < uint(MAX_BONES); ++b)
+        final_bones[base + b] = boneMatrix(b, state.clip_id, state.time_s);
+}

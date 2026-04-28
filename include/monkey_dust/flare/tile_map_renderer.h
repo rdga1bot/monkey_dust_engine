@@ -27,8 +27,10 @@ public:
 
     // Render map background layer.  tile_world_size controls the world-space
     // footprint of one tile (default 1.0 = 1 world unit).
+    // ortho_size: orthographic half-height in world units (0 = perspective).
     void Render(const FlareMap& map, const MdCamera& cam,
-                float aspect, float tile_world_size = 1.0f);
+                float aspect, float tile_world_size = 1.0f,
+                float ortho_size = 0.0f);
 
 private:
     TileMapRenderer() = default;

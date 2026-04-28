@@ -91,7 +91,7 @@ void TileMapRenderer::SetAtlas(const char* png_path) {
 }
 
 void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
-                              float aspect, float tile_world_size)
+                              float aspect, float tile_world_size, float ortho_size)
 {
     if (!init_ || !prog_) return;
     if (map.layer_count == 0 || map.width <= 0 || map.height <= 0) return;
@@ -179,7 +179,15 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     // Use Raylib's own matrix functions — avoids GLM row/column ordering issues.
     Camera3D rl = cam.ToRaylib();
     Matrix V  = MatrixLookAt(rl.position, rl.target, rl.up);
-    Matrix P  = MatrixPerspective((double)rl.fovy * 0.01745329251844, (double)aspect, 0.1, 300.0);
+
+    Matrix P;
+    if (ortho_size > 0.0f) {
+        const float oh = ortho_size;
+        const float ow = oh * aspect;
+        P = MatrixOrtho(-ow, +ow, -oh, +oh, 0.1, 300.0);
+    } else {
+        P = MatrixPerspective((double)rl.fovy * 0.01745329251844, (double)aspect, 0.1, 300.0);
+    }
     Matrix vp = MatrixMultiply(V, P);   // Raylib MM(A,B)=P*V mathematically → correct
     glUniformMatrix4fv(loc_vp_, 1, GL_FALSE, MatrixToFloat(vp));
 

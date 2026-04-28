@@ -2,8 +2,122 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <dirent.h>
+#include <sys/stat.h>
 
 namespace md::flare {
+
+// ── TileMetaRegistry ──────────────────────────────────────────────────────────
+
+void TileMetaRegistry::Clear() { count = 0; }
+
+const TileMeta* TileMetaRegistry::Find(uint16_t tile_id) const {
+    if (tile_id == 0) return nullptr;
+    for (int i = 0; i < count; ++i)
+        if (entries[i].tile_id == tile_id) return &entries[i];
+    return nullptr;
+}
+
+bool TileMetaRegistry::Add(const TileMeta& m) {
+    if (count >= MAX_TILE_META) {
+        fprintf(stderr, "[TileMeta] registry full (MAX=%d), tile_id=%d dropped\n",
+                MAX_TILE_META, (int)m.tile_id);
+        return false;
+    }
+    for (int i = 0; i < count; ++i) {
+        if (entries[i].tile_id == m.tile_id) { entries[i] = m; return true; }
+    }
+    entries[count++] = m;
+    return true;
+}
+
+void TileMetaRegistry::DumpFirst(int n) const {
+    int show = (n < count) ? n : count;
+    fprintf(stdout, "[TileMeta] registry contains %d entries (showing first %d):\n",
+            count, show);
+    for (int i = 0; i < show; ++i) {
+        const TileMeta& m = entries[i];
+        fprintf(stdout, "  [%d] id=%u src=(%d,%d) size=(%d,%d) offset=(%d,%d)\n",
+                i, (unsigned)m.tile_id,
+                (int)m.src_x, (int)m.src_y,
+                (int)m.w, (int)m.h,
+                (int)m.offset_x, (int)m.offset_y);
+    }
+}
+
+// ── Tilesetdef parser ─────────────────────────────────────────────────────────
+
+static bool ParseTilesetDefFile(const char* path, TileMetaRegistry& meta) {
+    FILE* f = fopen(path, "r");
+    if (!f) return false;
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "tile=", 5) != 0) continue;
+        const char* p = line + 5;
+        int id, sx, sy, w, h, ox, oy;
+        if (sscanf(p, "%d,%d,%d,%d,%d,%d,%d", &id, &sx, &sy, &w, &h, &ox, &oy) == 7) {
+            TileMeta m;
+            m.tile_id  = (uint16_t)id;
+            m.src_x    = (int16_t)sx;
+            m.src_y    = (int16_t)sy;
+            m.w        = (int16_t)w;
+            m.h        = (int16_t)h;
+            m.offset_x = (int16_t)ox;
+            m.offset_y = (int16_t)oy;
+            meta.Add(m);
+        } else {
+            fprintf(stderr, "[TileMeta] bad format: %s", line);
+        }
+    }
+    fclose(f);
+    return meta.count > 0;
+}
+
+// Extract parent directory in-place (removes last path component).
+static void DirOf(const char* path, char* out, int n) {
+    snprintf(out, (size_t)n, "%s", path);
+    char* last = nullptr;
+    for (char* c = out; *c; ++c) if (*c == '/') last = c;
+    if (last) *last = '\0';
+    else { out[0] = '.'; out[1] = '\0'; }
+}
+
+// Scan siblings of the map's mod directory for a tilesetdef file.
+// Map is at: {mods_root}/{mod}/{maps}/{file}.txt
+// tileset_def is relative to a mod root, e.g. "tilesetdefs/tileset_grassland.txt".
+static bool TryLoadTilesetDef(const char* map_path, const char* tileset_def,
+                               TileMetaRegistry& meta) {
+    if (!tileset_def || !tileset_def[0]) return false;
+
+    char map_dir[512], mod_dir[512], mods_root[512];
+    DirOf(map_path, map_dir, sizeof(map_dir));   // strip filename → .../maps
+    DirOf(map_dir, mod_dir, sizeof(mod_dir));    // strip maps/  → .../mod
+    DirOf(mod_dir, mods_root, sizeof(mods_root)); // strip mod/  → .../mods
+
+    DIR* d = opendir(mods_root);
+    if (!d) {
+        // Fallback: try same mod dir
+        char candidate[512];
+        snprintf(candidate, sizeof(candidate), "%s/%s", mod_dir, tileset_def);
+        return ParseTilesetDefFile(candidate, meta);
+    }
+
+    struct dirent* ent;
+    bool found = false;
+    while (!found && (ent = readdir(d)) != nullptr) {
+        if (ent->d_name[0] == '.') continue;
+        char candidate[512];
+        snprintf(candidate, sizeof(candidate), "%s/%s/%s",
+                 mods_root, ent->d_name, tileset_def);
+        struct stat st;
+        if (stat(candidate, &st) == 0 && S_ISREG(st.st_mode)) {
+            fprintf(stdout, "[TileMeta] loading tilesetdef: %s\n", candidate);
+            found = ParseTilesetDefFile(candidate, meta);
+        }
+    }
+    closedir(d);
+    return found;
+}
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -281,10 +395,19 @@ static bool LoadTmx(const char* path, FlareMap& m) {
 // ── Public API ─────────────────────────────────────────────────────────────────
 
 bool LoadFlareMap(const char* path, FlareMap& out) {
+    out.meta.Clear();
+
     const char* dot = strrchr(path, '.');
     if (!dot) return false;
-    if (strcmp(dot, ".tmx") == 0) return LoadTmx(path, out);
-    return LoadTxt(path, out);
+
+    bool ok = (strcmp(dot, ".tmx") == 0) ? LoadTmx(path, out) : LoadTxt(path, out);
+    if (!ok) return false;
+
+    if (out.tileset_def[0])
+        TryLoadTilesetDef(path, out.tileset_def, out.meta);
+
+    out.meta.DumpFirst(10);
+    return true;
 }
 
 bool ResolveTile(const FlareMap& map, uint16_t tile_id,

@@ -30,6 +30,26 @@ struct TileSet {
     int  firstgid;    // TMX: base tile ID (1-based). .txt: 0 (unknown).
 };
 
+// Per-tile metadata from tilesetdef. One entry per tile= line.
+struct TileMeta {
+    uint16_t tile_id;
+    int16_t  src_x, src_y;   // upper-left in atlas (px)
+    int16_t  w, h;            // tile size in atlas (px) — h > 96 means billboard
+    int16_t  offset_x, offset_y;
+};
+
+constexpr int MAX_TILE_META = 4096;
+
+struct TileMetaRegistry {
+    TileMeta entries[MAX_TILE_META];
+    int      count;
+
+    void Clear();
+    const TileMeta* Find(uint16_t tile_id) const;
+    bool Add(const TileMeta& meta);
+    void DumpFirst(int n) const;
+};
+
 // Flat row-major tile array.  Index: tiles[row * MAX_MAP_WIDTH + col].
 // Value 0 = empty cell.
 struct TileMapLayer {
@@ -45,8 +65,9 @@ struct FlareMap {
     char  tileset_def[128];   // "tilesetdefs/tileset_grassland.txt"
     char  title[64];
 
-    TileSet      tilesets[MAX_TILESETS];
-    int          tileset_count;
+    TileSet           tilesets[MAX_TILESETS];
+    int               tileset_count;
+    TileMetaRegistry  meta;
 
     TileMapLayer layers[MAX_MAP_LAYERS];
     int          layer_count;

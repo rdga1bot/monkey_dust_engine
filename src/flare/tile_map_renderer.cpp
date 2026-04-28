@@ -181,7 +181,7 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     Matrix V  = MatrixLookAt(rl.position, rl.target, rl.up);
     Matrix P  = MatrixPerspective((double)rl.fovy * 0.01745329251844, (double)aspect, 0.1, 300.0);
     Matrix vp = MatrixMultiply(V, P);   // Raylib MM(A,B)=P*V mathematically → correct
-    glUniformMatrix4fv(loc_vp_, 1, GL_FALSE, &vp.m0);
+    glUniformMatrix4fv(loc_vp_, 1, GL_FALSE, MatrixToFloat(vp));
 
     float tsz[2] = { tile_world_size, tile_world_size };
     glUniform2fv(loc_tile_size_, 1, tsz);

@@ -7,12 +7,14 @@
 #include <cstring>
 #include <cstdio>
 
-// Per-instance GPU layout (stride = 24 bytes):
+// Per-instance GPU layout (stride = 28 bytes):
 //   vec2  tile_pos  (grid x, y)   offset  0
 //   vec4  uv_rect   (u0,v0,u1,v1) offset  8
-static constexpr int TINST_STRIDE  = 24;
+//   float tile_h_px (sprite h px) offset 24  (96=flat, >96=billboard)
+static constexpr int TINST_STRIDE  = 28;
 static constexpr int TINST_OFF_POS =  0;
 static constexpr int TINST_OFF_UV  =  8;
+static constexpr int TINST_OFF_H   = 24;
 
 // Unit quad corners [0,1]×[0,1] (4 verts, GL_TRIANGLE_FAN).
 static const float TILE_QUAD[8] = {
@@ -57,6 +59,10 @@ void TileMapRenderer::Init() {
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)TINST_OFF_UV);
     glVertexAttribDivisor(2, 1);
+
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)(intptr_t)TINST_OFF_H);
+    glVertexAttribDivisor(3, 1);
 
     glBindVertexArray(0);
 
@@ -160,6 +166,15 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
             memcpy(p + TINST_OFF_UV +  4, &v0, 4);
             memcpy(p + TINST_OFF_UV +  8, &u1, 4);
             memcpy(p + TINST_OFF_UV + 12, &v1, 4);
+            {
+                float tile_h_f = 96.0f;
+                const TileMeta* tm = map.meta.Find((uint16_t)tid);
+                if (tm && tm->h > 0) {
+                    tile_h_f = (float)tm->h;
+                    if (tile_h_f > 768.0f) tile_h_f = 768.0f;
+                }
+                memcpy(p + TINST_OFF_H, &tile_h_f, 4);
+            }
             ++n;
         }
     }

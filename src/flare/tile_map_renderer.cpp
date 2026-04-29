@@ -6,6 +6,7 @@
 #include "raylib.h"   // Matrix, MatrixMultiply
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>    // qsort
 
 // Per-instance GPU layout (stride = 28 bytes):
 //   vec2  tile_pos  (grid x, y)   offset  0
@@ -20,6 +21,21 @@ static constexpr int TINST_OFF_H   = 24;
 static const float TILE_QUAD[8] = {
     0.f, 0.f,  1.f, 0.f,  1.f, 1.f,  0.f, 1.f
 };
+
+// Painter's algorithm sort scratch.
+struct VisibleTile {
+    uint16_t col;
+    uint16_t row;
+    uint16_t tid;
+    uint16_t _pad;
+    int      local_idx;  // tileset-local UV index, resolved in PASS 1
+    int      depth;      // col + row, precomputed sort key
+};
+static int VisibleTileCmp(const void* a, const void* b) {
+    const VisibleTile* va = (const VisibleTile*)a;
+    const VisibleTile* vb = (const VisibleTile*)b;
+    return va->depth - vb->depth;
+}
 
 namespace md::flare {
 
@@ -130,10 +146,12 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     float iaw = (atlas_.w > 0 && vis.tile_w > 0) ? (float)vis.tile_w / atlas_.w : 1.0f / vis_cols;
     float iah = (atlas_.h > 0 && vis.tile_h > 0) ? (float)vis.tile_h / atlas_.h : iaw;
 
-    // Pack instance buffer.
-    static uint8_t ibuf[MAX_VISIBLE_TILES * TINST_STRIDE];
+    // Pack instance buffer (painter's algorithm: collect → sort → write).
+    static VisibleTile vbuf[MAX_VISIBLE_TILES];
+    static uint8_t     ibuf[MAX_VISIBLE_TILES * TINST_STRIDE];
     int n = 0;
 
+    // PASS 1: collect visible tiles with resolved local_idx.
     for (int row = 0; row < map.height && row < MAX_MAP_HEIGHT && n < MAX_VISIBLE_TILES; ++row) {
         for (int col = 0; col < map.width && col < MAX_MAP_WIDTH && n < MAX_VISIBLE_TILES; ++col) {
             uint16_t tid = bg->tiles[row * MAX_MAP_WIDTH + col];
@@ -141,42 +159,55 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
 
             int local_idx;
             if (txt_fmt) {
-                // 1-based into the visual tileset.
                 local_idx = (int)tid - 1;
             } else {
                 int ts_idx = 0;
                 if (!ResolveTile(map, tid, &ts_idx, &local_idx)) continue;
-                if (map.tilesets[ts_idx].firstgid < 2) continue; // skip collision
+                if (map.tilesets[ts_idx].firstgid < 2) continue;
             }
             if (local_idx < 0) continue;
 
-            int tc = local_idx % vis_cols;
-            int tr = local_idx / vis_cols;
-            float u0 = tc * iaw;
-            float v0 = tr * iah;
-            float u1 = u0 + iaw;
-            float v1 = v0 + iah;
-
-            uint8_t* p = ibuf + n * TINST_STRIDE;
-            float tx = (float)col;
-            float ty_f = (float)row;
-            memcpy(p + TINST_OFF_POS + 0, &tx,  4);
-            memcpy(p + TINST_OFF_POS + 4, &ty_f, 4);
-            memcpy(p + TINST_OFF_UV +  0, &u0, 4);
-            memcpy(p + TINST_OFF_UV +  4, &v0, 4);
-            memcpy(p + TINST_OFF_UV +  8, &u1, 4);
-            memcpy(p + TINST_OFF_UV + 12, &v1, 4);
-            {
-                float tile_h_f = 96.0f;
-                const TileMeta* tm = map.meta.Find((uint16_t)tid);
-                if (tm && tm->h > 0) {
-                    tile_h_f = (float)tm->h;
-                    if (tile_h_f > 768.0f) tile_h_f = 768.0f;
-                }
-                memcpy(p + TINST_OFF_H, &tile_h_f, 4);
-            }
+            vbuf[n].col       = (uint16_t)col;
+            vbuf[n].row       = (uint16_t)row;
+            vbuf[n].tid       = tid;
+            vbuf[n].local_idx = local_idx;
+            vbuf[n].depth     = col + row;
             ++n;
         }
+    }
+
+    // PASS 2: sort back-to-front (ascending col+row = painter's order for SE isometric).
+    qsort(vbuf, (size_t)n, sizeof(VisibleTile), VisibleTileCmp);
+
+    // PASS 3: write to GPU buffer in sorted order.
+    for (int i = 0; i < n; ++i) {
+        const VisibleTile& vt = vbuf[i];
+
+        int tc = vt.local_idx % vis_cols;
+        int tr = vt.local_idx / vis_cols;
+        float u0 = tc * iaw;
+        float v0 = tr * iah;
+        float u1 = u0 + iaw;
+        float v1 = v0 + iah;
+
+        float tx   = (float)vt.col;
+        float ty_f = (float)vt.row;
+
+        float tile_h_f = 96.0f;
+        const TileMeta* tm = map.meta.Find(vt.tid);
+        if (tm && tm->h > 0) {
+            tile_h_f = (float)tm->h;
+            if (tile_h_f > 768.0f) tile_h_f = 768.0f;
+        }
+
+        uint8_t* p = ibuf + i * TINST_STRIDE;
+        memcpy(p + TINST_OFF_POS + 0,  &tx,        4);
+        memcpy(p + TINST_OFF_POS + 4,  &ty_f,      4);
+        memcpy(p + TINST_OFF_UV  + 0,  &u0,        4);
+        memcpy(p + TINST_OFF_UV  + 4,  &v0,        4);
+        memcpy(p + TINST_OFF_UV  + 8,  &u1,        4);
+        memcpy(p + TINST_OFF_UV  + 12, &v1,        4);
+        memcpy(p + TINST_OFF_H,        &tile_h_f,  4);
     }
 
     if (n == 0) return;

@@ -247,10 +247,12 @@ static void CpStr(char* dst, int n, const char* src) {
 }
 
 static LayerType LayerTypeOf(const char* s) {
-    if (strcmp(s, "background") == 0) return LayerType::BACKGROUND;
-    if (strcmp(s, "fringe")     == 0) return LayerType::FRINGE;
-    if (strcmp(s, "object")     == 0) return LayerType::OBJECT;
-    if (strcmp(s, "collision")  == 0) return LayerType::COLLISION;
+    if (strcmp(s, "background")       == 0) return LayerType::BACKGROUND;
+    if (strcmp(s, "fringe")           == 0) return LayerType::FRINGE;
+    if (strcmp(s, "background_fringe")== 0) return LayerType::FRINGE;  // Flare .txt variant
+    if (strcmp(s, "backgroundfringe") == 0) return LayerType::FRINGE;  // Tiled TMX variant
+    if (strcmp(s, "object")           == 0) return LayerType::OBJECT;
+    if (strcmp(s, "collision")        == 0) return LayerType::COLLISION;
     return LayerType::UNKNOWN;
 }
 

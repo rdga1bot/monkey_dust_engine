@@ -182,8 +182,11 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     static uint8_t     ibuf[MAX_VISIBLE_TILES * TINST_STRIDE];
     int n = 0;
 
-    // PASS 1: collect background + object layers into vbuf.
-    auto CollectLayer = [&](const TileMapLayer& layer) {
+    // PASS 1: collect layers into vbuf.
+    // layer_prio encodes render order within the same (col+row) depth bucket:
+    //   0 = BACKGROUND (ground), 1 = FRINGE (ground-level overlays), 2 = OBJECT (tall)
+    // depth = (col+row)*3 + layer_prio ensures bg < fringe < object at equal depth.
+    auto CollectLayer = [&](const TileMapLayer& layer, int layer_prio) {
         for (int row = 0; row < map.height && row < MAX_MAP_HEIGHT && n < MAX_VISIBLE_TILES; ++row) {
             for (int col = 0; col < map.width && col < MAX_MAP_WIDTH && n < MAX_VISIBLE_TILES; ++col) {
                 uint16_t tid = layer.tiles[row * MAX_MAP_WIDTH + col];
@@ -198,10 +201,8 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
                     if (map.tilesets[ts_idx].firstgid < 2) continue;
                 }
 
-                // atlas_idx from metadata; grid fallback only for atlas[0] tiles.
                 const TileMeta* tm_c = map.meta.Find(tid);
                 uint8_t aidx = tm_c ? tm_c->atlas_idx : 0;
-                // Skip tiles with no metadata that fall outside atlas[0] grid.
                 if (!tm_c && (local_idx < 0 || local_idx >= vis_max)) continue;
 
                 vbuf[n].col       = (uint16_t)col;
@@ -209,16 +210,19 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
                 vbuf[n].tid       = tid;
                 vbuf[n].atlas_idx = aidx;
                 vbuf[n].local_idx = local_idx;
-                vbuf[n].depth     = col + row;
+                vbuf[n].depth     = (col + row) * 3 + layer_prio;
                 ++n;
             }
         }
     };
 
-    CollectLayer(*bg);
+    CollectLayer(*bg, 0);
+    for (int i = 0; i < map.layer_count; ++i)
+        if (map.layers[i].type == LayerType::FRINGE)
+            CollectLayer(map.layers[i], 1);
     for (int i = 0; i < map.layer_count; ++i)
         if (map.layers[i].type == LayerType::OBJECT)
-            CollectLayer(map.layers[i]);
+            CollectLayer(map.layers[i], 2);
 
     // PASS 2: sort back-to-front (ascending col+row = painter's order).
     qsort(vbuf, (size_t)n, sizeof(VisibleTile), VisibleTileCmp);

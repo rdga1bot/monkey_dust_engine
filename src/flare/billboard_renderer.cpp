@@ -217,7 +217,7 @@ void BillboardRenderer::Render(const MdCamera& cam, float aspect) {
 
 void BillboardRenderer::LoadSpriteAtlas(const char* png_path) {
     MdUnloadTexture(atlas_);
-    atlas_ = MdLoadTexture(png_path);
+    atlas_ = MdLoadTexturePixelArt(png_path);
     if (!atlas_.id)
         fprintf(stderr, "[Billboard] failed to load atlas: %s\n", png_path);
 }

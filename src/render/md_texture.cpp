@@ -34,6 +34,32 @@ MdTexture MdLoadTexture(const char* path) {
     return t;
 }
 
+MdTexture MdLoadTexturePixelArt(const char* path) {
+    int w, h, ch;
+    stbi_set_flip_vertically_on_load(1);
+    unsigned char* data = stbi_load(path, &w, &h, &ch, 4);
+    stbi_set_flip_vertically_on_load(0);
+    if (!data) {
+        fprintf(stderr, "[MdTexture] pixel-art load failed: %s\n", path);
+        return {};
+    }
+
+    MdTexture t;
+    t.w = w;
+    t.h = h;
+    glGenTextures(1, &t.id);
+    glBindTexture(GL_TEXTURE_2D, t.id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+                 GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    stbi_image_free(data);
+    return t;
+}
+
 MdTexture MdLoadTextureFromMemory(const uint8_t* data, int w, int h) {
     MdTexture t;
     t.w = w;

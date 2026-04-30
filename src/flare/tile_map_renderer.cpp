@@ -107,7 +107,7 @@ void TileMapRenderer::Shutdown() {
 
 void TileMapRenderer::SetAtlas(const char* png_path) {
     MdUnloadTexture(atlas_);
-    atlas_ = MdLoadTexture(png_path);
+    atlas_ = MdLoadTexturePixelArt(png_path);
     if (!atlas_.id)
         fprintf(stderr, "[TileMap] failed to load atlas: %s\n", png_path);
 }

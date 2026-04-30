@@ -37,6 +37,7 @@ static const float TILE_QUAD[8] = {
 };
 
 // Painter's algorithm sort scratch.
+// M10: depth is float to allow sub-tile ordering corrections.
 struct VisibleTile {
     uint16_t col;
     uint16_t row;
@@ -44,12 +45,12 @@ struct VisibleTile {
     uint8_t  atlas_idx;  // TileMeta::atlas_idx — which atlas texture to sample
     uint8_t  _pad;
     int      local_idx;  // tileset-local UV index (grid fallback only)
-    int      depth;      // col + row, precomputed sort key
+    float    depth;      // (col+row)*3 + layer_prio + x_off_correction
 };
 static int VisibleTileCmp(const void* a, const void* b) {
-    const VisibleTile* va = (const VisibleTile*)a;
-    const VisibleTile* vb = (const VisibleTile*)b;
-    return va->depth - vb->depth;
+    float da = ((const VisibleTile*)a)->depth;
+    float db = ((const VisibleTile*)b)->depth;
+    return (da > db) - (da < db);
 }
 
 namespace md::flare {
@@ -211,12 +212,24 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
                 uint8_t aidx = tm_c ? tm_c->atlas_idx : 0;
                 if (!tm_c && (local_idx < 0 || local_idx >= vis_max)) continue;
 
+                // M10: float depth with sub-tile x_off correction.
+                // x_off_corr = (w/2 - offset_x) / 192 shifts sprite's effective
+                // sort position toward its visual center (screen-right = +depth).
+                // Clamped to ±0.9 so it never crosses a layer_prio boundary (1.0).
+                float depth_f = (float)((col + row) * 3 + layer_prio);
+                if (tm_c && tm_c->w > 0) {
+                    float x_corr = ((float)tm_c->w * 0.5f - (float)tm_c->offset_x)
+                                   / 192.0f;
+                    if (x_corr >  0.9f) x_corr =  0.9f;
+                    if (x_corr < -0.9f) x_corr = -0.9f;
+                    depth_f += x_corr;
+                }
                 vbuf[n].col       = (uint16_t)col;
                 vbuf[n].row       = (uint16_t)row;
                 vbuf[n].tid       = tid;
                 vbuf[n].atlas_idx = aidx;
                 vbuf[n].local_idx = local_idx;
-                vbuf[n].depth     = (col + row) * 3 + layer_prio;
+                vbuf[n].depth     = depth_f;
                 ++n;
             }
         }

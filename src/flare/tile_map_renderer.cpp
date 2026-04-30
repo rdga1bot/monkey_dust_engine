@@ -16,7 +16,11 @@
 //   float x_off     screen-horiz     offset 32  (world units; +→right on screen)
 //
 // BILLBOARD CLASSIFICATION: is_billboard = (offset_y > h / 2)
-// Y FORMULA (96px = 1 world unit):
+//   Anchor in lower half → billboard (trees/mushrooms).
+//   Anchor in upper half (offset_y ≤ h/2) → flat XZ diamond (water, cliff, grass).
+//   Flat includes h>96 tiles: the art is 2D isometric pre-rendered at the camera
+//   angle, so flat projection + ortho camera reproduces the original appearance.
+// Y FORMULA (96 atlas-px = 1 world unit):
 //   y_top = offset_y / 96.0 * tsz,  y_bot = -(h - offset_y) / 96.0 * tsz
 //
 // HORIZONTAL OFFSET (M7.27):
@@ -254,8 +258,9 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     //
     // BILLBOARD CLASSIFICATION (M7.24):
     //   is_billboard = (TileMeta::offset_y > TileMeta::h / 2)
-    //   Tiles where the anchor row is in the lower half of the sprite are
-    //   billboards (tree trunk etc.); upper-half anchor = flat overlay (water etc.).
+    //   Anchor in lower half → billboard. Upper half (offset_y ≤ h/2) → flat XZ diamond.
+    //   Flat applies to h>96 tiles too (water, cliff): art is 2D isometric pre-rendered,
+    //   so flat projection + ortho camera faithfully reproduces the original appearance.
     //
     // Y EXTENTS for billboards (96 atlas-px = 1 world unit):
     //   y_top = offset_y / 96 * tsz           (tip, above ground)
@@ -293,7 +298,8 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
             u1 = (float)(frame_sx + tm->w) / (float)atl.w;
 
             // Billboard: anchor row (offset_y) is in the lower half of the sprite.
-            // Water/overlay tiles (h>96 but oy≤h/2) are correctly classified flat.
+            // Upper-half anchor (offset_y ≤ h/2): flat XZ diamond — covers water, cliff,
+            // and all h>96 overlay tiles whose art is pre-rendered for the camera angle.
             bool is_bb = (tm->offset_y > tm->h / 2);
             if (is_bb) {
                 // UV: corner.y=0=base(bottom of image), corner.y=1=tip(top of image).

@@ -8,14 +8,26 @@
 #include <cstdio>
 #include <cstdlib>    // qsort
 
-// Per-instance GPU layout (stride = 28 bytes):
-//   vec2  tile_pos  (grid x, y)   offset  0
-//   vec4  uv_rect   (u0,v0,u1,v1) offset  8
-//   float tile_h_px (sprite h px) offset 24  (96=flat, >96=billboard)
-static constexpr int TINST_STRIDE  = 28;
-static constexpr int TINST_OFF_POS =  0;
-static constexpr int TINST_OFF_UV  =  8;
-static constexpr int TINST_OFF_H   = 24;
+// Per-instance GPU layout (stride = 32 bytes — M7.24 sprite-offset):
+//   vec2  tile_pos  (grid col, row)   offset  0
+//   vec4  uv_rect   (u0,v0,u1,v1)    offset  8
+//   float y_bot     world Y of base  offset 24  (≤0 or 0 for flat tile)
+//   float y_top     world Y of tip   offset 28  (>0 = billboard; 0 = flat tile)
+//
+// BILLBOARD CLASSIFICATION (CPU side):
+//   is_billboard = (TileMeta::offset_y > TileMeta::h / 2)
+//   Rationale: the anchor row within the sprite image (offset_y) sits in
+//   the lower half only for billboards (most of the sprite is above the anchor).
+//   Flat tiles with h>96 (e.g. water 192×192) have oy≤h/2 → correctly flat.
+//
+// Y FORMULA for billboards (96px = 1 world unit):
+//   y_top = offset_y / 96.0 * tile_world_size   (sprite above anchor = above ground)
+//   y_bot = -(h - offset_y) / 96.0 * tile_world_size  (root/shadow below ground)
+static constexpr int TINST_STRIDE    = 32;
+static constexpr int TINST_OFF_POS   =  0;
+static constexpr int TINST_OFF_UV    =  8;
+static constexpr int TINST_OFF_YBOT  = 24;
+static constexpr int TINST_OFF_YTOP  = 28;
 
 // Unit quad corners [0,1]×[0,1] (4 verts, GL_TRIANGLE_FAN).
 static const float TILE_QUAD[8] = {
@@ -77,9 +89,14 @@ void TileMapRenderer::Init() {
     glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)TINST_OFF_UV);
     glVertexAttribDivisor(2, 1);
 
+    // attrib 3: y_bot (1 float at offset 24)
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)(intptr_t)TINST_OFF_H);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)(intptr_t)TINST_OFF_YBOT);
     glVertexAttribDivisor(3, 1);
+    // attrib 4: y_top (1 float at offset 28)
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)(intptr_t)TINST_OFF_YTOP);
+    glVertexAttribDivisor(4, 1);
 
     glBindVertexArray(0);
 
@@ -206,72 +223,81 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     // PASS 2: sort back-to-front (ascending col+row = painter's order).
     qsort(vbuf, (size_t)n, sizeof(VisibleTile), VisibleTileCmp);
 
-    // PASS 3: compute UV for every tile into ibuf (full sorted buffer).
+    // PASS 3: compute UV and world Y extents for every tile into ibuf.
     //
-    // UV CONVENTION: MdLoadTexturePixelArt uses stbi vertical flip.
-    //   GL v=0 = bottom of image file,  GL v=1 = top of image file.
-    //   Correct formula:  v_gl = 1.0f - y_file / atlas_h
-    //   Wrong formula:    v_gl = y_file / atlas_h  (produces invisible tiles)
+    // UV CONVENTION (stbi flip active — see tile_map.h and CLAUDE_ARCH.md):
+    //   Flat:      v0 = 1-(src_y/H)      [north/top],   v1 = 1-((src_y+h)/H) [south/bottom]
+    //   Billboard: v0 = 1-((src_y+h)/H)  [base/anchor], v1 = 1-(src_y/H)     [tip/crown]
     //
-    // CORNER MAPPING:
-    //   Flat tile  (h≤96): a_corner.y 0→north(top of sprite)  1→south(bottom)
-    //   Billboard  (h>96): a_corner.y 0→ground/base           1→tip/top
-    //   For flat:      v0 = 1-(src_y/H),    v1 = 1-((src_y+h)/H)  [v0 > v1]
-    //   For billboard: v0 = 1-((src_y+h)/H), v1 = 1-(src_y/H)    [v0 < v1]
+    // BILLBOARD CLASSIFICATION (M7.24):
+    //   is_billboard = (TileMeta::offset_y > TileMeta::h / 2)
+    //   Tiles where the anchor row is in the lower half of the sprite are
+    //   billboards (tree trunk etc.); upper-half anchor = flat overlay (water etc.).
+    //
+    // Y EXTENTS for billboards (96 atlas-px = 1 world unit):
+    //   y_top = offset_y / 96 * tsz           (tip, above ground)
+    //   y_bot = -(h - offset_y) / 96 * tsz    (root, clipped below ground by depth test)
     for (int i = 0; i < n; ++i) {
         const VisibleTile& vt = vbuf[i];
-        float tile_h_f = 96.0f;
         float u0, v0, u1, v1;
+        float y_bot = 0.0f, y_top = 0.0f;  // 0/0 = flat tile sentinel
 
         const TileMeta* tm = map.meta.Find(vt.tid);
-        // Per-tile metadata path: use exact pixel coordinates + owning atlas dims.
         if (tm && tm->w > 0 && tm->h > 0) {
             uint8_t aidx = tm->atlas_idx < (uint8_t)atlas_count_ ? tm->atlas_idx : 0;
             const MdTexture& atl = atlases_[aidx];
-            if (atl.w > 0 && atl.h > 0) {
-                tile_h_f = (float)tm->h;
-                if (tile_h_f > 768.0f) tile_h_f = 768.0f;
-                u0 = (float)tm->src_x / (float)atl.w;
-                u1 = (float)(tm->src_x + tm->w) / (float)atl.w;
-                if (tile_h_f <= 96.5f) {
-                    v0 = 1.0f - (float)tm->src_y / (float)atl.h;
-                    v1 = 1.0f - (float)(tm->src_y + tm->h) / (float)atl.h;
-                } else {
-                    v0 = 1.0f - (float)(tm->src_y + tm->h) / (float)atl.h;
-                    v1 = 1.0f - (float)tm->src_y / (float)atl.h;
-                }
+            u0 = (float)tm->src_x / (float)atl.w;
+            u1 = (float)(tm->src_x + tm->w) / (float)atl.w;
+
+            // Billboard: anchor row (offset_y) is in the lower half of the sprite.
+            // Water/overlay tiles (h>96 but oy≤h/2) are correctly classified flat.
+            bool is_bb = (tm->offset_y > tm->h / 2);
+            if (is_bb) {
+                // UV: corner.y=0=base(bottom of image), corner.y=1=tip(top of image).
+                v0 = 1.0f - (float)(tm->src_y + tm->h) / (float)atl.h;
+                v1 = 1.0f - (float)tm->src_y / (float)atl.h;
+                // World Y: 96 atlas-px → 1 world unit.
+                y_top = (float)tm->offset_y / 96.0f * tile_world_size;
+                y_bot = -((float)tm->h - (float)tm->offset_y) / 96.0f * tile_world_size;
             } else {
-                u0 = 0.0f; u1 = 1.0f; v0 = 1.0f; v1 = 0.0f;
+                // UV: corner.y=0=north(top of image), corner.y=1=south(bottom).
+                v0 = 1.0f - (float)tm->src_y / (float)atl.h;
+                v1 = 1.0f - (float)(tm->src_y + tm->h) / (float)atl.h;
+                // y_bot = y_top = 0 → flat tile (shader uses XZ diamond).
             }
         } else {
-            // Grid fallback (atlas[0] only — tiles without metadata).
-            if (tm && tm->h > 0) {
-                tile_h_f = (float)tm->h;
-                if (tile_h_f > 768.0f) tile_h_f = 768.0f;
-            }
+            // Grid fallback (no metadata — uses atlas[0] grid layout).
+            float tile_h_f = 96.0f;
+            if (tm && tm->h > 0) tile_h_f = (float)tm->h;
             int tc = vt.local_idx % vis_cols;
             int tr = vt.local_idx / vis_cols;
             u0 = tc * iaw;
             u1 = u0 + iaw;
             if (tile_h_f <= 96.5f) {
+                // Flat diamond.
                 v1 = 1.0f - (float)(tr + 1) * iah;
                 v0 = v1 + ground_iah;
+                // y_bot = y_top = 0 already.
             } else {
+                // Tall grid tile: assume standard anchor (billboard rising from y=0).
                 v0 = 1.0f - (float)(tr + 1) * iah;
                 v1 = 1.0f - (float)tr * iah;
+                y_top = (tile_h_f - 96.0f) / 96.0f * tile_world_size;
+                // y_bot = 0: no below-ground portion assumed for grid fallback.
             }
         }
 
         float tx   = (float)vt.col;
         float ty_f = (float)vt.row;
         uint8_t* p = ibuf + i * TINST_STRIDE;
-        memcpy(p + TINST_OFF_POS + 0,  &tx,       4);
-        memcpy(p + TINST_OFF_POS + 4,  &ty_f,     4);
-        memcpy(p + TINST_OFF_UV  + 0,  &u0,       4);
-        memcpy(p + TINST_OFF_UV  + 4,  &v0,       4);
-        memcpy(p + TINST_OFF_UV  + 8,  &u1,       4);
-        memcpy(p + TINST_OFF_UV  + 12, &v1,       4);
-        memcpy(p + TINST_OFF_H,        &tile_h_f, 4);
+        memcpy(p + TINST_OFF_POS + 0,  &tx,    4);
+        memcpy(p + TINST_OFF_POS + 4,  &ty_f,  4);
+        memcpy(p + TINST_OFF_UV  + 0,  &u0,    4);
+        memcpy(p + TINST_OFF_UV  + 4,  &v0,    4);
+        memcpy(p + TINST_OFF_UV  + 8,  &u1,    4);
+        memcpy(p + TINST_OFF_UV  + 12, &v1,    4);
+        memcpy(p + TINST_OFF_YBOT,     &y_bot, 4);
+        memcpy(p + TINST_OFF_YTOP,     &y_top, 4);
     }
 
     if (n == 0) return;

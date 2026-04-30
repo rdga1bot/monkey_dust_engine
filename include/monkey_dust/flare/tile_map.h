@@ -43,6 +43,7 @@ constexpr int MAX_TILE_META = 4096;
 struct TileMetaRegistry {
     TileMeta entries[MAX_TILE_META];
     int      count;
+    char     atlas_rel_path[256];  // img= line from tilesetdef (relative to mod root)
 
     void Clear();
     const TileMeta* Find(uint16_t tile_id) const;
@@ -75,6 +76,7 @@ struct FlareMap {
     float hero_x, hero_y;     // spawn position in tile coords
     char  music_path[128];
     char  tileset_def[128];   // "tilesetdefs/tileset_grassland.txt"
+    char  tileset_atlas[256]; // resolved absolute path to per-tile atlas image
     char  title[64];
 
     TileSet           tilesets[MAX_TILESETS];

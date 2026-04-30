@@ -9,7 +9,7 @@ namespace md::flare {
 
 // ── TileMetaRegistry ──────────────────────────────────────────────────────────
 
-void TileMetaRegistry::Clear() { count = 0; }
+void TileMetaRegistry::Clear() { count = 0; atlas_rel_path[0] = '\0'; }
 
 const TileMeta* TileMetaRegistry::Find(uint16_t tile_id) const {
     if (tile_id == 0) return nullptr;
@@ -52,6 +52,15 @@ static bool ParseTilesetDefFile(const char* path, TileMetaRegistry& meta) {
     if (!f) return false;
     char line[256];
     while (fgets(line, sizeof(line), f)) {
+        // Strip trailing newline
+        int len = (int)strlen(line);
+        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) line[--len] = '\0';
+
+        if (strncmp(line, "img=", 4) == 0) {
+            // Store atlas-relative path for later resolution
+            strncpy(meta.atlas_rel_path, line + 4, sizeof(meta.atlas_rel_path) - 1);
+            continue;
+        }
         if (strncmp(line, "tile=", 5) != 0) continue;
         const char* p = line + 5;
         int id, sx, sy, w, h, ox, oy;
@@ -447,8 +456,46 @@ bool LoadFlareMap(const char* path, FlareMap& out) {
     bool ok = (strcmp(dot, ".tmx") == 0) ? LoadTmx(path, out) : LoadTxt(path, out);
     if (!ok) return false;
 
-    if (out.tileset_def[0])
+    out.tileset_atlas[0] = '\0';
+    if (out.tileset_def[0]) {
         TryLoadTilesetDef(path, out.tileset_def, out.meta);
+
+        // Resolve atlas image: meta.atlas_rel_path is relative to the mod root.
+        // The def file was found in one of the sibling mods; try each mod dir.
+        if (out.meta.atlas_rel_path[0]) {
+            char map_dir[512], mod_dir[512], mods_root[512];
+            DirOf(path, map_dir, sizeof(map_dir));
+            DirOf(map_dir, mod_dir, sizeof(mod_dir));
+            DirOf(mod_dir, mods_root, sizeof(mods_root));
+
+            DIR* d2 = opendir(mods_root);
+            if (d2) {
+                struct dirent* ent2;
+                while ((ent2 = readdir(d2)) != nullptr) {
+                    if (ent2->d_name[0] == '.') continue;
+                    char candidate[512];
+                    snprintf(candidate, sizeof(candidate), "%s/%s/%s",
+                             mods_root, ent2->d_name, out.meta.atlas_rel_path);
+                    struct stat st2;
+                    if (stat(candidate, &st2) == 0 && S_ISREG(st2.st_mode)) {
+                        strncpy(out.tileset_atlas, candidate, sizeof(out.tileset_atlas) - 1);
+                        fprintf(stdout, "[FlareMap] tileset atlas: %s\n", out.tileset_atlas);
+                        break;
+                    }
+                }
+                closedir(d2);
+            }
+            // Fallback: try same mod dir
+            if (!out.tileset_atlas[0]) {
+                char candidate[512];
+                snprintf(candidate, sizeof(candidate), "%s/%s",
+                         mod_dir, out.meta.atlas_rel_path);
+                struct stat st2;
+                if (stat(candidate, &st2) == 0 && S_ISREG(st2.st_mode))
+                    strncpy(out.tileset_atlas, candidate, sizeof(out.tileset_atlas) - 1);
+            }
+        }
+    }
 
     out.meta.DumpFirst(10);
     return true;

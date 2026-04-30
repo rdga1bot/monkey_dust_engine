@@ -146,34 +146,56 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     float iaw = (atlas_.w > 0 && vis.tile_w > 0) ? (float)vis.tile_w / atlas_.w : 1.0f / vis_cols;
     float iah = (atlas_.h > 0 && vis.tile_h > 0) ? (float)vis.tile_h / atlas_.h : iaw;
 
+    // Ground diamond UV height.  In Flare .txt tilesets the isometric rhombus
+    // always occupies the bottom map.tile_h (=96) px of each slot.  Flat tiles
+    // must sample only that strip; billboard tiles use the full slot.
+    float ground_iah = (atlas_.h > 0 && map.tile_h > 0)
+                       ? (float)map.tile_h / (float)atlas_.h
+                       : iah;
+
+    // Total tile slots in atlas — used to skip out-of-range IDs (other tilesets).
+    int vis_rows = (atlas_.h > 0 && vis.tile_h > 0) ? atlas_.h / vis.tile_h : 8;
+    int vis_max  = vis_cols * vis_rows;
+
     // Pack instance buffer (painter's algorithm: collect → sort → write).
     static VisibleTile vbuf[MAX_VISIBLE_TILES];
     static uint8_t     ibuf[MAX_VISIBLE_TILES * TINST_STRIDE];
     int n = 0;
 
-    // PASS 1: collect visible tiles with resolved local_idx.
-    for (int row = 0; row < map.height && row < MAX_MAP_HEIGHT && n < MAX_VISIBLE_TILES; ++row) {
-        for (int col = 0; col < map.width && col < MAX_MAP_WIDTH && n < MAX_VISIBLE_TILES; ++col) {
-            uint16_t tid = bg->tiles[row * MAX_MAP_WIDTH + col];
-            if (tid == 0) continue;
+    // Collect tiles from one layer into vbuf.
+    auto CollectLayer = [&](const TileMapLayer& layer) {
+        for (int row = 0; row < map.height && row < MAX_MAP_HEIGHT && n < MAX_VISIBLE_TILES; ++row) {
+            for (int col = 0; col < map.width && col < MAX_MAP_WIDTH && n < MAX_VISIBLE_TILES; ++col) {
+                uint16_t tid = layer.tiles[row * MAX_MAP_WIDTH + col];
+                if (tid == 0) continue;
 
-            int local_idx;
-            if (txt_fmt) {
-                local_idx = (int)tid - 1;
-            } else {
-                int ts_idx = 0;
-                if (!ResolveTile(map, tid, &ts_idx, &local_idx)) continue;
-                if (map.tilesets[ts_idx].firstgid < 2) continue;
+                int local_idx;
+                if (txt_fmt) {
+                    local_idx = (int)tid - 1;
+                } else {
+                    int ts_idx = 0;
+                    if (!ResolveTile(map, tid, &ts_idx, &local_idx)) continue;
+                    if (map.tilesets[ts_idx].firstgid < 2) continue;
+                }
+                if (local_idx < 0 || local_idx >= vis_max) continue;
+
+                vbuf[n].col       = (uint16_t)col;
+                vbuf[n].row       = (uint16_t)row;
+                vbuf[n].tid       = tid;
+                vbuf[n].local_idx = local_idx;
+                vbuf[n].depth     = col + row;
+                ++n;
             }
-            if (local_idx < 0) continue;
-
-            vbuf[n].col       = (uint16_t)col;
-            vbuf[n].row       = (uint16_t)row;
-            vbuf[n].tid       = tid;
-            vbuf[n].local_idx = local_idx;
-            vbuf[n].depth     = col + row;
-            ++n;
         }
+    };
+
+    // PASS 1: collect background + object layers together.
+    // Depth test handles intra-position ordering; painter's sort handles
+    // back-to-front order for alpha-tested transparent geometry.
+    CollectLayer(*bg);
+    for (int i = 0; i < map.layer_count; ++i) {
+        if (map.layers[i].type == LayerType::OBJECT)
+            CollectLayer(map.layers[i]);
     }
 
     // PASS 2: sort back-to-front (ascending col+row = painter's order for SE isometric).
@@ -183,22 +205,41 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     for (int i = 0; i < n; ++i) {
         const VisibleTile& vt = vbuf[i];
 
-        int tc = vt.local_idx % vis_cols;
-        int tr = vt.local_idx / vis_cols;
-        float u0 = tc * iaw;
-        float v0 = tr * iah;
-        float u1 = u0 + iaw;
-        float v1 = v0 + iah;
+        // Resolve UV and sprite height from per-tile metadata when available,
+        // falling back to grid-based calculation for unmapped tiles.
+        float tile_h_f = 96.0f;
+        float u0, v0, u1, v1;
+
+        const TileMeta* tm = map.meta.Find(vt.tid);
+        if (tm && tm->w > 0 && tm->h > 0 && atlas_.w > 0 && atlas_.h > 0) {
+            // Per-tile atlas: exact pixel coordinates from tilesetdef.
+            tile_h_f = (float)tm->h;
+            if (tile_h_f > 768.0f) tile_h_f = 768.0f;
+            u0 = (float)tm->src_x / (float)atlas_.w;
+            v0 = (float)tm->src_y / (float)atlas_.h;
+            u1 = (float)(tm->src_x + tm->w) / (float)atlas_.w;
+            v1 = (float)(tm->src_y + tm->h) / (float)atlas_.h;
+        } else {
+            // Grid-based fallback (tiled/tilesheets atlas layout).
+            if (tm && tm->h > 0) {
+                tile_h_f = (float)tm->h;
+                if (tile_h_f > 768.0f) tile_h_f = 768.0f;
+            }
+            int tc = vt.local_idx % vis_cols;
+            int tr = vt.local_idx / vis_cols;
+            u0 = tc * iaw;
+            u1 = u0 + iaw;
+            if (tile_h_f <= 96.5f) {
+                v1 = (tr + 1) * iah;
+                v0 = v1 - ground_iah;
+            } else {
+                v0 = tr * iah;
+                v1 = v0 + iah;
+            }
+        }
 
         float tx   = (float)vt.col;
         float ty_f = (float)vt.row;
-
-        float tile_h_f = 96.0f;
-        const TileMeta* tm = map.meta.Find(vt.tid);
-        if (tm && tm->h > 0) {
-            tile_h_f = (float)tm->h;
-            if (tile_h_f > 768.0f) tile_h_f = 768.0f;
-        }
 
         uint8_t* p = ibuf + i * TINST_STRIDE;
         memcpy(p + TINST_OFF_POS + 0,  &tx,        4);

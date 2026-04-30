@@ -38,6 +38,8 @@ public:
     void UnloadSpriteAtlas();
 
     int SubmittedCount() const;
+    int AtlasWidth()     const { return atlas_.w; }
+    int AtlasHeight()    const { return atlas_.h; }
 
 private:
     BillboardRenderer() = default;

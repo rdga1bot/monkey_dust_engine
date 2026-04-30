@@ -44,6 +44,9 @@ public:
     bool  IsLoaded()       const { return loaded_; }
     float TileWorldSize()  const { return tile_world_size_; }
 
+    // Resolve a relative asset path through the active mod chain.
+    bool ResolveAsset(const char* relative_path, char* out, int out_size) const;
+
     const FlareMap&              GetMap()      const { return map_; }
     const EnemyRegistry&         GetEnemies()  const { return enemies_; }
     const ItemRegistry&          GetItems()    const { return items_; }

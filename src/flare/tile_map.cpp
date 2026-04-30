@@ -158,11 +158,15 @@ static bool LoadTxt(const char* path, FlareMap& m) {
     memset(&m, 0, sizeof(m));
     m.tile_w = 192; m.tile_h = 96;
 
-    enum { S_NONE, S_HEADER, S_TILESETS, S_LAYER, S_SKIP } state = S_NONE;
+    enum { S_NONE, S_HEADER, S_TILESETS, S_LAYER, S_ENEMY, S_SKIP } state = S_NONE;
 
-    TileMapLayer* cur_layer = nullptr;
-    bool reading_data = false;
-    int  tile_row     = 0;
+    TileMapLayer* cur_layer  = nullptr;
+    bool          reading_data = false;
+    int           tile_row     = 0;
+
+    FlareSpawn cur_enemy;
+    bool       enemy_open = false;
+    memset(&cur_enemy, 0, sizeof(cur_enemy));
 
     char line[1024];
     while (fgets(line, sizeof(line), f)) {
@@ -175,6 +179,13 @@ static bool LoadTxt(const char* path, FlareMap& m) {
             char sec[32] = {};
             for (int i = 1; i < len && line[i] != ']' && i < 31; ++i) sec[i-1] = line[i];
             reading_data = false;
+
+            // Commit pending enemy block before switching section.
+            if (enemy_open && cur_enemy.category[0] && m.spawn_count < MAX_SPAWNS_PER_MAP) {
+                m.spawns[m.spawn_count++] = cur_enemy;
+            }
+            enemy_open = false;
+
             if      (strcmp(sec, "header")   == 0) { state = S_HEADER; }
             else if (strcmp(sec, "tilesets") == 0) { state = S_TILESETS; }
             else if (strcmp(sec, "layer")    == 0) {
@@ -187,6 +198,12 @@ static bool LoadTxt(const char* path, FlareMap& m) {
                 } else {
                     cur_layer = nullptr;
                 }
+            }
+            else if (strcmp(sec, "enemy") == 0) {
+                state = S_ENEMY;
+                memset(&cur_enemy, 0, sizeof(cur_enemy));
+                cur_enemy.number_min = 1;
+                enemy_open = true;
             }
             else { state = S_SKIP; cur_layer = nullptr; }
             continue;
@@ -238,6 +255,33 @@ static bool LoadTxt(const char* path, FlareMap& m) {
             if      (strcmp(key, "type") == 0) cur_layer->type = LayerTypeOf(val);
             else if (strcmp(key, "data") == 0) { reading_data = true; tile_row = 0; }
         }
+        else if (state == S_ENEMY) {
+            if (strcmp(key, "category") == 0) {
+                strncpy(cur_enemy.category, val, sizeof(cur_enemy.category) - 1);
+            } else if (strcmp(key, "location") == 0) {
+                int x, y, w, h;
+                if (sscanf(val, "%d,%d,%d,%d", &x, &y, &w, &h) == 4) {
+                    cur_enemy.center_x = (float)x + (float)w * 0.5f;
+                    cur_enemy.center_y = (float)y + (float)h * 0.5f;
+                } else if (sscanf(val, "%d,%d", &x, &y) == 2) {
+                    cur_enemy.center_x = (float)x;
+                    cur_enemy.center_y = (float)y;
+                }
+            } else if (strcmp(key, "level") == 0) {
+                cur_enemy.level = atoi(val);
+            } else if (strcmp(key, "number") == 0) {
+                int a, b;
+                if (sscanf(val, "%d,%d", &a, &b) == 2) cur_enemy.number_min = a;
+                else cur_enemy.number_min = atoi(val);
+            } else if (strcmp(key, "wander_radius") == 0) {
+                cur_enemy.wander_radius = atoi(val);
+            }
+        }
+    }
+
+    // Commit last enemy block.
+    if (enemy_open && cur_enemy.category[0] && m.spawn_count < MAX_SPAWNS_PER_MAP) {
+        m.spawns[m.spawn_count++] = cur_enemy;
     }
 
     fclose(f);

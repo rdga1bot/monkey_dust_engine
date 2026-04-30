@@ -130,6 +130,16 @@ bool FlareRuntime::LoadMod(const char* mod_name, const char* mods_root,
     return true;
 }
 
+bool FlareRuntime::ResolveAsset(const char* relative_path, char* out, int out_size) const {
+    for (int i = 0; i < chain_n_; ++i) {
+        snprintf(out, (size_t)out_size, "%s/%s", chain_ptrs_[i], relative_path);
+        struct stat st;
+        if (stat(out, &st) == 0 && S_ISREG(st.st_mode)) return true;
+    }
+    out[0] = '\0';
+    return false;
+}
+
 void FlareRuntime::Tick(float /*dt*/) {
     if (!loaded_) return;
     // Future: iterate sprite animation states and advance frame counters.

@@ -50,6 +50,18 @@ struct TileMetaRegistry {
     void DumpFirst(int n) const;
 };
 
+// One [enemy] block parsed from map .txt.
+struct FlareSpawn {
+    char  category[32];   // e.g. "goblin", "minotaur"
+    float center_x;       // tile coord (col)
+    float center_y;       // tile coord (row)
+    int   number_min;     // spawn count (min of range)
+    int   level;
+    int   wander_radius;
+};
+
+constexpr int MAX_SPAWNS_PER_MAP = 256;
+
 // Flat row-major tile array.  Index: tiles[row * MAX_MAP_WIDTH + col].
 // Value 0 = empty cell.
 struct TileMapLayer {
@@ -71,6 +83,9 @@ struct FlareMap {
 
     TileMapLayer layers[MAX_MAP_LAYERS];
     int          layer_count;
+
+    FlareSpawn   spawns[MAX_SPAWNS_PER_MAP];
+    int          spawn_count;
 };
 
 // Load Flare .txt or Tiled .tmx map (format detected by file extension).

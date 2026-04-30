@@ -1,11 +1,10 @@
 #pragma once
-#include "raylib.h"
+#include <monkey_dust/platform/math_types.h>
+#include <monkey_dust/render/md_shader.h>
+#include <monkey_dust/render/md_texture.h>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#ifdef USE_SDL3
-#  include "render/MdTexture.h"
-#endif
 
 // ─────────────────────────────────────────────────────────
 // LightSystem — directional sun + ambient IBL.
@@ -27,51 +26,32 @@ public:
         return inst;
     }
 
-    Vector3 sun_dir     = { 0.577f, -0.577f, 0.577f }; // normalized, sun→surface
-    Vector3 sun_color   = { 1.00f, 0.95f, 0.80f };
-    Vector3 ambient_color = { 0.15f, 0.18f, 0.22f };
+    Vec3 sun_dir      = { 0.577f, -0.577f, 0.577f }; // normalized, sun→surface
+    Vec3 sun_color    = { 1.00f, 0.95f, 0.80f };
+    Vec3 ambient_color = { 0.15f, 0.18f, 0.22f };
 
-#ifdef USE_SDL3
     MdTexture brdf_lut;
-#else
-    Texture2D brdf_lut = {};
-#endif
 
     void Init() {
         static uint8_t pixels[BRDF_LUT_SIZE * BRDF_LUT_SIZE * 4];
         GenerateBRDFLUT(pixels, BRDF_LUT_SIZE);
-#ifdef USE_SDL3
         brdf_lut = MdLoadTextureFromMemory(pixels, BRDF_LUT_SIZE, BRDF_LUT_SIZE);
-#else
-        Image img = {};
-        img.data    = pixels;
-        img.width   = BRDF_LUT_SIZE;
-        img.height  = BRDF_LUT_SIZE;
-        img.mipmaps = 1;
-        img.format  = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
-        brdf_lut = LoadTextureFromImage(img);
-        // do NOT call UnloadImage — pixels[] is stack, img.data not heap
-#endif
     }
 
     // Sets sunDir, sunColor, ambientColor uniforms on any shader by name.
-    void Apply(Shader shader) const {
-        int locDir = GetShaderLocation(shader, "sunDir");
-        int locSun = GetShaderLocation(shader, "sunColor");
-        int locAmb = GetShaderLocation(shader, "ambientColor");
-        // sunDir is "to sun" in fragment shader convention (light dir reversed)
+    // sunDir is "to sun" in fragment shader convention (light dir reversed).
+    void Apply(MdShader shader) const {
+        int locDir = MdGetLoc(shader, "sunDir");
+        int locSun = MdGetLoc(shader, "sunColor");
+        int locAmb = MdGetLoc(shader, "ambientColor");
         float toSun[3] = { -sun_dir.x, -sun_dir.y, -sun_dir.z };
-        if (locDir >= 0) SetShaderValue(shader, locDir, toSun,            SHADER_UNIFORM_VEC3);
-        if (locSun >= 0) SetShaderValue(shader, locSun, &sun_color,       SHADER_UNIFORM_VEC3);
-        if (locAmb >= 0) SetShaderValue(shader, locAmb, &ambient_color,   SHADER_UNIFORM_VEC3);
+        MdSetVec3(locDir, toSun);
+        MdSetVec3(locSun, &sun_color.x);
+        MdSetVec3(locAmb, &ambient_color.x);
     }
 
     void Shutdown() {
-#ifdef USE_SDL3
         MdUnloadTexture(brdf_lut);
-#else
-        if (brdf_lut.id > 0) { UnloadTexture(brdf_lut); brdf_lut = {}; }
-#endif
     }
 
 private:

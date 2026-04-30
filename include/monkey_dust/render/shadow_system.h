@@ -3,16 +3,15 @@
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/compute_shader.h>
 #include <monkey_dust/render/md_camera.h>  // pulls in raylib.h (Camera3D) + math_types.h
+#include <monkey_dust/render/md_shader.h>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
 #ifdef USE_SDL3
-#  include "render/MdShader.h"
 #  include "render/MdMesh.h"
 #endif
 
 #ifdef MD_OPENGL43_ENABLED
-#include "rlgl.h"
 #include "external/glad.h"
 #endif
 
@@ -102,15 +101,9 @@ public:
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
 
-#ifdef USE_SDL3
         shadow_shader_ = MdLoadShader("shaders/shadow_csm.vert",
                                       "shaders/shadow_csm.frag");
         loc_lightVP_   = MdGetLoc(shadow_shader_, "lightViewProj");
-#else
-        shadow_shader_ = LoadShader("shaders/shadow_csm.vert",
-                                    "shaders/shadow_csm.frag");
-        loc_lightVP_   = GetShaderLocation(shadow_shader_, "lightViewProj");
-#endif
 
         shadow_cull_cs_.Load("shaders/shadow_cull.comp");
         loc_svCamPos_  = shadow_cull_cs_.GetUniformLoc("camPos");
@@ -207,25 +200,15 @@ public:
         float cpf[3]   = { cam_pos_.x, cam_pos_.y, cam_pos_.z };
         float maxDSq   = 60.f * 60.f;
         int   total    = active_npc_count;
-#ifdef USE_SDL3
         glUniform3fv(loc_svCamPos_,  1, cpf);
         glUniform1f (loc_svMaxDist_, maxDSq);
         glUniform1i (loc_svTotal_,   total);
-#else
-        rlSetUniform(loc_svCamPos_,  cpf,    SHADER_UNIFORM_VEC3,  1);
-        rlSetUniform(loc_svMaxDist_, &maxDSq, SHADER_UNIFORM_FLOAT, 1);
-        rlSetUniform(loc_svTotal_,   &total,  SHADER_UNIFORM_INT,   1);
-#endif
         shadow_cull_cs_.Dispatch(((unsigned)active_npc_count + 63u) / 64u, 1u, 1u);
         shadow_cull_cs_.Disable();
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
 
         // Depth pass per cascade
-#ifdef USE_SDL3
         glUseProgram(shadow_shader_.id);
-#else
-        rlEnableShader(shadow_shader_.id);
-#endif
         shadow_vis_buf_.Bind(6); // re-bind after cull compute
         glCullFace(GL_FRONT);
 
@@ -234,42 +217,28 @@ public:
             glViewport(0, 0, MAP_SIZE, MAP_SIZE);
             glClear(GL_DEPTH_BUFFER_BIT);
 
-#ifdef USE_SDL3
             glUniformMatrix4fv(loc_lightVP_, 1, GL_FALSE, mat4_ptr(lightViewProj[k]));
+#ifdef USE_SDL3
             glBindVertexArray(mesh_.vao);
 #else
-            rlSetUniformMatrix(loc_lightVP_, lightViewProj[k]);
-            rlEnableVertexArray(mesh_.vaoId);
+            glBindVertexArray(mesh_.vaoId);
 #endif
             glBindBuffer(GL_DRAW_INDIRECT_BUFFER, shadow_ind_buf_.id);
             glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, 1, 0);
             glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
-#ifdef USE_SDL3
             glBindVertexArray(0);
-#else
-            rlDisableVertexArray();
-#endif
         }
 
         glCullFace(GL_BACK);
-#ifdef USE_SDL3
         glUseProgram(0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, GetScreenWidth(), GetScreenHeight());
-#else
-        rlDisableShader();
-        rlDisableFramebuffer(); // restore main FBO + viewport
-#endif
 #endif
     }
 
     // Binds shadow maps to texture units 5/6/7 and sets CSM uniforms.
-    // Caller must have the npc shader active (MdUseShader / rlEnableShader).
-#ifdef USE_SDL3
+    // Caller must have the npc shader active (glUseProgram / MdUseShader).
     void BindShadowMaps(MdShader shader) {
-#else
-    void BindShadowMaps(Shader shader) {
-#endif
 #ifdef MD_OPENGL43_ENABLED
         if (!init_) return;
 
@@ -282,32 +251,18 @@ public:
         char nm[32];
         for (int k = 0; k < NUM_CASCADES; ++k) {
             snprintf(nm, sizeof(nm), "shadowMaps[%d]", k);
-#ifdef USE_SDL3
             int loc = MdGetLoc(shader, nm);
-#else
-            int loc = GetShaderLocation(shader, nm);
-#endif
             if (loc >= 0) glUniform1i(loc, 5 + k);
         }
 
         for (int k = 0; k < NUM_CASCADES; ++k) {
             snprintf(nm, sizeof(nm), "lightViewProj[%d]", k);
-#ifdef USE_SDL3
             int loc = MdGetLoc(shader, nm);
             if (loc >= 0) glUniformMatrix4fv(loc, 1, GL_FALSE, mat4_ptr(lightViewProj[k]));
-#else
-            int loc = GetShaderLocation(shader, nm);
-            if (loc >= 0) rlSetUniformMatrix(loc, lightViewProj[k]);
-#endif
         }
 
-#ifdef USE_SDL3
         int loc_s = MdGetLoc(shader, "cascadeSplits");
         if (loc_s >= 0) glUniform1fv(loc_s, 3, cascade_splits);
-#else
-        int loc_s = GetShaderLocation(shader, "cascadeSplits");
-        if (loc_s >= 0) rlSetUniform(loc_s, cascade_splits, SHADER_UNIFORM_FLOAT, 3);
-#endif
 #endif
     }
 
@@ -318,11 +273,7 @@ public:
             if (fbo_[k])        glDeleteFramebuffers(1, &fbo_[k]);
             if (shadow_tex_[k]) glDeleteTextures(1,    &shadow_tex_[k]);
         }
-#ifdef USE_SDL3
         MdUnloadShader(shadow_shader_);
-#else
-        UnloadShader(shadow_shader_);
-#endif
         shadow_cull_cs_.Unload();
         shadow_vis_buf_.Shutdown();
         shadow_ind_buf_.Shutdown();
@@ -336,11 +287,7 @@ private:
     bool          init_    = false;
     unsigned int  fbo_[NUM_CASCADES]        = {};
     unsigned int  shadow_tex_[NUM_CASCADES] = {};
-#ifdef USE_SDL3
     MdShader      shadow_shader_;
-#else
-    Shader        shadow_shader_ = {};
-#endif
     ComputeShader shadow_cull_cs_;
     SSBO          shadow_vis_buf_;
     SSBO          shadow_ind_buf_;

@@ -9,7 +9,12 @@ namespace md::flare {
 
 // ── TileMetaRegistry ──────────────────────────────────────────────────────────
 
-void TileMetaRegistry::Clear() { count = 0; atlas_rel_path[0] = '\0'; }
+void TileMetaRegistry::Clear() {
+    count = 0;
+    atlas_count = 0;
+    atlas_rel_path[0] = '\0';
+    for (int i = 0; i < MAX_ATLAS_COUNT; ++i) atlas_paths[i][0] = '\0';
+}
 
 const TileMeta* TileMetaRegistry::Find(uint16_t tile_id) const {
     if (tile_id == 0) return nullptr;
@@ -33,12 +38,12 @@ bool TileMetaRegistry::Add(const TileMeta& m) {
 
 void TileMetaRegistry::DumpFirst(int n) const {
     int show = (n < count) ? n : count;
-    fprintf(stdout, "[TileMeta] registry contains %d entries (showing first %d):\n",
-            count, show);
+    fprintf(stdout, "[TileMeta] %d entries, %d atlas(es) (showing first %d):\n",
+            count, atlas_count, show);
     for (int i = 0; i < show; ++i) {
         const TileMeta& m = entries[i];
-        fprintf(stdout, "  [%d] id=%u src=(%d,%d) size=(%d,%d) offset=(%d,%d)\n",
-                i, (unsigned)m.tile_id,
+        fprintf(stdout, "  [%d] id=%u atlas=%d src=(%d,%d) size=(%d,%d) offset=(%d,%d)\n",
+                i, (unsigned)m.tile_id, (int)m.atlas_idx,
                 (int)m.src_x, (int)m.src_y,
                 (int)m.w, (int)m.h,
                 (int)m.offset_x, (int)m.offset_y);
@@ -51,19 +56,27 @@ static bool ParseTilesetDefFile(const char* path, TileMetaRegistry& meta) {
     FILE* f = fopen(path, "r");
     if (!f) return false;
     char line[256];
+    // Tracks which [tileset] section we are currently in.
+    // Each img= line opens a new section; subsequent tile= entries belong to it.
+    int cur_atlas = 0;
     while (fgets(line, sizeof(line), f)) {
-        // Strip trailing newline
         int len = (int)strlen(line);
         while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) line[--len] = '\0';
 
         if (strncmp(line, "img=", 4) == 0) {
-            // Flare tilesetdefs list multiple img= lines: first = primary atlas
-            // (ground/object tiles whose coordinates this file describes),
-            // subsequent = secondary atlases (water overlay, structures, etc.).
-            // TileMapRenderer loads ONE atlas, so take only the first img= line.
-            // Taking the last line causes UV mismatch → invisible tiles (M7.22).
-            if (!meta.atlas_rel_path[0])
-                strncpy(meta.atlas_rel_path, line + 4, sizeof(meta.atlas_rel_path) - 1);
+            // Each img= opens a new atlas section (M7.23 multi-atlas).
+            // Tile IDs in this section sample from this specific image.
+            // We store all paths and tag each TileMeta with its section index.
+            if (meta.atlas_count < MAX_ATLAS_COUNT) {
+                strncpy(meta.atlas_paths[meta.atlas_count], line + 4, 255);
+                meta.atlas_paths[meta.atlas_count][255] = '\0';
+                cur_atlas = meta.atlas_count;
+                ++meta.atlas_count;
+                // atlas_rel_path mirrors atlas_paths[0] for backward compat.
+                if (meta.atlas_count == 1)
+                    strncpy(meta.atlas_rel_path, meta.atlas_paths[0],
+                            sizeof(meta.atlas_rel_path) - 1);
+            }
             continue;
         }
         if (strncmp(line, "tile=", 5) != 0) continue;
@@ -71,13 +84,15 @@ static bool ParseTilesetDefFile(const char* path, TileMetaRegistry& meta) {
         int id, sx, sy, w, h, ox, oy;
         if (sscanf(p, "%d,%d,%d,%d,%d,%d,%d", &id, &sx, &sy, &w, &h, &ox, &oy) == 7) {
             TileMeta m;
-            m.tile_id  = (uint16_t)id;
-            m.src_x    = (int16_t)sx;
-            m.src_y    = (int16_t)sy;
-            m.w        = (int16_t)w;
-            m.h        = (int16_t)h;
-            m.offset_x = (int16_t)ox;
-            m.offset_y = (int16_t)oy;
+            m.tile_id   = (uint16_t)id;
+            m.src_x     = (int16_t)sx;
+            m.src_y     = (int16_t)sy;
+            m.w         = (int16_t)w;
+            m.h         = (int16_t)h;
+            m.offset_x  = (int16_t)ox;
+            m.offset_y  = (int16_t)oy;
+            m.atlas_idx = (uint8_t)cur_atlas;
+            m._pad2     = 0;
             meta.Add(m);
         } else {
             fprintf(stderr, "[TileMeta] bad format: %s", line);
@@ -85,6 +100,41 @@ static bool ParseTilesetDefFile(const char* path, TileMetaRegistry& meta) {
     }
     fclose(f);
     return meta.count > 0;
+}
+
+// Resolve one atlas relative path by searching all sibling mod directories,
+// then falling back to the same mod dir.  Returns true if found.
+static bool ResolveAtlasInMods(const char* mods_root, const char* mod_dir,
+                                const char* rel_path, char* out, int out_n) {
+    out[0] = '\0';
+    if (!rel_path || !rel_path[0]) return false;
+    DIR* d = opendir(mods_root);
+    if (d) {
+        struct dirent* ent;
+        while ((ent = readdir(d)) != nullptr) {
+            if (ent->d_name[0] == '.') continue;
+            char candidate[512];
+            snprintf(candidate, sizeof(candidate), "%s/%s/%s",
+                     mods_root, ent->d_name, rel_path);
+            struct stat st;
+            if (stat(candidate, &st) == 0 && S_ISREG(st.st_mode)) {
+                strncpy(out, candidate, (size_t)(out_n - 1));
+                out[out_n - 1] = '\0';
+                closedir(d);
+                return true;
+            }
+        }
+        closedir(d);
+    }
+    char candidate[512];
+    snprintf(candidate, sizeof(candidate), "%s/%s", mod_dir, rel_path);
+    struct stat st;
+    if (stat(candidate, &st) == 0 && S_ISREG(st.st_mode)) {
+        strncpy(out, candidate, (size_t)(out_n - 1));
+        out[out_n - 1] = '\0';
+        return true;
+    }
+    return false;
 }
 
 // Extract parent directory in-place (removes last path component).
@@ -462,43 +512,37 @@ bool LoadFlareMap(const char* path, FlareMap& out) {
     if (!ok) return false;
 
     out.tileset_atlas[0] = '\0';
+    out.tileset_atlas_count = 0;
+    for (int ai = 0; ai < MAX_ATLAS_COUNT; ++ai) out.tileset_atlases[ai][0] = '\0';
+
     if (out.tileset_def[0]) {
         TryLoadTilesetDef(path, out.tileset_def, out.meta);
 
-        // Resolve atlas image: meta.atlas_rel_path is relative to the mod root.
-        // The def file was found in one of the sibling mods; try each mod dir.
-        if (out.meta.atlas_rel_path[0]) {
+        if (out.meta.atlas_count > 0) {
             char map_dir[512], mod_dir[512], mods_root[512];
             DirOf(path, map_dir, sizeof(map_dir));
             DirOf(map_dir, mod_dir, sizeof(mod_dir));
             DirOf(mod_dir, mods_root, sizeof(mods_root));
 
-            DIR* d2 = opendir(mods_root);
-            if (d2) {
-                struct dirent* ent2;
-                while ((ent2 = readdir(d2)) != nullptr) {
-                    if (ent2->d_name[0] == '.') continue;
-                    char candidate[512];
-                    snprintf(candidate, sizeof(candidate), "%s/%s/%s",
-                             mods_root, ent2->d_name, out.meta.atlas_rel_path);
-                    struct stat st2;
-                    if (stat(candidate, &st2) == 0 && S_ISREG(st2.st_mode)) {
-                        strncpy(out.tileset_atlas, candidate, sizeof(out.tileset_atlas) - 1);
-                        fprintf(stdout, "[FlareMap] tileset atlas: %s\n", out.tileset_atlas);
-                        break;
-                    }
+            // Resolve each atlas section path (M7.23 multi-atlas).
+            for (int ai = 0; ai < out.meta.atlas_count && ai < MAX_ATLAS_COUNT; ++ai) {
+                char resolved[512];
+                if (ResolveAtlasInMods(mods_root, mod_dir,
+                                       out.meta.atlas_paths[ai],
+                                       resolved, sizeof(resolved))) {
+                    strncpy(out.tileset_atlases[ai], resolved,
+                            sizeof(out.tileset_atlases[ai]) - 1);
+                    fprintf(stdout, "[FlareMap] atlas[%d]: %s\n", ai, resolved);
+                    ++out.tileset_atlas_count;
+                } else {
+                    fprintf(stderr, "[FlareMap] atlas[%d] not found: %s\n",
+                            ai, out.meta.atlas_paths[ai]);
                 }
-                closedir(d2);
             }
-            // Fallback: try same mod dir
-            if (!out.tileset_atlas[0]) {
-                char candidate[512];
-                snprintf(candidate, sizeof(candidate), "%s/%s",
-                         mod_dir, out.meta.atlas_rel_path);
-                struct stat st2;
-                if (stat(candidate, &st2) == 0 && S_ISREG(st2.st_mode))
-                    strncpy(out.tileset_atlas, candidate, sizeof(out.tileset_atlas) - 1);
-            }
+            // atlas[0] → backward-compat single-atlas field.
+            if (out.tileset_atlases[0][0])
+                strncpy(out.tileset_atlas, out.tileset_atlases[0],
+                        sizeof(out.tileset_atlas) - 1);
         }
     }
 

@@ -10,16 +10,18 @@ namespace md::flare {
 constexpr int MAX_VISIBLE_TILES = 16384;
 
 // Renders one FlareMap background + object layers as instanced geometry.
-// One tileset atlas texture shared across all tiles per call.
+// Supports multiple atlas textures (M7.23): tiles from different [tileset]
+// sections in the tilesetdef are batched by atlas and drawn with texture switches
+// while maintaining global painter's depth order (col+row sort).
 //
-// UV CONVENTION: atlas loaded via MdLoadTexturePixelArt (stbi flip=1).
+// UV CONVENTION: atlases loaded via MdLoadTexturePixelArt (stbi flip=1).
 //   v_gl = 1.0f − y_file/atlas_h  ← MUST match tile_map_renderer.cpp
 //   Flat tile  (h≤96): v0=1−src_y/H (north), v1=1−(src_y+h)/H (south)
 //   Billboard  (h>96): v0=1−(src_y+h)/H (base), v1=1−src_y/H (tip)
 //
 // Per-frame usage:
-//   SetAtlas(png_path)                  — once per tileset change
-//   Render(map, cam, aspect, tile_size) — one instanced draw per frame
+//   SetAtlases(map)                     — once after LoadFlareMap()
+//   Render(map, cam, aspect, tile_size) — one or more instanced draws per frame
 class TileMapRenderer {
 public:
     static TileMapRenderer& Get();
@@ -27,12 +29,17 @@ public:
     void Init();
     void Shutdown();
 
-    // Load the tileset image used as the atlas for subsequent Render() calls.
+    // Load all atlas textures from a parsed FlareMap.
+    // Call once after LoadFlareMap(); replaces any previously loaded atlases.
+    void SetAtlases(const FlareMap& map);
+
+    // Single-atlas convenience — loads one image as atlas[0].
+    // Kept for backward compat; prefer SetAtlases() for multi-atlas maps.
     void SetAtlas(const char* png_path);
 
-    // Render map background layer.  tile_world_size controls the world-space
-    // footprint of one tile (default 1.0 = 1 world unit).
-    // ortho_size: orthographic half-height in world units (0 = perspective).
+    // Render map background + object layers in painter's depth order.
+    // tile_world_size: world-space footprint of one tile (default 1.0).
+    // ortho_size:      orthographic half-height in world units (0 = perspective).
     void Render(const FlareMap& map, const MdCamera& cam,
                 float aspect, float tile_world_size = 1.0f,
                 float ortho_size = 0.0f);
@@ -49,7 +56,8 @@ private:
     int loc_tile_size_ = -1;
     int loc_y_         = -1;
 
-    MdTexture atlas_;
+    MdTexture atlases_[MAX_ATLAS_COUNT];
+    int       atlas_count_ = 0;
 
     bool init_ = false;
 };

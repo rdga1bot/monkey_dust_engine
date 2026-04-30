@@ -7,10 +7,12 @@
 //   → Correct UV formula: v_gl = 1.0f - y_file / atlas_h
 //   See: tile_map_renderer.cpp, CLAUDE_ARCH.md §"Flare Tileset UV Convention"
 //
-// TILESETDEF img= RULE:
-//   ParseTilesetDefFile() stores only the FIRST img= line as atlas_rel_path.
-//   Flare tilesetdefs have multiple img= lines (primary + water/structures).
-//   Only the first line's coordinates match the TileMeta entries in that file.
+// TILESETDEF img= / atlas_idx RULE (M7.23):
+//   A tilesetdef has multiple [tileset] sections, each starting with img=.
+//   Each section owns the tile= entries that follow it until the next [tileset].
+//   ParseTilesetDefFile() assigns TileMeta::atlas_idx = section index (0-based).
+//   TileMapRenderer::SetAtlases() loads all atlas textures; Render() switches
+//   textures between draw calls to maintain painter's depth order.
 #include <cstdint>
 
 namespace md::flare {
@@ -20,6 +22,9 @@ constexpr int MAX_MAP_WIDTH  = 128;
 constexpr int MAX_MAP_HEIGHT = 128;
 constexpr int MAX_MAP_LAYERS = 6;
 constexpr int MAX_TILESETS   = 8;
+// Maximum distinct atlases a tilesetdef may reference.
+// goblin_camp uses 2 (grassland + water); other maps may use up to 4.
+constexpr int MAX_ATLAS_COUNT = 4;
 
 // FlareMap structs total ~135 KB — declare as static or heap-allocate; do not
 // put on the call stack without thought.
@@ -48,6 +53,8 @@ struct TileMeta {
     int16_t  src_x, src_y;   // upper-left in atlas (px)
     int16_t  w, h;            // tile size in atlas (px) — h > 96 means billboard
     int16_t  offset_x, offset_y;
+    uint8_t  atlas_idx;       // index into TileMetaRegistry::atlas_paths[] (0-based)
+    uint8_t  _pad2;
 };
 
 constexpr int MAX_TILE_META = 4096;
@@ -55,10 +62,15 @@ constexpr int MAX_TILE_META = 4096;
 struct TileMetaRegistry {
     TileMeta entries[MAX_TILE_META];
     int      count;
-    // Relative path of the PRIMARY atlas (first img= line in tilesetdef).
-    // Coordinates in TileMeta entries are pixel offsets into this image.
-    // Set once; subsequent img= lines (water, structures) are ignored.
+
+    // Primary atlas relative path (first img= line) — backward compat with M7.22.
+    // Use atlas_paths[0] for new code; atlas_rel_path always equals atlas_paths[0].
     char     atlas_rel_path[256];
+
+    // All atlas relative paths in tilesetdef section order.
+    // atlas_paths[i] corresponds to TileMeta::atlas_idx == i.
+    char     atlas_paths[MAX_ATLAS_COUNT][256];
+    int      atlas_count;
 
     void Clear();
     const TileMeta* Find(uint16_t tile_id) const;
@@ -91,7 +103,11 @@ struct FlareMap {
     float hero_x, hero_y;     // spawn position in tile coords
     char  music_path[128];
     char  tileset_def[128];   // "tilesetdefs/tileset_grassland.txt"
-    char  tileset_atlas[256]; // resolved absolute path to per-tile atlas image
+    char  tileset_atlas[256]; // resolved absolute path of atlas[0] (backward compat)
+    // All resolved atlas absolute paths (parallel to meta.atlas_paths[]).
+    // Indexed by TileMeta::atlas_idx.  Pass to TileMapRenderer::SetAtlases().
+    char  tileset_atlases[MAX_ATLAS_COUNT][256];
+    int   tileset_atlas_count;
     char  title[64];
 
     TileSet           tilesets[MAX_TILESETS];

@@ -1,8 +1,7 @@
 #include <monkey_dust/world/transform_soa.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ecs/registry.h>
-#include "raylib.h"
-#include "raymath.h"
+#include "raylib.h"   // TraceLog
 #include <cstring>
 #include <cmath>
 
@@ -138,7 +137,7 @@ void TransformSoA::BulkComputeLOD(float near_sq, float far_sq, uint8_t* out_lod)
 }
 
 int TransformSoA::BuildMatrices(const uint8_t* lod, float far_sq,
-                                 Matrix* out_matrices, int max_out) const {
+                                 Mat4* out_matrices, int max_out) const {
     int count = 0;
     for (int i = 0; i < active_count && count < max_out; ++i) {
         if (lod && lod[i] >= 2) continue;
@@ -148,9 +147,9 @@ int TransformSoA::BuildMatrices(const uint8_t* lod, float far_sq,
     return count;
 }
 
-Matrix TransformSoA::BuildSingleMatrix(uint32_t slot) const {
-    return MatrixMultiply(MatrixRotateY(rot_y[slot]),
-                          MatrixTranslate(px[slot], py[slot] + 0.9f, pz[slot]));
+Mat4 TransformSoA::BuildSingleMatrix(uint32_t slot) const {
+    return mat4_mul(mat4_rotate_y(rot_y[slot]),
+                    mat4_translate(px[slot], py[slot] + 0.9f, pz[slot]));
 }
 
 // Save v5 accessors (БОРГ-6)

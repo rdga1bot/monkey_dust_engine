@@ -3,7 +3,7 @@
 
 #ifdef MD_OPENGL43_ENABLED
 #include "external/glad.h"
-#include "raylib.h"   // Matrix, MatrixMultiply
+#include <monkey_dust/platform/math_types.h>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>    // qsort
@@ -358,17 +358,16 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     glDepthMask(GL_TRUE);
     glUseProgram(prog_);
 
-    Camera3D rl = cam.ToRaylib();
-    Matrix V = MatrixLookAt(rl.position, rl.target, rl.up);
-    Matrix P;
+    Mat4 V = cam.ViewMatrix();
+    Mat4 P;
     if (ortho_size > 0.0f) {
         const float oh = ortho_size, ow = oh * aspect;
-        P = MatrixOrtho(-ow, +ow, -oh, +oh, 0.1, 300.0);
+        P = mat4_ortho(-ow, +ow, -oh, +oh, 0.1f, 300.0f);
     } else {
-        P = MatrixPerspective((double)rl.fovy * 0.01745329251844, (double)aspect, 0.1, 300.0);
+        P = cam.ProjMatrix(aspect);
     }
-    Matrix vp = MatrixMultiply(V, P);
-    glUniformMatrix4fv(loc_vp_, 1, GL_FALSE, MatrixToFloat(vp));
+    Mat4 vp = mat4_mul(V, P);
+    glUniformMatrix4fv(loc_vp_, 1, GL_FALSE, mat4_ptr(vp));
 
     float tsz[2] = { tile_world_size, tile_world_size };
     glUniform2fv(loc_tile_size_, 1, tsz);

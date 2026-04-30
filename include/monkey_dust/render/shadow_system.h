@@ -1,16 +1,14 @@
 #pragma once
-#include "raylib.h"
-#include "raymath.h"
+#include <monkey_dust/platform/math_types.h>
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/compute_shader.h>
-#include <monkey_dust/render/md_camera.h>
+#include <monkey_dust/render/md_camera.h>  // pulls in raylib.h (Camera3D) + math_types.h
 #include <cstdio>
 #include <cstring>
 #include <cmath>
 #ifdef USE_SDL3
 #  include "render/MdShader.h"
 #  include "render/MdMesh.h"
-#  include "math_types.h"
 #endif
 
 #ifdef MD_OPENGL43_ENABLED
@@ -18,8 +16,12 @@
 #include "external/glad.h"
 #endif
 
-// Vector4Transform was removed from raymath in Raylib 6.x
-static inline Vector4 ShadowVec4Transform(Vector4 v, Matrix m) {
+// Vector4Transform was removed from raymath in Raylib 6.x.
+// In GLM mode, matrix * vector handles this directly.
+#ifdef USE_GLM
+static inline Vec4 ShadowVec4Transform(Vec4 v, Mat4 m) { return m * v; }
+#else
+static inline Vec4 ShadowVec4Transform(Vec4 v, Mat4 m) {
     return {
         m.m0*v.x + m.m4*v.y + m.m8 *v.z + m.m12*v.w,
         m.m1*v.x + m.m5*v.y + m.m9 *v.z + m.m13*v.w,
@@ -27,6 +29,10 @@ static inline Vector4 ShadowVec4Transform(Vector4 v, Matrix m) {
         m.m3*v.x + m.m7*v.y + m.m11*v.z + m.m15*v.w,
     };
 }
+#endif
+
+// Convert Raylib Vector3 → Vec3 (no-op in non-GLM; explicit in GLM mode).
+static inline Vec3 RlToVec3(Vector3 v) { return { v.x, v.y, v.z }; }
 
 // ─────────────────────────────────────────────────────────
 // ShadowSystem — 3-cascade CSM for the directional sun.
@@ -56,8 +62,8 @@ public:
         return inst;
     }
 
-    Matrix lightViewProj[NUM_CASCADES]  = {};
-    float  cascade_splits[NUM_CASCADES] = { SPLITS[1], SPLITS[2], SPLITS[3] };
+    Mat4  lightViewProj[NUM_CASCADES]  = {};
+    float cascade_splits[NUM_CASCADES] = { SPLITS[1], SPLITS[2], SPLITS[3] };
 
 #ifdef USE_SDL3
     void Init(MdMesh npc_mesh) {
@@ -119,57 +125,58 @@ public:
     }
 
     // Recompute light-space VP matrices from camera frustum corners.
-    void Update(const MdCamera& camera, Vector3 sun_dir) {
+    void Update(const MdCamera& camera, Vec3 sun_dir) {
         Camera3D rc = camera.ToRaylib();
         Update(rc, sun_dir);
     }
-    void Update(const Camera3D& camera, Vector3 sun_dir) {
+    void Update(const Camera3D& camera, Vec3 sun_dir) {
 #ifdef MD_OPENGL43_ENABLED
         if (!init_) return;
-        cam_pos_ = camera.position;
+        cam_pos_ = RlToVec3(camera.position);
 
         float aspect = (float)GetScreenWidth() / (float)GetScreenHeight();
         float fovY   = camera.fovy * DEG2RAD;
 
-        Vector3 fwd   = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
-        Vector3 right = Vector3Normalize(Vector3CrossProduct(fwd, { 0.f, 1.f, 0.f }));
-        Vector3 up_c  = Vector3CrossProduct(right, fwd);
+        Vec3 fwd   = vec3_norm(vec3_sub(RlToVec3(camera.target), RlToVec3(camera.position)));
+        Vec3 right = vec3_norm(vec3_cross(fwd, Vec3{ 0.f, 1.f, 0.f }));
+        Vec3 up_c  = vec3_cross(right, fwd);
 
-        Vector3 to_sun = { -sun_dir.x, -sun_dir.y, -sun_dir.z };
-        Vector3 lup    = (fabsf(sun_dir.y) < 0.99f) ?
-                          Vector3{ 0.f, 1.f, 0.f } : Vector3{ 1.f, 0.f, 0.f };
+        Vec3 to_sun = { -sun_dir.x, -sun_dir.y, -sun_dir.z };
+        Vec3 lup    = (fabsf(sun_dir.y) < 0.99f) ?
+                       Vec3{ 0.f, 1.f, 0.f } : Vec3{ 1.f, 0.f, 0.f };
 
+        Vec3 cam_p = RlToVec3(camera.position);
         for (int k = 0; k < NUM_CASCADES; ++k) {
             float nk = SPLITS[k],  fk = SPLITS[k + 1];
             float tanH = tanf(fovY * 0.5f);
             float nH = nk * tanH, nW = nH * aspect;
             float fH = fk * tanH, fW = fH * aspect;
 
-            Vector3 nc = Vector3Add(camera.position, Vector3Scale(fwd, nk));
-            Vector3 fc = Vector3Add(camera.position, Vector3Scale(fwd, fk));
+            Vec3 nc = vec3_add(cam_p, vec3_scale(fwd, nk));
+            Vec3 fc = vec3_add(cam_p, vec3_scale(fwd, fk));
 
-            Vector3 corners[8] = {
-                Vector3Add(Vector3Add(nc, Vector3Scale(up_c,  nH)), Vector3Scale(right,  nW)),
-                Vector3Add(Vector3Add(nc, Vector3Scale(up_c,  nH)), Vector3Scale(right, -nW)),
-                Vector3Add(Vector3Add(nc, Vector3Scale(up_c, -nH)), Vector3Scale(right,  nW)),
-                Vector3Add(Vector3Add(nc, Vector3Scale(up_c, -nH)), Vector3Scale(right, -nW)),
-                Vector3Add(Vector3Add(fc, Vector3Scale(up_c,  fH)), Vector3Scale(right,  fW)),
-                Vector3Add(Vector3Add(fc, Vector3Scale(up_c,  fH)), Vector3Scale(right, -fW)),
-                Vector3Add(Vector3Add(fc, Vector3Scale(up_c, -fH)), Vector3Scale(right,  fW)),
-                Vector3Add(Vector3Add(fc, Vector3Scale(up_c, -fH)), Vector3Scale(right, -fW)),
+            Vec3 corners[8] = {
+                vec3_add(vec3_add(nc, vec3_scale(up_c,  nH)), vec3_scale(right,  nW)),
+                vec3_add(vec3_add(nc, vec3_scale(up_c,  nH)), vec3_scale(right, -nW)),
+                vec3_add(vec3_add(nc, vec3_scale(up_c, -nH)), vec3_scale(right,  nW)),
+                vec3_add(vec3_add(nc, vec3_scale(up_c, -nH)), vec3_scale(right, -nW)),
+                vec3_add(vec3_add(fc, vec3_scale(up_c,  fH)), vec3_scale(right,  fW)),
+                vec3_add(vec3_add(fc, vec3_scale(up_c,  fH)), vec3_scale(right, -fW)),
+                vec3_add(vec3_add(fc, vec3_scale(up_c, -fH)), vec3_scale(right,  fW)),
+                vec3_add(vec3_add(fc, vec3_scale(up_c, -fH)), vec3_scale(right, -fW)),
             };
 
-            Vector3 center = {};
+            Vec3 center = {};
             for (int i = 0; i < 8; ++i)
-                center = Vector3Add(center, Vector3Scale(corners[i], 0.125f));
+                center = vec3_add(center, vec3_scale(corners[i], 0.125f));
 
-            Matrix lv = MatrixLookAt(Vector3Add(center, to_sun), center, lup);
+            Mat4 lv = mat4_lookat(vec3_add(center, to_sun), center, lup);
 
             float minX = 1e9f, maxX = -1e9f;
             float minY = 1e9f, maxY = -1e9f;
             float minZ = 1e9f, maxZ = -1e9f;
             for (int i = 0; i < 8; ++i) {
-                Vector4 lc = ShadowVec4Transform(
+                Vec4 lc = ShadowVec4Transform(
                     { corners[i].x, corners[i].y, corners[i].z, 1.f }, lv);
                 if (lc.x < minX) minX = lc.x; if (lc.x > maxX) maxX = lc.x;
                 if (lc.y < minY) minY = lc.y; if (lc.y > maxY) maxY = lc.y;
@@ -177,8 +184,8 @@ public:
             }
             minZ -= 50.0f; // extend backward to catch casters behind the slice
 
-            Matrix lp = MatrixOrtho(minX, maxX, minY, maxY, minZ, maxZ);
-            lightViewProj[k] = MatrixMultiply(lv, lp);
+            Mat4 lp = mat4_ortho(minX, maxX, minY, maxY, minZ, maxZ);
+            lightViewProj[k] = mat4_mul(lv, lp);
         }
 #endif
     }
@@ -228,7 +235,7 @@ public:
             glClear(GL_DEPTH_BUFFER_BIT);
 
 #ifdef USE_SDL3
-            glUniformMatrix4fv(loc_lightVP_, 1, GL_FALSE, &lightViewProj[k].m0);
+            glUniformMatrix4fv(loc_lightVP_, 1, GL_FALSE, mat4_ptr(lightViewProj[k]));
             glBindVertexArray(mesh_.vao);
 #else
             rlSetUniformMatrix(loc_lightVP_, lightViewProj[k]);
@@ -287,7 +294,7 @@ public:
             snprintf(nm, sizeof(nm), "lightViewProj[%d]", k);
 #ifdef USE_SDL3
             int loc = MdGetLoc(shader, nm);
-            if (loc >= 0) glUniformMatrix4fv(loc, 1, GL_FALSE, &lightViewProj[k].m0);
+            if (loc >= 0) glUniformMatrix4fv(loc, 1, GL_FALSE, mat4_ptr(lightViewProj[k]));
 #else
             int loc = GetShaderLocation(shader, nm);
             if (loc >= 0) rlSetUniformMatrix(loc, lightViewProj[k]);
@@ -343,7 +350,7 @@ private:
     Mesh          mesh_    = {};
 #endif
     int           mesh_idx_ = 0;
-    Vector3       cam_pos_ = {};
+    Vec3          cam_pos_ = {};
     int  loc_lightVP_  = -1;
     int  loc_svCamPos_ = -1, loc_svMaxDist_ = -1, loc_svTotal_ = -1;
 };

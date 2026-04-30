@@ -2,7 +2,7 @@
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/world/world_transform.h>
-#include "raylib.h"
+#include <monkey_dust/platform/math_types.h>
 #include <cstdint>
 #include <entt/entt.hpp>
 
@@ -43,8 +43,8 @@ public:
     void     BulkComputeDistSq(float cam_x, float cam_z);
     void     BulkComputeLOD(float near_sq, float far_sq, uint8_t* out_lod) const;
     int      BuildMatrices(const uint8_t* lod, float far_sq,
-                           Matrix* out_matrices, int max_out) const;
-    Matrix   BuildSingleMatrix(uint32_t slot) const;
+                           Mat4* out_matrices, int max_out) const;
+    Mat4     BuildSingleMatrix(uint32_t slot) const;
 
     // Save v5 accessors (БОРГ-6)
     int      SlotCount() const { return active_count; }

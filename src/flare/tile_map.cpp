@@ -57,8 +57,10 @@ static bool ParseTilesetDefFile(const char* path, TileMetaRegistry& meta) {
         while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) line[--len] = '\0';
 
         if (strncmp(line, "img=", 4) == 0) {
-            // Store atlas-relative path for later resolution
-            strncpy(meta.atlas_rel_path, line + 4, sizeof(meta.atlas_rel_path) - 1);
+            // Only the first img= line is the primary atlas (ground tiles).
+            // Subsequent img= lines are secondary layers (water, etc.) — skip.
+            if (!meta.atlas_rel_path[0])
+                strncpy(meta.atlas_rel_path, line + 4, sizeof(meta.atlas_rel_path) - 1);
             continue;
         }
         if (strncmp(line, "tile=", 5) != 0) continue;

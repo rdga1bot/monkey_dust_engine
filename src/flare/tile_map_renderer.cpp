@@ -212,15 +212,22 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
 
         const TileMeta* tm = map.meta.Find(vt.tid);
         if (tm && tm->w > 0 && tm->h > 0 && atlas_.w > 0 && atlas_.h > 0) {
-            // Per-tile atlas: exact pixel coordinates from tilesetdef.
+            // Per-tile atlas: stbi flip active → GL v=1−y_file/atlas_h.
             tile_h_f = (float)tm->h;
             if (tile_h_f > 768.0f) tile_h_f = 768.0f;
             u0 = (float)tm->src_x / (float)atlas_.w;
-            v0 = (float)tm->src_y / (float)atlas_.h;
             u1 = (float)(tm->src_x + tm->w) / (float)atlas_.w;
-            v1 = (float)(tm->src_y + tm->h) / (float)atlas_.h;
+            if (tile_h_f <= 96.5f) {
+                // Flat: corner.y=0=north=top of image (low y_file)=high GL v.
+                v0 = 1.0f - (float)tm->src_y / (float)atlas_.h;
+                v1 = 1.0f - (float)(tm->src_y + tm->h) / (float)atlas_.h;
+            } else {
+                // Billboard: corner.y=0=ground=base of sprite (src_y+h)=low GL v.
+                v0 = 1.0f - (float)(tm->src_y + tm->h) / (float)atlas_.h;
+                v1 = 1.0f - (float)tm->src_y / (float)atlas_.h;
+            }
         } else {
-            // Grid-based fallback (tiled/tilesheets atlas layout).
+            // Grid-based fallback (stbi flip active).
             if (tm && tm->h > 0) {
                 tile_h_f = (float)tm->h;
                 if (tile_h_f > 768.0f) tile_h_f = 768.0f;
@@ -230,11 +237,14 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
             u0 = tc * iaw;
             u1 = u0 + iaw;
             if (tile_h_f <= 96.5f) {
-                v1 = (tr + 1) * iah;
-                v0 = v1 - ground_iah;
+                // Ground diamond: bottom 96px of each slot.
+                // south (corner.y=1) = slot bottom in image = low GL v.
+                v1 = 1.0f - (float)(tr + 1) * iah;
+                v0 = v1 + ground_iah;
             } else {
-                v0 = tr * iah;
-                v1 = v0 + iah;
+                // Billboard: corner.y=0=ground=slot bottom=low GL v.
+                v0 = 1.0f - (float)(tr + 1) * iah;
+                v1 = 1.0f - (float)tr * iah;
             }
         }
 

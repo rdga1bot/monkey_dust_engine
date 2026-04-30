@@ -57,8 +57,11 @@ static bool ParseTilesetDefFile(const char* path, TileMetaRegistry& meta) {
         while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) line[--len] = '\0';
 
         if (strncmp(line, "img=", 4) == 0) {
-            // Only the first img= line is the primary atlas (ground tiles).
-            // Subsequent img= lines are secondary layers (water, etc.) — skip.
+            // Flare tilesetdefs list multiple img= lines: first = primary atlas
+            // (ground/object tiles whose coordinates this file describes),
+            // subsequent = secondary atlases (water overlay, structures, etc.).
+            // TileMapRenderer loads ONE atlas, so take only the first img= line.
+            // Taking the last line causes UV mismatch → invisible tiles (M7.22).
             if (!meta.atlas_rel_path[0])
                 strncpy(meta.atlas_rel_path, line + 4, sizeof(meta.atlas_rel_path) - 1);
             continue;

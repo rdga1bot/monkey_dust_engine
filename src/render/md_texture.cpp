@@ -34,6 +34,17 @@ MdTexture MdLoadTexture(const char* path) {
     return t;
 }
 
+// CONVENTION (DO NOT CHANGE without updating tile_map_renderer.cpp UV formulas):
+//   stbi_set_flip_vertically_on_load(1) is active for this function.
+//   Result: GL v=0 = bottom of image file, GL v=1 = top of image file.
+//   Tile UV formula in tile_map_renderer.cpp:  v_gl = 1.0f - y_file / atlas_h
+//   If you remove the flip, ALL tile UVs become wrong (tiles invisible).
+//
+// FILTER RULES (DO NOT SIMPLIFY):
+//   GL_LINEAR_MIPMAP_LINEAR (min) + glGenerateMipmap — without mipmaps,
+//   GL_NEAREST picks a single transparent texel at small screen sizes → tiles vanish.
+//   GL_NEAREST (mag) — crisp pixel-art at zoom-in.
+//   GL_CLAMP_TO_EDGE — prevents atlas seam bleeding.
 MdTexture MdLoadTexturePixelArt(const char* path) {
     int w, h, ch;
     stbi_set_flip_vertically_on_load(1);
@@ -51,8 +62,6 @@ MdTexture MdLoadTexturePixelArt(const char* path) {
     glBindTexture(GL_TEXTURE_2D, t.id);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, data);
-    // LINEAR_MIPMAP_LINEAR for min: correct averaging at zoom-out (sparse alpha
-    // tiles survive). NEAREST for mag: crisp pixel-art at zoom-in.
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);

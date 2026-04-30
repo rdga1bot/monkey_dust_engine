@@ -210,6 +210,16 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
         float tile_h_f = 96.0f;
         float u0, v0, u1, v1;
 
+        // UV CONVENTION: MdLoadTexturePixelArt uses stbi vertical flip.
+        //   GL v=0 = bottom of image file,  GL v=1 = top of image file.
+        //   Correct formula:  v_gl = 1.0f - y_file / atlas_h
+        //   Wrong formula:    v_gl = y_file / atlas_h  (produces invisible tiles)
+        //
+        // CORNER MAPPING:
+        //   Flat tile  (h≤96): a_corner.y 0→north(top of sprite)  1→south(bottom)
+        //   Billboard  (h>96): a_corner.y 0→ground/base           1→tip/top
+        //   For flat:      v0 = 1-(src_y/H),   v1 = 1-((src_y+h)/H)  [v0 > v1]
+        //   For billboard: v0 = 1-((src_y+h)/H), v1 = 1-(src_y/H)    [v0 < v1]
         const TileMeta* tm = map.meta.Find(vt.tid);
         if (tm && tm->w > 0 && tm->h > 0 && atlas_.w > 0 && atlas_.h > 0) {
             // Per-tile atlas: stbi flip active → GL v=1−y_file/atlas_h.

@@ -8,26 +8,28 @@
 #include <cstdio>
 #include <cstdlib>    // qsort
 
-// Per-instance GPU layout (stride = 32 bytes — M7.24 sprite-offset):
+// Per-instance GPU layout (stride = 36 bytes — M7.27 horizontal offset):
 //   vec2  tile_pos  (grid col, row)   offset  0
 //   vec4  uv_rect   (u0,v0,u1,v1)    offset  8
 //   float y_bot     world Y of base  offset 24  (≤0 or 0 for flat tile)
 //   float y_top     world Y of tip   offset 28  (>0 = billboard; 0 = flat tile)
+//   float x_off     screen-horiz     offset 32  (world units; +→right on screen)
 //
-// BILLBOARD CLASSIFICATION (CPU side):
-//   is_billboard = (TileMeta::offset_y > TileMeta::h / 2)
-//   Rationale: the anchor row within the sprite image (offset_y) sits in
-//   the lower half only for billboards (most of the sprite is above the anchor).
-//   Flat tiles with h>96 (e.g. water 192×192) have oy≤h/2 → correctly flat.
+// BILLBOARD CLASSIFICATION: is_billboard = (offset_y > h / 2)
+// Y FORMULA (96px = 1 world unit):
+//   y_top = offset_y / 96.0 * tsz,  y_bot = -(h - offset_y) / 96.0 * tsz
 //
-// Y FORMULA for billboards (96px = 1 world unit):
-//   y_top = offset_y / 96.0 * tile_world_size   (sprite above anchor = above ground)
-//   y_bot = -(h - offset_y) / 96.0 * tile_world_size  (root/shadow below ground)
-static constexpr int TINST_STRIDE    = 32;
+// HORIZONTAL OFFSET (M7.27):
+//   In Flare: sprite_screen_x_left = grid_x - offset_x.
+//   Center deviation from grid: dx_px = w/2 - offset_x  (positive = right on screen).
+//   Screen-right in world = (+Δwx, 0, +Δwz) where 96 screen-px = tsz/2 world units.
+//   x_off = (w/2 - offset_x) * tile_world_size / 192.0
+static constexpr int TINST_STRIDE    = 36;
 static constexpr int TINST_OFF_POS   =  0;
 static constexpr int TINST_OFF_UV    =  8;
 static constexpr int TINST_OFF_YBOT  = 24;
 static constexpr int TINST_OFF_YTOP  = 28;
+static constexpr int TINST_OFF_XOFF  = 32;
 
 // Unit quad corners [0,1]×[0,1] (4 verts, GL_TRIANGLE_FAN).
 static const float TILE_QUAD[8] = {
@@ -97,6 +99,10 @@ void TileMapRenderer::Init() {
     glEnableVertexAttribArray(4);
     glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)(intptr_t)TINST_OFF_YTOP);
     glVertexAttribDivisor(4, 1);
+    // attrib 5: x_off (1 float at offset 32) — M7.27 horizontal sprite offset
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)(intptr_t)TINST_OFF_XOFF);
+    glVertexAttribDivisor(5, 1);
 
     glBindVertexArray(0);
 
@@ -311,6 +317,11 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
             }
         }
 
+        // M7.27: horizontal sprite offset in world units (screen-right = +wx, +wz).
+        // 192 screen-px = 1 tile width; w/2-offset_x gives the px deviation from center.
+        float x_off = 0.0f;
+        if (tm) x_off = ((float)tm->w * 0.5f - (float)tm->offset_x) * (tile_world_size / 192.0f);
+
         float tx   = (float)vt.col;
         float ty_f = (float)vt.row;
         uint8_t* p = ibuf + i * TINST_STRIDE;
@@ -322,6 +333,7 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
         memcpy(p + TINST_OFF_UV  + 12, &v1,    4);
         memcpy(p + TINST_OFF_YBOT,     &y_bot, 4);
         memcpy(p + TINST_OFF_YTOP,     &y_top, 4);
+        memcpy(p + TINST_OFF_XOFF,     &x_off, 4);
     }
 
     if (n == 0) return;

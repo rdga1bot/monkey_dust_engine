@@ -7,6 +7,9 @@
 //   gladLoadGL is called once to load our own glad instance for direct GL calls.
 //
 // !USE_SDL3 path: thin Raylib wrappers — behaviour identical to before M6.
+//
+// imgui_init / imgui_new_frame / imgui_render / imgui_shutdown:
+//   Available only under #ifdef DEBUG. Collapse USE_SDL3 branching for imgui calls.
 
 #ifdef USE_SDL3
 #  include "raylib.h"        // InitWindow (PLATFORM=SDL → SDL3 + rlgl), CloseWindow
@@ -14,6 +17,11 @@
 #  include <SDL3/SDL.h>
 #  include "external/glad.h"
 #  include <cstdio>
+#ifdef DEBUG
+#  include "backends/imgui_impl_sdl3.h"
+#  include "backends/imgui_impl_opengl3.h"
+#  include "imgui.h"
+#endif
 
    namespace _wnd {
        inline SDL_Window*& ptr()    { static SDL_Window* w = nullptr; return w; }
@@ -77,20 +85,50 @@
        rlLoadIdentity();
    }
 
+   inline void window_begin_3d(Camera3D cam) { BeginMode3D(cam); }
+   inline void window_end_3d()               { EndMode3D(); }
+
    // Replaces EndDrawing(): flush Raylib batch, swap, pump SDL events.
-   // event_cb (optional) — called per-event before EventWatcher; used by Main.cpp to
-   // forward events to ImGui_ImplSDL3_ProcessEvent in DEBUG builds.
-   inline void window_end_frame(void(*event_cb)(const SDL_Event*) = nullptr) {
+   // ImGui_ImplSDL3_ProcessEvent is called per-event in DEBUG builds automatically.
+   inline void window_end_frame() {
        rlDrawRenderBatchActive();
        SDL_GL_SwapWindow(_wnd::ptr());
        SDL_Event e;
        while (SDL_PollEvent(&e)) {
-           if (event_cb) event_cb(&e);
+#ifdef DEBUG
+           ImGui_ImplSDL3_ProcessEvent(&e);
+#endif
        }
    }
 
+#ifdef DEBUG
+   inline void imgui_init() {
+       ImGui::CreateContext();
+       ImGui_ImplSDL3_InitForOpenGL(_wnd::ptr(), SDL_GL_GetCurrentContext());
+       ImGui_ImplOpenGL3_Init("#version 430");
+   }
+   inline void imgui_shutdown() {
+       ImGui_ImplOpenGL3_Shutdown();
+       ImGui_ImplSDL3_Shutdown();
+       ImGui::DestroyContext();
+   }
+   inline void imgui_new_frame() {
+       ImGui_ImplOpenGL3_NewFrame();
+       ImGui_ImplSDL3_NewFrame();
+       ImGui::NewFrame();
+   }
+   inline void imgui_render() {
+       ImGui::Render();
+       ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+   }
+#endif
+
 #else  // ── Raylib path (default, !USE_SDL3) ─────────────────────────────────
 #  include "raylib.h"
+#ifdef DEBUG
+#  include "rlImGui.h"
+#  include "imgui.h"
+#endif
 
    // w=0/h=0 → auto-detect from current monitor.
    inline void window_init(int w, int h, const char* title) {
@@ -104,12 +142,23 @@
            int mh  = GetMonitorHeight(mon);
            if (mw > 0 && mh > 0) SetWindowSize(mw, mh);
        }
+       SetExitKey(KEY_NULL);
    }
    inline void window_shutdown()            { CloseWindow(); }
    inline void window_set_vsync(int fps)    { SetTargetFPS(fps); }
    inline int  window_get_width()           { return GetScreenWidth(); }
    inline int  window_get_height()          { return GetScreenHeight(); }
-   inline void window_begin_frame()         { BeginDrawing(); }
+   // ClearBackground is included here so callers need no #ifdef for the clear colour.
+   inline void window_begin_frame()         { BeginDrawing(); ClearBackground({46, 51, 64, 255}); }
    inline void window_end_frame()           { EndDrawing(); }
+   inline void window_begin_3d(Camera3D cam){ BeginMode3D(cam); }
+   inline void window_end_3d()              { EndMode3D(); }
+
+#ifdef DEBUG
+   inline void imgui_init()      { rlImGuiSetup(true); }
+   inline void imgui_shutdown()  { rlImGuiShutdown(); }
+   inline void imgui_new_frame() { rlImGuiBegin(); }
+   inline void imgui_render()    { rlImGuiEnd(); }
+#endif
 
 #endif // USE_SDL3

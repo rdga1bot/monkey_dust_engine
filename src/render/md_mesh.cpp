@@ -148,6 +148,66 @@ MdMesh MdMeshCube(float w, float h, float d) {
     return BuildMesh(pos, 24*3, norm, 24*3, uv, 24*2, idx, 36);
 }
 
+// ── MdMeshCone ───────────────────────────────────────────────────────────────
+
+MdMesh MdMeshCone(float radius, float height, int slices) {
+    // apex + slices base verts + center base vert
+    int vcount = slices + 2;
+    // side: slices triangles; cap: slices triangles
+    int icount = slices * 6;
+
+    float* pos  = (float*)malloc((size_t)vcount * 3 * sizeof(float));
+    float* norm = (float*)malloc((size_t)vcount * 3 * sizeof(float));
+    float* uv   = (float*)malloc((size_t)vcount * 2 * sizeof(float));
+    unsigned int* idx = (unsigned int*)malloc((size_t)icount * sizeof(unsigned int));
+
+    static constexpr float PI = 3.14159265358979f;
+    float hy = height * 0.5f;
+
+    // v0: apex
+    pos[0]=0; pos[1]=hy;  pos[2]=0;
+    norm[0]=0; norm[1]=1; norm[2]=0;
+    uv[0]=0.5f; uv[1]=1.0f;
+    // v1..vSlices: base ring
+    for (int i = 0; i < slices; ++i) {
+        float a = 2.f * PI * (float)i / (float)slices;
+        float cx = cosf(a), cz = sinf(a);
+        int v = i + 1;
+        pos [v*3+0] = cx * radius; pos [v*3+1] = -hy; pos [v*3+2] = cz * radius;
+        norm[v*3+0] = cx;          norm[v*3+1] = 0;   norm[v*3+2] = cz;
+        uv  [v*2+0] = (float)i / (float)slices; uv[v*2+1] = 0.f;
+    }
+    // vLast: base center
+    int vc = slices + 1;
+    pos[vc*3+0]=0; pos[vc*3+1]=-hy; pos[vc*3+2]=0;
+    norm[vc*3+0]=0; norm[vc*3+1]=-1; norm[vc*3+2]=0;
+    uv[vc*2+0]=0.5f; uv[vc*2+1]=0.5f;
+
+    int ii = 0;
+    for (int i = 0; i < slices; ++i) {
+        int next = (i + 1) % slices;
+        // side triangle: apex, base[i], base[next]
+        idx[ii++] = 0; idx[ii++] = (unsigned int)(i + 1); idx[ii++] = (unsigned int)(next + 1);
+        // cap triangle: center, base[next], base[i]
+        idx[ii++] = (unsigned int)vc; idx[ii++] = (unsigned int)(next + 1); idx[ii++] = (unsigned int)(i + 1);
+    }
+
+    MdMesh m = BuildMesh(pos, vcount*3, norm, vcount*3, uv, vcount*2, idx, icount);
+    free(pos); free(norm); free(uv); free(idx);
+    return m;
+}
+
+// ── MdMeshPlane ──────────────────────────────────────────────────────────────
+
+MdMesh MdMeshPlane(float w, float d) {
+    float hw = w * 0.5f, hd = d * 0.5f;
+    float pos[4*3]  = { -hw,0,-hd,  hw,0,-hd,  hw,0, hd, -hw,0, hd };
+    float norm[4*3] = {  0,1,0,     0,1,0,      0,1,0,    0,1,0     };
+    float uv[4*2]   = {  0,0,  1,0,  1,1,  0,1 };
+    unsigned int idx[6] = { 0,1,2, 0,2,3 };
+    return BuildMesh(pos, 4*3, norm, 4*3, uv, 4*2, idx, 6);
+}
+
 // ── utilities ────────────────────────────────────────────────────────────────
 
 void MdUnloadMesh(MdMesh& m) {

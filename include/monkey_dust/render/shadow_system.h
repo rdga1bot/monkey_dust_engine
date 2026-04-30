@@ -4,12 +4,10 @@
 #include <monkey_dust/render/compute_shader.h>
 #include <monkey_dust/render/md_camera.h>  // pulls in raylib.h (Camera3D) + math_types.h
 #include <monkey_dust/render/md_shader.h>
+#include <monkey_dust/render/md_mesh.h>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
-#ifdef USE_SDL3
-#  include "render/MdMesh.h"
-#endif
 
 #ifdef MD_OPENGL43_ENABLED
 #include "external/glad.h"
@@ -64,19 +62,11 @@ public:
     Mat4  lightViewProj[NUM_CASCADES]  = {};
     float cascade_splits[NUM_CASCADES] = { SPLITS[1], SPLITS[2], SPLITS[3] };
 
-#ifdef USE_SDL3
     void Init(MdMesh npc_mesh) {
-#else
-    void Init(Mesh npc_mesh) {
-#endif
 #ifdef MD_OPENGL43_ENABLED
         if (init_) return;
         mesh_     = npc_mesh;
-#ifdef USE_SDL3
         mesh_idx_ = npc_mesh.index_count;
-#else
-        mesh_idx_ = npc_mesh.triangleCount * 3;
-#endif
 
         for (int k = 0; k < NUM_CASCADES; ++k) {
             glGenTextures(1, &shadow_tex_[k]);
@@ -218,11 +208,7 @@ public:
             glClear(GL_DEPTH_BUFFER_BIT);
 
             glUniformMatrix4fv(loc_lightVP_, 1, GL_FALSE, mat4_ptr(lightViewProj[k]));
-#ifdef USE_SDL3
             glBindVertexArray(mesh_.vao);
-#else
-            glBindVertexArray(mesh_.vaoId);
-#endif
             glBindBuffer(GL_DRAW_INDIRECT_BUFFER, shadow_ind_buf_.id);
             glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, 1, 0);
             glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
@@ -291,11 +277,7 @@ private:
     ComputeShader shadow_cull_cs_;
     SSBO          shadow_vis_buf_;
     SSBO          shadow_ind_buf_;
-#ifdef USE_SDL3
     MdMesh        mesh_;
-#else
-    Mesh          mesh_    = {};
-#endif
     int           mesh_idx_ = 0;
     Vec3          cam_pos_ = {};
     int  loc_lightVP_  = -1;

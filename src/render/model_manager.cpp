@@ -1,7 +1,7 @@
 #include <monkey_dust/render/model_manager.h>
 
-#ifdef USE_SDL3
-// cgltf declarations only — implementation compiled into libraylib.a (rmodels.c)
+#ifdef MD_OPENGL43_ENABLED
+// cgltf declarations only — implementation compiled into libraylib.a (rmodels.c) in non-SDL3 builds
 #include "external/cgltf.h"
 #include <cstdio>
 #include <cstdlib>
@@ -132,4 +132,4 @@ void ModelManager::Unload() {
     }
     count_ = 0;
 }
-#endif
+#endif // MD_OPENGL43_ENABLED

@@ -367,7 +367,15 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
         P = cam.ProjMatrix(aspect);
     }
     Mat4 vp = mat4_mul(V, P);
+    // Raylib Matrix struct memory is row-grouped ([m0,m4,m8,m12,...]),
+    // not OpenGL column-major ([m0,m1,m2,m3,...]). GL_TRUE tells OpenGL
+    // to transpose on load — equivalent to the old MatrixToFloat()+GL_FALSE path.
+    // GLM's value_ptr() is already column-major → GL_FALSE is correct there.
+#ifdef USE_GLM
     glUniformMatrix4fv(loc_vp_, 1, GL_FALSE, mat4_ptr(vp));
+#else
+    glUniformMatrix4fv(loc_vp_, 1, GL_TRUE,  mat4_ptr(vp));
+#endif
 
     float tsz[2] = { tile_world_size, tile_world_size };
     glUniform2fv(loc_tile_size_, 1, tsz);

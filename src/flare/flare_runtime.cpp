@@ -145,9 +145,9 @@ void FlareRuntime::Tick(float /*dt*/) {
     // Future: iterate sprite animation states and advance frame counters.
 }
 
-void FlareRuntime::Render(const MdCamera& cam, float aspect) {
+void FlareRuntime::Render(const MdCamera& cam, float aspect, float now_s) {
     if (!loaded_) return;
-    TileMapRenderer::Get().Render(map_, cam, aspect, tile_world_size_);
+    TileMapRenderer::Get().Render(map_, cam, aspect, tile_world_size_, 0.0f, now_s);
 }
 
 } // namespace md::flare

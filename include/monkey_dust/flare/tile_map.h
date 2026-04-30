@@ -57,7 +57,26 @@ struct TileMeta {
     uint8_t  _pad2;
 };
 
-constexpr int MAX_TILE_META = 4096;
+constexpr int MAX_TILE_META   = 4096;
+constexpr int MAX_ANIM_FRAMES = 8;   // frames per animated tile (max observed: 4)
+constexpr int MAX_ANIM_TILES  = 64;  // animated tiles per tilesetdef (observed: 57)
+
+// One frame of a tile animation.  src_x/src_y override the base TileMeta
+// coordinates for this frame; w/h/atlas_idx stay the same as the base tile.
+struct TileAnimFrame {
+    int16_t  src_x, src_y;   // atlas upper-left for this frame (px)
+    uint32_t duration_ms;     // how long this frame is displayed
+};
+
+// Animation sequence for one tile ID.  Stored in TileMetaRegistry.
+// At render time: pick frame where (now_ms % total_ms) falls in its window.
+struct TileAnim {
+    uint16_t      tile_id;
+    uint8_t       frame_count;
+    uint8_t       atlas_idx;              // matches TileMeta::atlas_idx
+    TileAnimFrame frames[MAX_ANIM_FRAMES];
+    uint32_t      total_ms;              // sum of all frame durations
+};
 
 struct TileMetaRegistry {
     TileMeta entries[MAX_TILE_META];
@@ -72,9 +91,14 @@ struct TileMetaRegistry {
     char     atlas_paths[MAX_ATLAS_COUNT][256];
     int      atlas_count;
 
+    TileAnim anim_entries[MAX_ANIM_TILES];
+    int      anim_count;
+
     void Clear();
     const TileMeta* Find(uint16_t tile_id) const;
-    bool Add(const TileMeta& meta);
+    bool Add(const TileMeta& m);
+    bool AddAnim(const TileAnim& anim);
+    const TileAnim* FindAnim(uint16_t tile_id) const;
     void DumpFirst(int n) const;
 };
 

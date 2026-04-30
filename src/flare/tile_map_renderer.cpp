@@ -145,7 +145,7 @@ void TileMapRenderer::SetAtlas(const char* png_path) {
 }
 
 void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
-                              float aspect, float tile_world_size, float ortho_size)
+                              float aspect, float tile_world_size, float ortho_size, float now_s)
 {
     if (!init_ || !prog_ || atlas_count_ == 0) return;
     if (map.layer_count == 0 || map.width <= 0 || map.height <= 0) return;
@@ -243,26 +243,46 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
         float y_bot = 0.0f, y_top = 0.0f;  // 0/0 = flat tile sentinel
 
         const TileMeta* tm = map.meta.Find(vt.tid);
+
+        // Animation: pick the current frame's src_x/src_y if this tile animates.
+        int16_t frame_sx = tm ? tm->src_x : 0;
+        int16_t frame_sy = tm ? tm->src_y : 0;
+        if (tm && now_s > 0.0f) {
+            const TileAnim* anim = map.meta.FindAnim(vt.tid);
+            if (anim && anim->total_ms > 0) {
+                uint32_t t = (uint32_t)(now_s * 1000.0f) % anim->total_ms;
+                uint32_t accum = 0;
+                for (int fi = 0; fi < anim->frame_count; ++fi) {
+                    accum += anim->frames[fi].duration_ms;
+                    if (t < accum) {
+                        frame_sx = anim->frames[fi].src_x;
+                        frame_sy = anim->frames[fi].src_y;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (tm && tm->w > 0 && tm->h > 0) {
             uint8_t aidx = tm->atlas_idx < (uint8_t)atlas_count_ ? tm->atlas_idx : 0;
             const MdTexture& atl = atlases_[aidx];
-            u0 = (float)tm->src_x / (float)atl.w;
-            u1 = (float)(tm->src_x + tm->w) / (float)atl.w;
+            u0 = (float)frame_sx / (float)atl.w;
+            u1 = (float)(frame_sx + tm->w) / (float)atl.w;
 
             // Billboard: anchor row (offset_y) is in the lower half of the sprite.
             // Water/overlay tiles (h>96 but oy≤h/2) are correctly classified flat.
             bool is_bb = (tm->offset_y > tm->h / 2);
             if (is_bb) {
                 // UV: corner.y=0=base(bottom of image), corner.y=1=tip(top of image).
-                v0 = 1.0f - (float)(tm->src_y + tm->h) / (float)atl.h;
-                v1 = 1.0f - (float)tm->src_y / (float)atl.h;
+                v0 = 1.0f - (float)(frame_sy + tm->h) / (float)atl.h;
+                v1 = 1.0f - (float)frame_sy / (float)atl.h;
                 // World Y: 96 atlas-px → 1 world unit.
                 y_top = (float)tm->offset_y / 96.0f * tile_world_size;
                 y_bot = -((float)tm->h - (float)tm->offset_y) / 96.0f * tile_world_size;
             } else {
                 // UV: corner.y=0=north(top of image), corner.y=1=south(bottom).
-                v0 = 1.0f - (float)tm->src_y / (float)atl.h;
-                v1 = 1.0f - (float)(tm->src_y + tm->h) / (float)atl.h;
+                v0 = 1.0f - (float)frame_sy / (float)atl.h;
+                v1 = 1.0f - (float)(frame_sy + tm->h) / (float)atl.h;
                 // y_bot = y_top = 0 → flat tile (shader uses XZ diamond).
             }
         } else {

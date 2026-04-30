@@ -39,7 +39,8 @@ public:
     void Tick(float dt);
 
     // Draw the current tile map via TileMapRenderer.
-    void Render(const MdCamera& cam, float aspect);
+    // now_s: elapsed time in seconds for tile animation (pass GetTime()).
+    void Render(const MdCamera& cam, float aspect, float now_s = 0.0f);
 
     bool  IsLoaded()       const { return loaded_; }
     float TileWorldSize()  const { return tile_world_size_; }

@@ -40,9 +40,10 @@ public:
     // Render map background + object layers in painter's depth order.
     // tile_world_size: world-space footprint of one tile (default 1.0).
     // ortho_size:      orthographic half-height in world units (0 = perspective).
+    // now_s:           elapsed time in seconds for tile animation (GetTime()).
     void Render(const FlareMap& map, const MdCamera& cam,
                 float aspect, float tile_world_size = 1.0f,
-                float ortho_size = 0.0f);
+                float ortho_size = 0.0f, float now_s = 0.0f);
 
 private:
     TileMapRenderer() = default;

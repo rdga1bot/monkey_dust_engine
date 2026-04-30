@@ -12,6 +12,7 @@ namespace md::flare {
 void TileMetaRegistry::Clear() {
     count = 0;
     atlas_count = 0;
+    anim_count = 0;
     atlas_rel_path[0] = '\0';
     for (int i = 0; i < MAX_ATLAS_COUNT; ++i) atlas_paths[i][0] = '\0';
 }
@@ -20,6 +21,21 @@ const TileMeta* TileMetaRegistry::Find(uint16_t tile_id) const {
     if (tile_id == 0) return nullptr;
     for (int i = 0; i < count; ++i)
         if (entries[i].tile_id == tile_id) return &entries[i];
+    return nullptr;
+}
+
+bool TileMetaRegistry::AddAnim(const TileAnim& anim) {
+    if (anim_count >= MAX_ANIM_TILES) return false;
+    for (int i = 0; i < anim_count; ++i) {
+        if (anim_entries[i].tile_id == anim.tile_id) { anim_entries[i] = anim; return true; }
+    }
+    anim_entries[anim_count++] = anim;
+    return true;
+}
+
+const TileAnim* TileMetaRegistry::FindAnim(uint16_t tile_id) const {
+    for (int i = 0; i < anim_count; ++i)
+        if (anim_entries[i].tile_id == tile_id) return &anim_entries[i];
     return nullptr;
 }
 
@@ -38,8 +54,8 @@ bool TileMetaRegistry::Add(const TileMeta& m) {
 
 void TileMetaRegistry::DumpFirst(int n) const {
     int show = (n < count) ? n : count;
-    fprintf(stdout, "[TileMeta] %d entries, %d atlas(es) (showing first %d):\n",
-            count, atlas_count, show);
+    fprintf(stdout, "[TileMeta] %d entries, %d atlas(es), %d animated (showing first %d):\n",
+            count, atlas_count, anim_count, show);
     for (int i = 0; i < show; ++i) {
         const TileMeta& m = entries[i];
         fprintf(stdout, "  [%d] id=%u atlas=%d src=(%d,%d) size=(%d,%d) offset=(%d,%d)\n",
@@ -79,6 +95,45 @@ static bool ParseTilesetDefFile(const char* path, TileMetaRegistry& meta) {
             }
             continue;
         }
+        // animation=id;sx,sy,Nms;sx,sy,Nms;…
+        // Frames override src_x/src_y of the base tile= for each time slice.
+        // w/h/atlas_idx stay the same as the corresponding TileMeta entry.
+        if (strncmp(line, "animation=", 10) == 0) {
+            const char* p = line + 10;
+            int tid = atoi(p);
+            while (*p && *p != ';') ++p;
+            TileAnim anim;
+            anim.tile_id    = (uint16_t)tid;
+            anim.frame_count = 0;
+            anim.total_ms   = 0;
+            anim.atlas_idx  = (uint8_t)cur_atlas;
+            // atlas_idx may be more precisely known from the base TileMeta.
+            const TileMeta* base = meta.Find((uint16_t)tid);
+            if (base) anim.atlas_idx = base->atlas_idx;
+
+            while (*p == ';' && anim.frame_count < MAX_ANIM_FRAMES) {
+                ++p;  // skip ';'
+                if (!*p) break;
+                int sx = atoi(p);
+                while (*p && *p != ',') ++p;
+                if (*p == ',') ++p;
+                int sy = atoi(p);
+                while (*p && *p != ',') ++p;
+                if (*p == ',') ++p;
+                int dur = atoi(p);  // digits before 'ms'
+                while (*p && *p != ';') ++p;
+                if (dur <= 0) continue;
+                TileAnimFrame& f       = anim.frames[anim.frame_count++];
+                f.src_x                = (int16_t)sx;
+                f.src_y                = (int16_t)sy;
+                f.duration_ms          = (uint32_t)dur;
+                anim.total_ms         += (uint32_t)dur;
+            }
+            if (anim.frame_count > 1 && anim.total_ms > 0)
+                meta.AddAnim(anim);
+            continue;
+        }
+
         if (strncmp(line, "tile=", 5) != 0) continue;
         const char* p = line + 5;
         int id, sx, sy, w, h, ox, oy;

@@ -9,8 +9,13 @@ namespace md::flare {
 // 128×128 map ≈ 16 384 tiles; capped so instance VBO stays fixed-size.
 constexpr int MAX_VISIBLE_TILES = 16384;
 
-// Renders one FlareMap background layer as an instanced flat XZ-plane grid.
+// Renders one FlareMap background + object layers as instanced geometry.
 // One tileset atlas texture shared across all tiles per call.
+//
+// UV CONVENTION: atlas loaded via MdLoadTexturePixelArt (stbi flip=1).
+//   v_gl = 1.0f − y_file/atlas_h  ← MUST match tile_map_renderer.cpp
+//   Flat tile  (h≤96): v0=1−src_y/H (north), v1=1−(src_y+h)/H (south)
+//   Billboard  (h>96): v0=1−(src_y+h)/H (base), v1=1−src_y/H (tip)
 //
 // Per-frame usage:
 //   SetAtlas(png_path)                  — once per tileset change

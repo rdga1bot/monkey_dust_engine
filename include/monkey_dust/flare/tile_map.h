@@ -1,4 +1,16 @@
 #pragma once
+// Flare map types and loader.
+//
+// UV CONVENTION (affects anyone computing tile UVs):
+//   MdLoadTexturePixelArt uses stbi_set_flip_vertically_on_load(1).
+//   → GL v=0 = bottom of image file, v=1 = top.
+//   → Correct UV formula: v_gl = 1.0f - y_file / atlas_h
+//   See: tile_map_renderer.cpp, CLAUDE_ARCH.md §"Flare Tileset UV Convention"
+//
+// TILESETDEF img= RULE:
+//   ParseTilesetDefFile() stores only the FIRST img= line as atlas_rel_path.
+//   Flare tilesetdefs have multiple img= lines (primary + water/structures).
+//   Only the first line's coordinates match the TileMeta entries in that file.
 #include <cstdint>
 
 namespace md::flare {
@@ -43,7 +55,10 @@ constexpr int MAX_TILE_META = 4096;
 struct TileMetaRegistry {
     TileMeta entries[MAX_TILE_META];
     int      count;
-    char     atlas_rel_path[256];  // img= line from tilesetdef (relative to mod root)
+    // Relative path of the PRIMARY atlas (first img= line in tilesetdef).
+    // Coordinates in TileMeta entries are pixel offsets into this image.
+    // Set once; subsequent img= lines (water, structures) are ignored.
+    char     atlas_rel_path[256];
 
     void Clear();
     const TileMeta* Find(uint16_t tile_id) const;

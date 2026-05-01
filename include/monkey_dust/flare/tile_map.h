@@ -153,6 +153,13 @@ bool LoadFlareMap(const char* path, FlareMap& out);
 // Returns false on I/O error.
 bool SaveFlareMap(const char* path, const FlareMap& map);
 
+// Create a blank FlareMap with 4 default layers (Background/Fringe/Object/Collision).
+// base_path is an existing map path used only to derive the mod root for tilesetdef
+// resolution; it is not the save path of the new map.
+// Always returns true; tilesetdef load failure is non-fatal (meta.count == 0).
+bool InitEmptyFlareMap(const char* base_path, int width, int height,
+                       const char* tilesetdef, FlareMap& out);
+
 // Map a tile_id to the owning tileset and its local index within that tileset.
 // Returns false when tile_id == 0 (empty) or no suitable tileset is found.
 bool ResolveTile(const FlareMap& map, uint16_t tile_id,

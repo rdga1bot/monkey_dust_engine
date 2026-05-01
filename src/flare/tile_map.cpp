@@ -607,6 +607,56 @@ bool LoadFlareMap(const char* path, FlareMap& out) {
     return true;
 }
 
+bool InitEmptyFlareMap(const char* base_path, int width, int height,
+                       const char* tilesetdef, FlareMap& out) {
+    memset(&out, 0, sizeof(out));
+    if (width  < 1) width  = 1;
+    if (height < 1) height = 1;
+    if (width  > MAX_MAP_WIDTH)  width  = MAX_MAP_WIDTH;
+    if (height > MAX_MAP_HEIGHT) height = MAX_MAP_HEIGHT;
+
+    out.width  = width;
+    out.height = height;
+    out.tile_w = 192;
+    out.tile_h = 96;
+    out.hero_x = width  * 0.5f;
+    out.hero_y = height * 0.5f;
+    snprintf(out.title,       sizeof(out.title),       "new_map");
+    snprintf(out.tileset_def, sizeof(out.tileset_def), "%s", tilesetdef ? tilesetdef : "");
+
+    out.layer_count   = 4;
+    out.layers[0].type = LayerType::BACKGROUND;
+    out.layers[1].type = LayerType::FRINGE;
+    out.layers[2].type = LayerType::OBJECT;
+    out.layers[3].type = LayerType::COLLISION;
+
+    if (tilesetdef && tilesetdef[0] && base_path && base_path[0]) {
+        TryLoadTilesetDef(base_path, tilesetdef, out.meta);
+
+        if (out.meta.atlas_count > 0) {
+            char map_dir[512], mod_dir[512], mods_root[512];
+            DirOf(base_path, map_dir, sizeof(map_dir));
+            DirOf(map_dir,   mod_dir, sizeof(mod_dir));
+            DirOf(mod_dir, mods_root, sizeof(mods_root));
+
+            for (int ai = 0; ai < out.meta.atlas_count && ai < MAX_ATLAS_COUNT; ++ai) {
+                char resolved[512];
+                if (ResolveAtlasInMods(mods_root, mod_dir,
+                                       out.meta.atlas_paths[ai],
+                                       resolved, sizeof(resolved))) {
+                    strncpy(out.tileset_atlases[ai], resolved,
+                            sizeof(out.tileset_atlases[ai]) - 1);
+                    ++out.tileset_atlas_count;
+                }
+            }
+            if (out.tileset_atlases[0][0])
+                strncpy(out.tileset_atlas, out.tileset_atlases[0],
+                        sizeof(out.tileset_atlas) - 1);
+        }
+    }
+    return true;
+}
+
 // ── Flare .txt serializer ─────────────────────────────────────────────────────
 
 static const char* LayerTypeName(LayerType t) {

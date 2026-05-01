@@ -8,18 +8,19 @@
 #include <cstdio>
 #include <cstdlib>    // qsort
 
-// Per-instance GPU layout (stride = 36 bytes — M7.27 horizontal offset):
+// Per-instance GPU layout (stride = 40 bytes — M12 dual-face structure tiles):
 //   vec2  tile_pos  (grid col, row)   offset  0
 //   vec4  uv_rect   (u0,v0,u1,v1)    offset  8
 //   float y_bot     world Y of base  offset 24  (≤0 or 0 for flat tile)
 //   float y_top     world Y of tip   offset 28  (>0 = billboard; 0 = flat tile)
 //   float x_off     screen-horiz     offset 32  (world units; +→right on screen)
+//   float z_off     south Z shift    offset 36  (M12 front face = tsz/2; else 0)
 //
 // BILLBOARD CLASSIFICATION: is_billboard = (offset_y > h / 2)
 //   Anchor in lower half → billboard (trees/mushrooms).
 //   Anchor in upper half (offset_y ≤ h/2) → flat XZ diamond (water, cliff, grass).
-//   Flat includes h>96 tiles: the art is 2D isometric pre-rendered at the camera
-//   angle, so flat projection + ortho camera reproduces the original appearance.
+//   Exception (M12): structure tiles (h>96, 0<offset_y<h/2) get TWO quads:
+//     top face (flat XZ, UV rows 0..offset_y) + front face (billboard, rows offset_y..h).
 // Y FORMULA (96 atlas-px = 1 world unit):
 //   y_top = offset_y / 96.0 * tsz,  y_bot = -(h - offset_y) / 96.0 * tsz
 //
@@ -28,12 +29,13 @@
 //   Center deviation from grid: dx_px = w/2 - offset_x  (positive = right on screen).
 //   Screen-right in world = (+Δwx, 0, +Δwz) where 96 screen-px = tsz/2 world units.
 //   x_off = (w/2 - offset_x) * tile_world_size / 192.0
-static constexpr int TINST_STRIDE    = 36;
+static constexpr int TINST_STRIDE    = 40;
 static constexpr int TINST_OFF_POS   =  0;
 static constexpr int TINST_OFF_UV    =  8;
 static constexpr int TINST_OFF_YBOT  = 24;
 static constexpr int TINST_OFF_YTOP  = 28;
 static constexpr int TINST_OFF_XOFF  = 32;
+static constexpr int TINST_OFF_ZOFF  = 36;
 
 // Unit quad corners [0,1]×[0,1] (4 verts, GL_TRIANGLE_FAN).
 static const float TILE_QUAD[8] = {
@@ -74,7 +76,7 @@ void TileMapRenderer::Init() {
     glGenBuffers(1, &inst_vbo_);
     glBindBuffer(GL_ARRAY_BUFFER, inst_vbo_);
     glBufferData(GL_ARRAY_BUFFER,
-                 (GLsizeiptr)(MAX_VISIBLE_TILES * TINST_STRIDE), nullptr, GL_STREAM_DRAW);
+                 (GLsizeiptr)(MAX_VISIBLE_TILES * 2 * TINST_STRIDE), nullptr, GL_STREAM_DRAW);
 
     glGenVertexArrays(1, &vao_);
     glBindVertexArray(vao_);
@@ -108,6 +110,10 @@ void TileMapRenderer::Init() {
     glEnableVertexAttribArray(5);
     glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)(intptr_t)TINST_OFF_XOFF);
     glVertexAttribDivisor(5, 1);
+    // attrib 6: z_off (1 float at offset 36) — M12 front-face south Z shift
+    glEnableVertexAttribArray(6);
+    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, TINST_STRIDE, (void*)(intptr_t)TINST_OFF_ZOFF);
+    glVertexAttribDivisor(6, 1);
 
     glBindVertexArray(0);
 
@@ -190,7 +196,8 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     int vis_max  = vis_cols * vis_rows;
 
     static VisibleTile vbuf[MAX_VISIBLE_TILES];
-    static uint8_t     ibuf[MAX_VISIBLE_TILES * TINST_STRIDE];
+    static uint8_t     ibuf[MAX_VISIBLE_TILES * 2 * TINST_STRIDE];
+    static uint8_t     ibuf_atlas[MAX_VISIBLE_TILES * 2];
     int n = 0;
 
     // PASS 1: collect layers into vbuf.
@@ -250,25 +257,18 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     // PASS 2: sort back-to-front (ascending col+row = painter's order).
     qsort(vbuf, (size_t)n, sizeof(VisibleTile), VisibleTileCmp);
 
-    // PASS 3: compute UV and world Y extents for every tile into ibuf.
+    // PASS 3: compute UV and world Y extents per tile → ibuf/ibuf_atlas.
+    // Structure tiles (h>96, 0<offset_y<h/2) emit TWO instances:
+    //   [0] top face  — flat XZ diamond, UV rows 0..offset_y (roof/top surface)
+    //   [1] front face — vertical billboard at south edge, UV rows offset_y..h (wall)
+    // All other tiles emit one instance (billboard or flat).
     //
-    // UV CONVENTION (stbi flip active — see tile_map.h and CLAUDE_ARCH.md):
-    //   Flat:      v0 = 1-(src_y/H)      [north/top],   v1 = 1-((src_y+h)/H) [south/bottom]
-    //   Billboard: v0 = 1-((src_y+h)/H)  [base/anchor], v1 = 1-(src_y/H)     [tip/crown]
-    //
-    // BILLBOARD CLASSIFICATION (M7.24):
-    //   is_billboard = (TileMeta::offset_y > TileMeta::h / 2)
-    //   Anchor in lower half → billboard. Upper half (offset_y ≤ h/2) → flat XZ diamond.
-    //   Flat applies to h>96 tiles too (water, cliff): art is 2D isometric pre-rendered,
-    //   so flat projection + ortho camera faithfully reproduces the original appearance.
-    //
-    // Y EXTENTS for billboards (96 atlas-px = 1 world unit):
-    //   y_top = offset_y / 96 * tsz           (tip, above ground)
-    //   y_bot = -(h - offset_y) / 96 * tsz    (root, clipped below ground by depth test)
+    // UV CONVENTION (stbi flip active):
+    //   Flat:      v0 = 1-(src_y/H)      [north/top],   v1 = 1-((src_y+h)/H) [south]
+    //   Billboard: v0 = 1-((src_y+h)/H)  [base/ground], v1 = 1-(src_y/H)     [tip/crown]
+    int ni = 0;  // instance count written into ibuf (≥ n due to structure tile dual emit)
     for (int i = 0; i < n; ++i) {
         const VisibleTile& vt = vbuf[i];
-        float u0, v0, u1, v1;
-        float y_bot = 0.0f, y_top = 0.0f;  // 0/0 = flat tile sentinel
 
         const TileMeta* tm = map.meta.Find(vt.tid);
 
@@ -291,28 +291,81 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
             }
         }
 
-        if (tm && tm->w > 0 && tm->h > 0) {
-            uint8_t aidx = tm->atlas_idx < (uint8_t)atlas_count_ ? tm->atlas_idx : 0;
-            const MdTexture& atl = atlases_[aidx];
-            u0 = (float)frame_sx / (float)atl.w;
-            u1 = (float)(frame_sx + tm->w) / (float)atl.w;
+        float tx   = (float)vt.col;
+        float ty_f = (float)vt.row;
 
-            // Billboard: anchor row (offset_y) is in the lower half of the sprite.
-            // Upper-half anchor (offset_y ≤ h/2): flat XZ diamond — covers water, cliff,
-            // and all h>96 overlay tiles whose art is pre-rendered for the camera angle.
-            bool is_bb = (tm->offset_y > tm->h / 2);
-            if (is_bb) {
-                // UV: corner.y=0=base(bottom of image), corner.y=1=tip(top of image).
-                v0 = 1.0f - (float)(frame_sy + tm->h) / (float)atl.h;
-                v1 = 1.0f - (float)frame_sy / (float)atl.h;
-                // World Y: 96 atlas-px → 1 world unit.
-                y_top = (float)tm->offset_y / 96.0f * tile_world_size;
-                y_bot = -((float)tm->h - (float)tm->offset_y) / 96.0f * tile_world_size;
+        if (tm && tm->w > 0 && tm->h > 0) {
+            uint8_t aidx = vt.atlas_idx < (uint8_t)atlas_count_ ? vt.atlas_idx : 0;
+            const MdTexture& atl = atlases_[aidx];
+            float u0 = (float)frame_sx / (float)atl.w;
+            float u1 = (float)(frame_sx + tm->w) / (float)atl.w;
+            float x_off = ((float)tm->w * 0.5f - (float)tm->offset_x) * (tile_world_size / 192.0f);
+
+            bool is_bb     = (tm->offset_y > tm->h / 2);
+            // M12: structure tile — tall sprite with anchor in the upper quarter.
+            bool is_struct = !is_bb && tm->h > 96 && tm->offset_y > 0 && tm->offset_y < tm->h / 2;
+
+            if (is_struct) {
+                // TOP FACE: flat XZ diamond showing roof rows (src_y..src_y+offset_y).
+                float tv0 = 1.0f - (float)frame_sy / (float)atl.h;
+                float tv1 = 1.0f - (float)(frame_sy + tm->offset_y) / (float)atl.h;
+                float yb0 = 0.0f, yt0 = 0.0f, zof0 = 0.0f;
+                uint8_t* p0 = ibuf + ni * TINST_STRIDE;
+                memcpy(p0 + TINST_OFF_POS + 0, &tx,    4);
+                memcpy(p0 + TINST_OFF_POS + 4, &ty_f,  4);
+                memcpy(p0 + TINST_OFF_UV  + 0, &u0,    4);
+                memcpy(p0 + TINST_OFF_UV  + 4, &tv0,   4);
+                memcpy(p0 + TINST_OFF_UV  + 8, &u1,    4);
+                memcpy(p0 + TINST_OFF_UV  +12, &tv1,   4);
+                memcpy(p0 + TINST_OFF_YBOT,    &yb0,   4);
+                memcpy(p0 + TINST_OFF_YTOP,    &yt0,   4);
+                memcpy(p0 + TINST_OFF_XOFF,    &x_off, 4);
+                memcpy(p0 + TINST_OFF_ZOFF,    &zof0,  4);
+                ibuf_atlas[ni++] = aidx;
+
+                // FRONT FACE: vertical billboard at south tile edge, rows offset_y..h.
+                // corner.y=0 (ground) samples bottom of image; corner.y=1 (top) samples anchor line.
+                float fv0  = 1.0f - (float)(frame_sy + tm->h) / (float)atl.h;
+                float fv1  = 1.0f - (float)(frame_sy + tm->offset_y) / (float)atl.h;
+                float fyt  = (float)(tm->h - tm->offset_y) / 96.0f * tile_world_size;
+                float fyb  = 0.0f;
+                float fzof = tile_world_size * 0.5f;
+                uint8_t* p1 = ibuf + ni * TINST_STRIDE;
+                memcpy(p1 + TINST_OFF_POS + 0, &tx,    4);
+                memcpy(p1 + TINST_OFF_POS + 4, &ty_f,  4);
+                memcpy(p1 + TINST_OFF_UV  + 0, &u0,    4);
+                memcpy(p1 + TINST_OFF_UV  + 4, &fv0,   4);
+                memcpy(p1 + TINST_OFF_UV  + 8, &u1,    4);
+                memcpy(p1 + TINST_OFF_UV  +12, &fv1,   4);
+                memcpy(p1 + TINST_OFF_YBOT,    &fyb,   4);
+                memcpy(p1 + TINST_OFF_YTOP,    &fyt,   4);
+                memcpy(p1 + TINST_OFF_XOFF,    &x_off, 4);
+                memcpy(p1 + TINST_OFF_ZOFF,    &fzof,  4);
+                ibuf_atlas[ni++] = aidx;
             } else {
-                // UV: corner.y=0=north(top of image), corner.y=1=south(bottom).
-                v0 = 1.0f - (float)frame_sy / (float)atl.h;
-                v1 = 1.0f - (float)(frame_sy + tm->h) / (float)atl.h;
-                // y_bot = y_top = 0 → flat tile (shader uses XZ diamond).
+                // Single instance: billboard or flat tile (water, ground, h>96 flat overlays).
+                float v0, v1, y_bot = 0.0f, y_top = 0.0f, zof = 0.0f;
+                if (is_bb) {
+                    v0 = 1.0f - (float)(frame_sy + tm->h) / (float)atl.h;
+                    v1 = 1.0f - (float)frame_sy / (float)atl.h;
+                    y_top = (float)tm->offset_y / 96.0f * tile_world_size;
+                    y_bot = -((float)tm->h - (float)tm->offset_y) / 96.0f * tile_world_size;
+                } else {
+                    v0 = 1.0f - (float)frame_sy / (float)atl.h;
+                    v1 = 1.0f - (float)(frame_sy + tm->h) / (float)atl.h;
+                }
+                uint8_t* p = ibuf + ni * TINST_STRIDE;
+                memcpy(p + TINST_OFF_POS + 0, &tx,    4);
+                memcpy(p + TINST_OFF_POS + 4, &ty_f,  4);
+                memcpy(p + TINST_OFF_UV  + 0, &u0,    4);
+                memcpy(p + TINST_OFF_UV  + 4, &v0,    4);
+                memcpy(p + TINST_OFF_UV  + 8, &u1,    4);
+                memcpy(p + TINST_OFF_UV  +12, &v1,    4);
+                memcpy(p + TINST_OFF_YBOT,    &y_bot, 4);
+                memcpy(p + TINST_OFF_YTOP,    &y_top, 4);
+                memcpy(p + TINST_OFF_XOFF,    &x_off, 4);
+                memcpy(p + TINST_OFF_ZOFF,    &zof,   4);
+                ibuf_atlas[ni++] = aidx;
             }
         } else {
             // Grid fallback (no metadata — uses atlas[0] grid layout).
@@ -320,39 +373,30 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
             if (tm && tm->h > 0) tile_h_f = (float)tm->h;
             int tc = vt.local_idx % vis_cols;
             int tr = vt.local_idx / vis_cols;
-            u0 = tc * iaw;
-            u1 = u0 + iaw;
+            float u0 = tc * iaw;
+            float u1 = u0 + iaw;
+            float v0, v1, y_bot = 0.0f, y_top = 0.0f, x_off = 0.0f, zof = 0.0f;
             if (tile_h_f <= 96.5f) {
-                // Flat diamond.
                 v1 = 1.0f - (float)(tr + 1) * iah;
                 v0 = v1 + ground_iah;
-                // y_bot = y_top = 0 already.
             } else {
-                // Tall grid tile: assume standard anchor (billboard rising from y=0).
                 v0 = 1.0f - (float)(tr + 1) * iah;
                 v1 = 1.0f - (float)tr * iah;
                 y_top = (tile_h_f - 96.0f) / 96.0f * tile_world_size;
-                // y_bot = 0: no below-ground portion assumed for grid fallback.
             }
+            uint8_t* p = ibuf + ni * TINST_STRIDE;
+            memcpy(p + TINST_OFF_POS + 0, &tx,    4);
+            memcpy(p + TINST_OFF_POS + 4, &ty_f,  4);
+            memcpy(p + TINST_OFF_UV  + 0, &u0,    4);
+            memcpy(p + TINST_OFF_UV  + 4, &v0,    4);
+            memcpy(p + TINST_OFF_UV  + 8, &u1,    4);
+            memcpy(p + TINST_OFF_UV  +12, &v1,    4);
+            memcpy(p + TINST_OFF_YBOT,    &y_bot, 4);
+            memcpy(p + TINST_OFF_YTOP,    &y_top, 4);
+            memcpy(p + TINST_OFF_XOFF,    &x_off, 4);
+            memcpy(p + TINST_OFF_ZOFF,    &zof,   4);
+            ibuf_atlas[ni++] = vt.atlas_idx;
         }
-
-        // M7.27: horizontal sprite offset in world units (screen-right = +wx, +wz).
-        // 192 screen-px = 1 tile width; w/2-offset_x gives the px deviation from center.
-        float x_off = 0.0f;
-        if (tm) x_off = ((float)tm->w * 0.5f - (float)tm->offset_x) * (tile_world_size / 192.0f);
-
-        float tx   = (float)vt.col;
-        float ty_f = (float)vt.row;
-        uint8_t* p = ibuf + i * TINST_STRIDE;
-        memcpy(p + TINST_OFF_POS + 0,  &tx,    4);
-        memcpy(p + TINST_OFF_POS + 4,  &ty_f,  4);
-        memcpy(p + TINST_OFF_UV  + 0,  &u0,    4);
-        memcpy(p + TINST_OFF_UV  + 4,  &v0,    4);
-        memcpy(p + TINST_OFF_UV  + 8,  &u1,    4);
-        memcpy(p + TINST_OFF_UV  + 12, &v1,    4);
-        memcpy(p + TINST_OFF_YBOT,     &y_bot, 4);
-        memcpy(p + TINST_OFF_YTOP,     &y_top, 4);
-        memcpy(p + TINST_OFF_XOFF,     &x_off, 4);
     }
 
     if (n == 0) return;
@@ -391,15 +435,14 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     glBindBuffer(GL_ARRAY_BUFFER, inst_vbo_);
 
     // PASS 4: draw contiguous atlas runs in painter's depth order.
-    // Tiles are sorted by depth (col+row); we emit one draw call per run of
-    // same atlas_idx, switching the bound texture between runs.
-    // This maintains correct painter's order across multiple atlases.
+    // ibuf/ibuf_atlas are in sorted depth order (PASS 2 sort + sequential emit in PASS 3).
+    // Structure tiles emit [top face, front face] consecutively — same atlas, correct order.
     {
         int i = 0;
-        while (i < n) {
-            uint8_t aidx       = vbuf[i].atlas_idx;
+        while (i < ni) {
+            uint8_t aidx        = ibuf_atlas[i];
             int     batch_start = i;
-            while (i < n && vbuf[i].atlas_idx == aidx) ++i;
+            while (i < ni && ibuf_atlas[i] == aidx) ++i;
             int count = i - batch_start;
 
             // Upload only the relevant batch slice to the VBO start.

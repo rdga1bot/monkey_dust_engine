@@ -137,7 +137,7 @@ void TileMap2DRenderer::SetAtlases(const FlareMap& map) {
 
 void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
                                 float origin_x, float origin_y, float scale,
-                                int vp_w, int vp_h)
+                                int vp_w, int vp_h, uint8_t layer_mask)
 {
     if (!init_ || !prog_ || atlas_count_ == 0) return;
     if (map.layer_count == 0 || map.width <= 0 || map.height <= 0) return;
@@ -148,6 +148,7 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
     int n = 0;
 
     for (int li = 0; li < map.layer_count && n < MAX_TILES; ++li) {
+        if (!(layer_mask & (1u << li))) continue;
         const TileMapLayer& layer = map.layers[li];
         using LT = md::flare::LayerType;
         if (layer.type == LT::COLLISION) continue;

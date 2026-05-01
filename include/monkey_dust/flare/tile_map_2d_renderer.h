@@ -30,9 +30,10 @@ public:
     //   origin_x, origin_y : screen-pixel position of tile(0,0)'s grid anchor
     //   scale               : zoom factor (1.0 = native atlas pixels)
     //   vp_w, vp_h          : current viewport/window dimensions in pixels
+    // layer_mask: bit i = 1 means layer i is visible (default 0xFF = all visible).
     void Render(const FlareMap& map, float now_s,
                 float origin_x, float origin_y, float scale,
-                int vp_w, int vp_h);
+                int vp_w, int vp_h, uint8_t layer_mask = 0xFF);
 
 private:
     bool     init_        = false;

@@ -18,9 +18,8 @@
 // BILLBOARD CLASSIFICATION: is_billboard = (offset_y > h / 2)
 //   Anchor in lower half → billboard (trees/mushrooms).
 //   Anchor in upper half (offset_y ≤ h/2) → flat XZ diamond (water, cliff, grass).
-//   ALL h>96 tiles with offset_y ≤ h/2 (cliffs, buildings) render FLAT — the art is
-//   2D isometric pre-rendered at the camera angle; flat projection reproduces it correctly.
-//   A separate vertical face would distort the pre-rendered slope/perspective.
+//   NOTE: offset_y == h/2 (wall tiles 16-47, h=96) currently classified as flat.
+//   Pending ground-truth comparison with original Flare rendering before changing to >=.
 // Y FORMULA (96 atlas-px = 1 world unit):
 //   y_top = offset_y / 96.0 * tsz,  y_bot = -(h - offset_y) / 96.0 * tsz
 //
@@ -265,9 +264,6 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     // BILLBOARD CLASSIFICATION (M7.24):
     //   is_billboard = (TileMeta::offset_y > TileMeta::h / 2)
     //   Anchor in lower half → billboard. Upper half (offset_y ≤ h/2) → flat XZ diamond.
-    //   Flat applies to h>96 tiles too (water, cliff): art is 2D isometric pre-rendered,
-    //   so flat projection + ortho camera faithfully reproduces the original appearance.
-    //   Adding a separate vertical face DISTORTS the baked perspective — do NOT do it.
     //
     // Y EXTENTS for billboards (96 atlas-px = 1 world unit):
     //   y_top = offset_y / 96 * tsz           (tip, above ground)
@@ -304,9 +300,8 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
             u0 = (float)frame_sx / (float)atl.w;
             u1 = (float)(frame_sx + tm->w) / (float)atl.w;
 
-            // Billboard: anchor row (offset_y) is in the lower half of the sprite.
-            // Upper-half anchor (offset_y ≤ h/2): flat XZ diamond — covers water, cliff,
-            // and all h>96 overlay tiles whose art is pre-rendered for the camera angle.
+            // Billboard: anchor row in lower half of sprite (offset_y > h/2).
+            // Flat: anchor in upper half or center (offset_y ≤ h/2) → XZ diamond.
             bool is_bb = (tm->offset_y > tm->h / 2);
             if (is_bb) {
                 // UV: corner.y=0=base(bottom of image), corner.y=1=tip(top of image).

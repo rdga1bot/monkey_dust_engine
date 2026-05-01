@@ -233,6 +233,10 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
     glBindBuffer(GL_ARRAY_BUFFER, inst_vbo_);
     glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(n * STRIDE), ibuf);
 
+    // Save Raylib's GL state before taking over the pipeline.
+    GLint prev_prog = 0;
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prev_prog);
+
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
@@ -254,8 +258,16 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
     glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, n);
     glBindVertexArray(0);
 
+    // Restore GL state for Raylib's subsequent DrawText / DrawFPS calls.
+    // Critical: keep GL_BLEND enabled with alpha blend func — Raylib's font
+    // glyphs are RGBA with transparency; disabling blend renders them as
+    // solid white rectangles ("boxes").
+    glUseProgram((GLuint)prev_prog);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);  // unbind atlas so Raylib rebinds font tex
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
-    glDisable(GL_BLEND);
 }
 
 } // namespace md::flare

@@ -159,7 +159,12 @@ void TileMapRenderer::SetAtlas(const char* png_path) {
 void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
                               float aspect, float tile_world_size, float ortho_size, float now_s)
 {
-    if (!init_ || !prog_ || atlas_count_ == 0) return;
+    if (!init_ || !prog_) return;
+    if (atlas_count_ == 0) {
+        static bool w = false;
+        if (!w) { TraceLog(LOG_WARNING, "[TileMap] Render() called with no atlases"); w = true; }
+        return;
+    }
     if (map.layer_count == 0 || map.width <= 0 || map.height <= 0) return;
 
     // Pick background layer (first BACKGROUND, else layer 0).

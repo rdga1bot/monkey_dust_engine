@@ -607,6 +607,90 @@ bool LoadFlareMap(const char* path, FlareMap& out) {
     return true;
 }
 
+// ── Flare .txt serializer ─────────────────────────────────────────────────────
+
+static const char* LayerTypeName(LayerType t) {
+    switch (t) {
+        case LayerType::BACKGROUND: return "background";
+        case LayerType::FRINGE:     return "background_fringe";
+        case LayerType::OBJECT:     return "object";
+        case LayerType::COLLISION:  return "collision";
+        default:                    return "background";
+    }
+}
+
+bool SaveFlareMap(const char* path, const FlareMap& map) {
+    FILE* f = fopen(path, "w");
+    if (!f) {
+        fprintf(stderr, "[SaveFlareMap] cannot open for write: %s\n", path);
+        return false;
+    }
+
+    // [header]
+    fprintf(f, "[header]\n");
+    fprintf(f, "width=%d\n",      map.width);
+    fprintf(f, "height=%d\n",     map.height);
+    fprintf(f, "tilewidth=%d\n",  map.tile_w);
+    fprintf(f, "tileheight=%d\n", map.tile_h);
+    if (map.music_path[0])  fprintf(f, "music=%s\n",   map.music_path);
+    if (map.tileset_def[0]) fprintf(f, "tileset=%s\n", map.tileset_def);
+    if (map.title[0])       fprintf(f, "title=%s\n",   map.title);
+    if (map.hero_x != 0.0f || map.hero_y != 0.0f)
+        fprintf(f, "hero_pos=%d,%d\n", (int)map.hero_x, (int)map.hero_y);
+    fprintf(f, "\n");
+
+    // [tilesets]
+    if (map.tileset_count > 0) {
+        fprintf(f, "[tilesets]\n");
+        for (int i = 0; i < map.tileset_count; ++i) {
+            const TileSet& ts = map.tilesets[i];
+            if (!ts.image_path[0]) continue;
+            fprintf(f, "tileset=%s,%d,%d,%d,%d\n",
+                    ts.image_path, ts.tile_w, ts.tile_h,
+                    ts.offset_x, ts.offset_y);
+        }
+        fprintf(f, "\n");
+    }
+
+    // [layer] sections — tile data as CSV rows
+    for (int li = 0; li < map.layer_count; ++li) {
+        const TileMapLayer& layer = map.layers[li];
+        if (layer.type == LayerType::UNKNOWN) continue;
+
+        fprintf(f, "[layer]\n");
+        fprintf(f, "type=%s\n", LayerTypeName(layer.type));
+        fprintf(f, "data\n");
+        for (int row = 0; row < map.height; ++row) {
+            for (int col = 0; col < map.width; ++col) {
+                fprintf(f, "%d", (int)layer.tiles[row * MAX_MAP_WIDTH + col]);
+                if (col < map.width - 1) fputc(',', f);
+            }
+            fputc('\n', f);
+        }
+        fprintf(f, "\n");
+    }
+
+    // [enemy] blocks
+    for (int si = 0; si < map.spawn_count; ++si) {
+        const FlareSpawn& sp = map.spawns[si];
+        if (!sp.category[0]) continue;
+        fprintf(f, "[enemy]\n");
+        fprintf(f, "category=%s\n", sp.category);
+        // Reconstruct a 1×1 spawn rect whose centre matches stored center_x/y.
+        // center = x+0.5 → x = (int)center_x (works for half-integer centres too).
+        fprintf(f, "location=%d,%d,1,1\n",
+                (int)sp.center_x, (int)sp.center_y);
+        if (sp.level         > 0) fprintf(f, "level=%d\n",         sp.level);
+        if (sp.number_min    > 0) fprintf(f, "number=%d\n",        sp.number_min);
+        if (sp.wander_radius > 0) fprintf(f, "wander_radius=%d\n", sp.wander_radius);
+        fprintf(f, "\n");
+    }
+
+    fclose(f);
+    fprintf(stdout, "[SaveFlareMap] wrote %s\n", path);
+    return true;
+}
+
 bool ResolveTile(const FlareMap& map, uint16_t tile_id,
                  int* out_ts_idx, int* out_local_idx)
 {

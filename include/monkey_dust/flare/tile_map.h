@@ -148,6 +148,11 @@ struct FlareMap {
 // Load Flare .txt or Tiled .tmx map (format detected by file extension).
 bool LoadFlareMap(const char* path, FlareMap& out);
 
+// Serialize map back to Flare .txt format.
+// Skips layers with type == UNKNOWN. Enemy spawns become [enemy] blocks.
+// Returns false on I/O error.
+bool SaveFlareMap(const char* path, const FlareMap& map);
+
 // Map a tile_id to the owning tileset and its local index within that tileset.
 // Returns false when tile_id == 0 (empty) or no suitable tileset is found.
 bool ResolveTile(const FlareMap& map, uint16_t tile_id,

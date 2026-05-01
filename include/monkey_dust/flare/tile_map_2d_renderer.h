@@ -19,6 +19,13 @@ public:
     // Load atlas textures from the FlareMap's tileset_atlases paths.
     void SetAtlases(const FlareMap& map);
 
+    // Expose atlas textures so editor tools can render tile thumbnails.
+    MdTexture GetAtlas(int idx) const {
+        if (idx < 0 || idx >= atlas_count_) return {};
+        return atlases_[idx];
+    }
+    int GetAtlasCount() const { return atlas_count_; }
+
     // Render the map in 2D screen space.
     //   origin_x, origin_y : screen-pixel position of tile(0,0)'s grid anchor
     //   scale               : zoom factor (1.0 = native atlas pixels)

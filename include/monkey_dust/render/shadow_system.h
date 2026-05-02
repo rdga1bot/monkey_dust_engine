@@ -1,16 +1,20 @@
 #pragma once
 #include <monkey_dust/platform/math_types.h>
 #include <monkey_dust/render/ssbo.h>
-#include <monkey_dust/render/compute_shader.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/render/md_camera.h>
 #include <monkey_dust/render/md_shader.h>
 #include <monkey_dust/render/md_mesh.h>
-#include <cstdio>
-#include <cstring>
 #include <cmath>
+#include <cstdio>
+#include <cstdint>
 
 #ifdef MD_OPENGL43_ENABLED
 #include "glad.h"
+#endif
+
+#ifndef DEG2RAD
+#define DEG2RAD 0.01745329251f
 #endif
 
 // Vector4Transform was removed from raymath in Raylib 6.x.
@@ -66,37 +70,20 @@ public:
         mesh_     = npc_mesh;
         mesh_idx_ = npc_mesh.index_count;
 
-        for (int k = 0; k < NUM_CASCADES; ++k) {
-            glGenTextures(1, &shadow_tex_[k]);
-            glBindTexture(GL_TEXTURE_2D, shadow_tex_[k]);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24,
-                         MAP_SIZE, MAP_SIZE, 0,
-                         GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-            float border[4] = { 1.f, 1.f, 1.f, 1.f };
-            glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
-            glBindTexture(GL_TEXTURE_2D, 0);
-
-            glGenFramebuffers(1, &fbo_[k]);
-            glBindFramebuffer(GL_FRAMEBUFFER, fbo_[k]);
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                                   GL_TEXTURE_2D, shadow_tex_[k], 0);
-            glDrawBuffer(GL_NONE);
-            glReadBuffer(GL_NONE);
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        }
+        // 3 cascade depth textures + FBOs — managed by GpuDepthTexture.
+        // shadow_border=true: GL_CLAMP_TO_BORDER + white border for PCF off-map reads.
+        for (int k = 0; k < NUM_CASCADES; ++k)
+            shadow_depth_[k].Init(MAP_SIZE, MAP_SIZE, /*shadow_border=*/true);
 
         shadow_shader_ = MdLoadShader("shaders/shadow_csm.vert",
                                       "shaders/shadow_csm.frag");
         loc_lightVP_   = MdGetLoc(shadow_shader_, "lightViewProj");
 
-        shadow_cull_cs_.Load("shaders/shadow_cull.comp");
-        loc_svCamPos_  = shadow_cull_cs_.GetUniformLoc("camPos");
-        loc_svMaxDist_ = shadow_cull_cs_.GetUniformLoc("maxDistSq");
-        loc_svTotal_   = shadow_cull_cs_.GetUniformLoc("total_count");
+        // Shadow cull compute — GpuComputePipeline replaces raw ComputeShader.
+        shadow_cull_cs_.Create("shaders/shadow_cull.comp");
+        loc_svCamPos_  = shadow_cull_cs_.UniformLoc("camPos");
+        loc_svMaxDist_ = shadow_cull_cs_.UniformLoc("maxDistSq");
+        loc_svTotal_   = shadow_cull_cs_.UniformLoc("total_count");
 
         // MAX_SLOTS = 8192, indirect = 5 uint32 = 20 bytes
         shadow_vis_buf_.Init(8192 * (int)sizeof(uint32_t));
@@ -175,46 +162,40 @@ public:
 #ifdef MD_OPENGL43_ENABLED
         if (!init_ || active_npc_count <= 0) return;
 
-        // Reset indirect command (instanceCount = 0)
+        // Reset indirect command (instanceCount = 0).
         uint32_t cmd[5] = { (uint32_t)mesh_idx_, 0u, 0u, 0u, 0u };
         shadow_ind_buf_.Upload(cmd, 20, 0);
         shadow_vis_buf_.Bind(6);
         shadow_ind_buf_.Bind(7);
 
-        // Shadow cull: distance < 60 m → LOD_HIGH + LOD_MID
-        shadow_cull_cs_.Enable();
-        float cpf[3]   = { cam_pos_.x, cam_pos_.y, cam_pos_.z };
-        float maxDSq   = 60.f * 60.f;
-        int   total    = active_npc_count;
-        glUniform3fv(loc_svCamPos_,  1, cpf);
-        glUniform1f (loc_svMaxDist_, maxDSq);
-        glUniform1i (loc_svTotal_,   total);
-        shadow_cull_cs_.Dispatch(((unsigned)active_npc_count + 63u) / 64u, 1u, 1u);
-        shadow_cull_cs_.Disable();
-        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
-
-        // Depth pass per cascade
-        glUseProgram(shadow_shader_.id);
-        shadow_vis_buf_.Bind(6); // re-bind after cull compute
-        glCullFace(GL_FRONT);
-
-        for (int k = 0; k < NUM_CASCADES; ++k) {
-            glBindFramebuffer(GL_FRAMEBUFFER, fbo_[k]);
-            glViewport(0, 0, MAP_SIZE, MAP_SIZE);
-            glClear(GL_DEPTH_BUFFER_BIT);
-
-            glUniformMatrix4fv(loc_lightVP_, 1, GL_FALSE, mat4_ptr(lightViewProj[k]));
-            glBindVertexArray(mesh_.vao);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, shadow_ind_buf_.id);
-            glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, 0, 1, 0);
-            glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
-            glBindVertexArray(0);
+        // Shadow cull compute — GpuComputePass replaces raw ComputeShader dispatch.
+        {
+            float cpf[3] = { cam_pos_.x, cam_pos_.y, cam_pos_.z };
+            GpuComputePass cull;
+            cull.Begin(&shadow_cull_cs_);
+            cull.SetUniformVec3  (loc_svCamPos_,  cpf);
+            cull.SetUniformFloat (loc_svMaxDist_, 60.f * 60.f);
+            cull.SetUniformInt   (loc_svTotal_,   active_npc_count);
+            cull.Dispatch(((unsigned)active_npc_count + 63u) / 64u, 1u, 1u);
+            // STORAGE | COMMAND: indirect buffer written by compute, read by draw call.
+            cull.End(GpuComputePass::BARRIER_STORAGE_COMMAND);
         }
 
-        glCullFace(GL_BACK);
-        glUseProgram(0);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, screen_w_, screen_h_);
+        // Depth pass per cascade — GpuRenderPass manages FBO bind/viewport/clear.
+        MdUseShader(shadow_shader_);
+        shadow_vis_buf_.Bind(6); // re-bind after compute (may have unbound SSBOs)
+        glBindVertexArray(mesh_.vao);
+
+        for (int k = 0; k < NUM_CASCADES; ++k) {
+            GpuRenderPass pass;
+            pass.BeginDepthOnly({ &shadow_depth_[k], 1.0f, /*cull_front=*/true });
+            glUniformMatrix4fv(loc_lightVP_, 1, GL_FALSE, mat4_ptr(lightViewProj[k]));
+            GpuDrawIndexedIndirect(shadow_ind_buf_.id);
+            pass.End();
+        }
+
+        glBindVertexArray(0);
+        MdStopShader();
 #endif
     }
 
@@ -224,10 +205,9 @@ public:
 #ifdef MD_OPENGL43_ENABLED
         if (!init_) return;
 
-        for (int k = 0; k < NUM_CASCADES; ++k) {
-            glActiveTexture(GL_TEXTURE5 + k);
-            glBindTexture(GL_TEXTURE_2D, shadow_tex_[k]);
-        }
+        // GpuDepthTexture::Bind handles glActiveTexture + glBindTexture.
+        for (int k = 0; k < NUM_CASCADES; ++k)
+            shadow_depth_[k].Bind((uint32_t)(5 + k));
         glActiveTexture(GL_TEXTURE0);
 
         char nm[32];
@@ -251,12 +231,10 @@ public:
     void Shutdown() {
 #ifdef MD_OPENGL43_ENABLED
         if (!init_) return;
-        for (int k = 0; k < NUM_CASCADES; ++k) {
-            if (fbo_[k])        glDeleteFramebuffers(1, &fbo_[k]);
-            if (shadow_tex_[k]) glDeleteTextures(1,    &shadow_tex_[k]);
-        }
+        for (int k = 0; k < NUM_CASCADES; ++k)
+            shadow_depth_[k].Shutdown();
         MdUnloadShader(shadow_shader_);
-        shadow_cull_cs_.Unload();
+        shadow_cull_cs_.Destroy();
         shadow_vis_buf_.Shutdown();
         shadow_ind_buf_.Shutdown();
         init_ = false;
@@ -266,13 +244,12 @@ public:
 private:
     ShadowSystem() = default;
 
-    bool          init_    = false;
-    unsigned int  fbo_[NUM_CASCADES]        = {};
-    unsigned int  shadow_tex_[NUM_CASCADES] = {};
-    MdShader      shadow_shader_;
-    ComputeShader shadow_cull_cs_;
-    SSBO          shadow_vis_buf_;
-    SSBO          shadow_ind_buf_;
+    bool               init_     = false;
+    GpuDepthTexture    shadow_depth_[NUM_CASCADES]; // tex + FBO per cascade
+    MdShader           shadow_shader_;
+    GpuComputePipeline shadow_cull_cs_;             // shadow_cull.comp
+    SSBO               shadow_vis_buf_;
+    SSBO               shadow_ind_buf_;
     MdMesh        mesh_;
     int           mesh_idx_ = 0;
     Vec3          cam_pos_ = {};

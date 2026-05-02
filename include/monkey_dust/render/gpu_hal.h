@@ -198,6 +198,69 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GpuDepthTexture — depth texture + FBO attachment for offscreen depth passes.
+// Typical use: shadow map cascade (depth-only, no color output).
+// SDL_GPU: SDL_GPUTexture(SDL_GPU_TEXTUREFORMAT_D24_UNORM) used as depth target
+// ─────────────────────────────────────────────────────────────────────────────
+class GpuDepthTexture {
+public:
+    // shadow_border: adds GL_CLAMP_TO_BORDER + white border for PCF shadow sampling.
+    void Init(int w, int h, bool shadow_border = false);
+    void Shutdown();
+
+    // Bind for fragment shader sampling (shadow map lookup in NPC shader).
+    // SDL_GPU: SDL_BindGPUFragmentSamplers(cmd, unit, &binding, 1)
+    void Bind(uint32_t unit) const;
+
+    unsigned int FBO()     const { return fbo_; }
+    unsigned int Texture() const { return tex_; }
+    int Width()  const { return w_; }
+    int Height() const { return h_; }
+
+private:
+    unsigned int fbo_ = 0;
+    unsigned int tex_ = 0;
+    int w_ = 0, h_ = 0;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuRenderPass — scoped render pass bound to one or more attachments.
+// Current scope: depth-only passes (shadow maps).  Color passes TBD.
+//
+// SDL_GPU: SDL_BeginGPURenderPass / SDL_EndGPURenderPass with
+//   load_op = CLEAR (depth), store_op = STORE, no color target.
+// ─────────────────────────────────────────────────────────────────────────────
+class GpuRenderPass {
+public:
+    struct DepthDesc {
+        GpuDepthTexture* target;
+        float clear_depth = 1.0f;
+        bool  cull_front  = false; // GL_FRONT for shadow bias (Peter-Panning fix)
+    };
+
+    // Saves current viewport, binds FBO, sets viewport to target size, clears depth.
+    // SDL_GPU: SDL_BeginGPURenderPass(cmd, nullptr, 0, &depth_info)
+    void BeginDepthOnly(const DepthDesc& desc);
+
+    // Unbinds FBO (→ default framebuffer), restores viewport.
+    // SDL_GPU: SDL_EndGPURenderPass (no explicit viewport restore needed)
+    void End();
+
+private:
+    int  saved_vp_[4]  = {};
+    bool cull_front_   = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuDrawIndexedIndirect — indexed draw using a GPU-side indirect buffer.
+// Used by shadow pass and GPU-culled NPC pass.
+// SDL_GPU: SDL_DrawGPUIndexedPrimitivesIndirect(pass, buf, offset, draw_count)
+// ─────────────────────────────────────────────────────────────────────────────
+// Caller is responsible for VAO binding and active program setup.
+// Always draws GL_TRIANGLES (suitable for mesh geometry).
+void GpuDrawIndexedIndirect(unsigned int indirect_buf_id, uint32_t draw_count = 1);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GpuStaticBuffer — immutable GPU buffer loaded once from CPU data.
 // Use for static mesh geometry (position, normal, UV, index arrays).
 // SDL_GPU: SDL_CreateGPUBuffer(usage=VERTEX|INDEX) + SDL_UploadToGPUBuffer

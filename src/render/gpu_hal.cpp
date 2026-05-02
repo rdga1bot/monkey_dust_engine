@@ -233,6 +233,78 @@ void GpuComputePass::End(uint32_t barrier_flags) {
     pipeline_ = nullptr;
 }
 
+// ── GpuDepthTexture ───────────────────────────────────────────────────────────
+
+void GpuDepthTexture::Init(int w, int h, bool shadow_border) {
+    w_ = w; h_ = h;
+    glGenTextures(1, &tex_);
+    glBindTexture(GL_TEXTURE_2D, tex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0,
+                 GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    if (shadow_border) {
+        // Clamp-to-border with white (depth=1) ensures regions outside shadow map
+        // are treated as fully lit (PCF kernel reads off-map → 1.0 depth → no shadow).
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        float border[4] = { 1.f, 1.f, 1.f, 1.f };
+        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+    } else {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenFramebuffers(1, &fbo_);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex_, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void GpuDepthTexture::Shutdown() {
+    if (fbo_) { glDeleteFramebuffers(1, &fbo_); fbo_ = 0; }
+    if (tex_) { glDeleteTextures(1,    &tex_); tex_ = 0; }
+    w_ = h_ = 0;
+}
+
+void GpuDepthTexture::Bind(uint32_t unit) const {
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_2D, tex_);
+}
+
+// ── GpuRenderPass ─────────────────────────────────────────────────────────────
+
+void GpuRenderPass::BeginDepthOnly(const DepthDesc& desc) {
+    cull_front_ = desc.cull_front;
+    glGetIntegerv(GL_VIEWPORT, saved_vp_);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, desc.target->FBO());
+    glViewport(0, 0, desc.target->Width(), desc.target->Height());
+    glClearDepthf(desc.clear_depth);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    if (cull_front_) glCullFace(GL_FRONT);
+}
+
+void GpuRenderPass::End() {
+    if (cull_front_) glCullFace(GL_BACK);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(saved_vp_[0], saved_vp_[1], saved_vp_[2], saved_vp_[3]);
+    cull_front_ = false;
+}
+
+// ── GpuDrawIndexedIndirect ────────────────────────────────────────────────────
+
+void GpuDrawIndexedIndirect(unsigned int indirect_buf_id, uint32_t draw_count) {
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirect_buf_id);
+    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr,
+                                (GLsizei)draw_count, 0);
+    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+}
+
 // ── GpuStaticBuffer ───────────────────────────────────────────────────────────
 
 void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size) {

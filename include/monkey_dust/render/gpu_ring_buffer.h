@@ -51,8 +51,11 @@ public:
     // Call this AFTER all draw/compute calls that read from this buffer.
     void Advance();
 
-    uint32_t size_bytes() const { return size_; }
-    int      current()    const { return cur_; }
+    uint32_t     size_bytes()  const { return size_; }
+    int          current()     const { return cur_; }
+    // OpenGL internals used by GpuVertexBuffer::BindVertexBuffer.
+    unsigned int GLBuffer()    const { return gl_buf_; }
+    int64_t      GLOffset()    const { return (int64_t)cur_ * size_; }
 
 private:
     void WaitFence(int slot);

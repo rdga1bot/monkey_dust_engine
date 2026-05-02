@@ -1,13 +1,13 @@
 #pragma once
 #include <monkey_dust/render/particle_soa.h>
-#include <monkey_dust/render/md_shader.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/math_types.h>
-#ifdef MD_OPENGL43_ENABLED
-#include "glad.h"
-#endif
 
 #ifdef MD_OPENGL43_ENABLED
 
+// ParticleRenderer — point-sprite particle system.
+// Migrated to GpuPipeline + GpuVertexBuffer + GpuCommandBuffer (Action 3).
+// Previously used raw OpenGL (VAO/VBO + MdShader + glEnable calls directly).
 class ParticleRenderer {
 public:
     static ParticleRenderer& Get() {
@@ -22,11 +22,12 @@ public:
 private:
     ParticleRenderer() = default;
 
-    unsigned int particle_vbo_ = 0;
-    unsigned int particle_vao_ = 0;
-    MdShader     particle_shader_;
-    int          loc_viewProj_ = -1;
-    int          loc_camPos_   = -1;
+    GpuPipeline      pipeline_;
+    GpuVertexBuffer  vbuf_;
+    GpuCommandBuffer cmd_;
+
+    int loc_viewProj_ = -1;
+    int loc_camPos_   = -1;
 };
 
 #endif // MD_OPENGL43_ENABLED

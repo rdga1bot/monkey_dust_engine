@@ -141,6 +141,63 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GpuComputePipeline — immutable compute shader program.
+// SDL_GPU: SDL_CreateGPUComputePipeline (SPIR-V binary; see shaders/spirv/)
+// ─────────────────────────────────────────────────────────────────────────────
+class GpuComputePipeline {
+public:
+    bool Create (const char* glsl_path);   // compile + link compute shader
+    void Destroy();
+    int  UniformLoc(const char* name) const;
+
+private:
+    friend class GpuComputePass;
+    unsigned int program_ = 0;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuComputePass — scoped compute dispatch with explicit memory barrier.
+//
+// Usage:
+//   pass.Begin(&pipeline);     // bind compute pipeline
+//   // bind SSBOs / ring buffers before or here
+//   pass.SetUniform*(...);     // optional uniforms
+//   pass.Dispatch(gx, gy, gz); // one or more dispatches
+//   pass.End(BARRIER_STORAGE); // glMemoryBarrier + unbind
+//
+// SDL_GPU:
+//   Begin    → SDL_BeginGPUComputePass + SDL_BindGPUComputePipeline
+//   Dispatch → SDL_DispatchGPUCompute
+//   End      → SDL_EndGPUComputePass  (barriers implicit via resource declarations)
+// ─────────────────────────────────────────────────────────────────────────────
+class GpuComputePass {
+public:
+    // Barrier flags for End() — maps to GL_*_BARRIER_BIT constants.
+    // SDL_GPU: expressed via SDL_GPUStorageBufferReadWriteBinding at Begin.
+    static constexpr uint32_t BARRIER_STORAGE         = 1u; // GL_SHADER_STORAGE_BARRIER_BIT
+    static constexpr uint32_t BARRIER_COMMAND         = 2u; // GL_COMMAND_BARRIER_BIT
+    static constexpr uint32_t BARRIER_STORAGE_COMMAND = 3u; // both — for indirect draw output
+
+    void Begin   (GpuComputePipeline* pipeline);
+
+    // Uniform setters — SDL_GPU: SDL_PushGPUComputeUniformData(cmd, slot, data, size)
+    void SetUniformFloat    (int loc, float v);
+    void SetUniformInt      (int loc, int v);
+    void SetUniformVec3     (int loc, const float* v3);
+    void SetUniformVec4Array(int loc, const float* v4, int count);
+
+    // SDL_GPU: SDL_DispatchGPUCompute
+    void Dispatch(uint32_t gx, uint32_t gy, uint32_t gz);
+
+    // glUseProgram(0) + glMemoryBarrier.
+    // barrier_flags: BARRIER_STORAGE | BARRIER_COMMAND (or both).
+    void End(uint32_t barrier_flags = BARRIER_STORAGE);
+
+private:
+    GpuComputePipeline* pipeline_ = nullptr;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GpuStaticBuffer — immutable GPU buffer loaded once from CPU data.
 // Use for static mesh geometry (position, normal, UV, index arrays).
 // SDL_GPU: SDL_CreateGPUBuffer(usage=VERTEX|INDEX) + SDL_UploadToGPUBuffer

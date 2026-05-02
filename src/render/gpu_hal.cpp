@@ -3,6 +3,8 @@
 #ifdef MD_OPENGL43_ENABLED
 #include "glad.h"
 #include <monkey_dust/platform/md_log.h>
+#include <cstdlib>
+#include <cstdio>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -133,6 +135,101 @@ void GpuCommandBuffer::EndPass() {
     if (!r.cull_back)    glEnable(GL_CULL_FACE);
     if (r.point_size)    glDisable(GL_PROGRAM_POINT_SIZE);
     MdStopShader();
+    pipeline_ = nullptr;
+}
+
+// ── GpuComputePipeline ────────────────────────────────────────────────────────
+
+static char* ReadTextFile(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return nullptr;
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    rewind(f);
+    char* buf = (char*)malloc((size_t)len + 1);
+    if (!buf) { fclose(f); return nullptr; }
+    fread(buf, 1, (size_t)len, f);
+    buf[len] = '\0';
+    fclose(f);
+    return buf;
+}
+
+bool GpuComputePipeline::Create(const char* path) {
+    char* src = ReadTextFile(path);
+    if (!src) {
+        MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] file not found: %s", path);
+        return false;
+    }
+    GLuint sh = glCreateShader(GL_COMPUTE_SHADER);
+    glShaderSource(sh, 1, (const GLchar**)&src, nullptr);
+    glCompileShader(sh);
+    free(src);
+
+    GLint ok = 0;
+    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+    if (!ok) {
+        char log[512]; glGetShaderInfoLog(sh, 512, nullptr, log);
+        MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] compile error %s: %s", path, log);
+        glDeleteShader(sh);
+        return false;
+    }
+    program_ = glCreateProgram();
+    glAttachShader(program_, sh);
+    glLinkProgram(program_);
+    glDeleteShader(sh);
+
+    glGetProgramiv(program_, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        char log[512]; glGetProgramInfoLog(program_, 512, nullptr, log);
+        MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] link error %s: %s", path, log);
+        glDeleteProgram(program_);
+        program_ = 0;
+        return false;
+    }
+    return true;
+}
+
+void GpuComputePipeline::Destroy() {
+    if (program_) { glDeleteProgram(program_); program_ = 0; }
+}
+
+int GpuComputePipeline::UniformLoc(const char* name) const {
+    return program_ ? (int)glGetUniformLocation(program_, name) : -1;
+}
+
+// ── GpuComputePass ────────────────────────────────────────────────────────────
+
+void GpuComputePass::Begin(GpuComputePipeline* pipeline) {
+    pipeline_ = pipeline;
+    if (pipeline_ && pipeline_->program_) glUseProgram(pipeline_->program_);
+}
+
+void GpuComputePass::SetUniformFloat(int loc, float v) {
+    if (loc >= 0) glUniform1f(loc, v);
+}
+
+void GpuComputePass::SetUniformInt(int loc, int v) {
+    if (loc >= 0) glUniform1i(loc, v);
+}
+
+void GpuComputePass::SetUniformVec3(int loc, const float* v3) {
+    if (loc >= 0) glUniform3fv(loc, 1, v3);
+}
+
+void GpuComputePass::SetUniformVec4Array(int loc, const float* v4, int count) {
+    if (loc >= 0) glUniform4fv(loc, count, v4);
+}
+
+void GpuComputePass::Dispatch(uint32_t gx, uint32_t gy, uint32_t gz) {
+    glDispatchCompute(gx, gy, gz);
+}
+
+void GpuComputePass::End(uint32_t barrier_flags) {
+    glUseProgram(0);
+    GLbitfield bits = 0;
+    if (barrier_flags & BARRIER_STORAGE) bits |= GL_SHADER_STORAGE_BARRIER_BIT;
+    if (barrier_flags & BARRIER_COMMAND)  bits |= GL_COMMAND_BARRIER_BIT;
+    if (bits) glMemoryBarrier(bits);
     pipeline_ = nullptr;
 }
 

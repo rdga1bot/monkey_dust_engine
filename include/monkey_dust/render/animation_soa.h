@@ -1,6 +1,7 @@
 #pragma once
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/gpu_ring_buffer.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -59,6 +60,8 @@ public:
         bones_ssbo_.Init(MAX_ANIMATED_NPC * MAX_BONES * 64);
         // anim_state_ring_ is written by CPU each frame — ring-buffered.
         anim_state_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState)), 5);
+        // Skinning compute pipeline — loaded once, dispatched each frame.
+        skin_pipeline_.Create("shaders/skinning.comp");
         LoadDefaults();
     }
 
@@ -124,10 +127,24 @@ public:
         bones_ssbo_.Bind(4);
     }
 
+    // Dispatch skinning compute pass and insert GL_SHADER_STORAGE_BARRIER_BIT.
+    // SSBOs 4+5 must already be bound (Upload() does this).
+    // SDL_GPU: SDL_BeginGPUComputePass + SDL_DispatchGPUCompute + SDL_EndGPUComputePass
+    void DispatchSkinning() {
+#ifdef MD_OPENGL43_ENABLED
+        static constexpr uint32_t SKIN_GROUPS = (MAX_ANIMATED_NPC + 63u) / 64u;
+        GpuComputePass pass;
+        pass.Begin(&skin_pipeline_);
+        pass.Dispatch(SKIN_GROUPS, 1u, 1u);
+        pass.End(GpuComputePass::BARRIER_STORAGE);
+#endif
+    }
+
     // Call once per frame AFTER all draw/compute that read anim_state_ring_.
     void AdvanceFrame() { anim_state_ring_.Advance(); }
 
     void Shutdown() {
+        skin_pipeline_.Destroy();
         bones_ssbo_.Shutdown();
         anim_state_ring_.Shutdown();
     }
@@ -145,8 +162,9 @@ private:
     AnimationClip clips_[MAX_ANIM_CLIPS];
     int           clips_count_ = 0;
 
-    SSBO          bones_ssbo_;      // compute output — regular SSBO
-    GpuRingBuffer anim_state_ring_; // CPU per-frame — ring-buffered
+    SSBO               bones_ssbo_;      // compute output — regular SSBO
+    GpuRingBuffer      anim_state_ring_; // CPU per-frame — ring-buffered
+    GpuComputePipeline skin_pipeline_;   // skinning compute shader
 
     void LoadDefaults() {
         clips_count_ = 3;

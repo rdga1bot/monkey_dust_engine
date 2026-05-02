@@ -21,7 +21,7 @@ void TransformSoA::Init() {
         faction[i] = 0;
     }
     active_count = 0;
-    transform_ssbo_.Init(MAX_SLOTS * 4 * sizeof(float));
+    transform_ring_.Init(MAX_SLOTS * 4 * sizeof(float), 0);
     faction_ssbo_.Init(MAX_SLOTS * sizeof(uint32_t));
 }
 
@@ -81,17 +81,31 @@ void TransformSoA::FlushAoStoSoA(entt::registry& reg) {
 
 void TransformSoA::UploadToGPU() {
     if (active_count <= 0) return;
-    static float    tf[MAX_SLOTS * 4];
-    static uint32_t ff[MAX_SLOTS];
-    for (int i = 0; i < active_count; ++i) {
-        tf[i*4+0] = px[i];
-        tf[i*4+1] = pz[i];
-        tf[i*4+2] = py[i];
-        tf[i*4+3] = rot_y[i];
-        ff[i]     = (uint32_t)faction[i];
+
+    // Write transform data directly into the ring buffer's current slot (zero-copy).
+    const uint32_t xzyr_bytes = (uint32_t)active_count * 4 * sizeof(float);
+    float* dst = static_cast<float*>(transform_ring_.MapWrite());
+    if (dst) {
+        for (int i = 0; i < active_count; ++i) {
+            dst[i*4+0] = px[i];
+            dst[i*4+1] = pz[i];
+            dst[i*4+2] = py[i];
+            dst[i*4+3] = rot_y[i];
+        }
+        transform_ring_.Unmap();
     }
-    transform_ssbo_.Upload(tf, active_count * 4 * (int)sizeof(float), 0);
+    transform_ring_.BindStorage(0);
+
+    // Faction data rarely changes → regular SSBO upload.
+    static uint32_t ff[MAX_SLOTS];
+    for (int i = 0; i < active_count; ++i)
+        ff[i] = (uint32_t)faction[i];
     faction_ssbo_.Upload(ff, active_count * (int)sizeof(uint32_t), 0);
+    faction_ssbo_.Bind(3);
+}
+
+void TransformSoA::AdvanceFrame() {
+    transform_ring_.Advance();
 }
 
 void TransformSoA::BulkComputeDistSq(float cam_x, float cam_z) {

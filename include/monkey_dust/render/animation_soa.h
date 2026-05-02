@@ -1,5 +1,6 @@
 #pragma once
 #include <monkey_dust/render/ssbo.h>
+#include <monkey_dust/render/gpu_ring_buffer.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -54,8 +55,10 @@ public:
         for (int i = 0; i < MAX_ANIMATED_NPC; ++i)
             states_[i].slot = (uint32_t)i;
         // mat4 = 64 bytes; finalBoneMatrices: MAX_ANIMATED_NPC * MAX_BONES * 64
+        // bones_ssbo_ is written by skinning.comp (not CPU) — regular SSBO.
         bones_ssbo_.Init(MAX_ANIMATED_NPC * MAX_BONES * 64);
-        anim_state_ssbo_.Init(MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState));
+        // anim_state_ring_ is written by CPU each frame — ring-buffered.
+        anim_state_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState)), 5);
         LoadDefaults();
     }
 
@@ -106,19 +109,27 @@ public:
     }
 
     void Upload() {
-        anim_state_ssbo_.Upload(states_, MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState));
-        anim_state_ssbo_.Bind(5);
+        // Write anim states into ring buffer's current slot (zero-copy via persistent map).
+        void* dst = anim_state_ring_.MapWrite();
+        if (dst) {
+            memcpy(dst, states_, MAX_ANIMATED_NPC * sizeof(AnimNpcState));
+            anim_state_ring_.Unmap();
+        }
+        anim_state_ring_.BindStorage(5);
         bones_ssbo_.Bind(4);
     }
 
     void BindSSBOs() {
-        anim_state_ssbo_.Bind(5);
+        anim_state_ring_.BindStorage(5);
         bones_ssbo_.Bind(4);
     }
 
+    // Call once per frame AFTER all draw/compute that read anim_state_ring_.
+    void AdvanceFrame() { anim_state_ring_.Advance(); }
+
     void Shutdown() {
         bones_ssbo_.Shutdown();
-        anim_state_ssbo_.Shutdown();
+        anim_state_ring_.Shutdown();
     }
 
     // Accessors for editor panels (replaces direct field access — БОРГ-7/8).
@@ -134,8 +145,8 @@ private:
     AnimationClip clips_[MAX_ANIM_CLIPS];
     int           clips_count_ = 0;
 
-    SSBO bones_ssbo_;
-    SSBO anim_state_ssbo_;
+    SSBO          bones_ssbo_;      // compute output — regular SSBO
+    GpuRingBuffer anim_state_ring_; // CPU per-frame — ring-buffered
 
     void LoadDefaults() {
         clips_count_ = 3;

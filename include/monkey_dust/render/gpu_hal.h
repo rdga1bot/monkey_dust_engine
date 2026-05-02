@@ -140,4 +140,94 @@ private:
     GpuPipeline* pipeline_ = nullptr;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuStaticBuffer — immutable GPU buffer loaded once from CPU data.
+// Use for static mesh geometry (position, normal, UV, index arrays).
+// SDL_GPU: SDL_CreateGPUBuffer(usage=VERTEX|INDEX) + SDL_UploadToGPUBuffer
+// ─────────────────────────────────────────────────────────────────────────────
+class GpuStaticBuffer {
+public:
+    void Init(unsigned int gl_target,   // GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER
+              const void* data,
+              uint32_t    size_bytes);
+    void Shutdown();
+
+    // Bind for legacy-VAO style drawing (attrib pointer already stored in VAO).
+    void Bind(unsigned int gl_target) const;
+
+    // GL 4.3 DSA vertex binding (no current VAO needed).
+    // SDL_GPU: slot corresponds to SDL_GPUVertexBufferDescription.slot
+    void BindVertex(uint32_t slot, uint32_t stride, uint64_t offset = 0) const;
+
+    unsigned int GLBuffer() const { return gl_buf_; }
+
+    // Transfer ownership: returns GL ID and nulls this object (no double-delete).
+    // Used by MdMesh::BuildMesh to place the buffer ID back into legacy struct fields.
+    unsigned int Release() {
+        unsigned int id = gl_buf_;
+        gl_buf_ = 0;
+        return id;
+    }
+
+private:
+    unsigned int gl_buf_ = 0;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuSamplerDesc — texture sampling parameters.
+// SDL_GPU: SDL_GPUSamplerCreateInfo
+// ─────────────────────────────────────────────────────────────────────────────
+struct GpuSamplerDesc {
+    enum class Filter : uint8_t { NEAREST, LINEAR, LINEAR_MIPMAP };
+    enum class Wrap   : uint8_t { REPEAT, CLAMP_TO_EDGE };
+
+    Filter min_filter = Filter::LINEAR_MIPMAP;
+    Filter mag_filter = Filter::LINEAR;
+    Wrap   wrap_s     = Wrap::REPEAT;
+    Wrap   wrap_t     = Wrap::REPEAT;
+    bool   gen_mipmap = false;
+    bool   flip_v     = false;  // stbi flip (Flare atlas convention, DO NOT change)
+
+    // Presets
+    static GpuSamplerDesc Default() { return {}; }
+    static GpuSamplerDesc PixelArt() {
+        return { Filter::LINEAR_MIPMAP, Filter::NEAREST,
+                 Wrap::CLAMP_TO_EDGE, Wrap::CLAMP_TO_EDGE, true, true };
+    }
+    static GpuSamplerDesc Lut() {
+        return { Filter::LINEAR, Filter::LINEAR,
+                 Wrap::CLAMP_TO_EDGE, Wrap::CLAMP_TO_EDGE, false, false };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuTexture — RGBA texture + sampler state.
+// SDL_GPU: SDL_GPUTexture + SDL_CreateGPUSampler + SDL_UploadToGPUTexture
+// ─────────────────────────────────────────────────────────────────────────────
+class GpuTexture {
+public:
+    // Load from file (stb_image). Returns false on failure.
+    bool InitFromFile  (const char* path,              const GpuSamplerDesc& s = {});
+    // Upload raw RGBA8 pixel data.
+    bool InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSamplerDesc& s = {});
+    void Shutdown();
+
+    // Bind to texture unit.
+    // SDL_GPU: SDL_BindGPUFragmentSamplers(cmd, unit, &binding, 1)
+    void Bind(uint32_t unit) const;
+
+    int          Width()     const { return w_; }
+    int          Height()    const { return h_; }
+    unsigned int GLTexture() const { return id_; }
+    bool         Valid()     const { return id_ != 0; }
+
+    // Transfer ownership (same pattern as GpuStaticBuffer::Release).
+    unsigned int Release() { unsigned int t = id_; id_ = 0; return t; }
+
+private:
+    void ApplySampler(const GpuSamplerDesc& s) const;
+    unsigned int id_ = 0;
+    int w_ = 0, h_ = 0;
+};
+
 #endif // MD_OPENGL43_ENABLED

@@ -136,4 +136,89 @@ void GpuCommandBuffer::EndPass() {
     pipeline_ = nullptr;
 }
 
+// ── GpuStaticBuffer ───────────────────────────────────────────────────────────
+
+void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size) {
+    glGenBuffers(1, &gl_buf_);
+    glBindBuffer(target, gl_buf_);
+    glBufferData(target, (GLsizeiptr)size, data, GL_STATIC_DRAW);
+    glBindBuffer(target, 0);
+}
+
+void GpuStaticBuffer::Shutdown() {
+    if (gl_buf_) { glDeleteBuffers(1, &gl_buf_); gl_buf_ = 0; }
+}
+
+void GpuStaticBuffer::Bind(unsigned int target) const {
+    glBindBuffer(target, gl_buf_);
+}
+
+void GpuStaticBuffer::BindVertex(uint32_t slot, uint32_t stride, uint64_t offset) const {
+    glBindVertexBuffer((GLuint)slot, gl_buf_, (GLintptr)offset, (GLsizei)stride);
+}
+
+// ── GpuTexture ────────────────────────────────────────────────────────────────
+
+// stb_image declarations (implementation from libraylib.a or stb_image_impl.cpp)
+#include "stb_image.h"
+#include <cstdio>
+
+static GLenum ToGLFilter(GpuSamplerDesc::Filter f, bool is_min) {
+    switch (f) {
+    case GpuSamplerDesc::Filter::NEAREST:       return GL_NEAREST;
+    case GpuSamplerDesc::Filter::LINEAR:        return GL_LINEAR;
+    case GpuSamplerDesc::Filter::LINEAR_MIPMAP: return is_min ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR;
+    }
+    return GL_LINEAR;
+}
+
+static GLenum ToGLWrap(GpuSamplerDesc::Wrap w) {
+    return (w == GpuSamplerDesc::Wrap::CLAMP_TO_EDGE) ? GL_CLAMP_TO_EDGE : GL_REPEAT;
+}
+
+void GpuTexture::ApplySampler(const GpuSamplerDesc& s) const {
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLint)ToGLFilter(s.min_filter, true));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)ToGLFilter(s.mag_filter, false));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     (GLint)ToGLWrap(s.wrap_s));
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     (GLint)ToGLWrap(s.wrap_t));
+    if (s.gen_mipmap) glGenerateMipmap(GL_TEXTURE_2D);
+}
+
+bool GpuTexture::InitFromFile(const char* path, const GpuSamplerDesc& s) {
+    int ch;
+    stbi_set_flip_vertically_on_load(s.flip_v ? 1 : 0);
+    uint8_t* data = stbi_load(path, &w_, &h_, &ch, 4);
+    stbi_set_flip_vertically_on_load(0);
+    if (!data) {
+        fprintf(stderr, "[GpuTexture] load failed: %s\n", path);
+        return false;
+    }
+    glGenTextures(1, &id_);
+    glBindTexture(GL_TEXTURE_2D, id_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w_, h_, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    ApplySampler(s);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    stbi_image_free(data);
+    return true;
+}
+
+bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSamplerDesc& s) {
+    w_ = w; h_ = h;
+    glGenTextures(1, &id_);
+    glBindTexture(GL_TEXTURE_2D, id_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba8);
+    ApplySampler(s);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return true;
+}
+
+void GpuTexture::Shutdown() {
+    if (id_) { glDeleteTextures(1, &id_); id_ = 0; w_ = h_ = 0; }
+}
+
+void GpuTexture::Bind(uint32_t unit) const {
+    glActiveTexture(GL_TEXTURE0 + unit);
+    glBindTexture(GL_TEXTURE_2D, id_);
+}
+
 #endif // MD_OPENGL43_ENABLED

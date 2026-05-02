@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 file(GLOB_RECURSE ENGINE_SRC src/*.cpp)
+# stb_image_impl.cpp will be activated once game/ also drops Raylib (which
+# provides stbi_* via rtextures.c).  Until then, keep it excluded to avoid
+# duplicate-symbol link errors when the game links both engine + raylib.
+list(FILTER ENGINE_SRC EXCLUDE REGEX "stb_image_impl\\.cpp$")
+# glad_impl.cpp must NOT be in the engine lib: game gets glad from Raylib (symbol
+# conflict). Each standalone binary (editor) compiles it directly.
+list(FILTER ENGINE_SRC EXCLUDE REGEX "glad_impl\\.cpp$")
 add_library(monkey_dust_engine STATIC ${ENGINE_SRC})
 add_library(monkey_dust::engine ALIAS monkey_dust_engine)
 
@@ -19,30 +26,34 @@ target_include_directories(monkey_dust_engine
     PRIVATE ${CMAKE_SOURCE_DIR}/third_party/recastnavigation/DetourCrowd/Include
     PRIVATE ${CMAKE_SOURCE_DIR}/third_party/imgui
     PRIVATE /usr/include/lua5.4
-    # Raylib headers; external/ accessed as "external/glad.h" via this base path
-    PRIVATE ${CMAKE_SOURCE_DIR}/third_party/raylib/src
-    # NOTE: do NOT add raylib/src/external directly — it contains a Windows-only
-    # dirent.h stub that shadows the Linux system <dirent.h>
+    # Vendor: glad, stb headers — PUBLIC so game/ and tools/ can find them too
+    PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor
 )
 
-# Raylib provides the OpenGL/glad headers
-target_link_libraries(monkey_dust_engine PUBLIC raylib)
+if(USE_SDL3)
+    # M12.16: SDL3 build is Raylib-free at the engine level.
+    # GLM provides math types; MD_LOG_NO_RAYLIB replaces TraceLog with fprintf.
+    # Raylib stays in game/ (for DrawMesh* etc.) but is no longer an engine dep.
+    target_compile_definitions(monkey_dust_engine PUBLIC USE_SDL3 USE_GLM MD_LOG_NO_RAYLIB)
+    target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3)
+    target_include_directories(monkey_dust_engine PRIVATE
+        ${CMAKE_SOURCE_DIR}/third_party/imgui/backends)
+else()
+    # Legacy Raylib path: engine links Raylib for math types + TraceLog.
+    target_link_libraries(monkey_dust_engine PUBLIC raylib)
+    target_include_directories(monkey_dust_engine PRIVATE
+        ${CMAKE_SOURCE_DIR}/third_party/raylib/src
+        ${CMAKE_SOURCE_DIR}/third_party/rlImGui)
+endif()
+
 target_link_libraries(monkey_dust_engine PRIVATE
     Recast Detour DetourCrowd
     lua5.4
 )
 
-if(USE_SDL3)
-    target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3)
-    target_compile_definitions(monkey_dust_engine PUBLIC USE_SDL3)
-    target_include_directories(monkey_dust_engine PRIVATE
-        ${CMAKE_SOURCE_DIR}/third_party/imgui/backends)
-else()
-    target_include_directories(monkey_dust_engine PRIVATE
-        ${CMAKE_SOURCE_DIR}/third_party/rlImGui)
-endif()
-
-if(USE_GLM)
+if(USE_GLM AND NOT USE_SDL3)
+    # In SDL3 path USE_GLM is already set above; this handles explicit -DUSE_GLM
+    # without USE_SDL3 (uncommon but supported).
     target_compile_definitions(monkey_dust_engine PUBLIC USE_GLM)
 endif()
 if(MD_OPENGL43)

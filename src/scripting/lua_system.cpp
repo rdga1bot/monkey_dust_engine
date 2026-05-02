@@ -1,5 +1,5 @@
 #include <monkey_dust/scripting/lua_system.h>
-#include "raylib.h"
+#include <monkey_dust/platform/md_log.h>
 #include <cstring>
 #include <cstdint>
 #include <dirent.h>
@@ -10,19 +10,19 @@ void LuaSystem::hook(lua_State* L, lua_Debug* /*ar*/) {
 
 int LuaSystem::md_log(lua_State* L) {
     const char* msg = lua_tostring(L, 1);
-    if (msg) TraceLog(LOG_INFO, "[Lua] %s", msg);
+    if (msg) MD_LOG(MD_LOG_INFO, "[Lua] %s", msg);
     return 0;
 }
 
 bool LuaSystem::LoadFile(const char* path) {
     if (luaL_dofile(L_, path) != LUA_OK) {
         const char* err = lua_tostring(L_, -1);
-        TraceLog(LOG_WARNING, "[LuaSystem] Load error %s: %s",
+        MD_LOG(MD_LOG_WARNING, "[LuaSystem] Load error %s: %s",
                  path, err ? err : "?");
         lua_pop(L_, 1);
         return false;
     }
-    TraceLog(LOG_INFO, "[LuaSystem] Loaded: %s", path);
+    MD_LOG(MD_LOG_INFO, "[LuaSystem] Loaded: %s", path);
     return true;
 }
 
@@ -38,7 +38,7 @@ bool LuaSystem::Init(const char* scripts_dir) {
 
     DIR* dir = opendir(scripts_dir);
     if (!dir) {
-        TraceLog(LOG_WARNING, "[LuaSystem] Cannot open scripts dir: %s", scripts_dir);
+        MD_LOG(MD_LOG_WARNING, "[LuaSystem] Cannot open scripts dir: %s", scripts_dir);
         return true;
     }
     struct dirent* ent;
@@ -77,7 +77,7 @@ BTStatus LuaSystem::CallAction(const char* func_name, entt::entity e) {
 
     if (lua_pcall(L_, 1, 1, 0) != LUA_OK) {
         const char* err = lua_tostring(L_, -1);
-        TraceLog(LOG_WARNING, "[LuaSystem] Error in %s: %s",
+        MD_LOG(MD_LOG_WARNING, "[LuaSystem] Error in %s: %s",
                  func_name, err ? err : "?");
         lua_pop(L_, 1);
         return BTStatus::Failure;

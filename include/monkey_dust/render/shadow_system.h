@@ -2,7 +2,7 @@
 #include <monkey_dust/platform/math_types.h>
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/compute_shader.h>
-#include <monkey_dust/render/md_camera.h>  // pulls in raylib.h (Camera3D) + math_types.h
+#include <monkey_dust/render/md_camera.h>
 #include <monkey_dust/render/md_shader.h>
 #include <monkey_dust/render/md_mesh.h>
 #include <cstdio>
@@ -10,7 +10,7 @@
 #include <cmath>
 
 #ifdef MD_OPENGL43_ENABLED
-#include "external/glad.h"
+#include "glad.h"
 #endif
 
 // Vector4Transform was removed from raymath in Raylib 6.x.
@@ -28,8 +28,6 @@ static inline Vec4 ShadowVec4Transform(Vec4 v, Mat4 m) {
 }
 #endif
 
-// Convert Raylib Vector3 → Vec3 (no-op in non-GLM; explicit in GLM mode).
-static inline Vec3 RlToVec3(Vector3 v) { return { v.x, v.y, v.z }; }
 
 // ─────────────────────────────────────────────────────────
 // ShadowSystem — 3-cascade CSM for the directional sun.
@@ -108,19 +106,17 @@ public:
     }
 
     // Recompute light-space VP matrices from camera frustum corners.
-    void Update(const MdCamera& camera, Vec3 sun_dir) {
-        Camera3D rc = camera.ToRaylib();
-        Update(rc, sun_dir);
-    }
-    void Update(const Camera3D& camera, Vec3 sun_dir) {
+    void Update(const MdCamera& camera, Vec3 sun_dir, int sw, int sh) {
 #ifdef MD_OPENGL43_ENABLED
         if (!init_) return;
-        cam_pos_ = RlToVec3(camera.position);
+        cam_pos_  = camera.pos;
+        screen_w_ = (sw > 0) ? sw : 1280;
+        screen_h_ = (sh > 0) ? sh : 720;
 
-        float aspect = (float)GetScreenWidth() / (float)GetScreenHeight();
+        float aspect = (float)screen_w_ / (float)screen_h_;
         float fovY   = camera.fovy * DEG2RAD;
 
-        Vec3 fwd   = vec3_norm(vec3_sub(RlToVec3(camera.target), RlToVec3(camera.position)));
+        Vec3 fwd   = vec3_norm(vec3_sub(camera.target, camera.pos));
         Vec3 right = vec3_norm(vec3_cross(fwd, Vec3{ 0.f, 1.f, 0.f }));
         Vec3 up_c  = vec3_cross(right, fwd);
 
@@ -128,7 +124,7 @@ public:
         Vec3 lup    = (fabsf(sun_dir.y) < 0.99f) ?
                        Vec3{ 0.f, 1.f, 0.f } : Vec3{ 1.f, 0.f, 0.f };
 
-        Vec3 cam_p = RlToVec3(camera.position);
+        Vec3 cam_p = camera.pos;
         for (int k = 0; k < NUM_CASCADES; ++k) {
             float nk = SPLITS[k],  fk = SPLITS[k + 1];
             float tanH = tanf(fovY * 0.5f);
@@ -218,7 +214,7 @@ public:
         glCullFace(GL_BACK);
         glUseProgram(0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, GetScreenWidth(), GetScreenHeight());
+        glViewport(0, 0, screen_w_, screen_h_);
 #endif
     }
 
@@ -282,4 +278,5 @@ private:
     Vec3          cam_pos_ = {};
     int  loc_lightVP_  = -1;
     int  loc_svCamPos_ = -1, loc_svMaxDist_ = -1, loc_svTotal_ = -1;
+    int  screen_w_ = 1280, screen_h_ = 720;
 };

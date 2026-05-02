@@ -1,9 +1,9 @@
 #include <monkey_dust/render/md_texture.h>
 
 #ifdef MD_OPENGL43_ENABLED
-#include "external/glad.h"
+#include "glad.h"
 // stb_image declarations only — implementation is already compiled into libraylib.a
-#include "external/stb_image.h"
+#include "stb_image.h"
 #include <cstdio>
 
 MdTexture MdLoadTexture(const char* path) {

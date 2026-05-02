@@ -1,7 +1,7 @@
 #include <monkey_dust/render/md_shader.h>
 
 #ifdef MD_OPENGL43_ENABLED
-#include "external/glad.h"
+#include "glad.h"
 #include <cstdio>
 #include <cstdlib>
 

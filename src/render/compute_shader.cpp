@@ -3,7 +3,7 @@
 #ifdef MD_OPENGL43_ENABLED
 #include <cstdio>
 #include <cstdlib>
-#include "external/glad.h"
+#include "glad.h"
 
 static char* LoadSourceFile(const char* path) {
     FILE* f = fopen(path, "rb");

@@ -1,7 +1,7 @@
 #include <monkey_dust/world/transform_soa.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ecs/registry.h>
-#include "raylib.h"   // TraceLog
+#include <monkey_dust/platform/md_log.h>
 #include <cstring>
 #include <cmath>
 
@@ -27,7 +27,7 @@ void TransformSoA::Init() {
 
 uint32_t TransformSoA::Alloc(entt::entity e, float x, float z, uint8_t faction_id) {
     if (active_count >= MAX_SLOTS) {
-        TraceLog(LOG_WARNING, "[TransformSoA] Alloc: out of slots (%d)", MAX_SLOTS);
+        MD_LOG(MD_LOG_WARNING, "[TransformSoA] Alloc: out of slots (%d)", MAX_SLOTS);
         return INVALID_SLOT;
     }
     uint32_t slot = (uint32_t)active_count++;
@@ -162,7 +162,7 @@ uint32_t TransformSoA::GetSlotForEntity(entt::entity e) const {
 void TransformSoA::AssignSlot(entt::entity e, uint32_t slot,
                                float x, float z, uint8_t faction_id) {
     if (slot >= MAX_SLOTS) {
-        TraceLog(LOG_WARNING, "[TransformSoA] AssignSlot: slot %u out of range", slot);
+        MD_LOG(MD_LOG_WARNING, "[TransformSoA] AssignSlot: slot %u out of range", slot);
         return;
     }
     px[slot]    = x;

@@ -7,24 +7,26 @@ namespace md::flare {
 
 struct BillboardInstance {
     float    x, y, z;         // world center
-    float    width;
-    float    height;
+    float    width, height;
     float    u0, v0, u1, v1;  // atlas UV rect [0,1]
     uint8_t  r, g, b, a;      // tint color
+    uint8_t  atlas_idx = 0;   // which atlas slot [0..MAX_ATLAS-1]
 };
 
 constexpr int MAX_BILLBOARDS = 4096;
 
 // Renders Flare 2D sprites as camera-facing quads in 3D world space.
-// One shared sprite-atlas texture for all billboards per frame.
-// Uses alpha-test (discard) — no depth sort required.
+// Supports up to MAX_ATLAS=4 sprite atlases per frame.
+// Instances are sorted CPU-side by atlas_idx; one draw call per atlas group.
 //
 // Per-frame usage:
-//   BeginFrame()              — reset submitted list
-//   Submit(inst) × N          — queue instances
-//   Render(cam)               — one instanced draw call
+//   BeginFrame()                          — reset submitted list
+//   Submit(inst) × N                      — queue instances
+//   Render(cam, aspect)                   — ≤4 instanced draw calls
 class BillboardRenderer {
 public:
+    static constexpr int MAX_ATLAS = 4;
+
     static BillboardRenderer& Get();
 
     void Init();
@@ -34,29 +36,34 @@ public:
     void Submit(const BillboardInstance& inst);
     void Render(const MdCamera& cam, float aspect);
 
-    void LoadSpriteAtlas(const char* png_path);
-    void UnloadSpriteAtlas();
+    // Load atlas at slot idx (0..MAX_ATLAS-1). Default idx=0 for single-atlas compat.
+    void LoadSpriteAtlas(const char* png_path, int idx = 0);
+    void UnloadAllAtlases();
+    void UnloadSpriteAtlas() { UnloadAllAtlases(); }  // backward-compat alias
 
     int SubmittedCount() const;
-    int AtlasWidth()     const { return atlas_.w; }
-    int AtlasHeight()    const { return atlas_.h; }
+    int AtlasWidth(int idx = 0) const {
+        return (idx >= 0 && idx < MAX_ATLAS) ? atlases_[idx].w : 0;
+    }
+    int AtlasHeight(int idx = 0) const {
+        return (idx >= 0 && idx < MAX_ATLAS) ? atlases_[idx].h : 0;
+    }
 
 private:
     BillboardRenderer() = default;
 
-    // GPU objects
-    uint32_t vao_     = 0;
-    uint32_t quad_vbo_ = 0;   // 4 vertices, shared quad geometry
-    uint32_t inst_vbo_ = 0;   // per-instance stream
+    uint32_t vao_      = 0;
+    uint32_t quad_vbo_ = 0;
+    uint32_t inst_vbo_ = 0;
+    uint32_t prog_     = 0;
 
-    uint32_t prog_    = 0;
-    int      loc_view_       = -1;
-    int      loc_proj_       = -1;
-    int      loc_cam_right_  = -1;
-    int      loc_cam_up_     = -1;
-    int      loc_alpha_thr_  = -1;
+    int loc_view_      = -1;
+    int loc_proj_      = -1;
+    int loc_cam_right_ = -1;
+    int loc_cam_up_    = -1;
+    int loc_alpha_thr_ = -1;
 
-    MdTexture atlas_;
+    MdTexture atlases_[MAX_ATLAS] = {};
 
     BillboardInstance instances_[MAX_BILLBOARDS];
     int               count_ = 0;

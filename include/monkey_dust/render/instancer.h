@@ -3,7 +3,7 @@
 #include <monkey_dust/render/md_mesh.h>
 
 #ifdef MD_OPENGL43_ENABLED
-#include "external/glad.h"
+#include "glad.h"
 #endif
 
 static constexpr int MAX_INSTANCES = 1024;

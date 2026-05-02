@@ -2,7 +2,7 @@
 #include <monkey_dust/flare/flare_runtime.h>
 #include <cstdio>
 #include <cstring>
-#include "raylib.h"   // TraceLog
+#include <monkey_dust/platform/md_log.h>
 
 namespace md::flare {
 
@@ -25,7 +25,7 @@ const SpriteCategoryEntry* SpriteResolver::Resolve(const char* category) {
     }
 
     if (entry_count_ >= MAX_SPRITE_CATEGORIES) {
-        TraceLog(LOG_WARNING, "[SpriteResolver] cache full, %s skipped", category);
+        MD_LOG(MD_LOG_WARNING, "[SpriteResolver] cache full, %s skipped", category);
         return nullptr;
     }
 
@@ -38,13 +38,13 @@ const SpriteCategoryEntry* SpriteResolver::Resolve(const char* category) {
     snprintf(rel, sizeof(rel), "animations/enemies/%s.txt", category);
     char full_anim[256];
     if (!FlareRuntime::Get().ResolveAsset(rel, full_anim, sizeof(full_anim))) {
-        TraceLog(LOG_WARNING, "[SpriteResolver] %s: anim file not found", category);
+        MD_LOG(MD_LOG_WARNING, "[SpriteResolver] %s: anim file not found", category);
         e.valid = false;
         return nullptr;
     }
 
     if (!LoadAnimSet(full_anim, e.anim_set)) {
-        TraceLog(LOG_WARNING, "[SpriteResolver] %s: LoadAnimSet failed", category);
+        MD_LOG(MD_LOG_WARNING, "[SpriteResolver] %s: LoadAnimSet failed", category);
         e.valid = false;
         return nullptr;
     }
@@ -53,14 +53,14 @@ const SpriteCategoryEntry* SpriteResolver::Resolve(const char* category) {
     if (!FlareRuntime::Get().ResolveAsset(e.anim_set.image_path,
                                           e.atlas_full_path,
                                           sizeof(e.atlas_full_path))) {
-        TraceLog(LOG_WARNING, "[SpriteResolver] %s: atlas %s not found",
+        MD_LOG(MD_LOG_WARNING, "[SpriteResolver] %s: atlas %s not found",
                  category, e.anim_set.image_path);
         e.valid = false;
         return nullptr;
     }
 
     e.valid = true;
-    TraceLog(LOG_INFO, "[SpriteResolver] %s OK: %d clips, atlas=%s",
+    MD_LOG(MD_LOG_INFO, "[SpriteResolver] %s OK: %d clips, atlas=%s",
              category, e.anim_set.clip_count, e.atlas_full_path);
     return &e;
 }

@@ -2,7 +2,8 @@
 
 #ifdef DEBUG
 
-#include "raylib.h"
+#include <monkey_dust/platform/md_log.h>
+#include <chrono>
 #include <cstring>
 
 static constexpr int MAX_TIMINGS = 16;
@@ -25,19 +26,24 @@ struct TimingEntry {
     double begin_s;
 };
 
+static inline double _timing_now_s() {
+    return std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 class TimingSystem {
 public:
     static TimingSystem& Get() { static TimingSystem inst; return inst; }
 
     void Begin(const char* name) {
         int idx = FindOrCreate(name);
-        if (idx >= 0) entries_[idx].begin_s = GetTime();
+        if (idx >= 0) entries_[idx].begin_s = _timing_now_s();
     }
 
     void End(const char* name) {
         int idx = Find(name);
         if (idx < 0) return;
-        float elapsed = (float)((GetTime() - entries_[idx].begin_s) * 1000.0);
+        float elapsed = (float)((_timing_now_s() - entries_[idx].begin_s) * 1000.0);
         entries_[idx].sum += elapsed;
         entries_[idx].samples++;
         if (elapsed > entries_[idx].max_ms) entries_[idx].max_ms = elapsed;
@@ -48,12 +54,11 @@ public:
         for (int i = 0; i < count_; ++i) {
             float thresh = Threshold(entries_[i].name);
             if (thresh > 0.0f && entries_[i].avg_ms > thresh)
-                TraceLog(LOG_WARNING,
-                         "[Timing] %s avg=%.2fms max=%.2fms threshold=%.1fms",
-                         entries_[i].name, entries_[i].avg_ms,
-                         entries_[i].max_ms, thresh);
+                MD_LOG(MD_LOG_WARNING,
+                       "[Timing] %s avg=%.2fms max=%.2fms threshold=%.1fms",
+                       entries_[i].name, entries_[i].avg_ms,
+                       entries_[i].max_ms, thresh);
         }
-        // Reset rolling window each report cycle
         for (int i = 0; i < count_; ++i) {
             entries_[i].sum     = 0.0f;
             entries_[i].samples = 0;

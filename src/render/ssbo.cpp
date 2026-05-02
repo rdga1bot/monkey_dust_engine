@@ -2,7 +2,7 @@
 
 #ifdef MD_OPENGL43_ENABLED
 #include <cstdio>
-#include "external/glad.h"
+#include "glad.h"
 
 void SSBO::Init(int capacity_bytes) {
     glGenBuffers(1, &id);

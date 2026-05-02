@@ -2,8 +2,9 @@
 #include <monkey_dust/render/md_shader.h>
 
 #ifdef MD_OPENGL43_ENABLED
-#include "external/glad.h"
+#include "glad.h"
 #include <monkey_dust/platform/math_types.h>
+#include <monkey_dust/platform/md_log.h>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>    // qsort
@@ -161,7 +162,7 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     if (!init_ || !prog_) return;
     if (atlas_count_ == 0) {
         static bool w = false;
-        if (!w) { TraceLog(LOG_WARNING, "[TileMap] Render() called with no atlases"); w = true; }
+        if (!w) { MD_LOG(MD_LOG_WARNING, "[TileMap] Render() called with no atlases"); w = true; }
         return;
     }
     if (map.layer_count == 0 || map.width <= 0 || map.height <= 0) return;

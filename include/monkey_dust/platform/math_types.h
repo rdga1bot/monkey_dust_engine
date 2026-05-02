@@ -61,3 +61,6 @@
                                              { return glm::ortho(l, r, b, t, n, f); }
    inline const float* mat4_ptr(const Mat4& m) { return glm::value_ptr(m); }
 #endif
+
+// Simple ray: origin + normalised direction.  Defined after Vec3 aliases.
+struct MdRay { Vec3 pos; Vec3 dir; };

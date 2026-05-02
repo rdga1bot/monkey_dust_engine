@@ -1,6 +1,5 @@
 #ifdef DEBUG
 #pragma once
-#include "raylib.h"
 #ifdef USE_SDL3
 #  include "backends/imgui_impl_sdl3.h"
 #  include "backends/imgui_impl_opengl3.h"
@@ -8,6 +7,7 @@
 #  include "rlImGui.h"
 #endif
 #include "imgui.h"
+#include <monkey_dust/render/md_camera.h>
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/engine_context.h>
 #include <monkey_dust/world/spatial_grid.h>
@@ -25,13 +25,13 @@ public:
 
     entt::entity selected_entity = entt::null;
 
-    void HandleInput();
-    void DrawOverlay(const md::EngineContext& ctx, Camera3D cam,
+    // Key toggles moved to Main.cpp (Rule M-A: input.h only in Main).
+    void DrawOverlay(const md::EngineContext& ctx, const MdCamera& cam,
                      const SpatialGrid& grid);
-    void Draw3DOverlay(Camera3D cam);
+    void Draw3DOverlay(const MdCamera& cam);
     void DrawHotReload(float dt);
-    void DrawSpatialGridOverlay(Camera3D cam, const SpatialGrid& grid);
-    void DrawNavMeshWireframe(Camera3D cam);
+    void DrawSpatialGridOverlay(const MdCamera& cam, const SpatialGrid& grid);
+    void DrawNavMeshWireframe(const MdCamera& cam);
 
 private:
     void DrawEntityInspector();

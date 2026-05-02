@@ -2,7 +2,7 @@
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/world/transform_soa.h>
 #include <monkey_dust/tools/timing_system.h>
-#include "raylib.h"
+#include <monkey_dust/platform/md_log.h>
 #include <cstdio>
 #include <cstring>
 #include <chrono>
@@ -33,7 +33,7 @@ bool ChunkManager::SaveChunk(int idx) {
     snprintf(tmp, sizeof(tmp), "%s.tmp", cd.filename);
     FILE* f = fopen(tmp, "wb");
     if (!f) {
-        TraceLog(LOG_WARNING, "[ChunkManager] Cannot save %s", cd.filename);
+        MD_LOG(MD_LOG_WARNING, "[ChunkManager] Cannot save %s", cd.filename);
         return false;
     }
     fwrite(&CHUNK_MAGIC, sizeof(CHUNK_MAGIC), 1, f);
@@ -49,7 +49,7 @@ bool ChunkManager::SaveChunk(int idx) {
     }
     fclose(f);
     if (rename(tmp, cd.filename) != 0) {
-        TraceLog(LOG_WARNING, "[ChunkManager] rename failed for %s", cd.filename);
+        MD_LOG(MD_LOG_WARNING, "[ChunkManager] rename failed for %s", cd.filename);
         return false;
     }
     cd.dirty = false;
@@ -208,7 +208,7 @@ void ChunkManager::LoadChunkFromStaging(ChunkLoadStaging& stg) {
     }
 
     active_count_++;
-    TraceLog(LOG_INFO, "[ChunkManager] Applied %d_%d (%d entities)",
+    MD_LOG(MD_LOG_INFO, "[ChunkManager] Applied %d_%d (%d entities)",
              stg.coord.x, stg.coord.z, cd.entity_count);
 }
 
@@ -246,7 +246,7 @@ void ChunkManager::UnloadChunk(int idx) {
         reg.destroy(cd.entities[i]);
     }
 
-    TraceLog(LOG_INFO, "[ChunkManager] Unloaded %d_%d", cd.coord.x, cd.coord.z);
+    MD_LOG(MD_LOG_INFO, "[ChunkManager] Unloaded %d_%d", cd.coord.x, cd.coord.z);
     active_[idx] = active_[--active_count_];
     active_[active_count_].loaded = false;
 }
@@ -261,7 +261,7 @@ void ChunkManager::Init(const char* chunks_dir) {
         staging_[i].ready.store(false);
         staging_[i].consumed = true;
     }
-    TraceLog(LOG_INFO, "[ChunkManager] Init dir=%s", chunks_dir_);
+    MD_LOG(MD_LOG_INFO, "[ChunkManager] Init dir=%s", chunks_dir_);
 }
 
 void ChunkManager::StartIOWorker() {

@@ -1,8 +1,10 @@
 #include <monkey_dust/render/model_manager.h>
 
 #ifdef MD_OPENGL43_ENABLED
-// cgltf declarations only — implementation compiled into libraylib.a (rmodels.c) in non-SDL3 builds
-#include "external/cgltf.h"
+// cgltf declarations only (no CGLTF_IMPLEMENTATION).
+// Implementation is provided by Raylib's rmodels.c when linking libraylib.a.
+// For a no-Raylib build, add a separate cgltf_impl.cpp with #define CGLTF_IMPLEMENTATION.
+#include "cgltf.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

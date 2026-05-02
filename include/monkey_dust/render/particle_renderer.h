@@ -1,10 +1,9 @@
 #pragma once
 #include <monkey_dust/render/particle_soa.h>
 #include <monkey_dust/render/md_shader.h>
-#include "raylib.h"
-#include "rlgl.h"
+#include <monkey_dust/platform/math_types.h>
 #ifdef MD_OPENGL43_ENABLED
-#include "external/glad.h"
+#include "glad.h"
 #endif
 
 #ifdef MD_OPENGL43_ENABLED
@@ -17,7 +16,7 @@ public:
     }
 
     void Init();
-    void Draw(Matrix viewProj, Vector3 cam_pos);
+    void Draw(Mat4 viewProj, Vec3 cam_pos);
     void Shutdown();
 
 private:

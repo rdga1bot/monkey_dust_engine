@@ -5,26 +5,15 @@
 #include <cstdio>
 #include <cstring>
 
-void DebugSystem::HandleInput() {
-    if (IsKeyPressed(KEY_F1))  overlay_on  = !overlay_on;
-    if (IsKeyPressed(KEY_F2))  grid_on     = !grid_on;
-    if (IsKeyPressed(KEY_F3))  navmesh_on  = !navmesh_on;
-    if (IsKeyPressed(KEY_F10)) clean_mode  = !clean_mode;
-}
-
-void DebugSystem::DrawOverlay(const md::EngineContext& ctx, Camera3D cam,
-                               const SpatialGrid& grid) {
+void DebugSystem::DrawOverlay(const md::EngineContext& ctx, const MdCamera& /*cam*/,
+                               const SpatialGrid& /*grid*/) {
     if (!overlay_on) return;
     DrawEntityInspector();
     DrawEntityList();
     DrawPerformanceOverlay(ctx);
-    // Game-specific panels (BT visualizer, faction matrix, etc.) are drawn
-    // by game-level debug code in Main.cpp / game debug system.
-    (void)cam;
-    (void)grid;
 }
 
-void DebugSystem::Draw3DOverlay(Camera3D /*cam*/) {
+void DebugSystem::Draw3DOverlay(const MdCamera& /*cam*/) {
     if (!overlay_on) return;
 }
 
@@ -37,14 +26,13 @@ void DebugSystem::DrawHotReload(float dt) {
     }
 }
 
-void DebugSystem::DrawSpatialGridOverlay(Camera3D /*cam*/,
+void DebugSystem::DrawSpatialGridOverlay(const MdCamera& /*cam*/,
                                           const SpatialGrid& /*grid*/) {
     if (!grid_on) return;
 }
 
-void DebugSystem::DrawNavMeshWireframe(Camera3D /*cam*/) {
+void DebugSystem::DrawNavMeshWireframe(const MdCamera& /*cam*/) {
     if (!navmesh_on) return;
-    // NavMesh wireframe draw via DebugNavmesh (tools/dev_tools)
 }
 
 void DebugSystem::DrawEntityInspector() {

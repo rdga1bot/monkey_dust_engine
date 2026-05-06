@@ -105,6 +105,9 @@ public:
     // SDL_GPU replacement: use push_constant offsets / UBO members.
     int UniformLoc(const char* name) const;
 #endif
+#ifdef MD_SDL_GPU
+    SDL_GPUGraphicsPipeline* SDLPipeline() const { return sdl_pipeline_; }
+#endif
 
 private:
     friend class GpuCommandBuffer;

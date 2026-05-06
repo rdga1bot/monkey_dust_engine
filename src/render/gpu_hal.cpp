@@ -956,15 +956,12 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
 
-    // Map GL target → SDL_GPU buffer usage for type safety in future steps.
-#ifdef MD_OPENGL43_ENABLED
-    SDL_GPUBufferUsageFlags usage = (target == GL_ELEMENT_ARRAY_BUFFER)
+    // Map GL target → SDL_GPU buffer usage.
+    // 0x8893 = GL_ELEMENT_ARRAY_BUFFER value (avoid GL header dependency in SDL-only builds).
+    SDL_GPUBufferUsageFlags usage = (target == 0x8893u)
                                     ? SDL_GPU_BUFFERUSAGE_INDEX
                                     : SDL_GPU_BUFFERUSAGE_VERTEX;
-#else
-    SDL_GPUBufferUsageFlags usage = SDL_GPU_BUFFERUSAGE_VERTEX;
     (void)target;
-#endif
 
     SDL_GPUBufferCreateInfo buf_info = {};
     buf_info.usage = usage;

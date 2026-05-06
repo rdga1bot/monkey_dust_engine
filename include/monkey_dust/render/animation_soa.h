@@ -61,7 +61,12 @@ public:
         // anim_state_ring_ is written by CPU each frame — ring-buffered.
         anim_state_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState)), 5);
         // Skinning compute pipeline — loaded once, dispatched each frame.
-        skin_pipeline_.Create("shaders/skinning.comp");
+        // SDL_GPU: rw[0]=FinalBones(write), ro[0]=AnimState(read); no UBO (time in state).
+        GpuComputePipeline::Desc skin_desc;
+        skin_desc.glsl_path                     = "shaders/skinning.comp";
+        skin_desc.num_readwrite_storage_buffers = 1; // FinalBones (set=1 binding=0)
+        skin_desc.num_readonly_storage_buffers  = 1; // AnimState  (set=1 binding=1)
+        skin_pipeline_.Create(skin_desc);
         LoadDefaults();
     }
 
@@ -127,16 +132,27 @@ public:
         bones_ssbo_.Bind(4);
     }
 
-    // Dispatch skinning compute pass and insert GL_SHADER_STORAGE_BARRIER_BIT.
-    // SSBOs 4+5 must already be bound (Upload() does this).
-    // SDL_GPU: SDL_BeginGPUComputePass + SDL_DispatchGPUCompute + SDL_EndGPUComputePass
-    void DispatchSkinning() {
-#ifdef MD_OPENGL43_ENABLED
+    // Dispatch skinning compute pass.
+    // OpenGL: SSBOs 4+5 must already be bound (Upload() does this).
+    // SDL_GPU: pass bindings with rw_buffers[0]=FinalBones, ro_buffers[0]=AnimState.
+    //          bindings.cmd=nullptr is a safe no-op (Step 9 wires the SDL_GPUBuffer*).
+    void DispatchSkinning(const GpuComputePass::StorageBindings& bindings = {}) {
         static constexpr uint32_t SKIN_GROUPS = (MAX_ANIMATED_NPC + 63u) / 64u;
-        GpuComputePass pass;
-        pass.Begin(&skin_pipeline_);
-        pass.Dispatch(SKIN_GROUPS, 1u, 1u);
-        pass.End(GpuComputePass::BARRIER_STORAGE);
+#ifdef MD_SDL_GPU
+        if (bindings.cmd) {
+            GpuComputePass pass;
+            pass.Begin(&skin_pipeline_, bindings);
+            pass.Dispatch(SKIN_GROUPS, 1u, 1u);
+            pass.End();
+        }
+#endif
+#ifdef MD_OPENGL43_ENABLED
+        {
+            GpuComputePass pass;
+            pass.Begin(&skin_pipeline_);
+            pass.Dispatch(SKIN_GROUPS, 1u, 1u);
+            pass.End(GpuComputePass::BARRIER_STORAGE);
+        }
 #endif
     }
 

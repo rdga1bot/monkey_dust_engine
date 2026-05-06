@@ -226,28 +226,45 @@ private:
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuComputePipeline {
 public:
-    bool Create (const char* glsl_path);   // compile + link compute shader
+    struct Desc {
+        const char* glsl_path = nullptr; // OpenGL GLSL source; SPIR-V path derived by MakeSpvPath
+        // SDL_GPU resource counts — must match SPIR-V declarations exactly.
+        uint32_t num_uniform_buffers            = 0;
+        uint32_t num_readonly_storage_buffers   = 0;
+        uint32_t num_readwrite_storage_buffers  = 0;
+        uint32_t num_readonly_storage_textures  = 0;
+        uint32_t num_readwrite_storage_textures = 0;
+        uint32_t num_samplers                   = 0;
+    };
+
+    bool Create(const Desc& desc);
     void Destroy();
+    // OpenGL: glGetUniformLocation. SDL_GPU: always -1 (use PushUniforms instead).
     int  UniformLoc(const char* name) const;
 
 private:
     friend class GpuComputePass;
     unsigned int program_ = 0;
+#ifdef MD_SDL_GPU
+    SDL_GPUComputePipeline* sdl_pipeline_ = nullptr;
+#endif
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuComputePass — scoped compute dispatch with explicit memory barrier.
 //
-// Usage:
-//   pass.Begin(&pipeline);     // bind compute pipeline
-//   pass.SetUniform*(...);     // optional uniforms
-//   pass.Dispatch(gx, gy, gz); // one or more dispatches
-//   pass.End(BARRIER_STORAGE); // glMemoryBarrier + unbind
+// OpenGL usage:
+//   pass.Begin(&pipeline);        // bind compute program
+//   pass.SetUniform*(...);        // set uniforms via GL locations
+//   pass.Dispatch(gx, gy, gz);
+//   pass.End(BARRIER_STORAGE);    // glMemoryBarrier + unbind
 //
-// SDL_GPU:
-//   Begin    → SDL_BeginGPUComputePass + SDL_BindGPUComputePipeline
-//   Dispatch → SDL_DispatchGPUCompute
-//   End      → SDL_EndGPUComputePass  (barriers implicit via resource declarations)
+// SDL_GPU usage:
+//   StorageBindings b; b.cmd = cmd; b.rw_buffers[0] = {sdl_buf, false}; b.num_rw_buffers = 1;
+//   pass.Begin(&pipeline, b);     // SDL_BeginGPUComputePass + SDL_BindGPUComputePipeline
+//   pass.PushUniforms(0, &data, sizeof(data));
+//   pass.Dispatch(gx, gy, gz);    // SDL_DispatchGPUCompute
+//   pass.End();                   // SDL_EndGPUComputePass (barriers implicit)
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuComputePass {
 public:
@@ -255,16 +272,47 @@ public:
     static constexpr uint32_t BARRIER_COMMAND         = 2u; // GL_COMMAND_BARRIER_BIT
     static constexpr uint32_t BARRIER_STORAGE_COMMAND = 3u; // both — for indirect draw output
 
-    void Begin   (GpuComputePipeline* pipeline);
+    // Runtime bindings for one compute dispatch.
+    // SDL_GPU fields populated with SDL_GPUBuffer* objects; OpenGL path ignores them.
+    struct StorageBindings {
+#ifdef MD_SDL_GPU
+        SDL_GPUCommandBuffer* cmd = nullptr;
+        // Read-write storage buffers — declared to SDL_BeginGPUComputePass.
+        // Maps slot index to SPIR-V set=1 read-write bindings in ascending binding order.
+        SDL_GPUStorageBufferReadWriteBinding rw_buffers[8] = {};
+        uint32_t                             num_rw_buffers = 0;
+        // Read-only storage buffers — bound via SDL_BindGPUComputeStorageBuffers.
+        SDL_GPUBuffer* ro_buffers[8] = {};
+        uint32_t       num_ro_buffers = 0;
+#endif
+    };
+
+    // Bind pipeline and (SDL_GPU) open compute pass.
+    // bindings is required for SDL_GPU; ignored in OpenGL.
+    void Begin(GpuComputePipeline* pipeline, const StorageBindings& bindings = {});
+
+    // OpenGL named-uniform setters. SDL_GPU: no-ops (use PushUniforms instead).
     void SetUniformFloat    (int loc, float v);
     void SetUniformInt      (int loc, int v);
     void SetUniformVec3     (int loc, const float* v3);
     void SetUniformVec4Array(int loc, const float* v4, int count);
+
+#ifdef MD_SDL_GPU
+    // Push uniform data (UBO slot) for the compute shader.
+    void PushUniforms(uint32_t slot, const void* data, uint32_t size_bytes);
+#endif
+
     void Dispatch(uint32_t gx, uint32_t gy, uint32_t gz);
+
+    // barrier_flags: BARRIER_* constants (OpenGL). SDL_GPU barriers are implicit.
     void End(uint32_t barrier_flags = BARRIER_STORAGE);
 
 private:
     GpuComputePipeline* pipeline_ = nullptr;
+#ifdef MD_SDL_GPU
+    SDL_GPUCommandBuffer* sdl_cmd_  = nullptr;
+    SDL_GPUComputePass*   sdl_pass_ = nullptr;
+#endif
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

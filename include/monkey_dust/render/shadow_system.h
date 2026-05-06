@@ -80,7 +80,14 @@ public:
         loc_lightVP_   = MdGetLoc(shadow_shader_, "lightViewProj");
 
         // Shadow cull compute — GpuComputePipeline replaces raw ComputeShader.
-        shadow_cull_cs_.Create("shaders/shadow_cull.comp");
+        // SDL_GPU SPIRV: set=1 ro[0]=Transform(binding=0);
+        //                rw[0]=ShadowVis(binding=6), rw[1]=ShadowInd(binding=7); UBO=1.
+        GpuComputePipeline::Desc sc_desc;
+        sc_desc.glsl_path                    = "shaders/shadow_cull.comp";
+        sc_desc.num_uniform_buffers          = 1; // camPos/maxDist/count (set=0 binding=0)
+        sc_desc.num_readonly_storage_buffers = 1; // TransformBuf (binding=0)
+        sc_desc.num_readwrite_storage_buffers= 2; // ShadowVisBuf(6), ShadowIndBuf(7)
+        shadow_cull_cs_.Create(sc_desc);
         loc_svCamPos_  = shadow_cull_cs_.UniformLoc("camPos");
         loc_svMaxDist_ = shadow_cull_cs_.UniformLoc("maxDistSq");
         loc_svTotal_   = shadow_cull_cs_.UniformLoc("total_count");
@@ -158,7 +165,10 @@ public:
 
     // Shadow cull + depth render.
     // Caller must pre-bind: transform SSBO at 0, finalBones SSBO at 4.
-    void RenderShadowPass(int active_npc_count) {
+    // SDL_GPU: pass bindings.cmd; rw[0]=shadow_vis, rw[1]=shadow_ind, ro[0]=transform.
+    //          bindings.cmd=nullptr is a safe no-op (Step 9 wires SDL_GPUBuffer*).
+    void RenderShadowPass(int active_npc_count,
+                          const GpuComputePass::StorageBindings& bindings = {}) {
 #ifdef MD_OPENGL43_ENABLED
         if (!init_ || active_npc_count <= 0) return;
 
@@ -169,6 +179,22 @@ public:
         shadow_ind_buf_.Bind(7);
 
         // Shadow cull compute — GpuComputePass replaces raw ComputeShader dispatch.
+#ifdef MD_SDL_GPU
+        if (bindings.cmd) {
+            // SDL_GPU path: push camPos/maxDistSq/totalCount as UBO slot 0.
+            struct alignas(16) ShadowCullUBO {
+                float camPos[3]; float _p;
+                float maxDistSq; float _p2[3];
+                int   totalCount; int _p3[3];
+            } ubo = { { cam_pos_.x, cam_pos_.y, cam_pos_.z }, 0.f,
+                       60.f * 60.f, {}, active_npc_count, {} };
+            GpuComputePass cull;
+            cull.Begin(&shadow_cull_cs_, bindings);
+            cull.PushUniforms(0, &ubo, sizeof(ubo));
+            cull.Dispatch(((unsigned)active_npc_count + 63u) / 64u, 1u, 1u);
+            cull.End();
+        }
+#endif
         {
             float cpf[3] = { cam_pos_.x, cam_pos_.y, cam_pos_.z };
             GpuComputePass cull;

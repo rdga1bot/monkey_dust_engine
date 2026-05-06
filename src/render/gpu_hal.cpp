@@ -634,90 +634,205 @@ void GpuRenderPass::BeginColor(const ColorDesc& desc) {
 #endif
 }
 
-// ── GpuComputePipeline ────────────────────────────────────────────────────────
+// ── GpuComputePipeline + GpuComputePass (dual-backend) ────────────────────────
+
+bool GpuComputePipeline::Create(const Desc& desc) {
+    if (!desc.glsl_path) {
+        MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] Create: null glsl_path");
+        return false;
+    }
+
+#ifdef MD_SDL_GPU
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (dev) {
+        char spv[256];
+        MakeSpvPath(spv, sizeof(spv), desc.glsl_path);
+        size_t code_size = 0;
+        void*  code = ReadBinaryFile(spv, &code_size);
+        if (code) {
+            SDL_GPUComputePipelineCreateInfo ci = {};
+            ci.code                           = (const Uint8*)code;
+            ci.code_size                      = code_size;
+            ci.entrypoint                     = "main";
+            ci.format                         = SDL_GPU_SHADERFORMAT_SPIRV;
+            ci.num_uniform_buffers            = desc.num_uniform_buffers;
+            ci.num_readonly_storage_buffers   = desc.num_readonly_storage_buffers;
+            ci.num_readwrite_storage_buffers  = desc.num_readwrite_storage_buffers;
+            ci.num_readonly_storage_textures  = desc.num_readonly_storage_textures;
+            ci.num_readwrite_storage_textures = desc.num_readwrite_storage_textures;
+            ci.num_samplers                   = desc.num_samplers;
+            sdl_pipeline_ = SDL_CreateGPUComputePipeline(dev, &ci);
+            free(code);
+            if (!sdl_pipeline_)
+                MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] SDL_CreateGPUComputePipeline %s: %s",
+                       desc.glsl_path, SDL_GetError());
+            else
+                MD_LOG(MD_LOG_INFO, "[GpuComputePipeline] SDL_GPU pipeline: %s", desc.glsl_path);
+        } else {
+            MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] SPIR-V not found: %s", spv);
+        }
+    }
+#endif
 
 #ifdef MD_OPENGL43_ENABLED
+    {
+        char* src = ReadTextFile(desc.glsl_path);
+        if (!src) {
+            MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] file not found: %s", desc.glsl_path);
+            return false;
+        }
+        GLuint sh = glCreateShader(GL_COMPUTE_SHADER);
+        glShaderSource(sh, 1, (const GLchar**)&src, nullptr);
+        glCompileShader(sh);
+        free(src);
 
-bool GpuComputePipeline::Create(const char* path) {
-    char* src = ReadTextFile(path);
-    if (!src) {
-        MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] file not found: %s", path);
-        return false;
-    }
-    GLuint sh = glCreateShader(GL_COMPUTE_SHADER);
-    glShaderSource(sh, 1, (const GLchar**)&src, nullptr);
-    glCompileShader(sh);
-    free(src);
-
-    GLint ok = 0;
-    glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
-    if (!ok) {
-        char log[512]; glGetShaderInfoLog(sh, 512, nullptr, log);
-        MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] compile error %s: %s", path, log);
+        GLint ok = 0;
+        glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+        if (!ok) {
+            char log[512]; glGetShaderInfoLog(sh, 512, nullptr, log);
+            MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] compile error %s: %s", desc.glsl_path, log);
+            glDeleteShader(sh);
+            return false;
+        }
+        program_ = glCreateProgram();
+        glAttachShader(program_, sh);
+        glLinkProgram(program_);
         glDeleteShader(sh);
-        return false;
-    }
-    program_ = glCreateProgram();
-    glAttachShader(program_, sh);
-    glLinkProgram(program_);
-    glDeleteShader(sh);
 
-    glGetProgramiv(program_, GL_LINK_STATUS, &ok);
-    if (!ok) {
-        char log[512]; glGetProgramInfoLog(program_, 512, nullptr, log);
-        MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] link error %s: %s", path, log);
-        glDeleteProgram(program_);
-        program_ = 0;
-        return false;
+        glGetProgramiv(program_, GL_LINK_STATUS, &ok);
+        if (!ok) {
+            char log[512]; glGetProgramInfoLog(program_, 512, nullptr, log);
+            MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] link error %s: %s", desc.glsl_path, log);
+            glDeleteProgram(program_);
+            program_ = 0;
+            return false;
+        }
     }
     return true;
+#else
+    return sdl_pipeline_ != nullptr;
+#endif
 }
 
 void GpuComputePipeline::Destroy() {
+#ifdef MD_SDL_GPU
+    if (sdl_pipeline_) {
+        SDL_ReleaseGPUComputePipeline(md::GpuDevice::Get().SDLDevice(), sdl_pipeline_);
+        sdl_pipeline_ = nullptr;
+    }
+#endif
+#ifdef MD_OPENGL43_ENABLED
     if (program_) { glDeleteProgram(program_); program_ = 0; }
+#endif
 }
 
 int GpuComputePipeline::UniformLoc(const char* name) const {
+#ifdef MD_OPENGL43_ENABLED
     return program_ ? (int)glGetUniformLocation(program_, name) : -1;
+#else
+    (void)name;
+    return -1; // SDL_GPU: use PushUniforms instead
+#endif
 }
 
 // ── GpuComputePass ────────────────────────────────────────────────────────────
 
-void GpuComputePass::Begin(GpuComputePipeline* pipeline) {
+void GpuComputePass::Begin(GpuComputePipeline* pipeline, const StorageBindings& bindings) {
     pipeline_ = pipeline;
+#ifdef MD_SDL_GPU
+    sdl_cmd_ = bindings.cmd;
+    if (sdl_cmd_ && pipeline && pipeline->sdl_pipeline_) {
+        sdl_pass_ = SDL_BeginGPUComputePass(
+            sdl_cmd_,
+            nullptr, 0,
+            bindings.rw_buffers, bindings.num_rw_buffers
+        );
+        if (sdl_pass_) {
+            SDL_BindGPUComputePipeline(sdl_pass_, pipeline->sdl_pipeline_);
+            if (bindings.num_ro_buffers > 0)
+                SDL_BindGPUComputeStorageBuffers(
+                    sdl_pass_, 0, bindings.ro_buffers, bindings.num_ro_buffers);
+        }
+    }
+#else
+    (void)bindings;
+#endif
+#ifdef MD_OPENGL43_ENABLED
     if (pipeline_ && pipeline_->program_) glUseProgram(pipeline_->program_);
+#endif
 }
 
 void GpuComputePass::SetUniformFloat(int loc, float v) {
+#ifdef MD_OPENGL43_ENABLED
     if (loc >= 0) glUniform1f(loc, v);
+#else
+    (void)loc; (void)v;
+#endif
 }
 
 void GpuComputePass::SetUniformInt(int loc, int v) {
+#ifdef MD_OPENGL43_ENABLED
     if (loc >= 0) glUniform1i(loc, v);
+#else
+    (void)loc; (void)v;
+#endif
 }
 
 void GpuComputePass::SetUniformVec3(int loc, const float* v3) {
+#ifdef MD_OPENGL43_ENABLED
     if (loc >= 0) glUniform3fv(loc, 1, v3);
+#else
+    (void)loc; (void)v3;
+#endif
 }
 
 void GpuComputePass::SetUniformVec4Array(int loc, const float* v4, int count) {
+#ifdef MD_OPENGL43_ENABLED
     if (loc >= 0) glUniform4fv(loc, count, v4);
+#else
+    (void)loc; (void)v4; (void)count;
+#endif
 }
 
+#ifdef MD_SDL_GPU
+void GpuComputePass::PushUniforms(uint32_t slot, const void* data, uint32_t size_bytes) {
+    if (sdl_cmd_)
+        SDL_PushGPUComputeUniformData(sdl_cmd_, slot, data, size_bytes);
+}
+#endif
+
 void GpuComputePass::Dispatch(uint32_t gx, uint32_t gy, uint32_t gz) {
+#ifdef MD_SDL_GPU
+    if (sdl_pass_) SDL_DispatchGPUCompute(sdl_pass_, gx, gy, gz);
+#endif
+#ifdef MD_OPENGL43_ENABLED
     glDispatchCompute(gx, gy, gz);
+#endif
 }
 
 void GpuComputePass::End(uint32_t barrier_flags) {
+#ifdef MD_SDL_GPU
+    if (sdl_pass_) {
+        SDL_EndGPUComputePass(sdl_pass_);
+        sdl_pass_ = nullptr;
+    }
+    sdl_cmd_ = nullptr;
+#endif
+#ifdef MD_OPENGL43_ENABLED
     glUseProgram(0);
     GLbitfield bits = 0;
     if (barrier_flags & BARRIER_STORAGE) bits |= GL_SHADER_STORAGE_BARRIER_BIT;
     if (barrier_flags & BARRIER_COMMAND)  bits |= GL_COMMAND_BARRIER_BIT;
     if (bits) glMemoryBarrier(bits);
+#else
+    (void)barrier_flags;
+#endif
     pipeline_ = nullptr;
 }
 
 // ── GpuDepthTexture ───────────────────────────────────────────────────────────
+
+#ifdef MD_OPENGL43_ENABLED
 
 void GpuDepthTexture::Init(int w, int h, bool shadow_border) {
     w_ = w; h_ = h;

@@ -32,24 +32,27 @@ public:
     PathCache() { Clear(); }
 
     void Clear() {
-        AcquireWriteLock();
+        AcquireLock();
         for (auto& e : entries_) e.valid = false;
         lru_clock_ = 0;
-        ReleaseWriteLock();
+        ReleaseLock();
     }
 
     // Пошук шляху в кеші. Повертає true якщо знайдено і не протухло.
     bool Get(uint32_t key_start, uint32_t key_end, float now_s,
              float* out_verts, int& out_len) const
     {
+        AcquireLock();
         for (const auto& e : entries_) {
             if (!e.valid) continue;
             if (e.key_start != key_start || e.key_end != key_end) continue;
             if ((now_s - e.timestamp_s) > PATH_TTL_S) continue;
             memcpy(out_verts, e.verts, e.len * 3 * sizeof(float));
             out_len = e.len;
+            ReleaseLock();
             return true;
         }
+        ReleaseLock();
         return false;
     }
 
@@ -58,7 +61,7 @@ public:
              const float* verts, int len)
     {
         if (len <= 0 || len > MAX_PATH_LEN) return;
-        AcquireWriteLock();
+        AcquireLock();
         int slot = FindSlot(key_start, key_end, now_s);
         CachedPath& e = entries_[slot];
         e.key_start   = key_start;
@@ -67,7 +70,7 @@ public:
         e.len         = len;
         e.valid       = true;
         memcpy(e.verts, verts, len * 3 * sizeof(float));
-        ReleaseWriteLock();
+        ReleaseLock();
     }
 
     // Хеш для world-позиції (квантується по CELL_SIZE сітці)
@@ -80,18 +83,18 @@ public:
 private:
     CachedPath entries_[MAX_CACHED_PATHS];
     int        lru_clock_;
-    mutable std::atomic<bool> write_lock_{false};
+    mutable std::atomic<bool> lock_{false};
 
-    void AcquireWriteLock() const {
+    void AcquireLock() const {
         bool expected = false;
-        while (!write_lock_.compare_exchange_weak(
+        while (!lock_.compare_exchange_weak(
                    expected, true,
                    std::memory_order_acquire,
                    std::memory_order_relaxed))
             expected = false;
     }
-    void ReleaseWriteLock() const {
-        write_lock_.store(false, std::memory_order_release);
+    void ReleaseLock() const {
+        lock_.store(false, std::memory_order_release);
     }
 
     int FindSlot(uint32_t ks, uint32_t ke, float now_s) {

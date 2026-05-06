@@ -32,8 +32,8 @@ struct ChunkLoadStaging {
     int        npc_count;
     StagedTree trees[256];
     int        tree_count;
-    std::atomic<bool> ready{false};   // worker sets true when done
-    bool              consumed{false}; // main sets true after apply
+    std::atomic<bool> ready{false};    // worker sets true when done
+    std::atomic<bool> consumed{false}; // main sets true after apply
 };
 
 // 32 slots: covers up to chunk_radius=5 initial load (~21 new chunks per step)

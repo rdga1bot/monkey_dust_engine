@@ -89,7 +89,7 @@ void ChunkManager::IOWorkerLoop() {
         int slot = -1;
         for (int i = 0; i < MAX_STAGING; ++i) {
             if (!staging_[i].ready.load(std::memory_order_acquire) &&
-                staging_[i].consumed)
+                staging_[i].consumed.load(std::memory_order_acquire))
             {
                 slot = i;
                 break;
@@ -101,7 +101,7 @@ void ChunkManager::IOWorkerLoop() {
         stg.coord      = coord;
         stg.npc_count  = 0;
         stg.tree_count = 0;
-        stg.consumed   = false;
+        stg.consumed.store(false, std::memory_order_relaxed);
 
         char fname[128];
         snprintf(fname, sizeof(fname), "%s/chunk_%d_%d.bin",
@@ -215,19 +215,19 @@ void ChunkManager::LoadChunkFromStaging(ChunkLoadStaging& stg) {
 void ChunkManager::ApplyStagedChunks() {
     for (int i = 0; i < MAX_STAGING; ++i) {
         if (!staging_[i].ready.load(std::memory_order_acquire)) continue;
-        if (staging_[i].consumed) continue;
+        if (staging_[i].consumed.load(std::memory_order_relaxed)) continue;
         if (active_count_ >= MAX_CHUNKS_ACTIVE) {
-            staging_[i].consumed = true;
+            staging_[i].consumed.store(true, std::memory_order_relaxed);
             staging_[i].ready.store(false, std::memory_order_release);
             continue;
         }
         if (FindActive(staging_[i].coord) >= 0) {
-            staging_[i].consumed = true;
+            staging_[i].consumed.store(true, std::memory_order_relaxed);
             staging_[i].ready.store(false, std::memory_order_release);
             continue;
         }
         LoadChunkFromStaging(staging_[i]);
-        staging_[i].consumed = true;
+        staging_[i].consumed.store(true, std::memory_order_relaxed);
         staging_[i].ready.store(false, std::memory_order_release);
     }
 }
@@ -259,7 +259,7 @@ void ChunkManager::Init(const char* chunks_dir) {
     last_player_chunk_ = {9999, 9999};
     for (int i = 0; i < MAX_STAGING; ++i) {
         staging_[i].ready.store(false);
-        staging_[i].consumed = true;
+        staging_[i].consumed.store(true);
     }
     MD_LOG(MD_LOG_INFO, "[ChunkManager] Init dir=%s", chunks_dir_);
 }

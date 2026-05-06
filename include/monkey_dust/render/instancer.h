@@ -71,7 +71,8 @@ public:
     }
 #endif
 
-    int Count() const { return count_; }
+    int          Count()      const { return count_; }
+    const Mat4*  Transforms() const { return transforms_; }
 
 private:
     Mat4         transforms_[MAX_INSTANCES];

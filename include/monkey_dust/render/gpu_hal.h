@@ -55,10 +55,17 @@ struct GpuVertexAttrib {
 };
 
 // ── Vertex buffer layout ──────────────────────────────────────────────────────
+// slot 0: per-vertex attributes (stride > 0 required).
+// slot 1: per-instance attributes (inst_stride > 0 activates second binding,
+//         SDL_GPU_VERTEXINPUTRATE_INSTANCE).  Zero by default — no instancing.
 struct GpuVertexLayout {
     GpuVertexAttrib attribs[8] = {};
     uint32_t        count      = 0;
-    uint32_t        stride     = 0;   // bytes per vertex
+    uint32_t        stride     = 0;   // bytes per vertex (slot 0)
+    // Optional per-instance binding (slot 1).
+    GpuVertexAttrib inst_attribs[8] = {};
+    uint32_t        inst_count      = 0;
+    uint32_t        inst_stride     = 0;  // bytes per instance; 0 = disabled
 };
 
 // ── Rasterizer / output-merger state (immutable in pipeline) ─────────────────
@@ -94,6 +101,7 @@ public:
         uint32_t frag_storage_bufs = 0;
         uint32_t frag_samplers     = 0;
         bool     has_depth_target  = true;  // set false for 2D/HUD passes
+        bool     depth_only        = false; // depth-only pass (shadow): no color target
 #endif
     };
 

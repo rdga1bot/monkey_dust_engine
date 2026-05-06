@@ -24,6 +24,9 @@ void ParticleRenderer::Init() {
     desc.raster.cull_back   = false;  // points have no faces
     desc.raster.point_size  = true;   // GL_PROGRAM_POINT_SIZE for distance-based radius
 
+#ifdef MD_SDL_GPU
+    desc.vert_uniform_bufs = 1;  // particle.vert set=1 binding=0: viewProj + cameraPos (80B)
+#endif
     pipeline_.Create(desc);
 
     loc_viewProj_ = pipeline_.UniformLoc("viewProj");
@@ -63,5 +66,38 @@ void ParticleRenderer::Shutdown() {
     vbuf_.Shutdown();
     pipeline_.Destroy();
 }
+
+#ifdef MD_SDL_GPU
+
+int ParticleRenderer::PrepareSDLGPU(SDL_GPUCommandBuffer* cmd) {
+    void* ptr = vbuf_.MapWrite();
+    if (!ptr) return 0;
+    int count = ParticleSoA::Get().BuildVertices(
+        static_cast<ParticleVertex*>(ptr), MAX_PARTICLES);
+    vbuf_.Unmap();
+    if (count > 0) vbuf_.Upload(cmd);
+    return count;
+}
+
+void ParticleRenderer::DrawSDLGPU(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                                   int count, Mat4 vp, Vec3 cam_pos) {
+    if (count <= 0 || !rp || !pipeline_.SDLPipeline() || !vbuf_.SDLBuffer()) return;
+    // particle.vert UBO: set=1 binding=0 — mat4 viewProj (64B) + vec3 cameraPos + pad (16B) = 80B
+    struct alignas(16) PVtxUBO {
+        float viewProj[16];
+        float cameraPos[3]; float _pad;
+    } ubo = {};
+    memcpy(ubo.viewProj, mat4_ptr(vp), 64);
+    ubo.cameraPos[0] = cam_pos.x;
+    ubo.cameraPos[1] = cam_pos.y;
+    ubo.cameraPos[2] = cam_pos.z;
+    SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
+    SDL_GPUBufferBinding vb = { vbuf_.SDLBuffer(), 0 };
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
+    SDL_DrawGPUPrimitives(rp, (Uint32)count, 1, 0, 0);
+}
+
+#endif // MD_SDL_GPU
 
 #endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

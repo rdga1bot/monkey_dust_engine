@@ -235,47 +235,63 @@ bool GpuPipeline::Create(const Desc& desc) {
     }
 
     // Vertex input state
-    SDL_GPUVertexBufferDescription vbd = {};
-    vbd.slot             = 0;
-    vbd.pitch            = desc.layout.stride;
-    vbd.input_rate       = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-    vbd.instance_step_rate = 0;
+    SDL_GPUVertexBufferDescription vbds[2] = {};
+    vbds[0].slot               = 0;
+    vbds[0].pitch              = desc.layout.stride;
+    vbds[0].input_rate         = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+    vbds[0].instance_step_rate = 0;
+    const bool has_inst = (desc.layout.inst_stride > 0 && desc.layout.inst_count > 0);
+    if (has_inst) {
+        vbds[1].slot               = 1;
+        vbds[1].pitch              = desc.layout.inst_stride;
+        vbds[1].input_rate         = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+        vbds[1].instance_step_rate = 1;
+    }
 
-    SDL_GPUVertexAttribute vattribs[8] = {};
-    for (uint32_t i = 0; i < desc.layout.count; ++i) {
-        vattribs[i].location    = desc.layout.attribs[i].location;
-        vattribs[i].buffer_slot = 0;
-        vattribs[i].format      = ToSDLFmt(desc.layout.attribs[i].fmt);
-        vattribs[i].offset      = desc.layout.attribs[i].offset;
+    SDL_GPUVertexAttribute vattribs[16] = {};
+    uint32_t total_attribs = 0;
+    for (uint32_t i = 0; i < desc.layout.count; ++i, ++total_attribs) {
+        vattribs[total_attribs].location    = desc.layout.attribs[i].location;
+        vattribs[total_attribs].buffer_slot = 0;
+        vattribs[total_attribs].format      = ToSDLFmt(desc.layout.attribs[i].fmt);
+        vattribs[total_attribs].offset      = desc.layout.attribs[i].offset;
+    }
+    if (has_inst) {
+        for (uint32_t i = 0; i < desc.layout.inst_count; ++i, ++total_attribs) {
+            vattribs[total_attribs].location    = desc.layout.inst_attribs[i].location;
+            vattribs[total_attribs].buffer_slot = 1;
+            vattribs[total_attribs].format      = ToSDLFmt(desc.layout.inst_attribs[i].fmt);
+            vattribs[total_attribs].offset      = desc.layout.inst_attribs[i].offset;
+        }
     }
 
     SDL_GPUVertexInputState vertex_input = {};
-    vertex_input.vertex_buffer_descriptions = (desc.layout.stride > 0) ? &vbd : nullptr;
-    vertex_input.num_vertex_buffers         = (desc.layout.stride > 0) ? 1u  : 0u;
-    vertex_input.vertex_attributes          = (desc.layout.count > 0)  ? vattribs : nullptr;
-    vertex_input.num_vertex_attributes      = desc.layout.count;
+    vertex_input.vertex_buffer_descriptions = (desc.layout.stride > 0) ? vbds : nullptr;
+    vertex_input.num_vertex_buffers         = (desc.layout.stride > 0) ? (has_inst ? 2u : 1u) : 0u;
+    vertex_input.vertex_attributes          = (total_attribs > 0) ? vattribs : nullptr;
+    vertex_input.num_vertex_attributes      = total_attribs;
 
-    // Color target (uses swapchain format)
-    SDL_Window* win = md::GpuDevice::Get().Window();
-    SDL_GPUTextureFormat swapchain_fmt = SDL_GetGPUSwapchainTextureFormat(dev, win);
-
+    // Color target (uses swapchain format); skipped for depth_only passes.
     SDL_GPUColorTargetDescription color_target = {};
-    color_target.format = swapchain_fmt;
-    if (desc.raster.blend_enable) {
-        color_target.blend_state.enable_blend          = true;
-        color_target.blend_state.src_color_blendfactor = ToSDLBlend(desc.raster.src_factor);
-        color_target.blend_state.dst_color_blendfactor = ToSDLBlend(desc.raster.dst_factor);
-        color_target.blend_state.color_blend_op        = SDL_GPU_BLENDOP_ADD;
-        color_target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-        color_target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
-        color_target.blend_state.alpha_blend_op        = SDL_GPU_BLENDOP_ADD;
-        color_target.blend_state.color_write_mask      = 0xF;
+    if (!desc.depth_only) {
+        SDL_Window* win = md::GpuDevice::Get().Window();
+        color_target.format = SDL_GetGPUSwapchainTextureFormat(dev, win);
+        if (desc.raster.blend_enable) {
+            color_target.blend_state.enable_blend          = true;
+            color_target.blend_state.src_color_blendfactor = ToSDLBlend(desc.raster.src_factor);
+            color_target.blend_state.dst_color_blendfactor = ToSDLBlend(desc.raster.dst_factor);
+            color_target.blend_state.color_blend_op        = SDL_GPU_BLENDOP_ADD;
+            color_target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            color_target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+            color_target.blend_state.alpha_blend_op        = SDL_GPU_BLENDOP_ADD;
+            color_target.blend_state.color_write_mask      = 0xF;
+        }
     }
 
     SDL_GPUGraphicsPipelineTargetInfo target_info = {};
-    target_info.color_target_descriptions = &color_target;
-    target_info.num_color_targets         = 1;
-    if (desc.has_depth_target) {
+    target_info.color_target_descriptions = desc.depth_only ? nullptr : &color_target;
+    target_info.num_color_targets         = desc.depth_only ? 0u : 1u;
+    if (desc.has_depth_target || desc.depth_only) {
         target_info.depth_stencil_format       = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
         target_info.has_depth_stencil_target   = true;
     }

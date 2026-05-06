@@ -12,6 +12,9 @@ list(FILTER ENGINE_SRC EXCLUDE REGEX "stb_image_impl\\.cpp$")
 # glad_impl.cpp must NOT be in the engine lib: game gets glad from Raylib (symbol
 # conflict). Each standalone binary (editor) compiles it directly.
 list(FILTER ENGINE_SRC EXCLUDE REGEX "glad_impl\\.cpp$")
+# cgltf_impl.cpp provides CGLTF_IMPLEMENTATION. In non-SDL3 builds Raylib's rmodels.c
+# already defines it; compile directly into each SDL3 binary to avoid duplicate symbols.
+list(FILTER ENGINE_SRC EXCLUDE REGEX "cgltf_impl\\.cpp$")
 add_library(monkey_dust_engine STATIC ${ENGINE_SRC})
 add_library(monkey_dust::engine ALIAS monkey_dust_engine)
 

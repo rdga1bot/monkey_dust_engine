@@ -159,6 +159,21 @@ public:
     // Call once per frame AFTER all draw/compute that read anim_state_ring_.
     void AdvanceFrame() { anim_state_ring_.Advance(); }
 
+#ifdef MD_SDL_GPU
+    // Upload anim state to SDL_GPU device buffer via a copy pass in cmd.
+    // Call before DispatchSkinning(bindings) in the SDL_GPU frame sequence.
+    void UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
+        void* dst = anim_state_ring_.MapWriteSDL();
+        if (dst) {
+            memcpy(dst, states_, MAX_ANIMATED_NPC * sizeof(AnimNpcState));
+            anim_state_ring_.UnmapSDL();
+        }
+        anim_state_ring_.Upload(cmd);
+    }
+    SDL_GPUBuffer* SDLBonesBuffer()    const { return bones_ssbo_.SDLBuffer(); }
+    SDL_GPUBuffer* SDLAnimStateBuffer() const { return anim_state_ring_.SDLBuffer(); }
+#endif
+
     void Shutdown() {
         skin_pipeline_.Destroy();
         bones_ssbo_.Shutdown();

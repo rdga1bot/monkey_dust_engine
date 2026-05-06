@@ -7,6 +7,10 @@
 #include <cstdint>
 #include <entt/entt.hpp>
 
+#ifdef MD_SDL_GPU
+#include <SDL3/SDL_gpu.h>
+#endif
+
 // CPU-side Structure-of-Arrays for NPC transforms.
 // GPU upload via:
 //   GpuRingBuffer transform_ring_ (binding 0: vec4 xzyr) — per-frame, ring-buffered
@@ -46,6 +50,14 @@ public:
     void     UploadToGPU();
     // Call once per frame AFTER all draw/compute that read transform_ring_.
     void     AdvanceFrame();
+
+#ifdef MD_SDL_GPU
+    // Upload xzyr + faction to SDL_GPU device buffers via copy passes in cmd.
+    // Call before any SDL_GPU compute pass that reads transform or faction data.
+    void UploadSDLGPU(SDL_GPUCommandBuffer* cmd);
+    SDL_GPUBuffer* SDLTransformBuffer() const { return sdl_xzyr_buf_; }
+    SDL_GPUBuffer* SDLFactionBuffer()   const { return sdl_faction_buf_; }
+#endif
     void     BulkComputeDistSq(float cam_x, float cam_z);
     void     BulkComputeLOD(float near_sq, float far_sq, uint8_t* out_lod) const;
     int      BuildMatrices(const uint8_t* lod, float far_sq,
@@ -59,4 +71,10 @@ public:
 
 private:
     TransformSoA() = default;
+#ifdef MD_SDL_GPU
+    SDL_GPUBuffer*         sdl_xzyr_buf_    = nullptr;
+    SDL_GPUTransferBuffer* sdl_xzyr_stg_    = nullptr;
+    SDL_GPUBuffer*         sdl_faction_buf_ = nullptr;
+    SDL_GPUTransferBuffer* sdl_faction_stg_ = nullptr;
+#endif
 };

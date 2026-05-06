@@ -5,15 +5,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 file(GLOB_RECURSE ENGINE_SRC src/*.cpp)
-# stb_image_impl.cpp will be activated once game/ also drops Raylib (which
-# provides stbi_* via rtextures.c).  Until then, keep it excluded to avoid
-# duplicate-symbol link errors when the game links both engine + raylib.
+# stb_image_impl, glad_impl, cgltf_impl must NOT be in the engine static lib —
+# each binary (game, editor, demo) compiles them directly to avoid duplicate symbols
+# when the same impl appears in both the engine lib and the binary.
 list(FILTER ENGINE_SRC EXCLUDE REGEX "stb_image_impl\\.cpp$")
-# glad_impl.cpp must NOT be in the engine lib: game gets glad from Raylib (symbol
-# conflict). Each standalone binary (editor) compiles it directly.
 list(FILTER ENGINE_SRC EXCLUDE REGEX "glad_impl\\.cpp$")
-# cgltf_impl.cpp provides CGLTF_IMPLEMENTATION. In non-SDL3 builds Raylib's rmodels.c
-# already defines it; compile directly into each SDL3 binary to avoid duplicate symbols.
 list(FILTER ENGINE_SRC EXCLUDE REGEX "cgltf_impl\\.cpp$")
 add_library(monkey_dust_engine STATIC ${ENGINE_SRC})
 add_library(monkey_dust::engine ALIAS monkey_dust_engine)
@@ -40,6 +36,9 @@ if(USE_SDL3)
     target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3)
     target_include_directories(monkey_dust_engine PRIVATE
         ${CMAKE_SOURCE_DIR}/third_party/imgui/backends)
+    target_include_directories(monkey_dust_engine PUBLIC
+        # miniaudio.h lives in raylib/src/external/ — header-only, Raylib not linked.
+        ${CMAKE_SOURCE_DIR}/third_party/raylib/src)
 else()
     # Legacy Raylib path: engine links Raylib for math types + TraceLog.
     target_link_libraries(monkey_dust_engine PUBLIC raylib)

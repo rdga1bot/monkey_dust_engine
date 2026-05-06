@@ -120,7 +120,9 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuVertexBuffer — per-frame vertex data with ring buffering.
-// SDL_GPU: SDL_GPUBuffer (device-side) + SDL_GPUTransferBuffer (CPU staging).
+// OpenGL: GpuRingBuffer (GL 4.4 persistent coherent mapping, N=3 fence slots).
+// SDL_GPU: SDL_GPUTransferBuffer (CPU staging, cycle=true) +
+//          SDL_GPUBuffer (device VERTEX, cycle=true upload).
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuVertexBuffer {
 public:
@@ -128,23 +130,34 @@ public:
     void Shutdown();
 
     // Get CPU-writable pointer for this frame's vertex data.
-    // SDL_GPU: SDL_MapGPUTransferBuffer
+    // SDL_GPU: SDL_MapGPUTransferBuffer(cycle=true)
     void* MapWrite();
 
-    // Flush (no-op for coherent GL mapping; SDL_UnmapGPUTransferBuffer).
+    // Flush — no-op for coherent GL mapping; SDL_UnmapGPUTransferBuffer.
     void  Unmap();
 
-    // Insert fence + rotate to next ring slot.
-    // Call AFTER all draws that read this buffer.
-    // SDL_GPU: SDL_UploadToGPUBuffer(cycle=true)
-    void  Advance();
+    // SDL_GPU: copy transfer → device buffer via copy pass inside cmd.
+    // Must be called before the render pass that reads this buffer.
+    // OpenGL: no-op (data already coherently visible).
+#ifdef MD_SDL_GPU
+    void Upload(SDL_GPUCommandBuffer* cmd);
+    SDL_GPUBuffer* SDLBuffer() const { return sdl_buf_; }
+#endif
+
+    // Insert fence + rotate ring slot (OpenGL). No-op in SDL_GPU path.
+    void Advance();
 
     uint32_t Stride() const { return stride_; }
 
 private:
     friend class GpuCommandBuffer;
-    GpuRingBuffer ring_;
+    GpuRingBuffer ring_;       // OpenGL path (no-op stub when !MD_OPENGL43_ENABLED)
     uint32_t      stride_ = 0;
+#ifdef MD_SDL_GPU
+    SDL_GPUBuffer*         sdl_buf_      = nullptr;
+    SDL_GPUTransferBuffer* sdl_transfer_ = nullptr;
+    uint32_t               sdl_size_     = 0;
+#endif
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,28 +292,34 @@ void GpuDrawIndexedIndirect(unsigned int indirect_buf_id, uint32_t draw_count = 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuStaticBuffer — immutable GPU buffer loaded once from CPU data.
-// SDL_GPU: SDL_CreateGPUBuffer(usage=VERTEX|INDEX) + SDL_UploadToGPUBuffer
+// OpenGL: glBufferData(GL_STATIC_DRAW).
+// SDL_GPU: SDL_CreateGPUBuffer(VERTEX|INDEX) + one-shot SDL_UploadToGPUBuffer
+//          via temporary transfer buffer (released after upload).
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuStaticBuffer {
 public:
-    void Init(unsigned int gl_target,
-              const void* data,
-              uint32_t    size_bytes);
+    // gl_target: GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER (used for usage hint).
+    // SDL_GPU path maps GL_ELEMENT_ARRAY_BUFFER → INDEX usage, rest → VERTEX.
+    void Init(unsigned int gl_target, const void* data, uint32_t size_bytes);
     void Shutdown();
 
+    // OpenGL bind helpers (no-op in SDL_GPU-only builds).
     void Bind(unsigned int gl_target) const;
     void BindVertex(uint32_t slot, uint32_t stride, uint64_t offset = 0) const;
 
     unsigned int GLBuffer() const { return gl_buf_; }
+#ifdef MD_SDL_GPU
+    SDL_GPUBuffer* SDLBuffer() const { return sdl_buf_; }
+#endif
 
-    unsigned int Release() {
-        unsigned int id = gl_buf_;
-        gl_buf_ = 0;
-        return id;
-    }
+    // Transfer GL buffer ownership (for MdMesh legacy interop).
+    unsigned int Release() { unsigned int id = gl_buf_; gl_buf_ = 0; return id; }
 
 private:
     unsigned int gl_buf_ = 0;
+#ifdef MD_SDL_GPU
+    SDL_GPUBuffer* sdl_buf_ = nullptr;
+#endif
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

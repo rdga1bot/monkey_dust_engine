@@ -319,14 +319,83 @@ int GpuPipeline::UniformLoc(const char* name) const {
 
 void GpuVertexBuffer::Init(uint32_t max_vertices, uint32_t vertex_stride) {
     stride_ = vertex_stride;
+#ifdef MD_SDL_GPU
+    sdl_size_ = max_vertices * vertex_stride;
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+
+    SDL_GPUBufferCreateInfo buf_info = {};
+    buf_info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+    buf_info.size  = sdl_size_;
+    sdl_buf_ = SDL_CreateGPUBuffer(dev, &buf_info);
+    if (!sdl_buf_)
+        MD_LOG(MD_LOG_WARNING, "[GpuVertexBuffer] SDL_CreateGPUBuffer failed: %s", SDL_GetError());
+
+    SDL_GPUTransferBufferCreateInfo tbuf_info = {};
+    tbuf_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbuf_info.size  = sdl_size_;
+    sdl_transfer_ = SDL_CreateGPUTransferBuffer(dev, &tbuf_info);
+    if (!sdl_transfer_)
+        MD_LOG(MD_LOG_WARNING, "[GpuVertexBuffer] SDL_CreateGPUTransferBuffer failed: %s", SDL_GetError());
+#elif defined(MD_OPENGL43_ENABLED)
     ring_.Init(max_vertices * vertex_stride);
+#endif
 }
 
-void GpuVertexBuffer::Shutdown() { ring_.Shutdown(); stride_ = 0; }
+void GpuVertexBuffer::Shutdown() {
+#ifdef MD_SDL_GPU
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (sdl_buf_)      { SDL_ReleaseGPUBuffer(dev, sdl_buf_);                sdl_buf_      = nullptr; }
+    if (sdl_transfer_) { SDL_ReleaseGPUTransferBuffer(dev, sdl_transfer_);   sdl_transfer_ = nullptr; }
+    sdl_size_ = 0;
+#elif defined(MD_OPENGL43_ENABLED)
+    ring_.Shutdown();
+#endif
+    stride_ = 0;
+}
 
-void* GpuVertexBuffer::MapWrite() { return ring_.MapWrite(); }
-void  GpuVertexBuffer::Unmap()    { ring_.Unmap(); }
-void  GpuVertexBuffer::Advance()  { ring_.Advance(); }
+void* GpuVertexBuffer::MapWrite() {
+#ifdef MD_SDL_GPU
+    if (!sdl_transfer_) return nullptr;
+    return SDL_MapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(),
+                                    sdl_transfer_, SDL_TRUE /*cycle*/);
+#elif defined(MD_OPENGL43_ENABLED)
+    return ring_.MapWrite();
+#else
+    return nullptr;
+#endif
+}
+
+void GpuVertexBuffer::Unmap() {
+#ifdef MD_SDL_GPU
+    if (sdl_transfer_)
+        SDL_UnmapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(), sdl_transfer_);
+#elif defined(MD_OPENGL43_ENABLED)
+    ring_.Unmap();
+#endif
+}
+
+#ifdef MD_SDL_GPU
+void GpuVertexBuffer::Upload(SDL_GPUCommandBuffer* cmd) {
+    if (!cmd || !sdl_buf_ || !sdl_transfer_) return;
+    SDL_GPUCopyPass* pass = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTransferBufferLocation src = {};
+    src.transfer_buffer = sdl_transfer_;
+    src.offset          = 0;
+    SDL_GPUBufferRegion dst = {};
+    dst.buffer = sdl_buf_;
+    dst.offset = 0;
+    dst.size   = sdl_size_;
+    SDL_UploadToGPUBuffer(pass, &src, &dst, SDL_TRUE /*cycle*/);
+    SDL_EndGPUCopyPass(pass);
+}
+#endif
+
+void GpuVertexBuffer::Advance() {
+#ifdef MD_OPENGL43_ENABLED
+    ring_.Advance();
+#endif
+    // SDL_GPU: cycle=true in MapWrite/Upload handles versioning — no explicit advance needed.
+}
 
 // ── GpuCommandBuffer ─────────────────────────────────────────────────────────
 
@@ -554,22 +623,91 @@ void GpuDrawIndexedIndirect(unsigned int indirect_buf_id, uint32_t draw_count) {
 // ── GpuStaticBuffer ───────────────────────────────────────────────────────────
 
 void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size) {
+#ifdef MD_SDL_GPU
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+
+    // Map GL target → SDL_GPU buffer usage for type safety in future steps.
+#ifdef MD_OPENGL43_ENABLED
+    SDL_GPUBufferUsageFlags usage = (target == GL_ELEMENT_ARRAY_BUFFER)
+                                    ? SDL_GPU_BUFFERUSAGE_INDEX
+                                    : SDL_GPU_BUFFERUSAGE_VERTEX;
+#else
+    SDL_GPUBufferUsageFlags usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+    (void)target;
+#endif
+
+    SDL_GPUBufferCreateInfo buf_info = {};
+    buf_info.usage = usage;
+    buf_info.size  = size;
+    sdl_buf_ = SDL_CreateGPUBuffer(dev, &buf_info);
+    if (!sdl_buf_) {
+        MD_LOG(MD_LOG_WARNING, "[GpuStaticBuffer] SDL_CreateGPUBuffer failed: %s", SDL_GetError());
+        return;
+    }
+
+    // One-shot upload: staging transfer buffer → device buffer.
+    SDL_GPUTransferBufferCreateInfo tbuf_info = {};
+    tbuf_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbuf_info.size  = size;
+    SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(dev, &tbuf_info);
+    if (!transfer) {
+        MD_LOG(MD_LOG_WARNING, "[GpuStaticBuffer] SDL_CreateGPUTransferBuffer failed: %s", SDL_GetError());
+        return;
+    }
+
+    void* map = SDL_MapGPUTransferBuffer(dev, transfer, SDL_FALSE);
+    if (map) { memcpy(map, data, size); SDL_UnmapGPUTransferBuffer(dev, transfer); }
+
+    SDL_GPUCommandBuffer* cmd  = SDL_AcquireGPUCommandBuffer(dev);
+    SDL_GPUCopyPass*      pass = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTransferBufferLocation src = {};
+    src.transfer_buffer = transfer;
+    src.offset          = 0;
+    SDL_GPUBufferRegion dst = {};
+    dst.buffer = sdl_buf_;
+    dst.offset = 0;
+    dst.size   = size;
+    SDL_UploadToGPUBuffer(pass, &src, &dst, SDL_FALSE /*no cycle — one shot*/);
+    SDL_EndGPUCopyPass(pass);
+    SDL_SubmitGPUCommandBuffer(cmd);
+
+    SDL_ReleaseGPUTransferBuffer(dev, transfer); // staging no longer needed
+#endif
+
+#ifdef MD_OPENGL43_ENABLED
     glGenBuffers(1, &gl_buf_);
     glBindBuffer(target, gl_buf_);
     glBufferData(target, (GLsizeiptr)size, data, GL_STATIC_DRAW);
     glBindBuffer(target, 0);
+#endif
 }
 
 void GpuStaticBuffer::Shutdown() {
+#ifdef MD_SDL_GPU
+    if (sdl_buf_) {
+        SDL_ReleaseGPUBuffer(md::GpuDevice::Get().SDLDevice(), sdl_buf_);
+        sdl_buf_ = nullptr;
+    }
+#endif
+#ifdef MD_OPENGL43_ENABLED
     if (gl_buf_) { glDeleteBuffers(1, &gl_buf_); gl_buf_ = 0; }
+#endif
 }
 
 void GpuStaticBuffer::Bind(unsigned int target) const {
+#ifdef MD_OPENGL43_ENABLED
     glBindBuffer(target, gl_buf_);
+#else
+    (void)target;
+#endif
 }
 
 void GpuStaticBuffer::BindVertex(uint32_t slot, uint32_t stride, uint64_t offset) const {
+#ifdef MD_OPENGL43_ENABLED
     glBindVertexBuffer((GLuint)slot, gl_buf_, (GLintptr)offset, (GLsizei)stride);
+#else
+    (void)slot; (void)stride; (void)offset;
+#endif
 }
 
 // ── GpuTexture ────────────────────────────────────────────────────────────────

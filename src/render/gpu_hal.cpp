@@ -661,6 +661,9 @@ bool GpuComputePipeline::Create(const Desc& desc) {
             ci.num_readonly_storage_textures  = desc.num_readonly_storage_textures;
             ci.num_readwrite_storage_textures = desc.num_readwrite_storage_textures;
             ci.num_samplers                   = desc.num_samplers;
+            ci.threadcount_x                  = desc.threadcount_x;
+            ci.threadcount_y                  = desc.threadcount_y;
+            ci.threadcount_z                  = desc.threadcount_z;
             sdl_pipeline_ = SDL_CreateGPUComputePipeline(dev, &ci);
             free(code);
             if (!sdl_pipeline_)

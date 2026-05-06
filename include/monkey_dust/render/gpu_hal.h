@@ -238,6 +238,10 @@ public:
         uint32_t num_readonly_storage_textures  = 0;
         uint32_t num_readwrite_storage_textures = 0;
         uint32_t num_samplers                   = 0;
+        // Must match layout(local_size_x/y/z) in the compute shader.
+        uint32_t threadcount_x = 64;
+        uint32_t threadcount_y = 1;
+        uint32_t threadcount_z = 1;
     };
 
     bool Create(const Desc& desc);

@@ -11,14 +11,15 @@
 #include "glad.h"
 #endif
 
-void SSBO::Init(int capacity_bytes) {
+void SSBO::Init(int capacity_bytes, uint32_t extra_sdl_usage) {
 #ifdef MD_SDL_GPU
     sdl_cap_ = (uint32_t)capacity_bytes;
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     if (dev && capacity_bytes > 0) {
         SDL_GPUBufferCreateInfo bi = {};
         bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
-                   SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
+                   SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE |
+                   extra_sdl_usage;
         bi.size  = (Uint32)capacity_bytes;
         sdl_buf_ = SDL_CreateGPUBuffer(dev, &bi);
         if (!sdl_buf_)

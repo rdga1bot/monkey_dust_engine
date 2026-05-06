@@ -106,7 +106,7 @@ public:
 
         // MAX_SLOTS = 8192, indirect = 5 uint32 = 20 bytes
         shadow_vis_buf_.Init(8192 * (int)sizeof(uint32_t));
-        shadow_ind_buf_.Init(20);
+        shadow_ind_buf_.Init(20, SSBO_INDIRECT);
         init_ = true;
 #endif
     }

@@ -71,14 +71,19 @@ struct MdCamera {
 #  endif
     }
 
-    inline void FrustumPlanes(float aspect, float out[16]) const {
-        Matrix vp = GetViewProjRaylib(aspect);
-        out[ 0]=vp.m3+vp.m0; out[ 1]=vp.m7+vp.m4; out[ 2]=vp.m11+vp.m8;  out[ 3]=vp.m15+vp.m12;
-        out[ 4]=vp.m3-vp.m0; out[ 5]=vp.m7-vp.m4; out[ 6]=vp.m11-vp.m8;  out[ 7]=vp.m15-vp.m12;
-        out[ 8]=vp.m3-vp.m1; out[ 9]=vp.m7-vp.m5; out[10]=vp.m11-vp.m9;  out[11]=vp.m15-vp.m13;
-        out[12]=vp.m3+vp.m1; out[13]=vp.m7+vp.m5; out[14]=vp.m11+vp.m9;  out[15]=vp.m15+vp.m13;
-    }
 #endif // RAYLIB_H
+
+    // Portable frustum plane extraction — works in any build.
+    // Fills 4 planes (left, right, top, bottom) as vec4[4] for the cull shader.
+    inline void FrustumPlanes(float aspect, float out[16]) const {
+        Mat4 vp = mat4_mul(ViewMatrix(), ProjMatrix(aspect));
+        const float* m = mat4_ptr(vp);
+        // Gribb & Hartmann: row3 ± rowN from column-major float[16].
+        out[ 0]=m[3]+m[0]; out[ 1]=m[7]+m[4]; out[ 2]=m[11]+m[ 8]; out[ 3]=m[15]+m[12]; // left
+        out[ 4]=m[3]-m[0]; out[ 5]=m[7]-m[4]; out[ 6]=m[11]-m[ 8]; out[ 7]=m[15]-m[12]; // right
+        out[ 8]=m[3]-m[1]; out[ 9]=m[7]-m[5]; out[10]=m[11]-m[ 9]; out[11]=m[15]-m[13]; // top
+        out[12]=m[3]+m[1]; out[13]=m[7]+m[5]; out[14]=m[11]+m[ 9]; out[15]=m[15]+m[13]; // bottom
+    }
 };
 
 // Project a world-space point to screen pixels (column-major VP, Y-down screen).

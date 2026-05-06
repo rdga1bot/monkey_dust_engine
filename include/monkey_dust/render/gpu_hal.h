@@ -175,7 +175,7 @@ public:
     void BindVertexBuffer(GpuVertexBuffer* buf);
 
     // Upload small per-draw constants via named uniform location.
-    // SDL_GPU: SDL_PushGPUVertexUniformData(cmd, slot, data, size)
+    // SDL_GPU: no-op — use PushVertexUniforms / PushFragmentUniforms instead.
     void SetUniformMat4(int loc, const float* m16);
     void SetUniformVec3(int loc, const float* v3);
 
@@ -183,12 +183,41 @@ public:
     // SDL_GPU: SDL_DrawGPUPrimitives
     void Draw(uint32_t vertex_count, uint32_t first_vertex = 0);
 
-    // Restore GL state changed by BindPipeline.
-    // SDL_GPU: SDL_EndGPURenderPass (state is scope-managed)
+    // Restore GL state / end SDL_GPU render pass.
     void EndPass();
+
+#ifdef MD_SDL_GPU
+    // Open a color (+ optional depth) render pass on an existing command buffer.
+    struct ColorPassDesc {
+        SDL_GPUCommandBuffer* cmd;
+        SDL_GPUTexture*       color_tex;
+        SDL_GPUTexture*       depth_tex      = nullptr;
+        float                 clear_color[4] = {0.f, 0.f, 0.f, 1.f};
+        float                 clear_depth    = 1.0f;
+        bool                  load_color     = false; // false = CLEAR on entry
+        bool                  load_depth     = false;
+    };
+    void BeginColorPass(const ColorPassDesc& desc);
+
+    // Bind textures + samplers for the fragment stage.
+    void BindFragmentSamplers(uint32_t first_slot,
+                               const SDL_GPUTextureSamplerBinding* bindings,
+                               uint32_t count);
+
+    // Push small uniform structs (UBO slot 0/1 mapped via SPIRV_COMPILE bindings).
+    void PushVertexUniforms  (uint32_t slot, const void* data, uint32_t size_bytes);
+    void PushFragmentUniforms(uint32_t slot, const void* data, uint32_t size_bytes);
+
+    SDL_GPURenderPass*    SDLPass() const { return sdl_pass_; }
+    SDL_GPUCommandBuffer* SDLCmd()  const { return sdl_cmd_; }
+#endif
 
 private:
     GpuPipeline* pipeline_ = nullptr;
+#ifdef MD_SDL_GPU
+    SDL_GPUCommandBuffer* sdl_cmd_  = nullptr;
+    SDL_GPURenderPass*    sdl_pass_ = nullptr;
+#endif
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,15 +314,23 @@ public:
         bool  cull_front  = false; // GL_FRONT for shadow bias (Peter-Panning fix)
     };
 
-    // SDL_GPU: SDL_BeginGPURenderPass(cmd, nullptr, 0, &depth_info)
+    // OpenGL: FBO bind + clear.
     void BeginDepthOnly(const DepthDesc& desc);
 
-    // SDL_GPU: SDL_EndGPURenderPass
+#ifdef MD_SDL_GPU
+    // SDL_GPU variant: requires the frame command buffer.
+    void BeginDepthOnly(SDL_GPUCommandBuffer* cmd, const DepthDesc& desc);
+#endif
+
+    // OpenGL: restore FBO/viewport. SDL_GPU: SDL_EndGPURenderPass.
     void End();
 
 private:
     int  saved_vp_[4]  = {};
     bool cull_front_   = false;
+#ifdef MD_SDL_GPU
+    SDL_GPURenderPass* sdl_pass_ = nullptr;
+#endif
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -439,6 +439,9 @@ void GpuCommandBuffer::BindPipeline(GpuPipeline* p) {
     pipeline_ = p;
     if (!p) return;
 
+#ifdef MD_SDL_GPU
+    if (sdl_pass_) SDL_BindGPUGraphicsPipeline(sdl_pass_, p->sdl_pipeline_);
+#endif
 #ifdef MD_OPENGL43_ENABLED
     MdUseShader(p->shader_);
 
@@ -455,6 +458,14 @@ void GpuCommandBuffer::BindPipeline(GpuPipeline* p) {
 }
 
 void GpuCommandBuffer::BindVertexBuffer(GpuVertexBuffer* buf) {
+#ifdef MD_SDL_GPU
+    if (sdl_pass_ && buf && buf->sdl_buf_) {
+        SDL_GPUBufferBinding binding = {};
+        binding.buffer = buf->sdl_buf_;
+        binding.offset = 0;
+        SDL_BindGPUVertexBuffers(sdl_pass_, 0, &binding, 1);
+    }
+#endif
 #ifdef MD_OPENGL43_ENABLED
     if (!pipeline_ || !buf) return;
     glBindVertexArray(pipeline_->vao_);
@@ -481,6 +492,10 @@ void GpuCommandBuffer::SetUniformVec3(int loc, const float* v3) {
 }
 
 void GpuCommandBuffer::Draw(uint32_t vertex_count, uint32_t first_vertex) {
+#ifdef MD_SDL_GPU
+    if (sdl_pass_)
+        SDL_DrawGPUPrimitives(sdl_pass_, vertex_count, 1, first_vertex, 0);
+#endif
 #ifdef MD_OPENGL43_ENABLED
     if (!pipeline_) return;
     glDrawArrays(ToGL(pipeline_->raster_.topology),
@@ -491,19 +506,89 @@ void GpuCommandBuffer::Draw(uint32_t vertex_count, uint32_t first_vertex) {
 }
 
 void GpuCommandBuffer::EndPass() {
-#ifdef MD_OPENGL43_ENABLED
-    if (!pipeline_) return;
-    glBindVertexArray(0);
-    const GpuRasterState& r = pipeline_->raster_;
-    if (r.blend_enable)  glDisable(GL_BLEND);
-    if (!r.depth_test)   glEnable(GL_DEPTH_TEST);
-    if (!r.depth_write)  glDepthMask(GL_TRUE);
-    if (!r.cull_back)    glEnable(GL_CULL_FACE);
-    if (r.point_size)    glDisable(GL_PROGRAM_POINT_SIZE);
-    MdStopShader();
-    pipeline_ = nullptr;
+#ifdef MD_SDL_GPU
+    if (sdl_pass_) {
+        SDL_EndGPURenderPass(sdl_pass_);
+        sdl_pass_ = nullptr;
+    }
+    sdl_cmd_ = nullptr;
 #endif
+#ifdef MD_OPENGL43_ENABLED
+    if (pipeline_) {
+        glBindVertexArray(0);
+        const GpuRasterState& r = pipeline_->raster_;
+        if (r.blend_enable)  glDisable(GL_BLEND);
+        if (!r.depth_test)   glEnable(GL_DEPTH_TEST);
+        if (!r.depth_write)  glDepthMask(GL_TRUE);
+        if (!r.cull_back)    glEnable(GL_CULL_FACE);
+        if (r.point_size)    glDisable(GL_PROGRAM_POINT_SIZE);
+        MdStopShader();
+    }
+#endif
+    pipeline_ = nullptr;
 }
+
+// ── GpuCommandBuffer + GpuRenderPass — SDL_GPU paths ─────────────────────────
+
+#ifdef MD_SDL_GPU
+
+void GpuCommandBuffer::BeginColorPass(const ColorPassDesc& desc) {
+    sdl_cmd_ = desc.cmd;
+
+    SDL_GPUColorTargetInfo color_info = {};
+    color_info.texture     = desc.color_tex;
+    color_info.clear_color = { desc.clear_color[0], desc.clear_color[1],
+                               desc.clear_color[2], desc.clear_color[3] };
+    color_info.load_op  = desc.load_color ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
+    color_info.store_op = SDL_GPU_STOREOP_STORE;
+    color_info.cycle    = SDL_FALSE;
+
+    if (desc.depth_tex) {
+        SDL_GPUDepthStencilTargetInfo depth_info = {};
+        depth_info.texture          = desc.depth_tex;
+        depth_info.clear_depth      = desc.clear_depth;
+        depth_info.load_op          = desc.load_depth ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
+        depth_info.store_op         = SDL_GPU_STOREOP_STORE;
+        depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
+        depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+        depth_info.cycle            = SDL_FALSE;
+        sdl_pass_ = SDL_BeginGPURenderPass(sdl_cmd_, &color_info, 1, &depth_info);
+    } else {
+        sdl_pass_ = SDL_BeginGPURenderPass(sdl_cmd_, &color_info, 1, nullptr);
+    }
+}
+
+void GpuCommandBuffer::BindFragmentSamplers(uint32_t first_slot,
+                                             const SDL_GPUTextureSamplerBinding* bindings,
+                                             uint32_t count) {
+    if (sdl_pass_)
+        SDL_BindGPUFragmentSamplers(sdl_pass_, first_slot, bindings, count);
+}
+
+void GpuCommandBuffer::PushVertexUniforms(uint32_t slot, const void* data, uint32_t size_bytes) {
+    if (sdl_cmd_)
+        SDL_PushGPUVertexUniformData(sdl_cmd_, slot, data, size_bytes);
+}
+
+void GpuCommandBuffer::PushFragmentUniforms(uint32_t slot, const void* data, uint32_t size_bytes) {
+    if (sdl_cmd_)
+        SDL_PushGPUFragmentUniformData(sdl_cmd_, slot, data, size_bytes);
+}
+
+void GpuRenderPass::BeginDepthOnly(SDL_GPUCommandBuffer* cmd, const DepthDesc& desc) {
+    SDL_GPUDepthStencilTargetInfo depth_info = {};
+    depth_info.texture          = desc.target->SDLTexture();
+    depth_info.clear_depth      = desc.clear_depth;
+    depth_info.load_op          = SDL_GPU_LOADOP_CLEAR;
+    depth_info.store_op         = SDL_GPU_STOREOP_STORE;
+    depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
+    depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+    depth_info.cycle            = SDL_FALSE;
+    sdl_pass_  = SDL_BeginGPURenderPass(cmd, nullptr, 0, &depth_info);
+    cull_front_ = desc.cull_front; // stored for symmetry; SDL_GPU cull is pipeline-configured
+}
+
+#endif // MD_SDL_GPU
 
 // ── GpuComputePipeline ────────────────────────────────────────────────────────
 
@@ -685,6 +770,12 @@ void GpuRenderPass::BeginDepthOnly(const DepthDesc& desc) {
 }
 
 void GpuRenderPass::End() {
+#ifdef MD_SDL_GPU
+    if (sdl_pass_) {
+        SDL_EndGPURenderPass(sdl_pass_);
+        sdl_pass_ = nullptr;
+    }
+#endif
     if (cull_front_) glCullFace(GL_BACK);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(saved_vp_[0], saved_vp_[1], saved_vp_[2], saved_vp_[3]);

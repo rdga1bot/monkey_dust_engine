@@ -64,6 +64,19 @@ public:
     Mat4  lightViewProj[NUM_CASCADES]  = {};
     float cascade_splits[NUM_CASCADES] = { SPLITS[1], SPLITS[2], SPLITS[3] };
 
+    // Read-only access to cascade depth textures (SDL_GPU sampler binding, Step 11).
+    const GpuDepthTexture& GetCascadeDepth(int k) const { return shadow_depth_[k]; }
+
+#ifdef MD_SDL_GPU
+    // Create SDL_GPU depth textures for the shadow cascades.
+    // In dual-backend mode, Init() creates them; call this only in pure SDL_GPU mode.
+    void InitSDLGPU() {
+        for (int k = 0; k < NUM_CASCADES; ++k)
+            if (!shadow_depth_[k].SDLTexture())
+                shadow_depth_[k].Init(MAP_SIZE, MAP_SIZE, /*shadow_border=*/true);
+    }
+#endif
+
     void Init(MdMesh npc_mesh) {
 #ifdef MD_OPENGL43_ENABLED
         if (init_) return;
@@ -80,13 +93,12 @@ public:
         loc_lightVP_   = MdGetLoc(shadow_shader_, "lightViewProj");
 
         // Shadow cull compute — GpuComputePipeline replaces raw ComputeShader.
-        // SDL_GPU SPIRV: set=1 ro[0]=Transform(binding=0);
-        //                rw[0]=ShadowVis(binding=6), rw[1]=ShadowInd(binding=7); UBO=1.
+        // SDL_GPU SPIRV: set=0 ro[0]=Transform; set=1 rw[0]=ShadowVis, rw[1]=ShadowInd; set=2 UBO.
         GpuComputePipeline::Desc sc_desc;
         sc_desc.glsl_path                    = "shaders/shadow_cull.comp";
-        sc_desc.num_uniform_buffers          = 1; // camPos/maxDist/count (set=0 binding=0)
-        sc_desc.num_readonly_storage_buffers = 1; // TransformBuf (binding=0)
-        sc_desc.num_readwrite_storage_buffers= 2; // ShadowVisBuf(6), ShadowIndBuf(7)
+        sc_desc.num_uniform_buffers          = 1; // camPos/maxDist/count (set=2 binding=0)
+        sc_desc.num_readonly_storage_buffers = 1; // TransformBuf (set=0 binding=0)
+        sc_desc.num_readwrite_storage_buffers= 2; // ShadowVisBuf(set=1,bind=0), ShadowIndBuf(bind=1)
         shadow_cull_cs_.Create(sc_desc);
         loc_svCamPos_  = shadow_cull_cs_.UniformLoc("camPos");
         loc_svMaxDist_ = shadow_cull_cs_.UniformLoc("maxDistSq");

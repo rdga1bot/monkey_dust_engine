@@ -26,7 +26,8 @@
    inline Mat4 mat4_scale(float x, float y, float z)     { return MatrixScale(x, y, z); }
    inline Mat4 mat4_rotate_y(float angle)    { return MatrixRotateY(angle); }
    inline Mat4 mat4_perspective(float fovy, float aspect, float near_z, float far_z)
-                                             { return MatrixPerspective(fovy, aspect, near_z, far_z); }
+                                             { if (!(aspect > 0.001f)) aspect = 16.f/9.f;
+                                               return MatrixPerspective(fovy, aspect, near_z, far_z); }
    inline Mat4 mat4_lookat(Vec3 eye, Vec3 center, Vec3 up) { return MatrixLookAt(eye, center, up); }
    inline Mat4 mat4_ortho(float l, float r, float b, float t, float n, float f)
                                              { return MatrixOrtho(l, r, b, t, n, f); }
@@ -55,7 +56,8 @@
                                              { return glm::scale(glm::mat4(1.0f), {x, y, z}); }
    inline Mat4 mat4_rotate_y(float angle)    { return glm::rotate(glm::mat4(1.0f), angle, {0.0f, 1.0f, 0.0f}); }
    inline Mat4 mat4_perspective(float fovy, float aspect, float near_z, float far_z)
-                                             { return glm::perspective(fovy, aspect, near_z, far_z); }
+                                             { if (!(aspect > 0.001f)) aspect = 16.f/9.f;
+                                               return glm::perspective(fovy, aspect, near_z, far_z); }
    inline Mat4 mat4_lookat(Vec3 eye, Vec3 center, Vec3 up) { return glm::lookAt(eye, center, up); }
    inline Mat4 mat4_ortho(float l, float r, float b, float t, float n, float f)
                                              { return glm::ortho(l, r, b, t, n, f); }

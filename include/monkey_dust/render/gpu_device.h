@@ -30,6 +30,7 @@ public:
 
     bool           IsReady()    const { return device_ != nullptr; }
     SDL_GPUDevice* SDLDevice()  const { return device_; }
+    SDL_Window*    Window()     const { return window_; }
     const char*    DriverName() const;
 
     // Per-frame: get a command buffer for recording this frame's GPU work.

@@ -1,6 +1,6 @@
 #pragma once
 // ─────────────────────────────────────────────────────────────────────────────
-// GPU Hardware Abstraction Layer — OpenGL 4.3 implementation.
+// GPU Hardware Abstraction Layer — dual-backend (OpenGL 4.3 / SDL_GPU).
 //
 // API design mirrors SDL_GPU so future backend swap is mechanical:
 //
@@ -8,14 +8,21 @@
 //   GpuVertexBuffer   → SDL_GPUBuffer (device) + SDL_GPUTransferBuffer (staging)
 //   GpuCommandBuffer  → SDL_GPUCommandBuffer + SDL_BeginGPURenderPass
 //
-// See CLAUDE_SDL_GPU_PREP.md for full migration notes.
+// Backend selection:
+//   OpenGL 4.3 path:  compiled when MD_OPENGL43_ENABLED is defined
+//   SDL_GPU path:     compiled when MD_SDL_GPU       is defined
+//   Both can be active simultaneously during migration (dual-backend).
 // ─────────────────────────────────────────────────────────────────────────────
+
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
 #include <monkey_dust/render/md_shader.h>
 #include <monkey_dust/render/gpu_ring_buffer.h>
 #include <cstdint>
 
-#ifdef MD_OPENGL43_ENABLED
+#ifdef MD_SDL_GPU
+#include <SDL3/SDL_gpu.h>
+#endif
 
 // ── Vertex topology ───────────────────────────────────────────────────────────
 enum class GpuTopology : uint8_t { TRIANGLES, POINTS, LINES };
@@ -24,6 +31,20 @@ enum class GpuTopology : uint8_t { TRIANGLES, POINTS, LINES };
 enum class GpuAttribFmt : uint8_t {
     F1, F2, F3, F4,       // float scalars / vectors
     U8x4_NORM             // uint8×4 normalized [0,1] → vec4
+};
+
+// ── Blend factor (portable; maps to GL and SDL_GPU) ───────────────────────────
+enum class GpuBlendFactor : uint8_t {
+    ZERO,
+    ONE,
+    SRC_COLOR,
+    ONE_MINUS_SRC_COLOR,
+    SRC_ALPHA,
+    ONE_MINUS_SRC_ALPHA,
+    DST_ALPHA,
+    ONE_MINUS_DST_ALPHA,
+    DST_COLOR,
+    ONE_MINUS_DST_COLOR,
 };
 
 // ── Single vertex attribute descriptor ───────────────────────────────────────
@@ -42,14 +63,14 @@ struct GpuVertexLayout {
 
 // ── Rasterizer / output-merger state (immutable in pipeline) ─────────────────
 struct GpuRasterState {
-    GpuTopology topology    = GpuTopology::TRIANGLES;
-    bool  blend_enable      = false;
-    uint32_t src_factor     = 0;   // GL_SRC_ALPHA etc.
-    uint32_t dst_factor     = 0;
-    bool  depth_test        = true;
-    bool  depth_write       = true;
-    bool  cull_back         = true;
-    bool  point_size        = false; // GL_PROGRAM_POINT_SIZE
+    GpuTopology   topology    = GpuTopology::TRIANGLES;
+    bool          blend_enable = false;
+    GpuBlendFactor src_factor  = GpuBlendFactor::SRC_ALPHA;
+    GpuBlendFactor dst_factor  = GpuBlendFactor::ONE_MINUS_SRC_ALPHA;
+    bool  depth_test           = true;
+    bool  depth_write          = true;
+    bool  cull_back            = true;
+    bool  point_size           = false; // GL_PROGRAM_POINT_SIZE
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,23 +81,40 @@ struct GpuRasterState {
 class GpuPipeline {
 public:
     struct Desc {
-        const char*    vert_path = nullptr;
-        const char*    frag_path = nullptr;
+        const char*     vert_path = nullptr;  // GLSL (OpenGL) or SPIR-V basename (SDL_GPU)
+        const char*     frag_path = nullptr;
         GpuVertexLayout layout;
         GpuRasterState  raster;
+#ifdef MD_SDL_GPU
+        // Shader resource counts required by SDL_GPUShaderCreateInfo.
+        // Must match the SPIR-V descriptor declarations exactly.
+        uint32_t vert_uniform_bufs = 0;
+        uint32_t vert_storage_bufs = 0;
+        uint32_t frag_uniform_bufs = 0;
+        uint32_t frag_storage_bufs = 0;
+        uint32_t frag_samplers     = 0;
+        bool     has_depth_target  = true;  // set false for 2D/HUD passes
+#endif
     };
 
     bool Create(const Desc& desc);
     void Destroy();
 
+#ifdef MD_OPENGL43_ENABLED
     // Return the GL uniform location for a named uniform.
-    // SDL_GPU replacement: named locations are replaced by push_constant offsets.
+    // SDL_GPU replacement: use push_constant offsets / UBO members.
     int UniformLoc(const char* name) const;
+#endif
 
 private:
     friend class GpuCommandBuffer;
+#ifdef MD_OPENGL43_ENABLED
     unsigned int vao_    = 0;
     MdShader     shader_ = {};
+#endif
+#ifdef MD_SDL_GPU
+    SDL_GPUGraphicsPipeline* sdl_pipeline_ = nullptr;
+#endif
     GpuRasterState raster_ = {};
 };
 
@@ -160,7 +198,6 @@ private:
 //
 // Usage:
 //   pass.Begin(&pipeline);     // bind compute pipeline
-//   // bind SSBOs / ring buffers before or here
 //   pass.SetUniform*(...);     // optional uniforms
 //   pass.Dispatch(gx, gy, gz); // one or more dispatches
 //   pass.End(BARRIER_STORAGE); // glMemoryBarrier + unbind
@@ -172,25 +209,16 @@ private:
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuComputePass {
 public:
-    // Barrier flags for End() — maps to GL_*_BARRIER_BIT constants.
-    // SDL_GPU: expressed via SDL_GPUStorageBufferReadWriteBinding at Begin.
     static constexpr uint32_t BARRIER_STORAGE         = 1u; // GL_SHADER_STORAGE_BARRIER_BIT
     static constexpr uint32_t BARRIER_COMMAND         = 2u; // GL_COMMAND_BARRIER_BIT
     static constexpr uint32_t BARRIER_STORAGE_COMMAND = 3u; // both — for indirect draw output
 
     void Begin   (GpuComputePipeline* pipeline);
-
-    // Uniform setters — SDL_GPU: SDL_PushGPUComputeUniformData(cmd, slot, data, size)
     void SetUniformFloat    (int loc, float v);
     void SetUniformInt      (int loc, int v);
     void SetUniformVec3     (int loc, const float* v3);
     void SetUniformVec4Array(int loc, const float* v4, int count);
-
-    // SDL_GPU: SDL_DispatchGPUCompute
     void Dispatch(uint32_t gx, uint32_t gy, uint32_t gz);
-
-    // glUseProgram(0) + glMemoryBarrier.
-    // barrier_flags: BARRIER_STORAGE | BARRIER_COMMAND (or both).
     void End(uint32_t barrier_flags = BARRIER_STORAGE);
 
 private:
@@ -199,16 +227,13 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuDepthTexture — depth texture + FBO attachment for offscreen depth passes.
-// Typical use: shadow map cascade (depth-only, no color output).
 // SDL_GPU: SDL_GPUTexture(SDL_GPU_TEXTUREFORMAT_D24_UNORM) used as depth target
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuDepthTexture {
 public:
-    // shadow_border: adds GL_CLAMP_TO_BORDER + white border for PCF shadow sampling.
     void Init(int w, int h, bool shadow_border = false);
     void Shutdown();
 
-    // Bind for fragment shader sampling (shadow map lookup in NPC shader).
     // SDL_GPU: SDL_BindGPUFragmentSamplers(cmd, unit, &binding, 1)
     void Bind(uint32_t unit) const;
 
@@ -225,10 +250,7 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuRenderPass — scoped render pass bound to one or more attachments.
-// Current scope: depth-only passes (shadow maps).  Color passes TBD.
-//
-// SDL_GPU: SDL_BeginGPURenderPass / SDL_EndGPURenderPass with
-//   load_op = CLEAR (depth), store_op = STORE, no color target.
+// SDL_GPU: SDL_BeginGPURenderPass / SDL_EndGPURenderPass
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuRenderPass {
 public:
@@ -238,12 +260,10 @@ public:
         bool  cull_front  = false; // GL_FRONT for shadow bias (Peter-Panning fix)
     };
 
-    // Saves current viewport, binds FBO, sets viewport to target size, clears depth.
     // SDL_GPU: SDL_BeginGPURenderPass(cmd, nullptr, 0, &depth_info)
     void BeginDepthOnly(const DepthDesc& desc);
 
-    // Unbinds FBO (→ default framebuffer), restores viewport.
-    // SDL_GPU: SDL_EndGPURenderPass (no explicit viewport restore needed)
+    // SDL_GPU: SDL_EndGPURenderPass
     void End();
 
 private:
@@ -253,36 +273,26 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuDrawIndexedIndirect — indexed draw using a GPU-side indirect buffer.
-// Used by shadow pass and GPU-culled NPC pass.
 // SDL_GPU: SDL_DrawGPUIndexedPrimitivesIndirect(pass, buf, offset, draw_count)
 // ─────────────────────────────────────────────────────────────────────────────
-// Caller is responsible for VAO binding and active program setup.
-// Always draws GL_TRIANGLES (suitable for mesh geometry).
 void GpuDrawIndexedIndirect(unsigned int indirect_buf_id, uint32_t draw_count = 1);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuStaticBuffer — immutable GPU buffer loaded once from CPU data.
-// Use for static mesh geometry (position, normal, UV, index arrays).
 // SDL_GPU: SDL_CreateGPUBuffer(usage=VERTEX|INDEX) + SDL_UploadToGPUBuffer
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuStaticBuffer {
 public:
-    void Init(unsigned int gl_target,   // GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER
+    void Init(unsigned int gl_target,
               const void* data,
               uint32_t    size_bytes);
     void Shutdown();
 
-    // Bind for legacy-VAO style drawing (attrib pointer already stored in VAO).
     void Bind(unsigned int gl_target) const;
-
-    // GL 4.3 DSA vertex binding (no current VAO needed).
-    // SDL_GPU: slot corresponds to SDL_GPUVertexBufferDescription.slot
     void BindVertex(uint32_t slot, uint32_t stride, uint64_t offset = 0) const;
 
     unsigned int GLBuffer() const { return gl_buf_; }
 
-    // Transfer ownership: returns GL ID and nulls this object (no double-delete).
-    // Used by MdMesh::BuildMesh to place the buffer ID back into legacy struct fields.
     unsigned int Release() {
         unsigned int id = gl_buf_;
         gl_buf_ = 0;
@@ -306,10 +316,9 @@ struct GpuSamplerDesc {
     Wrap   wrap_s     = Wrap::REPEAT;
     Wrap   wrap_t     = Wrap::REPEAT;
     bool   gen_mipmap = false;
-    bool   flip_v     = false;  // stbi flip (Flare atlas convention, DO NOT change)
+    bool   flip_v     = false;
 
-    // Presets
-    static GpuSamplerDesc Default() { return {}; }
+    static GpuSamplerDesc Default()  { return {}; }
     static GpuSamplerDesc PixelArt() {
         return { Filter::LINEAR_MIPMAP, Filter::NEAREST,
                  Wrap::CLAMP_TO_EDGE, Wrap::CLAMP_TO_EDGE, true, true };
@@ -326,13 +335,10 @@ struct GpuSamplerDesc {
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuTexture {
 public:
-    // Load from file (stb_image). Returns false on failure.
     bool InitFromFile  (const char* path,              const GpuSamplerDesc& s = {});
-    // Upload raw RGBA8 pixel data.
     bool InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSamplerDesc& s = {});
     void Shutdown();
 
-    // Bind to texture unit.
     // SDL_GPU: SDL_BindGPUFragmentSamplers(cmd, unit, &binding, 1)
     void Bind(uint32_t unit) const;
 
@@ -341,7 +347,6 @@ public:
     unsigned int GLTexture() const { return id_; }
     bool         Valid()     const { return id_ != 0; }
 
-    // Transfer ownership (same pattern as GpuStaticBuffer::Release).
     unsigned int Release() { unsigned int t = id_; id_ = 0; return t; }
 
 private:
@@ -350,4 +355,4 @@ private:
     int w_ = 0, h_ = 0;
 };
 
-#endif // MD_OPENGL43_ENABLED
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

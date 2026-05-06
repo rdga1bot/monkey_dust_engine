@@ -590,6 +590,50 @@ void GpuRenderPass::BeginDepthOnly(SDL_GPUCommandBuffer* cmd, const DepthDesc& d
 
 #endif // MD_SDL_GPU
 
+// ── GpuRenderPass::BeginColor (dual-backend) ─────────────────────────────────
+
+void GpuRenderPass::BeginColor(const ColorDesc& desc) {
+#ifdef MD_SDL_GPU
+    if (desc.cmd) {
+        uint32_t sw = 0, sh = 0;
+        SDL_GPUTexture* color_tex =
+            md::GpuDevice::Get().AcquireSwapchainTexture(desc.cmd, &sw, &sh);
+        if (color_tex) {
+            SDL_GPUColorTargetInfo color_info = {};
+            color_info.texture     = color_tex;
+            color_info.clear_color = { desc.clear[0], desc.clear[1],
+                                       desc.clear[2], desc.clear[3] };
+            color_info.load_op  = SDL_GPU_LOADOP_CLEAR;
+            color_info.store_op = SDL_GPU_STOREOP_STORE;
+            color_info.cycle    = SDL_FALSE;
+
+            if (desc.depth) {
+                SDL_GPUDepthStencilTargetInfo depth_info = {};
+                depth_info.texture          = desc.depth->SDLTexture();
+                depth_info.clear_depth      = desc.clear_depth;
+                depth_info.load_op          = SDL_GPU_LOADOP_CLEAR;
+                depth_info.store_op         = SDL_GPU_STOREOP_STORE;
+                depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
+                depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
+                depth_info.cycle            = SDL_FALSE;
+                sdl_pass_ = SDL_BeginGPURenderPass(desc.cmd, &color_info, 1, &depth_info);
+            } else {
+                sdl_pass_ = SDL_BeginGPURenderPass(desc.cmd, &color_info, 1, nullptr);
+            }
+        }
+    }
+#endif
+#ifdef MD_OPENGL43_ENABLED
+    glGetIntegerv(GL_VIEWPORT, saved_vp_);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glClearColor(desc.clear[0], desc.clear[1], desc.clear[2], desc.clear[3]);
+    glClearDepthf(desc.clear_depth);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+#else
+    (void)desc;
+#endif
+}
+
 // ── GpuComputePipeline ────────────────────────────────────────────────────────
 
 #ifdef MD_OPENGL43_ENABLED

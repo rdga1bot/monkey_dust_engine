@@ -314,16 +314,36 @@ public:
         bool  cull_front  = false; // GL_FRONT for shadow bias (Peter-Panning fix)
     };
 
+    // Shadow / depth-only pass.
     // OpenGL: FBO bind + clear.
     void BeginDepthOnly(const DepthDesc& desc);
 
 #ifdef MD_SDL_GPU
-    // SDL_GPU variant: requires the frame command buffer.
+    // SDL_GPU depth-only variant: requires the frame command buffer.
     void BeginDepthOnly(SDL_GPUCommandBuffer* cmd, const DepthDesc& desc);
 #endif
 
-    // OpenGL: restore FBO/viewport. SDL_GPU: SDL_EndGPURenderPass.
+    // ── Color pass (main render target) ──────────────────────────────────────
+    struct ColorDesc {
+        float            clear[4]    = {0.f, 0.f, 0.f, 1.f};
+        float            clear_depth = 1.0f;
+        GpuDepthTexture* depth       = nullptr; // optional depth attachment
+#ifdef MD_SDL_GPU
+        // SDL_GPU: frame command buffer acquired from GpuDevice::AcquireCommandBuffer().
+        SDL_GPUCommandBuffer* cmd = nullptr;
+#endif
+    };
+
+    // SDL_GPU: AcquireSwapchainTexture + SDL_BeginGPURenderPass(color+depth).
+    // OpenGL: bind FBO 0, save viewport, glClear color+depth.
+    void BeginColor(const ColorDesc& desc);
+
+    // SDL_GPU: SDL_EndGPURenderPass. OpenGL: restore FBO + viewport.
     void End();
+
+#ifdef MD_SDL_GPU
+    SDL_GPURenderPass* SDLPass() const { return sdl_pass_; }
+#endif
 
 private:
     int  saved_vp_[4]  = {};

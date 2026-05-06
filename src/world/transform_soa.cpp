@@ -230,7 +230,7 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
 
     // Upload xzyr transform data
     if (sdl_xzyr_stg_ && sdl_xzyr_buf_) {
-        float* dst = (float*)SDL_MapGPUTransferBuffer(dev, sdl_xzyr_stg_, SDL_TRUE);
+        float* dst = (float*)SDL_MapGPUTransferBuffer(dev, sdl_xzyr_stg_, true);
         if (dst) {
             for (int i = 0; i < active_count; ++i) {
                 dst[i*4+0] = px[i];
@@ -246,13 +246,13 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
         SDL_GPUBufferRegion dst_r = {};
         dst_r.buffer = sdl_xzyr_buf_;
         dst_r.size   = (Uint32)(active_count * 4 * sizeof(float));
-        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, SDL_TRUE);
+        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, true);
         SDL_EndGPUCopyPass(cpass);
     }
 
     // Upload faction data
     if (sdl_faction_stg_ && sdl_faction_buf_) {
-        uint32_t* dst = (uint32_t*)SDL_MapGPUTransferBuffer(dev, sdl_faction_stg_, SDL_TRUE);
+        uint32_t* dst = (uint32_t*)SDL_MapGPUTransferBuffer(dev, sdl_faction_stg_, true);
         if (dst) {
             for (int i = 0; i < active_count; ++i)
                 dst[i] = (uint32_t)faction[i];
@@ -264,7 +264,7 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
         SDL_GPUBufferRegion dst_r = {};
         dst_r.buffer = sdl_faction_buf_;
         dst_r.size   = (Uint32)(active_count * sizeof(uint32_t));
-        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, SDL_TRUE);
+        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, true);
         SDL_EndGPUCopyPass(cpass);
     }
 }

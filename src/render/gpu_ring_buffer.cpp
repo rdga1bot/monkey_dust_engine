@@ -148,7 +148,7 @@ void GpuRingBuffer::WaitFence(int slot) {
 void* GpuRingBuffer::MapWriteSDL() {
     if (!sdl_staging_) return nullptr;
     return SDL_MapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(),
-                                    sdl_staging_, SDL_TRUE /*cycle*/);
+                                    sdl_staging_, true /*cycle*/);
 }
 
 void GpuRingBuffer::UnmapSDL() {
@@ -166,7 +166,7 @@ void GpuRingBuffer::Upload(SDL_GPUCommandBuffer* cmd) {
     dst.buffer = sdl_device_;
     dst.offset = 0;
     dst.size   = sdl_size_;
-    SDL_UploadToGPUBuffer(pass, &src, &dst, SDL_TRUE /*cycle*/);
+    SDL_UploadToGPUBuffer(pass, &src, &dst, true /*cycle*/);
     SDL_EndGPUCopyPass(pass);
 }
 #endif

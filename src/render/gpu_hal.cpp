@@ -262,7 +262,7 @@ bool GpuPipeline::Create(const Desc& desc) {
     SDL_GPUColorTargetDescription color_target = {};
     color_target.format = swapchain_fmt;
     if (desc.raster.blend_enable) {
-        color_target.blend_state.enable_blend          = SDL_TRUE;
+        color_target.blend_state.enable_blend          = true;
         color_target.blend_state.src_color_blendfactor = ToSDLBlend(desc.raster.src_factor);
         color_target.blend_state.dst_color_blendfactor = ToSDLBlend(desc.raster.dst_factor);
         color_target.blend_state.color_blend_op        = SDL_GPU_BLENDOP_ADD;
@@ -277,7 +277,7 @@ bool GpuPipeline::Create(const Desc& desc) {
     target_info.num_color_targets         = 1;
     if (desc.has_depth_target) {
         target_info.depth_stencil_format       = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
-        target_info.has_depth_stencil_target   = SDL_TRUE;
+        target_info.has_depth_stencil_target   = true;
     }
 
     SDL_GPUGraphicsPipelineCreateInfo ci = {};
@@ -291,8 +291,8 @@ bool GpuPipeline::Create(const Desc& desc) {
                                      : SDL_GPU_CULLMODE_NONE;
     ci.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
     ci.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
-    ci.depth_stencil_state.enable_depth_test  = desc.raster.depth_test  ? SDL_TRUE : SDL_FALSE;
-    ci.depth_stencil_state.enable_depth_write = desc.raster.depth_write ? SDL_TRUE : SDL_FALSE;
+    ci.depth_stencil_state.enable_depth_test  = desc.raster.depth_test  ? true : false;
+    ci.depth_stencil_state.enable_depth_write = desc.raster.depth_write ? true : false;
     ci.target_info = target_info;
 
     sdl_pipeline_ = SDL_CreateGPUGraphicsPipeline(dev, &ci);
@@ -393,7 +393,7 @@ void* GpuVertexBuffer::MapWrite() {
 #ifdef MD_SDL_GPU
     if (!sdl_transfer_) return nullptr;
     return SDL_MapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(),
-                                    sdl_transfer_, SDL_TRUE /*cycle*/);
+                                    sdl_transfer_, true /*cycle*/);
 #elif defined(MD_OPENGL43_ENABLED)
     return ring_.MapWrite();
 #else
@@ -421,7 +421,7 @@ void GpuVertexBuffer::Upload(SDL_GPUCommandBuffer* cmd) {
     dst.buffer = sdl_buf_;
     dst.offset = 0;
     dst.size   = sdl_size_;
-    SDL_UploadToGPUBuffer(pass, &src, &dst, SDL_TRUE /*cycle*/);
+    SDL_UploadToGPUBuffer(pass, &src, &dst, true /*cycle*/);
     SDL_EndGPUCopyPass(pass);
 }
 #endif
@@ -541,7 +541,7 @@ void GpuCommandBuffer::BeginColorPass(const ColorPassDesc& desc) {
                                desc.clear_color[2], desc.clear_color[3] };
     color_info.load_op  = desc.load_color ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
     color_info.store_op = SDL_GPU_STOREOP_STORE;
-    color_info.cycle    = SDL_FALSE;
+    color_info.cycle    = false;
 
     if (desc.depth_tex) {
         SDL_GPUDepthStencilTargetInfo depth_info = {};
@@ -551,7 +551,7 @@ void GpuCommandBuffer::BeginColorPass(const ColorPassDesc& desc) {
         depth_info.store_op         = SDL_GPU_STOREOP_STORE;
         depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
         depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-        depth_info.cycle            = SDL_FALSE;
+        depth_info.cycle            = false;
         sdl_pass_ = SDL_BeginGPURenderPass(sdl_cmd_, &color_info, 1, &depth_info);
     } else {
         sdl_pass_ = SDL_BeginGPURenderPass(sdl_cmd_, &color_info, 1, nullptr);
@@ -583,7 +583,7 @@ void GpuRenderPass::BeginDepthOnly(SDL_GPUCommandBuffer* cmd, const DepthDesc& d
     depth_info.store_op         = SDL_GPU_STOREOP_STORE;
     depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
     depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-    depth_info.cycle            = SDL_FALSE;
+    depth_info.cycle            = false;
     sdl_pass_  = SDL_BeginGPURenderPass(cmd, nullptr, 0, &depth_info);
     cull_front_ = desc.cull_front; // stored for symmetry; SDL_GPU cull is pipeline-configured
 }
@@ -605,7 +605,7 @@ void GpuRenderPass::BeginColor(const ColorDesc& desc) {
                                        desc.clear[2], desc.clear[3] };
             color_info.load_op  = SDL_GPU_LOADOP_CLEAR;
             color_info.store_op = SDL_GPU_STOREOP_STORE;
-            color_info.cycle    = SDL_FALSE;
+            color_info.cycle    = false;
 
             if (desc.depth) {
                 SDL_GPUDepthStencilTargetInfo depth_info = {};
@@ -615,7 +615,7 @@ void GpuRenderPass::BeginColor(const ColorDesc& desc) {
                 depth_info.store_op         = SDL_GPU_STOREOP_STORE;
                 depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
                 depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-                depth_info.cycle            = SDL_FALSE;
+                depth_info.cycle            = false;
                 sdl_pass_ = SDL_BeginGPURenderPass(desc.cmd, &color_info, 1, &depth_info);
             } else {
                 sdl_pass_ = SDL_BeginGPURenderPass(desc.cmd, &color_info, 1, nullptr);
@@ -982,7 +982,7 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
         return;
     }
 
-    void* map = SDL_MapGPUTransferBuffer(dev, transfer, SDL_FALSE);
+    void* map = SDL_MapGPUTransferBuffer(dev, transfer, false);
     if (map) { memcpy(map, data, size); SDL_UnmapGPUTransferBuffer(dev, transfer); }
 
     SDL_GPUCommandBuffer* cmd  = SDL_AcquireGPUCommandBuffer(dev);
@@ -994,7 +994,7 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
     dst.buffer = sdl_buf_;
     dst.offset = 0;
     dst.size   = size;
-    SDL_UploadToGPUBuffer(pass, &src, &dst, SDL_FALSE /*no cycle — one shot*/);
+    SDL_UploadToGPUBuffer(pass, &src, &dst, false /*no cycle — one shot*/);
     SDL_EndGPUCopyPass(pass);
     SDL_SubmitGPUCommandBuffer(cmd);
 
@@ -1100,7 +1100,7 @@ bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSam
     tbuf.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     tbuf.size  = upload_size;
     SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(dev, &tbuf);
-    void* map = SDL_MapGPUTransferBuffer(dev, transfer, SDL_FALSE);
+    void* map = SDL_MapGPUTransferBuffer(dev, transfer, false);
     if (map) { memcpy(map, rgba8, upload_size); SDL_UnmapGPUTransferBuffer(dev, transfer); }
 
     SDL_GPUCommandBuffer* cmd  = SDL_AcquireGPUCommandBuffer(dev);
@@ -1114,7 +1114,7 @@ bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSam
     dst_region.w       = (Uint32)w;
     dst_region.h       = (Uint32)h;
     dst_region.d       = 1;
-    SDL_UploadToGPUTexture(pass, &src_info, &dst_region, SDL_FALSE);
+    SDL_UploadToGPUTexture(pass, &src_info, &dst_region, false);
     SDL_EndGPUCopyPass(pass);
     if (s.gen_mipmap) SDL_GenerateMipmapsForGPUTexture(cmd, sdl_tex_);
     SDL_SubmitGPUCommandBuffer(cmd);

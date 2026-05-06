@@ -254,6 +254,23 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GpuComputePass::StorageBindings — declared outside the class so it can be
+// used as a default argument (GCC rejects nested-struct DMIs in that context).
+// ─────────────────────────────────────────────────────────────────────────────
+struct GpuComputeStorageBindings {
+#ifdef MD_SDL_GPU
+    SDL_GPUCommandBuffer* cmd = nullptr;
+    // Read-write storage buffers — declared to SDL_BeginGPUComputePass.
+    // Maps slot index to SPIR-V set=1 read-write bindings in ascending binding order.
+    SDL_GPUStorageBufferReadWriteBinding rw_buffers[8] = {};
+    uint32_t                             num_rw_buffers = 0;
+    // Read-only storage buffers — bound via SDL_BindGPUComputeStorageBuffers.
+    SDL_GPUBuffer* ro_buffers[8] = {};
+    uint32_t       num_ro_buffers = 0;
+#endif
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GpuComputePass — scoped compute dispatch with explicit memory barrier.
 //
 // OpenGL usage:
@@ -263,7 +280,7 @@ private:
 //   pass.End(BARRIER_STORAGE);    // glMemoryBarrier + unbind
 //
 // SDL_GPU usage:
-//   StorageBindings b; b.cmd = cmd; b.rw_buffers[0] = {sdl_buf, false}; b.num_rw_buffers = 1;
+//   GpuComputeStorageBindings b; b.cmd = cmd; b.rw_buffers[0] = {sdl_buf, false}; b.num_rw_buffers = 1;
 //   pass.Begin(&pipeline, b);     // SDL_BeginGPUComputePass + SDL_BindGPUComputePipeline
 //   pass.PushUniforms(0, &data, sizeof(data));
 //   pass.Dispatch(gx, gy, gz);    // SDL_DispatchGPUCompute
@@ -275,24 +292,11 @@ public:
     static constexpr uint32_t BARRIER_COMMAND         = 2u; // GL_COMMAND_BARRIER_BIT
     static constexpr uint32_t BARRIER_STORAGE_COMMAND = 3u; // both — for indirect draw output
 
-    // Runtime bindings for one compute dispatch.
-    // SDL_GPU fields populated with SDL_GPUBuffer* objects; OpenGL path ignores them.
-    struct StorageBindings {
-#ifdef MD_SDL_GPU
-        SDL_GPUCommandBuffer* cmd = nullptr;
-        // Read-write storage buffers — declared to SDL_BeginGPUComputePass.
-        // Maps slot index to SPIR-V set=1 read-write bindings in ascending binding order.
-        SDL_GPUStorageBufferReadWriteBinding rw_buffers[8] = {};
-        uint32_t                             num_rw_buffers = 0;
-        // Read-only storage buffers — bound via SDL_BindGPUComputeStorageBuffers.
-        SDL_GPUBuffer* ro_buffers[8] = {};
-        uint32_t       num_ro_buffers = 0;
-#endif
-    };
+    using StorageBindings = GpuComputeStorageBindings; // backward-compat alias
 
     // Bind pipeline and (SDL_GPU) open compute pass.
     // bindings is required for SDL_GPU; ignored in OpenGL.
-    void Begin(GpuComputePipeline* pipeline, const StorageBindings& bindings = {});
+    void Begin(GpuComputePipeline* pipeline, const StorageBindings& bindings = StorageBindings{});
 
     // OpenGL named-uniform setters. SDL_GPU: no-ops (use PushUniforms instead).
     void SetUniformFloat    (int loc, float v);

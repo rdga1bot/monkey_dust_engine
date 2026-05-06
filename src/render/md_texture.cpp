@@ -1,17 +1,35 @@
 #include <monkey_dust/render/md_texture.h>
 
-#ifdef MD_OPENGL43_ENABLED
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 #include <monkey_dust/render/gpu_hal.h>
+#ifdef MD_OPENGL43_ENABLED
 #include "glad.h"
-#include <cstdio>
+#endif
+#ifdef MD_SDL_GPU
+#include <monkey_dust/render/gpu_device.h>
+#include <SDL3/SDL_gpu.h>
+#endif
 
-// MdTexture functions now delegate to GpuTexture + GpuSamplerDesc.
-// The GL texture ID is extracted via Release() and stored in MdTexture.id.
-// This keeps MdTexture as a lightweight value type while the HAL layer
-// manages all GL calls.
+// MdTexture functions delegate to GpuTexture so both GL and SDL_GPU
+// handles are captured.  Transfer methods (Release / TakeSDL*) zero
+// out the source so the GpuTexture destructor does nothing.
 //
-// SDL_GPU future: GpuTexture::InitFromFile will call SDL_CreateGPUTexture +
-// SDL_UploadToGPUTexture, and GpuSamplerDesc will become SDL_GPUSamplerCreateInfo.
+// CONVENTION (DO NOT CHANGE without updating tile_map_renderer.cpp UV formulas):
+//   flip_v=true: GL/SDL_GPU v=0 = bottom of image file, v=1 = top.
+//   Tile UV formula: v_gl = 1.0f - y_file / atlas_h
+//   Removing the flip makes ALL tile UVs wrong.
+
+static MdTexture FromGpuTexture(GpuTexture& gt) {
+    MdTexture t;
+    t.w  = gt.Width();
+    t.h  = gt.Height();
+    t.id = gt.Release();
+#ifdef MD_SDL_GPU
+    t.sdl_tex     = gt.TakeSDLTexture();
+    t.sdl_sampler = gt.TakeSDLSampler();
+#endif
+    return t;
+}
 
 MdTexture MdLoadTexture(const char* path) {
     GpuTexture gt;
@@ -23,14 +41,9 @@ MdTexture MdLoadTexture(const char* path) {
     s.wrap_t     = GpuSamplerDesc::Wrap::REPEAT;
     s.gen_mipmap = true;
     if (!gt.InitFromFile(path, s)) return {};
-    return { gt.Release(), gt.Width(), gt.Height() };
+    return FromGpuTexture(gt);
 }
 
-// CONVENTION (DO NOT CHANGE without updating tile_map_renderer.cpp UV formulas):
-//   flip_v=true: GL v=0 = bottom of image file, GL v=1 = top of image file.
-//   Tile UV formula: v_gl = 1.0f - y_file / atlas_h
-//   Removing the flip makes ALL tile UVs wrong.
-//
 // FILTER RULES (DO NOT SIMPLIFY):
 //   LINEAR_MIPMAP min + gen_mipmap: prevents GL_NEAREST vanishing at small sizes.
 //   NEAREST mag: crisp pixel-art at zoom-in.
@@ -38,22 +51,36 @@ MdTexture MdLoadTexture(const char* path) {
 MdTexture MdLoadTexturePixelArt(const char* path) {
     GpuTexture gt;
     if (!gt.InitFromFile(path, GpuSamplerDesc::PixelArt())) return {};
-    return { gt.Release(), gt.Width(), gt.Height() };
+    return FromGpuTexture(gt);
 }
 
 MdTexture MdLoadTextureFromMemory(const uint8_t* data, int w, int h) {
     GpuTexture gt;
     if (!gt.InitFromMemory(data, w, h, GpuSamplerDesc::Lut())) return {};
-    return { gt.Release(), gt.Width(), gt.Height() };
+    return FromGpuTexture(gt);
 }
 
 void MdUnloadTexture(MdTexture& t) {
-    if (t.id) { glDeleteTextures(1, &t.id); t = {}; }
+#ifdef MD_OPENGL43_ENABLED
+    if (t.id) { glDeleteTextures(1, &t.id); }
+#endif
+#ifdef MD_SDL_GPU
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (dev) {
+        if (t.sdl_tex)     SDL_ReleaseGPUTexture(dev, (SDL_GPUTexture*)t.sdl_tex);
+        if (t.sdl_sampler) SDL_ReleaseGPUSampler(dev, (SDL_GPUSampler*)t.sdl_sampler);
+    }
+#endif
+    t = {};
 }
 
 void MdBindTexture(MdTexture t, int unit) {
+#ifdef MD_OPENGL43_ENABLED
     glActiveTexture(GL_TEXTURE0 + (unsigned int)unit);
     glBindTexture(GL_TEXTURE_2D, t.id);
+#else
+    (void)t; (void)unit;
+#endif
 }
 
-#endif
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

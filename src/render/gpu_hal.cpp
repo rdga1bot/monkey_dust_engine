@@ -440,7 +440,10 @@ void GpuCommandBuffer::BindPipeline(GpuPipeline* p) {
     if (!p) return;
 
 #ifdef MD_SDL_GPU
-    if (sdl_pass_) SDL_BindGPUGraphicsPipeline(sdl_pass_, p->sdl_pipeline_);
+    if (sdl_cmd_) {
+        if (sdl_pass_) SDL_BindGPUGraphicsPipeline(sdl_pass_, p->sdl_pipeline_);
+        return;  // dual-backend: skip GL path when SDL_GPU command buffer is active
+    }
 #endif
 #ifdef MD_OPENGL43_ENABLED
     MdUseShader(p->shader_);
@@ -459,11 +462,14 @@ void GpuCommandBuffer::BindPipeline(GpuPipeline* p) {
 
 void GpuCommandBuffer::BindVertexBuffer(GpuVertexBuffer* buf) {
 #ifdef MD_SDL_GPU
-    if (sdl_pass_ && buf && buf->sdl_buf_) {
-        SDL_GPUBufferBinding binding = {};
-        binding.buffer = buf->sdl_buf_;
-        binding.offset = 0;
-        SDL_BindGPUVertexBuffers(sdl_pass_, 0, &binding, 1);
+    if (sdl_cmd_) {
+        if (sdl_pass_ && buf && buf->sdl_buf_) {
+            SDL_GPUBufferBinding binding = {};
+            binding.buffer = buf->sdl_buf_;
+            binding.offset = 0;
+            SDL_BindGPUVertexBuffers(sdl_pass_, 0, &binding, 1);
+        }
+        return;
     }
 #endif
 #ifdef MD_OPENGL43_ENABLED
@@ -493,8 +499,10 @@ void GpuCommandBuffer::SetUniformVec3(int loc, const float* v3) {
 
 void GpuCommandBuffer::Draw(uint32_t vertex_count, uint32_t first_vertex) {
 #ifdef MD_SDL_GPU
-    if (sdl_pass_)
-        SDL_DrawGPUPrimitives(sdl_pass_, vertex_count, 1, first_vertex, 0);
+    if (sdl_cmd_) {
+        if (sdl_pass_) SDL_DrawGPUPrimitives(sdl_pass_, vertex_count, 1, first_vertex, 0);
+        return;
+    }
 #endif
 #ifdef MD_OPENGL43_ENABLED
     if (!pipeline_) return;
@@ -507,11 +515,12 @@ void GpuCommandBuffer::Draw(uint32_t vertex_count, uint32_t first_vertex) {
 
 void GpuCommandBuffer::EndPass() {
 #ifdef MD_SDL_GPU
-    if (sdl_pass_) {
-        SDL_EndGPURenderPass(sdl_pass_);
-        sdl_pass_ = nullptr;
+    if (sdl_cmd_) {
+        if (sdl_pass_) { SDL_EndGPURenderPass(sdl_pass_); sdl_pass_ = nullptr; }
+        sdl_cmd_ = nullptr;
+        pipeline_ = nullptr;
+        return;  // dual-backend: skip GL path when SDL_GPU command buffer is active
     }
-    sdl_cmd_ = nullptr;
 #endif
 #ifdef MD_OPENGL43_ENABLED
     if (pipeline_) {

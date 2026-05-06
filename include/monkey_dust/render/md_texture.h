@@ -1,20 +1,28 @@
 #pragma once
 // MdTexture — texture loader using stb_image (no Raylib).
-// Under !MD_OPENGL43_ENABLED all functions are no-ops / return {}.
+// Supported backends: OpenGL 4.3 (MD_OPENGL43_ENABLED) and SDL_GPU (MD_SDL_GPU).
+// Under neither flag all functions are no-ops / return {}.
 //
-// Implementation lives in MdTexture.cpp; stbi symbols come from libraylib.a.
+// Implementation lives in md_texture.cpp.
 
 #include <cstdint>
 
-struct MdTexture { unsigned int id = 0; int w = 0, h = 0; };
+struct MdTexture {
+    unsigned int id = 0;   // OpenGL texture name (0 in SDL_GPU-only path)
+    int w = 0, h = 0;
+#ifdef MD_SDL_GPU
+    void* sdl_tex     = nullptr;  // SDL_GPUTexture* (opaque to avoid SDL header in every TU)
+    void* sdl_sampler = nullptr;  // SDL_GPUSampler*
+#endif
+};
 
-#ifdef MD_OPENGL43_ENABLED
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
 // Load RGBA texture from file via stb_image.
 MdTexture MdLoadTexture(const char* path);
 
 // Load RGBA texture optimized for pixel-art rendering:
-// GL_NEAREST filter (no smoothing) + GL_CLAMP_TO_EDGE wrap (no seam bleeding).
+// GL_NEAREST filter + GL_CLAMP_TO_EDGE + mipmap (no seam bleeding / aliasing).
 // Use for: Flare sprite atlases, tile sheets, any pixel-art content.
 MdTexture MdLoadTexturePixelArt(const char* path);
 
@@ -22,7 +30,7 @@ MdTexture MdLoadTexturePixelArt(const char* path);
 MdTexture MdLoadTextureFromMemory(const uint8_t* data, int w, int h);
 
 void MdUnloadTexture(MdTexture& t);
-void MdBindTexture  (MdTexture t, int unit);
+void MdBindTexture  (MdTexture t, int unit);  // OpenGL only; no-op in SDL_GPU-only builds
 
 #else
 inline MdTexture MdLoadTexture(const char*)                        { return {}; }

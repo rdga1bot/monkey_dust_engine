@@ -505,6 +505,9 @@ public:
 #ifdef MD_SDL_GPU
     SDL_GPUTexture* SDLTexture() const { return sdl_tex_; }
     SDL_GPUSampler* SDLSampler() const { return sdl_sampler_; }
+    // Transfer SDL_GPU ownership out of this object (caller is responsible for release).
+    SDL_GPUTexture* TakeSDLTexture() { SDL_GPUTexture* t = sdl_tex_; sdl_tex_ = nullptr; return t; }
+    SDL_GPUSampler* TakeSDLSampler() { SDL_GPUSampler* s = sdl_sampler_; sdl_sampler_ = nullptr; return s; }
 #endif
 
     // Transfer GL texture ownership (MdMesh legacy interop — OpenGL only).

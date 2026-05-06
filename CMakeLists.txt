@@ -34,10 +34,9 @@ target_include_directories(monkey_dust_engine
 )
 
 if(USE_SDL3)
-    # M12.16: SDL3 build is Raylib-free at the engine level.
+    # SDL3 is the primary platform. SDL_GPU is always enabled with SDL3.
     # GLM provides math types; MD_LOG_NO_RAYLIB replaces TraceLog with fprintf.
-    # Raylib stays in game/ (for DrawMesh* etc.) but is no longer an engine dep.
-    target_compile_definitions(monkey_dust_engine PUBLIC USE_SDL3 USE_GLM MD_LOG_NO_RAYLIB)
+    target_compile_definitions(monkey_dust_engine PUBLIC USE_SDL3 USE_GLM MD_LOG_NO_RAYLIB MD_SDL_GPU)
     target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3)
     target_include_directories(monkey_dust_engine PRIVATE
         ${CMAKE_SOURCE_DIR}/third_party/imgui/backends)
@@ -59,12 +58,10 @@ if(USE_GLM AND NOT USE_SDL3)
     # without USE_SDL3 (uncommon but supported).
     target_compile_definitions(monkey_dust_engine PUBLIC USE_GLM)
 endif()
-if(MD_OPENGL43)
+if(MD_OPENGL43 AND NOT USE_SDL3)
+    # Legacy OpenGL 4.3+ path: only active for non-SDL3 builds.
     target_compile_definitions(monkey_dust_engine PUBLIC
         GRAPHICS_API_OPENGL_43 MD_OPENGL43_ENABLED)
-endif()
-if(MD_SDL_GPU)
-    target_compile_definitions(monkey_dust_engine PUBLIC MD_SDL_GPU)
 endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR MONKEY_DUST_EDITOR)
     target_compile_definitions(monkey_dust_engine PUBLIC DEBUG)

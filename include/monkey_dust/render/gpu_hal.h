@@ -100,9 +100,8 @@ public:
     bool Create(const Desc& desc);
     void Destroy();
 
-#ifdef MD_OPENGL43_ENABLED
-    // Return the GL uniform location for a named uniform.
-    // SDL_GPU replacement: use push_constant offsets / UBO members.
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
+    // OpenGL: glGetUniformLocation. SDL_GPU: always returns -1 (use PushUniforms instead).
     int UniformLoc(const char* name) const;
 #endif
 #ifdef MD_SDL_GPU

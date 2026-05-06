@@ -1,7 +1,9 @@
 #include <monkey_dust/render/particle_renderer.h>
 
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 #ifdef MD_OPENGL43_ENABLED
 #include "glad.h"
+#endif
 
 void ParticleRenderer::Init() {
     // Vertex layout: pos(F3) at offset 0, size(F1) at 12, color(U8x4_NORM) at 16.
@@ -62,4 +64,4 @@ void ParticleRenderer::Shutdown() {
     pipeline_.Destroy();
 }
 
-#endif // MD_OPENGL43_ENABLED
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

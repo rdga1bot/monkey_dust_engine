@@ -1,6 +1,6 @@
 #include <monkey_dust/render/model_manager.h>
 
-#ifdef MD_OPENGL43_ENABLED
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 // cgltf declarations only (no CGLTF_IMPLEMENTATION).
 // Implementation is provided by Raylib's rmodels.c when linking libraylib.a.
 // For a no-Raylib build, add a separate cgltf_impl.cpp with #define CGLTF_IMPLEMENTATION.
@@ -134,4 +134,4 @@ void ModelManager::Unload() {
     }
     count_ = 0;
 }
-#endif // MD_OPENGL43_ENABLED
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

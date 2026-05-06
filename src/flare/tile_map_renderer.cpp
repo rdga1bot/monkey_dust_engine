@@ -1,7 +1,7 @@
 #include <monkey_dust/flare/tile_map_renderer.h>
 #include <monkey_dust/render/md_shader.h>
 
-#ifdef MD_OPENGL43_ENABLED
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 #include "glad.h"
 #include <monkey_dust/platform/math_types.h>
 #include <monkey_dust/platform/md_log.h>
@@ -422,4 +422,4 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
 }
 
 } // namespace md::flare
-#endif // MD_OPENGL43_ENABLED
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

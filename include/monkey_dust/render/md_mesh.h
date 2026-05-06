@@ -36,6 +36,8 @@ inline MdMesh MdMeshSphere(float, int, int)    { return {}; }
 inline MdMesh MdMeshCube  (float, float, float) { return {}; }
 inline MdMesh MdMeshCone  (float, float, int)  { return {}; }
 inline MdMesh MdMeshPlane (float, float)        { return {}; }
+inline MdMesh MdMeshFromBuffers(const float*, const float*, const float*,
+                                const unsigned int*, int, int) { return {}; }
 inline void   MdUnloadMesh(MdMesh&) {}
 inline void   MdDrawMesh  (MdMesh)  {}
 #endif

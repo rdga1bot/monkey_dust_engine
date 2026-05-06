@@ -3,11 +3,10 @@
 #include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/math_types.h>
 
-#ifdef MD_OPENGL43_ENABLED
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
 // ParticleRenderer — point-sprite particle system.
 // Migrated to GpuPipeline + GpuVertexBuffer + GpuCommandBuffer (Action 3).
-// Previously used raw OpenGL (VAO/VBO + MdShader + glEnable calls directly).
 class ParticleRenderer {
 public:
     static ParticleRenderer& Get() {
@@ -30,4 +29,4 @@ private:
     int loc_camPos_   = -1;
 };
 
-#endif // MD_OPENGL43_ENABLED
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

@@ -345,9 +345,13 @@ void GpuPipeline::Destroy() {
 #endif
 }
 
-#ifdef MD_OPENGL43_ENABLED
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 int GpuPipeline::UniformLoc(const char* name) const {
+#ifdef MD_OPENGL43_ENABLED
     return MdGetLoc(shader_, name);
+#else
+    (void)name; return -1;
+#endif
 }
 #endif
 
@@ -844,7 +848,7 @@ void GpuComputePass::End(uint32_t barrier_flags) {
 
 // ── GpuDepthTexture ───────────────────────────────────────────────────────────
 
-#ifdef MD_OPENGL43_ENABLED
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
 void GpuDepthTexture::Init(int w, int h, bool shadow_border) {
     w_ = w; h_ = h;
@@ -930,6 +934,7 @@ void GpuDepthTexture::Bind(uint32_t unit) const {
 
 // ── GpuRenderPass ─────────────────────────────────────────────────────────────
 
+#ifdef MD_OPENGL43_ENABLED
 void GpuRenderPass::BeginDepthOnly(const DepthDesc& desc) {
     cull_front_ = desc.cull_front;
     glGetIntegerv(GL_VIEWPORT, saved_vp_);
@@ -939,6 +944,7 @@ void GpuRenderPass::BeginDepthOnly(const DepthDesc& desc) {
     glClear(GL_DEPTH_BUFFER_BIT);
     if (cull_front_) glCullFace(GL_FRONT);
 }
+#endif // MD_OPENGL43_ENABLED
 
 void GpuRenderPass::End() {
 #ifdef MD_SDL_GPU
@@ -947,20 +953,24 @@ void GpuRenderPass::End() {
         sdl_pass_ = nullptr;
     }
 #endif
+#ifdef MD_OPENGL43_ENABLED
     if (cull_front_) glCullFace(GL_BACK);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(saved_vp_[0], saved_vp_[1], saved_vp_[2], saved_vp_[3]);
+#endif
     cull_front_ = false;
 }
 
 // ── GpuDrawIndexedIndirect ────────────────────────────────────────────────────
 
+#ifdef MD_OPENGL43_ENABLED
 void GpuDrawIndexedIndirect(unsigned int indirect_buf_id, uint32_t draw_count) {
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirect_buf_id);
     glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr,
                                 (GLsizei)draw_count, 0);
     glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 }
+#endif // MD_OPENGL43_ENABLED
 
 // ── GpuStaticBuffer ───────────────────────────────────────────────────────────
 
@@ -1052,6 +1062,7 @@ void GpuStaticBuffer::BindVertex(uint32_t slot, uint32_t stride, uint64_t offset
 // ── GpuTexture ────────────────────────────────────────────────────────────────
 // (stb_image.h included above, outside backend guards)
 
+#ifdef MD_OPENGL43_ENABLED
 static GLenum ToGLFilter(GpuSamplerDesc::Filter f, bool is_min) {
     switch (f) {
     case GpuSamplerDesc::Filter::NEAREST:       return GL_NEAREST;
@@ -1072,6 +1083,7 @@ void GpuTexture::ApplySampler(const GpuSamplerDesc& s) const {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     (GLint)ToGLWrap(s.wrap_t));
     if (s.gen_mipmap) glGenerateMipmap(GL_TEXTURE_2D);
 }
+#endif // MD_OPENGL43_ENABLED
 
 bool GpuTexture::InitFromFile(const char* path, const GpuSamplerDesc& s) {
     int ch;
@@ -1170,6 +1182,6 @@ void GpuTexture::Bind(uint32_t unit) const {
 #endif
 }
 
-#endif // MD_OPENGL43_ENABLED
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU (GpuDepthTexture+GpuTexture+GpuStaticBuffer+GpuRenderPass)
 
-#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU (outer file guard)

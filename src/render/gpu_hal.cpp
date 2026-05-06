@@ -30,6 +30,10 @@ static char* ReadTextFile(const char* path) {
     return buf;
 }
 
+// stb_image declarations — implementation provided by Raylib (rtextures.c).
+// Included here (outside backend guards) so both OpenGL and SDL_GPU paths can call stbi_load.
+#include "stb_image.h"
+
 #ifdef MD_SDL_GPU
 
 static void* ReadBinaryFile(const char* path, size_t* out_size) {
@@ -86,6 +90,38 @@ static SDL_GPUBlendFactor ToSDLBlend(GpuBlendFactor f) {
     case GpuBlendFactor::ONE_MINUS_DST_COLOR: return SDL_GPU_BLENDFACTOR_ONE_MINUS_DST_COLOR;
     }
     return SDL_GPU_BLENDFACTOR_ONE;
+}
+
+static uint32_t MipLevels(int w, int h) {
+    uint32_t n = 1;
+    int dim = (w > h) ? w : h;
+    while (dim > 1) { dim >>= 1; ++n; }
+    return n;
+}
+
+static SDL_GPUFilter ToSDLFilter(GpuSamplerDesc::Filter f) {
+    return (f == GpuSamplerDesc::Filter::NEAREST) ? SDL_GPU_FILTER_NEAREST
+                                                   : SDL_GPU_FILTER_LINEAR;
+}
+
+static SDL_GPUSamplerAddressMode ToSDLWrap(GpuSamplerDesc::Wrap w) {
+    return (w == GpuSamplerDesc::Wrap::CLAMP_TO_EDGE) ? SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE
+                                                       : SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+}
+
+static SDL_GPUSampler* CreateSDLSampler(SDL_GPUDevice* dev, const GpuSamplerDesc& s) {
+    SDL_GPUSamplerCreateInfo info = {};
+    info.min_filter       = ToSDLFilter(s.min_filter);
+    info.mag_filter       = ToSDLFilter(s.mag_filter);
+    info.mipmap_mode      = (s.min_filter == GpuSamplerDesc::Filter::LINEAR_MIPMAP)
+                            ? SDL_GPU_SAMPLERMIPMAPMODE_LINEAR
+                            : SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    info.address_mode_u   = ToSDLWrap(s.wrap_s);
+    info.address_mode_v   = ToSDLWrap(s.wrap_t);
+    info.address_mode_w   = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+    info.min_lod          = 0.0f;
+    info.max_lod          = s.gen_mipmap ? 1000.0f : 0.0f;
+    return SDL_CreateGPUSampler(dev, &info);
 }
 
 static SDL_GPUShader* LoadSpvShader(SDL_GPUDevice* dev,
@@ -556,6 +592,36 @@ void GpuComputePass::End(uint32_t barrier_flags) {
 
 void GpuDepthTexture::Init(int w, int h, bool shadow_border) {
     w_ = w; h_ = h;
+#ifdef MD_SDL_GPU
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+
+    SDL_GPUTextureCreateInfo ti = {};
+    ti.type                  = SDL_GPU_TEXTURETYPE_2D;
+    ti.format                = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+    ti.usage                 = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET |
+                               SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    ti.width                 = (Uint32)w;
+    ti.height                = (Uint32)h;
+    ti.layer_count_or_depth  = 1;
+    ti.num_levels            = 1;
+    sdl_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    if (!sdl_tex_) {
+        MD_LOG(MD_LOG_WARNING, "[GpuDepthTexture] SDL_CreateGPUTexture failed: %s", SDL_GetError());
+        return;
+    }
+    // SDL3 has no CLAMP_TO_BORDER — use CLAMP_TO_EDGE (minor shadow-edge artefact).
+    SDL_GPUSamplerCreateInfo si = {};
+    si.min_filter     = SDL_GPU_FILTER_LINEAR;
+    si.mag_filter     = SDL_GPU_FILTER_LINEAR;
+    si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    si.min_lod        = 0.0f;
+    si.max_lod        = 0.0f;
+    sdl_sampler_ = SDL_CreateGPUSampler(dev, &si);
+#endif
+#ifdef MD_OPENGL43_ENABLED
     glGenTextures(1, &tex_);
     glBindTexture(GL_TEXTURE_2D, tex_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0,
@@ -579,17 +645,31 @@ void GpuDepthTexture::Init(int w, int h, bool shadow_border) {
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+#else
+    (void)shadow_border;
+#endif
 }
 
 void GpuDepthTexture::Shutdown() {
+#ifdef MD_SDL_GPU
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (sdl_sampler_) { SDL_ReleaseGPUSampler(dev, sdl_sampler_); sdl_sampler_ = nullptr; }
+    if (sdl_tex_)     { SDL_ReleaseGPUTexture(dev, sdl_tex_);     sdl_tex_     = nullptr; }
+#endif
+#ifdef MD_OPENGL43_ENABLED
     if (fbo_) { glDeleteFramebuffers(1, &fbo_); fbo_ = 0; }
     if (tex_) { glDeleteTextures(1,    &tex_); tex_ = 0; }
+#endif
     w_ = h_ = 0;
 }
 
 void GpuDepthTexture::Bind(uint32_t unit) const {
+#ifdef MD_OPENGL43_ENABLED
     glActiveTexture(GL_TEXTURE0 + unit);
     glBindTexture(GL_TEXTURE_2D, tex_);
+#else
+    (void)unit; // SDL_GPU: binding via SDL_BindGPUFragmentSamplers in render pass (Step 6)
+#endif
 }
 
 // ── GpuRenderPass ─────────────────────────────────────────────────────────────
@@ -711,8 +791,7 @@ void GpuStaticBuffer::BindVertex(uint32_t slot, uint32_t stride, uint64_t offset
 }
 
 // ── GpuTexture ────────────────────────────────────────────────────────────────
-
-#include "stb_image.h"
+// (stb_image.h included above, outside backend guards)
 
 static GLenum ToGLFilter(GpuSamplerDesc::Filter f, bool is_min) {
     switch (f) {
@@ -740,36 +819,93 @@ bool GpuTexture::InitFromFile(const char* path, const GpuSamplerDesc& s) {
     stbi_set_flip_vertically_on_load(s.flip_v ? 1 : 0);
     uint8_t* data = stbi_load(path, &w_, &h_, &ch, 4);
     stbi_set_flip_vertically_on_load(0);
-    if (!data) {
-        fprintf(stderr, "[GpuTexture] load failed: %s\n", path);
-        return false;
-    }
-    glGenTextures(1, &id_);
-    glBindTexture(GL_TEXTURE_2D, id_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w_, h_, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-    ApplySampler(s);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    if (!data) { fprintf(stderr, "[GpuTexture] load failed: %s\n", path); return false; }
+    bool ok = InitFromMemory(data, w_, h_, s);
     stbi_image_free(data);
-    return true;
+    return ok;
 }
 
 bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSamplerDesc& s) {
     w_ = w; h_ = h;
+#ifdef MD_SDL_GPU
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+
+    uint32_t num_levels = s.gen_mipmap ? MipLevels(w, h) : 1u;
+    SDL_GPUTextureUsageFlags usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    if (s.gen_mipmap) usage |= SDL_GPU_TEXTUREUSAGE_COLOR_TARGET; // required for mipmap blit
+
+    SDL_GPUTextureCreateInfo ti = {};
+    ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+    ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    ti.usage                = usage;
+    ti.width                = (Uint32)w;
+    ti.height               = (Uint32)h;
+    ti.layer_count_or_depth = 1;
+    ti.num_levels           = num_levels;
+    sdl_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    if (!sdl_tex_) {
+        MD_LOG(MD_LOG_WARNING, "[GpuTexture] SDL_CreateGPUTexture failed: %s", SDL_GetError());
+        return false;
+    }
+
+    uint32_t upload_size = (uint32_t)(w * h * 4);
+    SDL_GPUTransferBufferCreateInfo tbuf = {};
+    tbuf.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbuf.size  = upload_size;
+    SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(dev, &tbuf);
+    void* map = SDL_MapGPUTransferBuffer(dev, transfer, SDL_FALSE);
+    if (map) { memcpy(map, rgba8, upload_size); SDL_UnmapGPUTransferBuffer(dev, transfer); }
+
+    SDL_GPUCommandBuffer* cmd  = SDL_AcquireGPUCommandBuffer(dev);
+    SDL_GPUCopyPass*      pass = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTextureTransferInfo src_info = {};
+    src_info.transfer_buffer = transfer;
+    src_info.pixels_per_row  = (Uint32)w;
+    src_info.rows_per_layer  = (Uint32)h;
+    SDL_GPUTextureRegion dst_region = {};
+    dst_region.texture = sdl_tex_;
+    dst_region.w       = (Uint32)w;
+    dst_region.h       = (Uint32)h;
+    dst_region.d       = 1;
+    SDL_UploadToGPUTexture(pass, &src_info, &dst_region, SDL_FALSE);
+    SDL_EndGPUCopyPass(pass);
+    if (s.gen_mipmap) SDL_GenerateMipmapsForGPUTexture(cmd, sdl_tex_);
+    SDL_SubmitGPUCommandBuffer(cmd);
+    SDL_ReleaseGPUTransferBuffer(dev, transfer);
+
+    sdl_sampler_ = CreateSDLSampler(dev, s);
+    return true;
+#elif defined(MD_OPENGL43_ENABLED)
     glGenTextures(1, &id_);
     glBindTexture(GL_TEXTURE_2D, id_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba8);
     ApplySampler(s);
     glBindTexture(GL_TEXTURE_2D, 0);
     return true;
+#else
+    (void)rgba8; (void)s; return false;
+#endif
 }
 
 void GpuTexture::Shutdown() {
-    if (id_) { glDeleteTextures(1, &id_); id_ = 0; w_ = h_ = 0; }
+#ifdef MD_SDL_GPU
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (sdl_sampler_) { SDL_ReleaseGPUSampler(dev, sdl_sampler_); sdl_sampler_ = nullptr; }
+    if (sdl_tex_)     { SDL_ReleaseGPUTexture(dev, sdl_tex_);     sdl_tex_     = nullptr; }
+#endif
+#ifdef MD_OPENGL43_ENABLED
+    if (id_) { glDeleteTextures(1, &id_); id_ = 0; }
+#endif
+    w_ = h_ = 0;
 }
 
 void GpuTexture::Bind(uint32_t unit) const {
+#ifdef MD_OPENGL43_ENABLED
     glActiveTexture(GL_TEXTURE0 + unit);
     glBindTexture(GL_TEXTURE_2D, id_);
+#else
+    (void)unit; // SDL_GPU: binding via SDL_BindGPUFragmentSamplers in render pass (Step 6)
+#endif
 }
 
 #endif // MD_OPENGL43_ENABLED

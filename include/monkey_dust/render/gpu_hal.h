@@ -239,26 +239,38 @@ private:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GpuDepthTexture — depth texture + FBO attachment for offscreen depth passes.
-// SDL_GPU: SDL_GPUTexture(SDL_GPU_TEXTUREFORMAT_D24_UNORM) used as depth target
+// GpuDepthTexture — depth texture for shadow passes.
+// OpenGL: FBO + GL_DEPTH_COMPONENT24 texture.
+// SDL_GPU: SDL_GPUTexture(D24_UNORM, DEPTH_STENCIL_TARGET|SAMPLER) — no FBO.
+//   shadow_border: GL uses CLAMP_TO_BORDER (white); SDL_GPU uses CLAMP_TO_EDGE
+//   (SDL3 has no border color support — minor edge artifact, acceptable).
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuDepthTexture {
 public:
     void Init(int w, int h, bool shadow_border = false);
     void Shutdown();
 
-    // SDL_GPU: SDL_BindGPUFragmentSamplers(cmd, unit, &binding, 1)
+    // OpenGL: glActiveTexture + glBindTexture.
+    // SDL_GPU: binding done via SDL_BindGPUFragmentSamplers in render pass (Step 6).
     void Bind(uint32_t unit) const;
 
-    unsigned int FBO()     const { return fbo_; }
-    unsigned int Texture() const { return tex_; }
+    unsigned int FBO()     const { return fbo_; }   // 0 in SDL_GPU path
+    unsigned int Texture() const { return tex_; }   // 0 in SDL_GPU path
     int Width()  const { return w_; }
     int Height() const { return h_; }
+#ifdef MD_SDL_GPU
+    SDL_GPUTexture*  SDLTexture() const { return sdl_tex_; }
+    SDL_GPUSampler*  SDLSampler() const { return sdl_sampler_; }
+#endif
 
 private:
     unsigned int fbo_ = 0;
     unsigned int tex_ = 0;
     int w_ = 0, h_ = 0;
+#ifdef MD_SDL_GPU
+    SDL_GPUTexture* sdl_tex_     = nullptr;
+    SDL_GPUSampler* sdl_sampler_ = nullptr;
+#endif
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -349,8 +361,10 @@ struct GpuSamplerDesc {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GpuTexture — RGBA texture + sampler state.
-// SDL_GPU: SDL_GPUTexture + SDL_CreateGPUSampler + SDL_UploadToGPUTexture
+// GpuTexture — RGBA8 texture + sampler.
+// OpenGL: glGenTextures + glTexImage2D + sampler params.
+// SDL_GPU: SDL_CreateGPUTexture(R8G8B8A8_UNORM) + SDL_CreateGPUSampler +
+//   one-shot SDL_UploadToGPUTexture + optional SDL_GenerateMipmapsForGPUTexture.
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuTexture {
 public:
@@ -358,20 +372,42 @@ public:
     bool InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSamplerDesc& s = {});
     void Shutdown();
 
-    // SDL_GPU: SDL_BindGPUFragmentSamplers(cmd, unit, &binding, 1)
+    // OpenGL: glActiveTexture + glBindTexture.
+    // SDL_GPU: binding via SDL_BindGPUFragmentSamplers in render pass (Step 6).
     void Bind(uint32_t unit) const;
 
     int          Width()     const { return w_; }
     int          Height()    const { return h_; }
     unsigned int GLTexture() const { return id_; }
-    bool         Valid()     const { return id_ != 0; }
+    bool Valid() const {
+#ifdef MD_SDL_GPU
+        return sdl_tex_ != nullptr;
+#else
+        return id_ != 0;
+#endif
+    }
+#ifdef MD_SDL_GPU
+    SDL_GPUTexture* SDLTexture() const { return sdl_tex_; }
+    SDL_GPUSampler* SDLSampler() const { return sdl_sampler_; }
+#endif
 
-    unsigned int Release() { unsigned int t = id_; id_ = 0; return t; }
+    // Transfer GL texture ownership (MdMesh legacy interop — OpenGL only).
+    unsigned int Release() {
+#ifdef MD_OPENGL43_ENABLED
+        unsigned int t = id_; id_ = 0; return t;
+#else
+        return 0;
+#endif
+    }
 
 private:
-    void ApplySampler(const GpuSamplerDesc& s) const;
+    void ApplySampler(const GpuSamplerDesc& s) const; // OpenGL only
     unsigned int id_ = 0;
     int w_ = 0, h_ = 0;
+#ifdef MD_SDL_GPU
+    SDL_GPUTexture* sdl_tex_     = nullptr;
+    SDL_GPUSampler* sdl_sampler_ = nullptr;
+#endif
 };
 
 #endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

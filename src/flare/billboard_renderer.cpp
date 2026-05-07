@@ -204,3 +204,22 @@ void BillboardRenderer::UnloadAllAtlases() {
 
 } // namespace md::flare
 #endif // MD_OPENGL43_ENABLED
+
+#ifndef MD_OPENGL43_ENABLED
+// No-op stubs so FlareAnimSystem compiles cleanly in SDL_GPU-only builds.
+// BillboardRenderer::Render() is a no-op; atlas width/height return 0
+// so SubmitBillboards() skips every instance gracefully.
+namespace md::flare {
+
+BillboardRenderer& BillboardRenderer::Get() { static BillboardRenderer inst; return inst; }
+void  BillboardRenderer::Init()                              {}
+void  BillboardRenderer::Shutdown()                         {}
+void  BillboardRenderer::BeginFrame()                       { count_ = 0; }
+void  BillboardRenderer::Submit(const BillboardInstance& i) { if (count_ < MAX_BILLBOARDS) instances_[count_++] = i; }
+int   BillboardRenderer::SubmittedCount() const             { return count_; }
+void  BillboardRenderer::Render(const MdCamera&, float)     {}
+void  BillboardRenderer::LoadSpriteAtlas(const char*, int)  {}
+void  BillboardRenderer::UnloadAllAtlases()                 {}
+
+} // namespace md::flare
+#endif // !MD_OPENGL43_ENABLED

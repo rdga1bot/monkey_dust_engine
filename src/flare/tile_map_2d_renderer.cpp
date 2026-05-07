@@ -6,9 +6,7 @@
 #include <cstdlib>
 #include <cstdio>
 
-#ifdef MD_OPENGL43_ENABLED
 #include "glad.h"
-#endif
 
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
@@ -100,7 +98,6 @@ void TileMap2DRenderer::Init() {
     }
 #endif
 
-#ifdef MD_OPENGL43_ENABLED
     {
         static const float QUAD[8] = { 0,0, 1,0, 1,1, 0,1 };
         glGenBuffers(1, &quad_vbo_);
@@ -147,7 +144,6 @@ void TileMap2DRenderer::Init() {
         }
     }
     init_ = true;
-#endif
 }
 
 // ── Shutdown ──────────────────────────────────────────────────────────────────
@@ -171,12 +167,10 @@ void TileMap2DRenderer::Shutdown() {
     }
 #endif
 
-#ifdef MD_OPENGL43_ENABLED
     if (vao_)      { glDeleteVertexArrays(1, &vao_);      vao_      = 0; }
     if (quad_vbo_) { glDeleteBuffers(1, &quad_vbo_);      quad_vbo_ = 0; }
     if (inst_vbo_) { glDeleteBuffers(1, &inst_vbo_);      inst_vbo_ = 0; }
     if (prog_)     { glDeleteProgram(prog_);               prog_     = 0; }
-#endif
 
     init_ = false;
 }
@@ -221,7 +215,6 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
     }
 #endif
 
-#ifdef MD_OPENGL43_ENABLED
     if (!prog_) return;
 
     // ── Collect + sort tiles ──────────────────────────────────────────────────
@@ -325,7 +318,6 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_DEPTH_TEST);
-#endif
 }
 
 // ── RenderSDLGPU ──────────────────────────────────────────────────────────────

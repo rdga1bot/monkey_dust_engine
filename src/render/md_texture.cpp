@@ -2,9 +2,7 @@
 
 #if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 #include <monkey_dust/render/gpu_hal.h>
-#ifdef MD_OPENGL43_ENABLED
 #include "glad.h"
-#endif
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
 #include <SDL3/SDL_gpu.h>
@@ -61,9 +59,7 @@ MdTexture MdLoadTextureFromMemory(const uint8_t* data, int w, int h) {
 }
 
 void MdUnloadTexture(MdTexture& t) {
-#ifdef MD_OPENGL43_ENABLED
     if (t.id) { glDeleteTextures(1, &t.id); }
-#endif
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     if (dev) {
@@ -75,12 +71,10 @@ void MdUnloadTexture(MdTexture& t) {
 }
 
 void MdBindTexture(MdTexture t, int unit) {
-#ifdef MD_OPENGL43_ENABLED
-    glActiveTexture(GL_TEXTURE0 + (unsigned int)unit);
-    glBindTexture(GL_TEXTURE_2D, t.id);
-#else
-    (void)t; (void)unit;
-#endif
+    if (t.id) {
+        glActiveTexture(GL_TEXTURE0 + (unsigned int)unit);
+        glBindTexture(GL_TEXTURE_2D, t.id);
+    }
 }
 
 #endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

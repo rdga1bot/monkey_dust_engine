@@ -504,7 +504,7 @@ public:
     unsigned int GLTexture() const { return id_; }
     bool Valid() const {
 #ifdef MD_SDL_GPU
-        return sdl_tex_ != nullptr;
+        return sdl_tex_ != nullptr || id_ != 0;
 #else
         return id_ != 0;
 #endif
@@ -517,14 +517,8 @@ public:
     SDL_GPUSampler* TakeSDLSampler() { SDL_GPUSampler* s = sdl_sampler_; sdl_sampler_ = nullptr; return s; }
 #endif
 
-    // Transfer GL texture ownership (MdMesh legacy interop — OpenGL only).
-    unsigned int Release() {
-#ifdef MD_OPENGL43_ENABLED
-        unsigned int t = id_; id_ = 0; return t;
-#else
-        return 0;
-#endif
-    }
+    // Transfer GL texture ownership.
+    unsigned int Release() { unsigned int t = id_; id_ = 0; return t; }
 
 private:
     void ApplySampler(const GpuSamplerDesc& s) const; // OpenGL only

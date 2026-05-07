@@ -1,11 +1,11 @@
 #pragma once
 // MdShader — minimal vert+frag shader wrapper using direct glad (no Raylib).
-// Rule M-A: only used under MD_OPENGL43_ENABLED.
-// Under !MD_OPENGL43_ENABLED all functions are no-ops / return {}.
+// Active under MD_OPENGL43_ENABLED or MD_SDL_GPU (GL fallback path for standalone editor).
+// Under neither flag all functions are no-ops / return {}.
 
 struct MdShader { unsigned int id = 0; };
 
-#ifdef MD_OPENGL43_ENABLED
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
 MdShader MdLoadShader(const char* vert_path, const char* frag_path);
 void     MdUnloadShader(MdShader& s);
@@ -25,7 +25,7 @@ void MdUseShader (MdShader s);
 void MdStopShader();
 
 #else
-// ── no-op stubs ──────────────────────────────────────────────────────────────
+// ── no-op stubs (no GL context at all) ───────────────────────────────────────
 inline MdShader MdLoadShader(const char*, const char*) { return {}; }
 inline void     MdUnloadShader(MdShader&)              {}
 inline int      MdGetLoc(MdShader, const char*)        { return -1; }
@@ -38,4 +38,4 @@ inline void     MdSetFloatArr(int,const float*,int)    {}
 inline void     MdSetVec4Arr (int,const float*,int)    {}
 inline void     MdUseShader  (MdShader)                {}
 inline void     MdStopShader ()                        {}
-#endif
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

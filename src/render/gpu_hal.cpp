@@ -6,9 +6,7 @@
 #include <cstdio>
 #include <cstring>
 
-#ifdef MD_OPENGL43_ENABLED
 #include "glad.h"
-#endif
 
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
@@ -1078,7 +1076,6 @@ void GpuStaticBuffer::BindVertex(uint32_t slot, uint32_t stride, uint64_t offset
 // ── GpuTexture ────────────────────────────────────────────────────────────────
 // (stb_image.h included above, outside backend guards)
 
-#ifdef MD_OPENGL43_ENABLED
 static GLenum ToGLFilter(GpuSamplerDesc::Filter f, bool is_min) {
     switch (f) {
     case GpuSamplerDesc::Filter::NEAREST:       return GL_NEAREST;
@@ -1099,7 +1096,6 @@ void GpuTexture::ApplySampler(const GpuSamplerDesc& s) const {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     (GLint)ToGLWrap(s.wrap_t));
     if (s.gen_mipmap) glGenerateMipmap(GL_TEXTURE_2D);
 }
-#endif // MD_OPENGL43_ENABLED
 
 bool GpuTexture::InitFromFile(const char* path, const GpuSamplerDesc& s) {
     int ch;
@@ -1165,16 +1161,12 @@ bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSam
     }
     // dev == null: SDL_GPU not initialised — fall through to OpenGL path below.
 #endif
-#if defined(MD_OPENGL43_ENABLED)
     glGenTextures(1, &id_);
     glBindTexture(GL_TEXTURE_2D, id_);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba8);
     ApplySampler(s);
     glBindTexture(GL_TEXTURE_2D, 0);
     return true;
-#else
-    (void)rgba8; (void)s; return false;
-#endif
 }
 
 void GpuTexture::Shutdown() {
@@ -1183,19 +1175,15 @@ void GpuTexture::Shutdown() {
     if (sdl_sampler_) { SDL_ReleaseGPUSampler(dev, sdl_sampler_); sdl_sampler_ = nullptr; }
     if (sdl_tex_)     { SDL_ReleaseGPUTexture(dev, sdl_tex_);     sdl_tex_     = nullptr; }
 #endif
-#ifdef MD_OPENGL43_ENABLED
     if (id_) { glDeleteTextures(1, &id_); id_ = 0; }
-#endif
     w_ = h_ = 0;
 }
 
 void GpuTexture::Bind(uint32_t unit) const {
-#ifdef MD_OPENGL43_ENABLED
-    glActiveTexture(GL_TEXTURE0 + unit);
-    glBindTexture(GL_TEXTURE_2D, id_);
-#else
-    (void)unit; // SDL_GPU: binding via SDL_BindGPUFragmentSamplers in render pass (Step 6)
-#endif
+    if (id_) {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glBindTexture(GL_TEXTURE_2D, id_);
+    }
 }
 
 #endif // MD_OPENGL43_ENABLED || MD_SDL_GPU (GpuDepthTexture+GpuTexture+GpuStaticBuffer+GpuRenderPass)

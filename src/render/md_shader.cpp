@@ -1,6 +1,6 @@
 #include <monkey_dust/render/md_shader.h>
 
-#ifdef MD_OPENGL43_ENABLED
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 #include "glad.h"
 #include <cstdio>
 #include <cstdlib>
@@ -90,4 +90,4 @@ void MdSetVec4Arr (int loc, const float* v, int n) { if (loc >= 0) glUniform4fv(
 
 void MdUseShader (MdShader s) { glUseProgram(s.id); }
 void MdStopShader()           { glUseProgram(0); }
-#endif
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

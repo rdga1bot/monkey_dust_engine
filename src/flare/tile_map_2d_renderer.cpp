@@ -320,6 +320,14 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
     glEnable(GL_DEPTH_TEST);
 }
 
+// ── Atlas accessors (non-inline — struct layout differs between engine and editor) ──
+
+MdTexture TileMap2DRenderer::GetAtlas(int idx) const {
+    if (idx < 0 || idx >= atlas_count_) return {};
+    return atlases_[idx];
+}
+int TileMap2DRenderer::GetAtlasCount() const { return atlas_count_; }
+
 // ── RenderSDLGPU ──────────────────────────────────────────────────────────────
 
 #ifdef MD_SDL_GPU

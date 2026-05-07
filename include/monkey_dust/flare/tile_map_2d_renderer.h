@@ -30,11 +30,10 @@ public:
     void SetAtlases(const FlareMap& map);
 
     // Expose atlas textures so editor tools can render tile thumbnails.
-    MdTexture GetAtlas(int idx) const {
-        if (idx < 0 || idx >= atlas_count_) return {};
-        return atlases_[idx];
-    }
-    int GetAtlasCount() const { return atlas_count_; }
+    // Non-inline: member offsets must be resolved in the engine TU (MD_SDL_GPU
+    // members before atlases_[] make the layout differ between engine and editor).
+    MdTexture GetAtlas(int idx) const;
+    int       GetAtlasCount()   const;
 
     // Render the map in 2D screen space.
     //   origin_x, origin_y : screen-pixel position of tile(0,0)'s grid anchor

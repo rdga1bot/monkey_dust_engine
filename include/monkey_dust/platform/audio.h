@@ -27,58 +27,30 @@
    inline void audio_free(AudioHandle& h)      { if (h.valid) { UnloadSound(h.snd); h.valid = false; } }
 
 #else
-// ── Miniaudio path (M5) ──────────────────────────────────────────────────────
-// Miniaudio is bundled with Raylib at third_party/raylib/src/external/miniaudio.h.
-// MINIAUDIO_IMPLEMENTATION must be defined in exactly one TU — only Main.cpp
-// includes this header (Rule M-A), so this is safe.
-#  define MINIAUDIO_IMPLEMENTATION
-#  include "external/miniaudio.h"
-#  include <cstdio>
-
-   namespace _ma {
-       inline ma_engine& engine() { static ma_engine e; return e; }
-       inline bool&      ready()  { static bool r = false; return r; }
-   }
+// ── Miniaudio path (M17) — delegates to AudioSystem singleton ────────────────
+// MINIAUDIO_IMPLEMENTATION lives in audio_system.cpp (engine static lib).
+// AudioHandle is now an opaque slot id; no miniaudio types in this header.
+#  include <monkey_dust/audio/audio_system.h>
 
    struct AudioHandle {
-       ma_sound snd;
-       bool     valid = false;
+       int  sfx_id = -1;
+       bool valid  = false;
    };
 
-   inline void audio_init() {
-       ma_result r = ma_engine_init(nullptr, &_ma::engine());
-       if (r != MA_SUCCESS)
-           fprintf(stderr, "[audio] ma_engine_init failed: %d\n", r);
-       else
-           _ma::ready() = true;
-   }
-
-   inline void audio_shutdown() {
-       if (_ma::ready()) { ma_engine_uninit(&_ma::engine()); _ma::ready() = false; }
-   }
+   inline void audio_init()     { AudioSystem::Get().Init(); }
+   inline void audio_shutdown() { AudioSystem::Get().Shutdown(); }
 
    inline AudioHandle audio_load(const char* path) {
        AudioHandle h;
-       if (!_ma::ready()) return h;
-       FILE* f = fopen(path, "rb");
-       if (!f) { fprintf(stderr, "[audio] file not found '%s'\n", path); return h; }
-       fclose(f);
-       ma_result r = ma_sound_init_from_file(&_ma::engine(), path, 0, nullptr, nullptr, &h.snd);
-       if (r != MA_SUCCESS)
-           fprintf(stderr, "[audio] failed to load '%s': %d\n", path, r);
-       else
-           h.valid = true;
+       h.sfx_id = AudioSystem::Get().LoadSFX(path);
+       h.valid  = h.sfx_id >= 0;
        return h;
    }
-
    inline void audio_play(AudioHandle& h) {
-       if (!h.valid) return;
-       ma_sound_seek_to_pcm_frame(&h.snd, 0);
-       ma_sound_start(&h.snd);
+       if (h.valid) AudioSystem::Get().PlaySFX(h.sfx_id);
    }
-
    inline void audio_free(AudioHandle& h) {
-       if (h.valid) { ma_sound_uninit(&h.snd); h.valid = false; }
+       if (h.valid) { AudioSystem::Get().FreeSFX(h.sfx_id); h.valid = false; h.sfx_id = -1; }
    }
 
 #endif // USE_SDL3

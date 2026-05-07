@@ -1,27 +1,18 @@
 #include <monkey_dust/flare/billboard_renderer.h>
 #include <monkey_dust/render/md_shader.h>
-
-#ifdef MD_OPENGL43_ENABLED
-#include "glad.h"
+#include <monkey_dust/render/md_texture.h>
+#include <monkey_dust/platform/math_types.h>
 #include <cstring>
 #include <cstdio>
 
-// GPU instance layout (interleaved, matches billboard.vert locations 1-4):
-//   vec3 world_pos    offset 0
-//   vec2 size         offset 12
-//   vec4 uv_rect      offset 20
-//   vec4 tint (byte)  offset 36
-//   stride = 40
-// atlas_idx is CPU-only (used for sorting); not sent to GPU.
-static constexpr int INST_STRIDE   = 40;
-static constexpr int INST_OFF_POS  = 0;
-static constexpr int INST_OFF_SIZE = 12;
-static constexpr int INST_OFF_UV   = 20;
-static constexpr int INST_OFF_TINT = 36;
+#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
-static const float QUAD_VERTS[8] = {
-    -1.f, -1.f,   1.f, -1.f,   1.f,  1.f,  -1.f,  1.f
-};
+#ifdef MD_SDL_GPU
+#include <monkey_dust/render/gpu_device.h>
+#endif
+#ifdef MD_OPENGL43_ENABLED
+#include "glad.h"
+#endif
 
 namespace md::flare {
 
@@ -30,30 +21,85 @@ BillboardRenderer& BillboardRenderer::Get() {
     return inst;
 }
 
-// Pack BillboardInstance array → flat GPU buffer (excludes atlas_idx).
-static int PackInstances(const BillboardInstance* src, int count,
-                         uint8_t* dst, int dst_capacity_bytes)
-{
-    int max = dst_capacity_bytes / INST_STRIDE;
-    if (count > max) count = max;
+// ── Counting sort helpers (shared by both backends) ───────────────────────────
+
+static void CountingSort(const BillboardInstance* src, int count,
+                         BillboardInstance* dst, int* out_starts /*[MAX_ATLAS+1]*/) {
+    int tmp[BillboardRenderer::MAX_ATLAS + 1] = {};
     for (int i = 0; i < count; ++i) {
-        uint8_t* p = dst + (size_t)i * INST_STRIDE;
-        const BillboardInstance& s = src[i];
-        memcpy(p + INST_OFF_POS,  &s.x,    12);
-        memcpy(p + INST_OFF_SIZE, &s.width,  8);
-        memcpy(p + INST_OFF_UV,   &s.u0,   16);
-        p[INST_OFF_TINT + 0] = s.r;
-        p[INST_OFF_TINT + 1] = s.g;
-        p[INST_OFF_TINT + 2] = s.b;
-        p[INST_OFF_TINT + 3] = s.a;
+        int ai = src[i].atlas_idx < BillboardRenderer::MAX_ATLAS
+               ? src[i].atlas_idx : 0;
+        tmp[ai + 1]++;
     }
-    return count;
+    for (int i = 1; i <= BillboardRenderer::MAX_ATLAS; ++i)
+        tmp[i] += tmp[i - 1];
+    for (int i = 0; i <= BillboardRenderer::MAX_ATLAS; ++i)
+        out_starts[i] = tmp[i];
+    {
+        int cursor[BillboardRenderer::MAX_ATLAS] = {};
+        for (int i = 0; i < count; ++i) {
+            int ai = src[i].atlas_idx < BillboardRenderer::MAX_ATLAS
+                   ? src[i].atlas_idx : 0;
+            dst[tmp[ai] + cursor[ai]++] = src[i];
+        }
+    }
 }
 
-// ── Init / Shutdown ───────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 void BillboardRenderer::Init() {
     if (init_) return;
+
+#ifdef MD_SDL_GPU
+    if (md::GpuDevice::Get().IsReady()) {
+        GpuPipeline::Desc pd;
+        pd.vert_path           = "shaders/billboard.vert";
+        pd.frag_path           = "shaders/billboard.frag";
+        pd.raster.topology     = GpuTopology::TRIANGLES;
+        pd.raster.blend_enable = true;
+        pd.raster.src_factor   = GpuBlendFactor::SRC_ALPHA;
+        pd.raster.dst_factor   = GpuBlendFactor::ONE_MINUS_SRC_ALPHA;
+        pd.raster.depth_test   = true;
+        pd.raster.depth_write  = false;  // alpha sprites: test depth but don't write
+        pd.raster.cull_back    = false;
+        pd.vert_uniform_bufs   = 1;      // set=1: view+proj+cam_right+cam_up (160 B)
+        pd.frag_uniform_bufs   = 1;      // set=3: alpha_threshold (4 B)
+        pd.frag_samplers       = 1;      // set=2: one atlas per draw call
+        pd.has_depth_target    = true;
+        pd.layout.stride       = (uint32_t)STRIDE_SDL;
+        pd.layout.count        = 5;
+        pd.layout.attribs[0]   = {0,  0, GpuAttribFmt::F2};        // a_quad
+        pd.layout.attribs[1]   = {1,  8, GpuAttribFmt::F3};        // a_world_pos
+        pd.layout.attribs[2]   = {2, 20, GpuAttribFmt::F2};        // a_size
+        pd.layout.attribs[3]   = {3, 28, GpuAttribFmt::F4};        // a_uv_rect
+        pd.layout.attribs[4]   = {4, 44, GpuAttribFmt::U8x4_NORM}; // a_tint
+
+        if (!sdl_pipeline_.Create(pd))
+            fprintf(stderr, "[Billboard] SDL_GPU pipeline create failed\n");
+
+        sdl_vbuf_.Init((uint32_t)MAX_BILLBOARDS * 6u, (uint32_t)STRIDE_SDL);
+
+        // 1×1 transparent dummy for unused atlas binding slots.
+        GpuSamplerDesc ds;
+        ds.min_filter = GpuSamplerDesc::Filter::NEAREST;
+        ds.mag_filter = GpuSamplerDesc::Filter::NEAREST;
+        ds.gen_mipmap = false;
+        ds.flip_v     = false;
+        uint8_t pix[4] = {0, 0, 0, 0};
+        GpuTexture dgt;
+        if (dgt.InitFromMemory(pix, 1, 1, ds)) {
+            sdl_dummy_tex_     = dgt.TakeSDLTexture();
+            sdl_dummy_sampler_ = dgt.TakeSDLSampler();
+        }
+        sdl_init_ = true;
+        init_     = true;
+        return;
+    }
+#endif // MD_SDL_GPU
+
+#ifdef MD_OPENGL43_ENABLED
+    static constexpr int INST_STRIDE = 40;
+    static const float QUAD_VERTS[8] = { -1.f,-1.f, 1.f,-1.f, 1.f,1.f, -1.f,1.f };
 
     glGenBuffers(1, &quad_vbo_);
     glBindBuffer(GL_ARRAY_BUFFER, quad_vbo_);
@@ -73,23 +119,22 @@ void BillboardRenderer::Init() {
 
     glBindBuffer(GL_ARRAY_BUFFER, inst_vbo_);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, INST_STRIDE, (void*)INST_OFF_POS);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, INST_STRIDE, (void*)0);
     glVertexAttribDivisor(1, 1);
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, INST_STRIDE, (void*)INST_OFF_SIZE);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, INST_STRIDE, (void*)12);
     glVertexAttribDivisor(2, 1);
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, INST_STRIDE, (void*)INST_OFF_UV);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, INST_STRIDE, (void*)20);
     glVertexAttribDivisor(3, 1);
     glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 4, GL_UNSIGNED_BYTE, GL_TRUE, INST_STRIDE, (void*)INST_OFF_TINT);
+    glVertexAttribPointer(4, 4, GL_UNSIGNED_BYTE, GL_TRUE, INST_STRIDE, (void*)36);
     glVertexAttribDivisor(4, 1);
-
     glBindVertexArray(0);
 
     prog_ = MdLoadShader("shaders/billboard.vert", "shaders/billboard.frag").id;
     if (!prog_) {
-        fprintf(stderr, "[Billboard] failed to load shaders\n");
+        fprintf(stderr, "[Billboard] GL: failed to load shaders\n");
     } else {
         loc_view_      = glGetUniformLocation(prog_, "u_view");
         loc_proj_      = glGetUniformLocation(prog_, "u_proj");
@@ -97,17 +142,38 @@ void BillboardRenderer::Init() {
         loc_cam_up_    = glGetUniformLocation(prog_, "u_camera_up");
         loc_alpha_thr_ = glGetUniformLocation(prog_, "u_alpha_threshold");
     }
+#endif // MD_OPENGL43_ENABLED
 
     init_ = true;
 }
 
+// ── Shutdown ──────────────────────────────────────────────────────────────────
+
 void BillboardRenderer::Shutdown() {
     if (!init_) return;
     UnloadAllAtlases();
-    glDeleteVertexArrays(1, &vao_);
-    glDeleteBuffers(1, &quad_vbo_);
-    glDeleteBuffers(1, &inst_vbo_);
-    if (prog_) { glDeleteProgram(prog_); prog_ = 0; }
+
+#ifdef MD_SDL_GPU
+    if (sdl_init_) {
+        sdl_pipeline_.Destroy();
+        sdl_vbuf_.Shutdown();
+        SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+        if (dev) {
+            if (sdl_dummy_sampler_) SDL_ReleaseGPUSampler(dev, (SDL_GPUSampler*)sdl_dummy_sampler_);
+            if (sdl_dummy_tex_)     SDL_ReleaseGPUTexture(dev, (SDL_GPUTexture*)sdl_dummy_tex_);
+        }
+        sdl_dummy_tex_ = sdl_dummy_sampler_ = nullptr;
+        sdl_init_ = false;
+    }
+#endif
+
+#ifdef MD_OPENGL43_ENABLED
+    if (vao_)      { glDeleteVertexArrays(1, &vao_);  vao_      = 0; }
+    if (quad_vbo_) { glDeleteBuffers(1, &quad_vbo_);  quad_vbo_ = 0; }
+    if (inst_vbo_) { glDeleteBuffers(1, &inst_vbo_);  inst_vbo_ = 0; }
+    if (prog_)     { glDeleteProgram(prog_);           prog_     = 0; }
+#endif
+
     init_ = false;
 }
 
@@ -121,41 +187,43 @@ void BillboardRenderer::Submit(const BillboardInstance& inst) {
 
 int BillboardRenderer::SubmittedCount() const { return count_; }
 
+// ── Atlas management ──────────────────────────────────────────────────────────
+
+void BillboardRenderer::LoadSpriteAtlas(const char* png_path, int idx) {
+    if (idx < 0 || idx >= MAX_ATLAS) return;
+    MdUnloadTexture(atlases_[idx]);
+    atlases_[idx] = MdLoadTexturePixelArt(png_path);
+    bool ok = (atlases_[idx].id != 0);
+#ifdef MD_SDL_GPU
+    ok = ok || (atlases_[idx].sdl_tex != nullptr);
+#endif
+    if (!ok)
+        fprintf(stderr, "[Billboard] atlas[%d] load failed: %s\n", idx, png_path);
+}
+
+void BillboardRenderer::UnloadAllAtlases() {
+    for (int i = 0; i < MAX_ATLAS; ++i) MdUnloadTexture(atlases_[i]);
+}
+
+// ── OpenGL Render ─────────────────────────────────────────────────────────────
+
 void BillboardRenderer::Render(const MdCamera& cam, float aspect) {
+#ifdef MD_OPENGL43_ENABLED
     if (!init_ || !prog_ || count_ == 0) return;
 
-    // Counting sort by atlas_idx — O(N), max 4 passes.
     static BillboardInstance sorted[MAX_BILLBOARDS];
     int atlas_start[MAX_ATLAS + 1] = {};
-    for (int i = 0; i < count_; ++i) {
-        int ai = instances_[i].atlas_idx < MAX_ATLAS ? instances_[i].atlas_idx : 0;
-        atlas_start[ai + 1]++;
-    }
-    for (int i = 1; i <= MAX_ATLAS; ++i)
-        atlas_start[i] += atlas_start[i - 1];
-    {
-        int cursor[MAX_ATLAS] = {};
-        for (int i = 0; i < count_; ++i) {
-            int ai = instances_[i].atlas_idx < MAX_ATLAS ? instances_[i].atlas_idx : 0;
-            sorted[atlas_start[ai] + cursor[ai]++] = instances_[i];
-        }
-    }
+    CountingSort(instances_, count_, sorted, atlas_start);
 
-    // Compute view/proj matrices (portable via mat4_ptr).
-#ifdef USE_GLM
     Mat4 view_m4 = cam.ViewMatrix();
     Mat4 proj_m4 = cam.ProjMatrix(aspect);
     const float* vf = mat4_ptr(view_m4);
     const float* pf = mat4_ptr(proj_m4);
-#else
-    Mat4 view_m4 = cam.ViewMatrix();
-    Mat4 proj_m4 = cam.ProjMatrix(aspect);
-    const float* vf = mat4_ptr(view_m4);
-    const float* pf = mat4_ptr(proj_m4);
-#endif
-    // Camera basis from view matrix (column-major: col0=right, col1=up).
     float right[3] = { vf[0], vf[4], vf[8] };
     float up[3]    = { vf[1], vf[5], vf[9] };
+
+    static constexpr int INST_STRIDE = 40;
+    static uint8_t gpu_buf[MAX_BILLBOARDS * INST_STRIDE];
 
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
@@ -165,8 +233,6 @@ void BillboardRenderer::Render(const MdCamera& cam, float aspect) {
     glUniform3fv(loc_cam_right_, 1, right);
     glUniform3fv(loc_cam_up_,    1, up);
     glUniform1f (loc_alpha_thr_, 0.5f);
-
-    static uint8_t gpu_buf[MAX_BILLBOARDS * INST_STRIDE];
     glBindVertexArray(vao_);
 
     for (int ai = 0; ai < MAX_ATLAS; ++ai) {
@@ -174,52 +240,147 @@ void BillboardRenderer::Render(const MdCamera& cam, float aspect) {
         int n     = atlas_start[ai + 1] - start;
         if (n == 0 || !atlases_[ai].id) continue;
 
-        int packed = PackInstances(sorted + start, n, gpu_buf, (int)sizeof(gpu_buf));
+        // Pack GL instance buffer: pos(12)+size(8)+uv(16)+tint(4) = stride 40
+        for (int i = 0; i < n && i < MAX_BILLBOARDS; ++i) {
+            uint8_t* p = gpu_buf + (size_t)i * INST_STRIDE;
+            const BillboardInstance& s = sorted[start + i];
+            memcpy(p +  0, &s.x,     12);
+            memcpy(p + 12, &s.width,  8);
+            memcpy(p + 20, &s.u0,    16);
+            p[36] = s.r; p[37] = s.g; p[38] = s.b; p[39] = s.a;
+        }
         glBindBuffer(GL_ARRAY_BUFFER, inst_vbo_);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(packed * INST_STRIDE), gpu_buf);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(n * INST_STRIDE), gpu_buf);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
 
         MdBindTexture(atlases_[ai], 0);
-        glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, packed);
+        glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, n);
     }
 
     glBindVertexArray(0);
     glUseProgram(0);
     glDepthMask(GL_TRUE);
+#else
+    (void)cam; (void)aspect;
+#endif
 }
 
-// ── Atlas management ──────────────────────────────────────────────────────────
+// ── SDL_GPU path ──────────────────────────────────────────────────────────────
 
-void BillboardRenderer::LoadSpriteAtlas(const char* png_path, int idx) {
-    if (idx < 0 || idx >= MAX_ATLAS) return;
-    MdUnloadTexture(atlases_[idx]);
-    atlases_[idx] = MdLoadTexturePixelArt(png_path);
-    if (!atlases_[idx].id)
-        fprintf(stderr, "[Billboard] atlas[%d] failed: %s\n", idx, png_path);
+#ifdef MD_SDL_GPU
+
+void BillboardRenderer::PrepareSDLGPU(SDL_GPUCommandBuffer* cmd) {
+    if (!sdl_init_ || count_ == 0) return;
+
+    static BillboardInstance sorted[MAX_BILLBOARDS];
+    CountingSort(instances_, count_, sorted, sdl_group_start_);
+
+    // Build flat vertex buffer: 6 verts × STRIDE_SDL bytes per billboard.
+    // Vertex layout: quad(8) + world_pos(12) + size(8) + uv_rect(16) + tint(4) = 48
+    static const float CORNERS[6][2] = {
+        {-1.f,-1.f}, {1.f,-1.f}, {1.f,1.f},
+        {-1.f,-1.f}, {1.f,1.f}, {-1.f,1.f}
+    };
+
+    static uint8_t scratch[MAX_BILLBOARDS * 6 * STRIDE_SDL];
+    for (int i = 0; i < count_; ++i) {
+        const BillboardInstance& inst = sorted[i];
+        for (int vi = 0; vi < 6; ++vi) {
+            uint8_t* vp = scratch + ((size_t)i * 6 + (size_t)vi) * (size_t)STRIDE_SDL;
+            float*   f  = (float*)vp;
+            f[0]  = CORNERS[vi][0];  // a_quad.x
+            f[1]  = CORNERS[vi][1];  // a_quad.y
+            f[2]  = inst.x;          // a_world_pos.x
+            f[3]  = inst.y;          // a_world_pos.y
+            f[4]  = inst.z;          // a_world_pos.z
+            f[5]  = inst.width;      // a_size.x
+            f[6]  = inst.height;     // a_size.y
+            f[7]  = inst.u0;         // a_uv_rect.x
+            f[8]  = inst.v0;         // a_uv_rect.y
+            f[9]  = inst.u1;         // a_uv_rect.z
+            f[10] = inst.v1;         // a_uv_rect.w
+            vp[44] = inst.r;
+            vp[45] = inst.g;
+            vp[46] = inst.b;
+            vp[47] = inst.a;
+        }
+    }
+
+    void* ptr = sdl_vbuf_.MapWrite();
+    if (ptr) {
+        memcpy(ptr, scratch, (size_t)count_ * 6u * (size_t)STRIDE_SDL);
+        sdl_vbuf_.Unmap();
+    }
+    sdl_vbuf_.Upload(cmd);
 }
 
-void BillboardRenderer::UnloadAllAtlases() {
-    for (int i = 0; i < MAX_ATLAS; ++i) MdUnloadTexture(atlases_[i]);
+void BillboardRenderer::RenderInPass(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                                      const MdCamera& cam, float aspect) {
+    if (!sdl_init_ || !rp || !cmd || count_ == 0) return;
+    if (!sdl_pipeline_.SDLPipeline() || !sdl_vbuf_.SDLBuffer()) return;
+
+    // Vertex UBO (set=1,slot=0): view+proj+cam_right+cam_up = 160 bytes std140
+    struct alignas(16) BillVertUBO {
+        float view[16];          // offset 0
+        float proj[16];          // offset 64
+        float cam_right[3]; float _p0;  // offset 128
+        float cam_up[3];    float _p1;  // offset 144
+    } ubo = {};
+
+    Mat4 view = cam.ViewMatrix();
+    Mat4 proj = cam.ProjMatrix(aspect);
+    memcpy(ubo.view, mat4_ptr(view), 64);
+    memcpy(ubo.proj, mat4_ptr(proj), 64);
+    // Camera right/up from column-major view matrix: col0=right, col1=up
+    const float* vf = mat4_ptr(view);
+    ubo.cam_right[0] = vf[0]; ubo.cam_right[1] = vf[4]; ubo.cam_right[2] = vf[8];
+    ubo.cam_up[0]    = vf[1]; ubo.cam_up[1]    = vf[5]; ubo.cam_up[2]    = vf[9];
+
+    float alpha_thr = 0.5f;
+
+    SDL_BindGPUGraphicsPipeline(rp, sdl_pipeline_.SDLPipeline());
+    SDL_GPUBufferBinding vb = { sdl_vbuf_.SDLBuffer(), 0 };
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+
+    SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
+    SDL_PushGPUFragmentUniformData(cmd, 0, &alpha_thr, sizeof(alpha_thr));
+
+    for (int ai = 0; ai < MAX_ATLAS; ++ai) {
+        int start = sdl_group_start_[ai];
+        int end   = sdl_group_start_[ai + 1];
+        if (start >= end) continue;
+
+        bool has = (atlases_[ai].sdl_tex != nullptr);
+        SDL_GPUTextureSamplerBinding sb = {
+            has ? (SDL_GPUTexture*)atlases_[ai].sdl_tex      : (SDL_GPUTexture*)sdl_dummy_tex_,
+            has ? (SDL_GPUSampler*)atlases_[ai].sdl_sampler  : (SDL_GPUSampler*)sdl_dummy_sampler_
+        };
+        SDL_BindGPUFragmentSamplers(rp, 0, &sb, 1);
+        SDL_DrawGPUPrimitives(rp,
+            (uint32_t)(end - start) * 6u,  // vertex count
+            1u,                             // instance count
+            (uint32_t)start * 6u,           // first vertex
+            0u);                            // first instance
+    }
 }
+
+#endif // MD_SDL_GPU
 
 } // namespace md::flare
-#endif // MD_OPENGL43_ENABLED
 
-#ifndef MD_OPENGL43_ENABLED
-// No-op stubs so FlareAnimSystem compiles cleanly in SDL_GPU-only builds.
-// BillboardRenderer::Render() is a no-op; atlas width/height return 0
-// so SubmitBillboards() skips every instance gracefully.
+#else // neither MD_OPENGL43_ENABLED nor MD_SDL_GPU
+
+// Minimal stubs — SubmitBillboards skips all instances when AtlasWidth returns 0.
 namespace md::flare {
-
-BillboardRenderer& BillboardRenderer::Get() { static BillboardRenderer inst; return inst; }
-void  BillboardRenderer::Init()                              {}
-void  BillboardRenderer::Shutdown()                         {}
-void  BillboardRenderer::BeginFrame()                       { count_ = 0; }
-void  BillboardRenderer::Submit(const BillboardInstance& i) { if (count_ < MAX_BILLBOARDS) instances_[count_++] = i; }
-int   BillboardRenderer::SubmittedCount() const             { return count_; }
-void  BillboardRenderer::Render(const MdCamera&, float)     {}
-void  BillboardRenderer::LoadSpriteAtlas(const char*, int)  {}
-void  BillboardRenderer::UnloadAllAtlases()                 {}
-
+BillboardRenderer& BillboardRenderer::Get() { static BillboardRenderer i; return i; }
+void BillboardRenderer::Init()                              {}
+void BillboardRenderer::Shutdown()                         {}
+void BillboardRenderer::BeginFrame()                       { count_ = 0; }
+void BillboardRenderer::Submit(const BillboardInstance& i) { if (count_ < MAX_BILLBOARDS) instances_[count_++] = i; }
+int  BillboardRenderer::SubmittedCount() const             { return count_; }
+void BillboardRenderer::Render(const MdCamera&, float)     {}
+void BillboardRenderer::LoadSpriteAtlas(const char*, int)  {}
+void BillboardRenderer::UnloadAllAtlases()                 {}
 } // namespace md::flare
-#endif // !MD_OPENGL43_ENABLED
+
+#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

@@ -7,13 +7,14 @@
 
 #include <cstdint>
 
+// IMPORTANT: layout must NOT change between MD_SDL_GPU and non-SDL_GPU builds.
+// Engine lib is always compiled with MD_SDL_GPU; editor/tools may omit it.
+// Mismatched struct sizes cause ABI breakage (wrong array offsets, bad returns).
 struct MdTexture {
-    unsigned int id = 0;   // OpenGL texture name (0 in SDL_GPU-only path)
+    unsigned int id = 0;           // OpenGL texture name (0 in SDL_GPU path)
     int w = 0, h = 0;
-#ifdef MD_SDL_GPU
-    void* sdl_tex     = nullptr;  // SDL_GPUTexture* (opaque to avoid SDL header in every TU)
-    void* sdl_sampler = nullptr;  // SDL_GPUSampler*
-#endif
+    void* sdl_tex     = nullptr;   // SDL_GPUTexture*  (null when not using SDL_GPU)
+    void* sdl_sampler = nullptr;   // SDL_GPUSampler*  (null when not using SDL_GPU)
 };
 
 #if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)

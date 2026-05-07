@@ -115,7 +115,7 @@ public:
         uint32_t reset[5] = { npc_idx_count_, 0u, 0u, 0u, 0u };
         shadow_ind_buf_.UploadInCmd(cmd, reset, 20);
 
-        // Shadow cull compute.
+        // Shadow cull compute — select NPCs within 60 m of camera.
         struct alignas(16) SCullUBO {
             float camPos[3]; float _p;
             float maxDistSq; float _p2[3];
@@ -135,7 +135,7 @@ public:
         cull.Dispatch(((uint32_t)active_npc_count + 63u) / 64u, 1u, 1u);
         cull.End();
 
-        // 3 depth-only cascade passes.
+        // 3 depth-only cascade passes with draw calls.
         for (int k = 0; k < NUM_CASCADES; ++k) {
             GpuRenderPass pass;
             pass.BeginDepthOnly(cmd, { &shadow_depth_[k], 1.0f, /*cull_front=*/true });
@@ -259,7 +259,11 @@ public:
             minZ -= 50.0f; // extend backward to catch casters behind the slice
 
             Mat4 lp = mat4_ortho(minX, maxX, minY, maxY, minZ, maxZ);
+#ifdef MD_SDL_GPU
+            lightViewProj[k] = mat4_mul(lp, lv);
+#else
             lightViewProj[k] = mat4_mul(lv, lp);
+#endif
         }
     }
 

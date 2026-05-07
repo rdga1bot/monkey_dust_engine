@@ -29,6 +29,16 @@ struct MdCamera {
     float fovy;   // degrees
 
     Mat4 ViewMatrix() const { return mat4_lookat(pos, target, up); }
+    // Correct VP product for the active backend.
+    // SDL_GPU (column-major, depth [0,1]): clip = Proj * View * pos → P * V.
+    // Raylib/OpenGL (row-major convention): V * P was correct historically.
+    Mat4 ViewProjMatrix(float aspect) const {
+#ifdef MD_SDL_GPU
+        return mat4_mul(ProjMatrix(aspect), ViewMatrix());
+#else
+        return mat4_mul(ViewMatrix(), ProjMatrix(aspect));
+#endif
+    }
 
     Mat4 ProjMatrix(float aspect) const {
         static constexpr float DEG2R = 0.01745329251f;
@@ -76,7 +86,7 @@ struct MdCamera {
     // Portable frustum plane extraction — works in any build.
     // Fills 4 planes (left, right, top, bottom) as vec4[4] for the cull shader.
     inline void FrustumPlanes(float aspect, float out[16]) const {
-        Mat4 vp = mat4_mul(ViewMatrix(), ProjMatrix(aspect));
+        Mat4 vp = ViewProjMatrix(aspect);
         const float* m = mat4_ptr(vp);
         // Gribb & Hartmann: row3 ± rowN from column-major float[16].
         out[ 0]=m[3]+m[0]; out[ 1]=m[7]+m[4]; out[ 2]=m[11]+m[ 8]; out[ 3]=m[15]+m[12]; // left
@@ -90,7 +100,7 @@ struct MdCamera {
 // Portable: uses mat4_ptr — no Raylib types required.
 inline Vec2 MdWorldToScreen(Vec3 world, const MdCamera& cam, int sw, int sh) {
     float aspect = (sw > 0 && sh > 0) ? (float)sw / (float)sh : 1.f;
-    Mat4         vp = mat4_mul(cam.ViewMatrix(), cam.ProjMatrix(aspect));
+    Mat4         vp = cam.ViewProjMatrix(aspect);
     const float*  m = mat4_ptr(vp);
     float cx = m[0]*world.x + m[4]*world.y + m[8] *world.z + m[12];
     float cy = m[1]*world.x + m[5]*world.y + m[9] *world.z + m[13];

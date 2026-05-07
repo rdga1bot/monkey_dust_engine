@@ -245,7 +245,7 @@ bool GpuPipeline::Create(const Desc& desc) {
         vbds[1].slot               = 1;
         vbds[1].pitch              = desc.layout.inst_stride;
         vbds[1].input_rate         = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
-        vbds[1].instance_step_rate = 1;
+        vbds[1].instance_step_rate = 0; // SDL_GPU requires 0; INSTANCE input_rate controls stepping
     }
 
     SDL_GPUVertexAttribute vattribs[16] = {};

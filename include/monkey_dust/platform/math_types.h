@@ -33,6 +33,11 @@
                                              { return MatrixOrtho(l, r, b, t, n, f); }
    inline const float* mat4_ptr(const Mat4& m) { return &m.m0; }
 #else
+// SDL_GPU/Vulkan clip space: depth [0,1], Y points down.
+// GLM_FORCE_DEPTH_ZERO_TO_ONE makes perspective() generate depth in [0,1].
+#  ifdef MD_SDL_GPU
+#    define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#  endif
 #  include <glm/glm.hpp>
 #  include <glm/gtc/matrix_transform.hpp>
 #  include <glm/gtc/type_ptr.hpp>

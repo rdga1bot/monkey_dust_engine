@@ -135,7 +135,7 @@
 #endif
        SDL_Event e;
        while (SDL_PollEvent(&e)) {
-#if (defined(DEBUG) || defined(MONKEY_DUST_STANDALONE_EDITOR)) && !defined(MD_SDL_GPU)
+#if (defined(DEBUG) || defined(MONKEY_DUST_STANDALONE_EDITOR))
            ImGui_ImplSDL3_ProcessEvent(&e);
 #endif
 #ifdef MD_SDL_GPU
@@ -146,6 +146,8 @@
        }
    }
 
+// ── ImGui functions ──────────────────────────────────────────────────────────
+// Non-SDL_GPU path: imgui_impl_opengl3 + imgui_impl_sdl3
 #if (defined(DEBUG) || defined(MONKEY_DUST_STANDALONE_EDITOR)) && !defined(MD_SDL_GPU)
    inline void imgui_init() {
        ImGui::CreateContext();
@@ -165,6 +167,55 @@
    inline void imgui_render() {
        ImGui::Render();
        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+   }
+#endif
+
+// SDL_GPU path: imgui_impl_sdlgpu3 + imgui_impl_sdl3
+// imgui_sdlgpu_init() must be called after GpuDevice::Init(), not at window creation.
+// GPU upload + render pass done in main.cpp (needs GpuDevice) via imgui_sdlgpu_draw().
+#if defined(MD_SDL_GPU) && defined(DEBUG)
+#  include "backends/imgui_impl_sdl3.h"
+#  include "backends/imgui_impl_sdlgpu3.h"
+#  include "imgui.h"
+
+   inline void imgui_init() { /* no-op: call imgui_sdlgpu_init() after GpuDevice is ready */ }
+   inline void imgui_shutdown() {
+       ImGui_ImplSDLGPU3_Shutdown();
+       ImGui_ImplSDL3_Shutdown();
+       ImGui::DestroyContext();
+   }
+   inline void imgui_sdlgpu_init(SDL_GPUDevice* device, SDL_GPUTextureFormat fmt) {
+       ImGui::CreateContext();
+       ImGui_ImplSDL3_InitForSDLGPU(_wnd::ptr());
+       ImGui_ImplSDLGPU3_InitInfo info = {};
+       info.Device            = device;
+       info.ColorTargetFormat = fmt;
+       ImGui_ImplSDLGPU3_Init(&info);
+   }
+   inline void imgui_new_frame() {
+       ImGui_ImplSDLGPU3_NewFrame();
+       ImGui_ImplSDL3_NewFrame();
+       ImGui::NewFrame();
+   }
+   // Finalizes ImGui CPU draw lists — GPU upload/present done via imgui_sdlgpu_draw().
+   inline void imgui_render() { ImGui::Render(); }
+   // Call after all render passes but before Submit().
+   // sc_tex = swapchain texture acquired via GpuDevice::AcquireSwapchainTexture().
+   inline void imgui_sdlgpu_draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* sc_tex) {
+       if (!sc_tex) return;
+       ImDrawData* dd = ImGui::GetDrawData();
+       if (!dd || dd->CmdListsCount == 0) return;
+       ImGui_ImplSDLGPU3_PrepareDrawData(dd, cmd);
+       SDL_GPUColorTargetInfo ct = {};
+       ct.texture  = sc_tex;
+       ct.load_op  = SDL_GPU_LOADOP_LOAD;
+       ct.store_op = SDL_GPU_STOREOP_STORE;
+       ct.cycle    = false;
+       SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+       if (rp) {
+           ImGui_ImplSDLGPU3_RenderDrawData(dd, cmd, rp);
+           SDL_EndGPURenderPass(rp);
+       }
    }
 #endif
 

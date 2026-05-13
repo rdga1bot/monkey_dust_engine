@@ -2,7 +2,163 @@
 #include <monkey_dust/ai/fnv.h>
 #include <cstdint>
 
-// ── AgentBlackboard entry ────────────────────────────────────────────────────
+// ── Pattern 1: MotivationType ─────────────────────────────────────────────────
+// CATHODE MOTIVATION_TYPE analog — determines which BT branch is active.
+// DirectorSystem/FlowGraph write this; BT MotivationCheck nodes read it.
+enum class MotivationType : uint8_t {
+    None           =  0,
+    Idle           =  1,  // default wander/patrol
+    Stalk          =  2,  // STALK_MOTIVATION
+    Attack         =  3,  // ATTACK_MOTIVATION
+    ThreatAware    =  4,  // THREAT_AWARE_MOTIVATION
+    Search         =  5,  // SEARCH_SYSTEMATIC_MOTIVATION
+    Flee           =  6,  // retreat from threat
+    Script         =  7,  // CINEMATIC_MOTIVATION
+    Despawn        =  8,  // DESPAWN_MOTIVATION
+    Suspicious     =  9,  // SUSPECT_TARGET_RESPONSE_MOTIVATION
+    BackstageStalk = 10,  // BACKSTAGE_STALK_MOTIVATION
+    Ambush         = 11,  // AMBUSH_MOTIVATION
+    Breakout       = 12,  // BREAKOUT_MOTIVATION
+    PlayerHiding   = 13,  // PLAYER_HIDE_MOTIVATION
+    COUNT
+};
+
+// ── Pattern 5: AgentTimerSlot ─────────────────────────────────────────────────
+// CATHODE LOGIC_CHARACTER_TIMER_TYPE analog — 26 named per-agent timer slots.
+// BT TimerStart/TimerCheck nodes index by slot enum cast to uint8_t.
+enum class AgentTimerSlot : uint8_t {
+    SuspectTargetResponse =  0,
+    HeightenedSenses      =  1,  // 25 s — raised alertness after combat
+    ThreatAwareTimeout    =  2,
+    ThreatAwareDuration   =  3,
+    SearchTimeout         =  4,
+    BackstageStalkTimeout =  5,
+    AmbushTimeout         =  6,
+    AttackBan             =  7,  // cooldown between attacks
+    MeleeAttackBan        =  8,
+    VentBan               =  9,
+    NpcStayInCoverShoot   = 10,
+    NpcJustLeftCombat     = 11,
+    AttackKeepChasing     = 12,
+    DelayReturnToSpawn    = 13,
+    TargetInCrawlspace    = 14,
+    DurationSinceSearch   = 15,
+    BackstagePickKilltrap = 16,
+    FlankedVentAttack     = 17,
+    ThreatAwareVisual     = 18,
+    ResponseToBackstage   = 19,
+    VentAttract           = 20,
+    SeenPlayerAimWeapon   = 21,
+    SearchBan             = 22,
+    ObserveTarget         = 23,
+    RepeatedPathfindFail  = 24,
+    Generic               = 25,
+    COUNT
+};
+static constexpr int MAX_AGENT_TIMERS = static_cast<int>(AgentTimerSlot::COUNT);  // 26
+
+// ── Pattern 4: LogicCharacterFlags ───────────────────────────────────────────
+// CATHODE LOGIC_CHARACTER_FLAGS analog — 40-bit flat bitmask per agent.
+// Index by lcf::* constants (uint8_t bit position 0-63).
+// Replaces the old uint32_t flags field. O(1) test/set/clear, trivially serializable.
+namespace lcf {
+    static constexpr uint8_t DONE_BREAKOUT          =  0;
+    static constexpr uint8_t SHOULD_RESET           =  1;
+    static constexpr uint8_t DO_ASSAULT_CHECKS      =  2;
+    static constexpr uint8_t IS_IN_VENT             =  3;
+    static constexpr uint8_t BANNED_FROM_VENT       =  4;
+    static constexpr uint8_t IS_SITTING             =  5;
+    static constexpr uint8_t DONE_ESCALATION        =  6;
+    static constexpr uint8_t HAS_DONE_GRAPPLE_BREAK =  7;
+    static constexpr uint8_t HAS_RECEIVED_DOT       =  8;
+    static constexpr uint8_t SHOULD_BREAKOUT        =  9;
+    static constexpr uint8_t SHOULD_ATTACK          = 10;
+    static constexpr uint8_t SHOULD_HIT_AND_RUN     = 11;
+    static constexpr uint8_t DONE_HIT_AND_RUN       = 12;
+    static constexpr uint8_t PLAYER_HIDING          = 13;
+    static constexpr uint8_t ATTACK_HIDING_PLAYER   = 14;
+    static constexpr uint8_t ALIEN_KNOWS_VENT       = 15;
+    static constexpr uint8_t IS_CORPSE_TRAP         = 16;
+    static constexpr uint8_t SHOULD_DESPAWN         = 17;
+    static constexpr uint8_t ATTACK_IN_THRESHOLD    = 18;
+    static constexpr uint8_t LOCK_BACKSTAGE_STALK   = 19;
+    static constexpr uint8_t TOTALLY_BLIND          = 20;
+    static constexpr uint8_t PLAYER_WON_QTE         = 21;
+    static constexpr uint8_t NPC_IS_INERT           = 22;
+    static constexpr uint8_t NPC_IS_DUMMY           = 23;
+    static constexpr uint8_t SHOULD_AMBUSH          = 24;
+    static constexpr uint8_t NEVER_AGGRESSIVE       = 25;
+    static constexpr uint8_t MUTE_DIALOGUE          = 26;
+    static constexpr uint8_t DOING_THREAT_ANIM      = 27;
+    static constexpr uint8_t DONE_THREAT_AWARE      = 28;
+    static constexpr uint8_t BLOCK_AMBUSH           = 29;
+    static constexpr uint8_t PREVENT_GRAPPLES       = 30;
+    static constexpr uint8_t PREVENT_ALL_ATTACKS    = 31;
+    static constexpr uint8_t ALLOW_FLANK_VENT       = 32;
+    static constexpr uint8_t IGNORE_VENT_BEHAV      = 33;
+    static constexpr uint8_t AIMED_STANCE           = 34;
+    static constexpr uint8_t AIMED_LOW_STANCE       = 35;
+    static constexpr uint8_t CLOSE_TO_BACKSTAGE     = 36;
+    static constexpr uint8_t IS_IN_EXPLOITABLE_AREA = 37;
+    static constexpr uint8_t IS_ON_LADDER           = 38;
+    static constexpr uint8_t HAS_PATH_FAIL          = 39;
+}
+
+struct LogicCharacterFlags {
+    uint64_t bits = 0;
+    bool test  (uint8_t idx) const noexcept { return (bits >> idx) & 1ull; }
+    void set   (uint8_t idx)       noexcept { bits |=  (1ull << idx); }
+    void clear (uint8_t idx)       noexcept { bits &= ~(1ull << idx); }
+    void assign(uint8_t idx, bool v) noexcept { v ? set(idx) : clear(idx); }
+};
+
+// ── Pattern 6: AgentGauges ────────────────────────────────────────────────────
+// CATHODE RETREAT_GAUGE / STUN_DAMAGE_GAUGE analog — float [0..1] per agent.
+// GaugeCheck BT node fires when val >= threshold; GaugeSet resets to 0.
+enum class GaugeType : uint8_t { Retreat = 0, StunDamage = 1, COUNT };
+static constexpr int MAX_AGENT_GAUGES = static_cast<int>(GaugeType::COUNT);
+
+struct AgentGauges {
+    float val[MAX_AGENT_GAUGES] = {};
+    float get(GaugeType t) const noexcept { return val[static_cast<int>(t)]; }
+    void  set(GaugeType t, float v) noexcept { val[static_cast<int>(t)] = v; }
+    void  add(GaugeType t, float d) noexcept { val[static_cast<int>(t)] += d; }
+};
+
+// ── Pattern 8: EntityStateFlag ────────────────────────────────────────────────
+// CATHODE EntityState bitmask analog — 23 lifecycle flags per entity.
+// entity_state field in AgentState stores the current OR of active flags.
+enum class EntityStateFlag : uint32_t {
+    None         = 0x000000,
+    Activate     = 0x000001,
+    Spawn        = 0x000002,
+    Start        = 0x000004,
+    Pause        = 0x000008,
+    Attach       = 0x000010,
+    Enable       = 0x000080,
+    Simulate     = 0x000100,
+    Lock         = 0x000200,
+    Show         = 0x000400,
+    Suspend      = 0x000800,
+    ProxyEnable  = 0x001000,
+    Floating     = 0x002000,
+    LightOn      = 0x004000,
+    InstallProxy = 0x008000,
+    Suspended    = 0x080000,
+    Ghosted      = 0x100000,
+    Invisible    = 0x200000,
+    Frozen       = 0x400000,
+};
+
+inline EntityStateFlag operator|(EntityStateFlag a, EntityStateFlag b) noexcept {
+    return static_cast<EntityStateFlag>(
+        static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+}
+inline bool esf_test(uint32_t state, EntityStateFlag f) noexcept {
+    return (state & static_cast<uint32_t>(f)) != 0u;
+}
+
+// ── AgentBlackboard entry ─────────────────────────────────────────────────────
 // CATHODE EntityInterface analog: typed parameter slot keyed by FNV-1a hash.
 // type: 0=bool  1=int  2=float  3=vec3  4=enum
 struct BlackboardEntry {
@@ -19,28 +175,37 @@ struct BlackboardEntry {
 };
 static_assert(sizeof(BlackboardEntry) == 20, "BlackboardEntry must be 20 bytes");
 
-// ── AgentState ───────────────────────────────────────────────────────────────
+// ── AgentState ────────────────────────────────────────────────────────────────
 // M18 component. Pairs with BTComponent on every AI entity.
-// CATHODE analogs: AgentTimers[], AgentFlags, EntityInterface parameter bus.
 //
-// timers: absolute deadline in game-milliseconds; 0 = inactive.
-//   timer_id 0..7 — mapped by BT TimerStart/TimerCheck nodes (M21).
-// flags:   per-agent bitmask; checked by BT FlagCheck/FlagSet (M21).
-// bb:      CATHODE-style blackboard; MAX_BB_ENTRIES=24 (RAM budget).
-//   bb_count tracks live entries; search is linear (24 entries = trivial).
+// timers:       absolute deadline in game-ms; 0 = inactive. Indexed by AgentTimerSlot.
+// lcflags:      Pattern 4 — 40-bit LogicCharacterFlags bitmask (replaces old uint32 flags).
+// motivation:   Pattern 1 — current CATHODE-style motivation; BT MotivationCheck reads this.
+// entity_state: Pattern 8 — EntityStateFlag lifecycle bitmask.
+// gauges:       Pattern 6 — retreat/stun float gauges [0..1].
+// bb:           CATHODE-style blackboard; MAX_BB_ENTRIES=24.
 static constexpr int MAX_BB_ENTRIES = 24;
-static constexpr int MAX_AGENT_TIMERS = 8;
 
 struct AgentState {
-    uint64_t        timers[MAX_AGENT_TIMERS];  // ms deadlines; 0 = inactive
-    uint32_t        flags;
-    int             bb_count;
-    BlackboardEntry bb[MAX_BB_ENTRIES];
+    uint64_t            timers[MAX_AGENT_TIMERS];  // ms deadlines; 0 = inactive
+    LogicCharacterFlags lcflags;                    // Pattern 4: 40-bit flag bitmask
+    uint32_t            entity_state;               // Pattern 8: EntityStateFlag OR
+    AgentGauges         gauges;                     // Pattern 6: retreat/stun gauges
+    MotivationType      motivation;                 // Pattern 1: active motivation
+    uint8_t             _pad[3];
+    int                 bb_count;
+    BlackboardEntry     bb[MAX_BB_ENTRIES];
 };
 
-// ── Blackboard helpers ───────────────────────────────────────────────────────
+// ── Blackboard helpers ────────────────────────────────────────────────────────
 
 inline BlackboardEntry* bb_find(AgentState& s, uint32_t key) noexcept {
+    for (int i = 0; i < s.bb_count; ++i)
+        if (s.bb[i].key == key) return &s.bb[i];
+    return nullptr;
+}
+
+inline const BlackboardEntry* bb_find(const AgentState& s, uint32_t key) noexcept {
     for (int i = 0; i < s.bb_count; ++i)
         if (s.bb[i].key == key) return &s.bb[i];
     return nullptr;

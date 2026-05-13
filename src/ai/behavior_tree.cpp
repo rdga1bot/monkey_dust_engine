@@ -2,6 +2,7 @@
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/sense_component.h>
+#include <cstring>
 
 BehaviorTree::BehaviorTree() {
     memset(m_nodes,    0, sizeof(m_nodes));
@@ -21,10 +22,12 @@ static inline void initNode(BTNode& n, BTNodeType t) {
 
 // ── M21 factory implementations ───────────────────────────────────────────────
 
-uint16_t BehaviorTree::addBranch(BTConditionFunc cond) {
+uint16_t BehaviorTree::addBranch(BTConditionFunc cond, BranchType btype, ShutdownSpeed speed) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::Branch);
     m_nodes[i].condition = cond;
+    m_nodes[i].data      = static_cast<uint32_t>(btype);
+    m_nodes[i].flags     = static_cast<uint8_t>(speed);
     return i;
 }
 uint16_t BehaviorTree::addTimerStart(uint8_t timer_id, uint32_t duration_ms) {
@@ -36,20 +39,21 @@ uint16_t BehaviorTree::addTimerStart(uint8_t timer_id, uint32_t duration_ms) {
 uint16_t BehaviorTree::addTimerCheck(uint8_t timer_id) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::TimerCheck);
-    m_nodes[i].data = timer_id & 0x7u;
+    m_nodes[i].data = timer_id & 0x1Fu;  // 5 bits: 0-31 (covers all 26 slots)
     return i;
 }
-uint16_t BehaviorTree::addFlagCheck(uint32_t mask, bool check_set) {
+// Pattern 4: bit_idx = lcf::* constant (0-63)
+uint16_t BehaviorTree::addFlagCheck(uint8_t bit_idx, bool check_set) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::FlagCheck);
-    m_nodes[i].data  = mask;
+    m_nodes[i].data  = bit_idx & 0x3Fu;  // 6 bits: 0-63
     m_nodes[i].flags = check_set ? 0u : 1u;
     return i;
 }
-uint16_t BehaviorTree::addFlagSet(uint32_t mask, bool do_set) {
+uint16_t BehaviorTree::addFlagSet(uint8_t bit_idx, bool do_set) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::FlagSet);
-    m_nodes[i].data  = mask;
+    m_nodes[i].data  = bit_idx & 0x3Fu;
     m_nodes[i].flags = do_set ? 0u : 1u;
     return i;
 }
@@ -58,6 +62,44 @@ uint16_t BehaviorTree::addSenseCheck(uint8_t sense_idx, float threshold) {
     initNode(m_nodes[i], BTNodeType::SenseCheck);
     uint32_t t_fixed = static_cast<uint32_t>(threshold * 1000.f + 0.5f);
     m_nodes[i].data  = (static_cast<uint32_t>(sense_idx & 1u) << 24) | (t_fixed & 0x00FFFFFFu);
+    return i;
+}
+
+// ── Pattern 1: MotivationCheck / SetMotivation ────────────────────────────────
+uint16_t BehaviorTree::addMotivationCheck(MotivationType mot) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::MotivationCheck);
+    m_nodes[i].data = static_cast<uint32_t>(mot);
+    return i;
+}
+uint16_t BehaviorTree::addSetMotivation(MotivationType mot) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SetMotivation);
+    m_nodes[i].data = static_cast<uint32_t>(mot);
+    return i;
+}
+
+// ── Pattern 3: Reference ──────────────────────────────────────────────────────
+uint16_t BehaviorTree::addReference(BehaviorTree* other) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::Reference);
+    m_nodes[i]._padding = other;
+    return i;
+}
+
+// ── Pattern 6: GaugeCheck / GaugeSet ─────────────────────────────────────────
+uint16_t BehaviorTree::addGaugeCheck(GaugeType gauge, float threshold) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::GaugeCheck);
+    uint32_t t_fixed = static_cast<uint32_t>(threshold * 1000.f + 0.5f);
+    m_nodes[i].data  = (static_cast<uint32_t>(gauge) << 24) | (t_fixed & 0x00FFFFFFu);
+    return i;
+}
+uint16_t BehaviorTree::addGaugeSet(GaugeType gauge, float value) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::GaugeSet);
+    uint32_t v_fixed = static_cast<uint32_t>(value * 1000.f + 0.5f);
+    m_nodes[i].data  = (static_cast<uint32_t>(gauge) << 24) | (v_fixed & 0x00FFFFFFu);
     return i;
 }
 
@@ -107,7 +149,7 @@ void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }
 
-// Stackless VM tick
+// ── Stackless VM tick ─────────────────────────────────────────────────────────
 BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t nowMs) {
     if (!isValid()) return BTStatus::Failure;
 
@@ -217,7 +259,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         case BTNodeType::Branch:
             if (result == BTStatus::Running) {
                 // Re-evaluated every tick: persistent interrupt gate
-                if (nd.childCount == 0 || !nd.condition(ctx, e)) {
+                if (nd.childCount == 0 || (nd.condition && !nd.condition(ctx, e))) {
                     pc = nd.parent; result = BTStatus::Failure; continue;
                 }
                 pc = m_children[nd.childStart];
@@ -240,7 +282,8 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         case BTNodeType::TimerCheck: {
             AgentState* as = Registry::Get().try_get<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            uint8_t  tid      = static_cast<uint8_t>(nd.data & 0x7u);
+            uint8_t  tid      = static_cast<uint8_t>(nd.data & 0x1Fu);
+            if (tid >= MAX_AGENT_TIMERS) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint64_t deadline = as->timers[tid];
             if (deadline != 0u && static_cast<uint64_t>(nowMs) >= deadline) {
                 as->timers[tid] = 0u;
@@ -251,11 +294,13 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
+        // Pattern 4: bit-index encoding (lcf::* constants, 0-63)
         case BTNodeType::FlagCheck: {
             AgentState* as = Registry::Get().try_get<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            bool bits_set = (as->flags & nd.data) != 0u;
-            result = (nd.flags == 0u ? bits_set : !bits_set)
+            uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
+            bool    is_set  = as->lcflags.test(bit_idx);
+            result = (nd.flags == 0u ? is_set : !is_set)
                      ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
@@ -263,8 +308,9 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         case BTNodeType::FlagSet: {
             AgentState* as = Registry::Get().try_get<AgentState>(e);
             if (as) {
-                if (nd.flags == 0u) as->flags |=  nd.data;
-                else                as->flags &= ~nd.data;
+                uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
+                if (nd.flags == 0u) as->lcflags.set  (bit_idx);
+                else                as->lcflags.clear(bit_idx);
             }
             result = BTStatus::Success;
             pc = nd.parent; continue;
@@ -278,6 +324,57 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             if (sense_idx > 1u) sense_idx = 0u;
             result = (sc->activation[sense_idx] >= threshold)
                      ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // ── CATHODE pattern adaptations ───────────────────────────────────────
+
+        // Pattern 1: check current motivation matches expected
+        case BTNodeType::MotivationCheck: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->motivation == static_cast<MotivationType>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // Pattern 1: write motivation to agent state
+        case BTNodeType::SetMotivation: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->motivation = static_cast<MotivationType>(nd.data);
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // Pattern 3: delegate to referenced tree
+        case BTNodeType::Reference: {
+            BehaviorTree* other = static_cast<BehaviorTree*>(nd._padding);
+            if (!other) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = other->tick(ctx, e, nowMs);
+            if (result == BTStatus::Running) goto exit_loop;
+            pc = nd.parent; continue;
+        }
+
+        // Pattern 6: gauge threshold check
+        case BTNodeType::GaugeCheck: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            auto    gtype = static_cast<GaugeType>(nd.data >> 24);
+            float   thr   = static_cast<float>(nd.data & 0x00FFFFFFu) * 0.001f;
+            result = (as->gauges.get(gtype) >= thr)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // Pattern 6: gauge write (set to fixed value)
+        case BTNodeType::GaugeSet: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                auto  gtype = static_cast<GaugeType>(nd.data >> 24);
+                float val   = static_cast<float>(nd.data & 0x00FFFFFFu) * 0.001f;
+                as->gauges.set(gtype, val);
+            }
+            result = BTStatus::Success;
             pc = nd.parent; continue;
         }
 

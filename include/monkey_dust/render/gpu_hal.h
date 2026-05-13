@@ -256,6 +256,10 @@ public:
     // OpenGL: glGetUniformLocation. SDL_GPU: always -1 (use PushUniforms instead).
     int  UniformLoc(const char* name) const;
 
+#ifdef MD_SDL_GPU
+    SDL_GPUComputePipeline* SDLComputePipeline() const { return sdl_pipeline_; }
+#endif
+
 private:
     friend class GpuComputePass;
     unsigned int program_ = 0;

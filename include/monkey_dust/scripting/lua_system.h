@@ -11,7 +11,12 @@ extern "C" {
 // LuaSystem — Lua 5.4 scripting host.
 // Engine provides: Init/Shutdown, CallAction, RegisterFunction.
 // Game registers its component-aware C functions via RegisterFunction().
-// Instruction-limit hook prevents infinite loops (LUA_MASKCOUNT=10000).
+// Sandbox guarantees:
+//   - Instruction limit:   10 000 instructions/call (LUA_MASKCOUNT hook)
+//   - Memory limit:        8 MB heap for the entire Lua state
+//   - Blocked libraries:   io, os, package, debug, load, loadfile, dofile
+static constexpr size_t LUA_MEM_LIMIT_BYTES = 8u * 1024u * 1024u; // 8 MB
+
 class LuaSystem {
 public:
     static LuaSystem& Get() {
@@ -30,13 +35,17 @@ public:
 
     bool IsReady() const { return L_ != nullptr; }
 
+    size_t MemUsed() const { return lua_mem_used_; }
+
 private:
     LuaSystem() = default;
 
-    lua_State* L_ = nullptr;
+    lua_State* L_          = nullptr;
+    size_t     lua_mem_used_ = 0;
 
-    static void hook(lua_State* L, lua_Debug* ar);
-    static int  md_log(lua_State* L);  // engine-level: TraceLog only
+    static void   hook(lua_State* L, lua_Debug* ar);
+    static int    md_log(lua_State* L);
+    static void*  lua_alloc(void* ud, void* ptr, size_t osize, size_t nsize);
 
     bool LoadFile(const char* path);
 };

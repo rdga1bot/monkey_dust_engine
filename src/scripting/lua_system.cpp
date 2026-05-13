@@ -4,6 +4,22 @@
 #include <cstdint>
 #include <dirent.h>
 
+// Custom allocator: enforce LUA_MEM_LIMIT_BYTES.
+// Returns nullptr when limit exceeded — Lua handles OOM gracefully.
+void* LuaSystem::lua_alloc(void* ud, void* ptr, size_t osize, size_t nsize) {
+    auto* used = static_cast<size_t*>(ud);
+    if (nsize == 0) {
+        *used -= osize;
+        free(ptr);
+        return nullptr;
+    }
+    if (*used - osize + nsize > LUA_MEM_LIMIT_BYTES)
+        return nullptr; // allocation refused → Lua raises MemError
+    void* p = realloc(ptr, nsize);
+    if (p) *used = *used - osize + nsize;
+    return p;
+}
+
 void LuaSystem::hook(lua_State* L, lua_Debug* /*ar*/) {
     luaL_error(L, "[LuaSystem] instruction limit exceeded");
 }
@@ -27,10 +43,30 @@ bool LuaSystem::LoadFile(const char* path) {
 }
 
 bool LuaSystem::Init(const char* scripts_dir) {
-    L_ = luaL_newstate();
+    lua_mem_used_ = 0;
+    L_ = lua_newstate(lua_alloc, &lua_mem_used_);
     if (!L_) return false;
 
     luaL_openlibs(L_);
+
+    // Remove dangerous standard libraries — sandbox enforcement.
+    // luaL_openlibs opens io/os/package/debug which allow shell exec and FS access.
+    static const char* const blocked[] = {
+        "io", "os", "package", "debug", nullptr
+    };
+    for (int i = 0; blocked[i]; ++i) {
+        lua_pushnil(L_);
+        lua_setglobal(L_, blocked[i]);
+    }
+    // Also block the load* family (can compile arbitrary bytecode)
+    static const char* const blocked_fns[] = {
+        "dofile", "loadfile", "load", "loadstring", nullptr
+    };
+    for (int i = 0; blocked_fns[i]; ++i) {
+        lua_pushnil(L_);
+        lua_setglobal(L_, blocked_fns[i]);
+    }
+
     lua_register(L_, "md_log", md_log);
     lua_sethook(L_, hook, LUA_MASKCOUNT, 10000);
 

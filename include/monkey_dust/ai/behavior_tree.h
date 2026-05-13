@@ -1,6 +1,7 @@
 #pragma once
 #include <monkey_dust/ecs/engine_context.h>
 #include <monkey_dust/components/agent_state.h>
+#include <monkey_dust/ai/role_registry.h>
 #include <entt/entt.hpp>
 #include <cstdint>
 
@@ -65,6 +66,33 @@ enum class BTNodeType : uint8_t {
     Reference,      // delegates tick to another BehaviorTree* stored in _padding
     GaugeCheck,     // leaf condition: as->gauges.get(type) >= threshold
     GaugeSet,       // leaf action: as->gauges.set(type, value) → Success
+    // ── CATHODE-11–20 adaptations ──────────────────────────────────────────────
+    // C11: SequenceStateless — always restarts children from index 0 on re-entry
+    SequenceStateless,
+    // C13: FrameFlag — single-tick signal; frame_flags cleared each logic tick
+    FrameFlagCheck, // data=bit_idx(0-63), flags=0→check set / 1→check clear
+    FrameFlagSet,   // data=bit_idx(0-63), flags=0→set / 1→clear
+    // C14: WeightedSelector — picks child by weighted probability (LCG RNG)
+    //   data: bits 0-7=w[0], 8-15=w[1], 16-23=w[2], 24-31=w[3]; sum need not be 100
+    WeightedSelector,
+    // C15: AwarenessCheck — gates branch on as->awareness == (AwarenessState)data
+    AwarenessCheck,
+    // C16: AlertnessCheck — gates branch on as->alertness == (AlertnessState)data
+    AlertnessCheck,
+    // C17: MoodCheck — gates branch on as->mood == (NpcMood)data
+    MoodCheck,
+    // C18: Role nodes — coordinate exclusive NPC roles via RoleRegistry singleton
+    //   RoleCheck:   data = (NpcRole<<8)|(mode:0=performing,1=could_perform)
+    //   RoleClaim:   data = (query_id<<8)|(NpcRole&0xFF); Success=claimed, Failure=busy
+    //   RoleRelease: data = NpcRole; always Success
+    RoleCheck,
+    RoleClaim,
+    RoleRelease,
+    // C19: WithdrawState — 3-stage retreat FSM
+    //   WithdrawCheck: data=(WithdrawState)→Success if as->withdraw_state matches
+    //   SetWithdraw:   data=(WithdrawState)→writes and returns Success
+    WithdrawCheck,
+    SetWithdraw,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -73,20 +101,33 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 
 // BTNode: 24 bytes, cache-line friendly, flat array — no heap
 // data encoding per node type:
-//   TimerStart:      (timer_id << 24) | duration_ms
-//   TimerCheck:      timer_id & 0x1Fu  (AgentTimerSlot value)
-//   FlagCheck/Set:   bit_idx (0-63, maps to lcf::* constants)
-//   SenseCheck:      (sense_idx << 24) | (threshold * 1000)
-//   MotivationCheck: MotivationType value (uint8_t)
-//   SetMotivation:   MotivationType value (uint8_t)
-//   Reference:       unused (BehaviorTree* in _padding)
-//   GaugeCheck:      (GaugeType << 24) | (threshold * 1000)
-//   GaugeSet:        (GaugeType << 24) | (value * 1000)
-//   Branch:          BranchType in lower byte (semantic only)
+//   TimerStart:       (timer_id << 24) | duration_ms (max 16.7 s per slot)
+//   TimerCheck:       timer_id & 0x1Fu  (AgentTimerSlot value)
+//   FlagCheck/Set:    bit_idx (0-63, maps to lcf::* constants)
+//   SenseCheck:       (sense_idx << 24) | (threshold * 1000)
+//   MotivationCheck:  MotivationType value (uint8_t)
+//   SetMotivation:    MotivationType value (uint8_t)
+//   Reference:        unused (BehaviorTree* in _padding)
+//   GaugeCheck:       (GaugeType << 24) | (threshold * 1000)
+//   GaugeSet:         (GaugeType << 24) | (value * 1000)
+//   Branch:           BranchType in lower byte (semantic only)
+//   FrameFlagCheck/Set: bit_idx (0-63) → frame_flags field of AgentState
+//   WeightedSelector: bits 0-7=w[0], 8-15=w[1], 16-23=w[2], 24-31=w[3]
+//   AwarenessCheck:   AwarenessState value
+//   AlertnessCheck:   AlertnessState value
+//   MoodCheck:        NpcMood value
+//   RoleCheck:        (NpcRole << 8) | mode (0=performing, 1=could_perform)
+//   RoleClaim:        (query_id << 8) | (NpcRole & 0xFF)
+//   RoleRelease:      NpcRole value
+//   WithdrawCheck:    WithdrawState value
+//   SetWithdraw:      WithdrawState value
 // flags encoding per node type:
-//   FlagCheck:       0=check set, 1=check clear
-//   FlagSet:         0=set bit, 1=clear bit
-//   Branch:          ShutdownSpeed (upper nibble, currently unused in VM)
+//   FlagCheck:        0=check set, 1=check clear
+//   FlagSet:          0=set bit, 1=clear bit
+//   FrameFlagCheck:   0=check set, 1=check clear
+//   FrameFlagSet:     0=set bit, 1=clear bit
+//   TimerStart:       bit 0 = only_increase (C12: don't shorten existing timer)
+//   Branch:           ShutdownSpeed (upper nibble, currently unused in VM)
 struct BTNode {
     BTNodeType type;
     uint8_t    flags;
@@ -142,6 +183,30 @@ public:
     // Pattern 6: GaugeCheck / GaugeSet
     uint16_t addGaugeCheck(GaugeType gauge, float threshold);
     uint16_t addGaugeSet  (GaugeType gauge, float value);
+
+    // ── CATHODE-11–20 factories ────────────────────────────────────────────────
+    // C11: SequenceStateless — children always re-evaluated from index 0 on entry
+    uint16_t addSequenceStateless();
+    // C12: TimerStart with OnlyIncrease flag — does not shorten an existing timer
+    uint16_t addTimerStartOnlyIncrease(uint8_t timer_id, uint32_t duration_ms);
+    // C13: FrameFlag — single-tick signal cleared at start of each logic tick
+    uint16_t addFrameFlagCheck(uint8_t bit_idx, bool check_set = true);
+    uint16_t addFrameFlagSet  (uint8_t bit_idx, bool do_set    = true);
+    // C14: WeightedSelector — up to 4 weighted children (weights need not sum to 100)
+    uint16_t addWeightedSelector(const uint8_t weights[4]);
+    // C15: AwarenessCheck
+    uint16_t addAwarenessCheck(AwarenessState state);
+    // C16: AlertnessCheck
+    uint16_t addAlertnessCheck(AlertnessState state);
+    // C17: MoodCheck
+    uint16_t addMoodCheck(NpcMood mood);
+    // C18: Role coordination via RoleRegistry singleton
+    uint16_t addRoleCheck  (NpcRole role, bool check_could_perform = false);
+    uint16_t addRoleClaim  (NpcRole role, uint32_t query_id);
+    uint16_t addRoleRelease(NpcRole role);
+    // C19: WithdrawState 3-stage retreat FSM
+    uint16_t addWithdrawCheck(WithdrawState state);
+    uint16_t addSetWithdraw  (WithdrawState state);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

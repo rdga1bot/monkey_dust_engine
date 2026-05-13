@@ -59,21 +59,43 @@ struct FlowPendingTrigger {
     double   fire_at_s;
 };
 
-static constexpr uint32_t FLOW_INVALID_CONN = 0xFFFFFFFFu;
+static constexpr uint32_t FLOW_INVALID_CONN  = 0xFFFFFFFFu;
+static constexpr uint8_t  FLOW_INVALID_DURABLE = 0xFFu;
+
+// ── C20: FlowDurableTrigger ───────────────────────────────────────────────────
+// CATHODE TriggerInfo refcount + linked-list analog.
+// One-shot FlowPendingTriggers fire once and are discarded.
+// Durable triggers persist for `duration` seconds and can be ref-counted by
+// multiple consumers. Released when ref_count reaches 0 OR duration expires.
+//
+// Usage:
+//   slot = graph.AcquireDurable(node_id, duration_s)   // ref_count=1
+//   graph.AddRef(slot)                                  // ref_count++
+//   graph.Release(slot)                                 // ref_count--; free when 0
+//   FlowGraph::Tick automatically decrements duration and calls Release on expiry.
+struct FlowDurableTrigger {
+    uint32_t node_id;    // target node
+    float    duration;   // remaining seconds; 0 = expired / free slot
+    uint8_t  ref_count;
+    uint8_t  _pad[3];
+};
+static_assert(sizeof(FlowDurableTrigger) == 12, "FlowDurableTrigger must be 12 bytes");
 
 struct FlowGraph {
-    static constexpr int MAX_NODES   = 64;
-    static constexpr int MAX_CONNS   = 128;
-    static constexpr int MAX_VARS    = 32;
-    static constexpr int MAX_PENDING = 32;  // ring buffer — power of 2
-    static constexpr int MAX_PARAMS  = 128; // float parameter pool
-    static constexpr int MAX_ACTIONS = 16;  // registered action callbacks
+    static constexpr int MAX_NODES           = 64;
+    static constexpr int MAX_CONNS           = 128;
+    static constexpr int MAX_VARS            = 32;
+    static constexpr int MAX_PENDING         = 32;   // ring buffer — power of 2
+    static constexpr int MAX_PARAMS          = 128;  // float parameter pool
+    static constexpr int MAX_ACTIONS         = 16;   // registered action callbacks
+    static constexpr int MAX_DURABLE_TRIGGERS= 16;   // C20: durable trigger pool
 
-    FlowNode           nodes  [MAX_NODES];
-    FlowConn           conns  [MAX_CONNS];
-    FlowVar            vars   [MAX_VARS];
-    FlowPendingTrigger pending[MAX_PENDING];
-    float              params [MAX_PARAMS];
+    FlowNode             nodes  [MAX_NODES];
+    FlowConn             conns  [MAX_CONNS];
+    FlowVar              vars   [MAX_VARS];
+    FlowPendingTrigger   pending[MAX_PENDING];
+    float                params [MAX_PARAMS];
+    FlowDurableTrigger   durable[MAX_DURABLE_TRIGGERS]; // C20 pool
 
     int node_count, conn_count, var_count, params_count;
     int pending_head, pending_tail;  // ring buffer indices
@@ -83,6 +105,13 @@ struct FlowGraph {
     int         action_count;
 
     void Init();
+
+    // C20: Durable trigger pool management.
+    // AcquireDurable: allocate a slot (ref_count=1, duration=duration_s).
+    //   Returns FLOW_INVALID_DURABLE if pool is full.
+    uint8_t AcquireDurable(uint32_t node_id, float duration_s);
+    void    AddRef (uint8_t slot);    // increment ref_count (no-op on invalid slot)
+    void    Release(uint8_t slot);    // decrement ref_count; free slot when reaches 0
 
     // External trigger: fire node at fire_at_s (CATHODE queue_level analog).
     // fire_at_s == 0.0 → fire on next Tick.

@@ -11,6 +11,36 @@ void FlowGraph::Init() {
     memset(this, 0, sizeof(*this));
 }
 
+// ── C20: Durable trigger pool ─────────────────────────────────────────────────
+
+uint8_t FlowGraph::AcquireDurable(uint32_t node_id, float duration_s) {
+    for (int i = 0; i < MAX_DURABLE_TRIGGERS; ++i) {
+        if (durable[i].ref_count == 0) {
+            durable[i].node_id   = node_id;
+            durable[i].duration  = duration_s;
+            durable[i].ref_count = 1;
+            return static_cast<uint8_t>(i);
+        }
+    }
+    MD_LOG(MD_LOG_WARNING, "FlowGraph: durable trigger pool full");
+    return FLOW_INVALID_DURABLE;
+}
+
+void FlowGraph::AddRef(uint8_t slot) {
+    if (slot >= MAX_DURABLE_TRIGGERS) return;
+    if (durable[slot].ref_count > 0 && durable[slot].ref_count < 255u)
+        ++durable[slot].ref_count;
+}
+
+void FlowGraph::Release(uint8_t slot) {
+    if (slot >= MAX_DURABLE_TRIGGERS) return;
+    if (durable[slot].ref_count == 0) return;
+    if (--durable[slot].ref_count == 0) {
+        durable[slot].duration = 0.f;
+        durable[slot].node_id  = 0;
+    }
+}
+
 // ── Ring buffer ───────────────────────────────────────────────────────────────
 
 bool FlowGraph::ring_push(const FlowPendingTrigger& t) {
@@ -214,6 +244,23 @@ void FlowGraph::propagate(uint32_t from_node_id, uint8_t from_port,
 // ── Tick ──────────────────────────────────────────────────────────────────────
 
 void FlowGraph::Tick(double now_s, entt::entity ctx, entt::registry& reg) {
+    // C20: decay durable triggers; release expired slots
+    float dt = (now_s > 0.0) ? static_cast<float>(now_s) : 0.f;
+    // use a small sentinel: on first call now_s may be near 0; rely on caller
+    // passing a proper delta — here we use now_s as absolute time and just
+    // subtract frame delta via the fixed LOGIC_TICK_S constant (0.1 s).
+    // Callers that need precise decay should call Tick each logic tick.
+    static double s_last_tick = -1.0;
+    float tick_dt = (s_last_tick < 0.0) ? 0.f
+                  : static_cast<float>(now_s - s_last_tick);
+    s_last_tick = now_s;
+    for (int i = 0; i < MAX_DURABLE_TRIGGERS; ++i) {
+        if (durable[i].ref_count == 0) continue;
+        durable[i].duration -= tick_dt;
+        if (durable[i].duration <= 0.f)
+            Release(static_cast<uint8_t>(i));
+    }
+
     // Drain ring buffer — process only triggers with fire_at_s <= now_s.
     // Stop at first future trigger to preserve ordering (ring is FIFO).
     // Limit iterations to MAX_PENDING to prevent infinite propagation loops.

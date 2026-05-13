@@ -310,7 +310,7 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
     glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, n);
     glBindVertexArray(0);
 
-    // Restore GL state for any subsequent Raylib draw calls.
+    // Restore GL state for any subsequent draw calls.
     glUseProgram((GLuint)prev_prog);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);

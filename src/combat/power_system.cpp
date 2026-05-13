@@ -1,0 +1,95 @@
+#include <monkey_dust/combat/power_system.h>
+#include <monkey_dust/combat/power_def.h>
+#include <monkey_dust/combat/power_manager.h>
+#include <monkey_dust/components/health.h>
+#include <monkey_dust/components/projectile.h>
+#include <monkey_dust/world/world_transform.h>
+#include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/platform/md_log.h>
+#include <cmath>
+#include <cstring>
+
+namespace md {
+
+bool PowerSystem::Use(entt::entity caster, int power_id, float tx, float tz) {
+    const PowerDef* def = PowerManager::Get().Find(power_id);
+    if (!def) {
+        MD_LOG(MD_LOG_WARNING, "PowerSystem: unknown power id=%d", power_id);
+        return false;
+    }
+    auto& reg = Registry::Get();
+    if (!reg.valid(caster) || !reg.all_of<WorldTransform>(caster)) return false;
+
+    const auto& tr = reg.get<WorldTransform>(caster);
+    float cx = tr.x, cz = tr.z;
+
+    if (strcmp(def->dmg_type, "melee") == 0) {
+        float damage = def->radius * 10.0f;
+        DoMelee(caster, cx, cz, def->radius, damage);
+    } else if (strcmp(def->dmg_type, "ment") == 0) {
+        // Magic: AoE centered on target position
+        float damage = def->radius * 10.0f;
+        DoMelee(caster, tx, tz, def->radius, damage);
+    } else if (strcmp(def->dmg_type, "ranged") == 0) {
+        SpawnProjectile(caster, cx, cz, tx, tz, power_id);
+    }
+    return true;
+}
+
+void PowerSystem::DoMelee(entt::entity caster, float cx, float cz,
+                           float radius, float damage) {
+    auto& reg = Registry::Get();
+    float r2 = radius * radius;
+
+    // Collect hits first to avoid mutating registry mid-view.
+    struct HitRecord { entt::entity e; };
+    static HitRecord hits[64];
+    int hit_count = 0;
+
+    reg.view<WorldTransform, Health>().each(
+        [&](entt::entity e, const WorldTransform& t, const Health&) {
+            if (e == caster || hit_count >= 64) return;
+            float dx = t.x - cx, dz = t.z - cz;
+            if (dx*dx + dz*dz <= r2) hits[hit_count++] = {e};
+        });
+
+    for (int i = 0; i < hit_count; ++i) {
+        if (!reg.valid(hits[i].e) || !reg.all_of<Health>(hits[i].e)) continue;
+        auto& hp = reg.get<Health>(hits[i].e);
+        hp.current -= damage;
+        if (hp.current < 0.0f) hp.current = 0.0f;
+    }
+}
+
+void PowerSystem::SpawnProjectile(entt::entity caster,
+                                   float cx, float cz,
+                                   float tx, float tz,
+                                   int power_id) {
+    const PowerDef* def = PowerManager::Get().Find(power_id);
+    auto& reg = Registry::Get();
+
+    constexpr float PROJ_SPEED = 8.0f; // m/s
+    float dx = tx - cx, dz = tz - cz;
+    float dist = std::sqrt(dx*dx + dz*dz);
+    float vx = 0.0f, vz = 0.0f;
+    if (dist > 0.01f) { vx = dx/dist * PROJ_SPEED; vz = dz/dist * PROJ_SPEED; }
+
+    ProjectileComponent pc{};
+    pc.owner      = caster;
+    pc.power_id   = power_id;
+    pc.x          = cx;
+    pc.z          = cz;
+    pc.vx         = vx;
+    pc.vz         = vz;
+    pc.speed      = PROJ_SPEED;
+    pc.damage     = def ? def->radius * 8.0f : 10.0f;
+    pc.lifespan_s = def ? def->radius * 0.5f + 1.5f : 2.0f;
+    pc.elapsed_s  = 0.0f;
+    pc.radius     = 0.4f;
+
+    auto proj = reg.create();
+    reg.emplace<ProjectileComponent>(proj, pc);
+    reg.emplace<WorldTransform>(proj, WorldTransform{cx, 0.0f, cz, 0.0f});
+}
+
+} // namespace md

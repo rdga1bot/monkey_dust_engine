@@ -2,6 +2,9 @@
 #include <cstdint>
 #include <cstring>
 #include <atomic>
+#ifdef __x86_64__
+#  include <immintrin.h>  // _mm_pause
+#endif
 
 // ─────────────────────────────────────────────────────────
 // PathCache — LRU кеш шляхів для Recast/Detour запитів.
@@ -90,8 +93,12 @@ private:
         while (!lock_.compare_exchange_weak(
                    expected, true,
                    std::memory_order_acquire,
-                   std::memory_order_relaxed))
+                   std::memory_order_relaxed)) {
             expected = false;
+#ifdef __x86_64__
+            _mm_pause(); // yield HT sibling core during contention
+#endif
+        }
     }
     void ReleaseLock() const {
         lock_.store(false, std::memory_order_release);

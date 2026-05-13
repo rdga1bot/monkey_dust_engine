@@ -272,8 +272,12 @@ bool GpuPipeline::Create(const Desc& desc) {
     // Color target (uses swapchain format); skipped for depth_only passes.
     SDL_GPUColorTargetDescription color_target = {};
     if (!desc.depth_only) {
-        SDL_Window* win = md::GpuDevice::Get().Window();
-        color_target.format = SDL_GetGPUSwapchainTextureFormat(dev, win);
+        SDL_GPUTextureFormat fmt = desc.color_format;
+        if (fmt == SDL_GPU_TEXTUREFORMAT_INVALID) {
+            SDL_Window* win = md::GpuDevice::Get().Window();
+            fmt = SDL_GetGPUSwapchainTextureFormat(dev, win);
+        }
+        color_target.format = fmt;
         if (desc.raster.blend_enable) {
             color_target.blend_state.enable_blend          = true;
             color_target.blend_state.src_color_blendfactor = ToSDLBlend(desc.raster.src_factor);

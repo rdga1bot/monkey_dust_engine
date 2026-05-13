@@ -102,6 +102,9 @@ public:
         uint32_t frag_samplers     = 0;
         bool     has_depth_target  = true;  // set false for 2D/HUD passes
         bool     depth_only        = false; // depth-only pass (shadow): no color target
+        // Override swapchain color format (e.g. SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM
+        // for intermediate render targets). INVALID (0) = use swapchain format.
+        SDL_GPUTextureFormat color_format = SDL_GPU_TEXTUREFORMAT_INVALID;
 #endif
     };
 

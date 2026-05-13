@@ -17,7 +17,14 @@ enum class BTNodeType : uint8_t {
     Action,
     Inverter,
     Repeat,
-    Wait
+    Wait,
+    // M21 — CATHODE LegendPlugin analogs
+    Branch,      // persistent interrupt: re-checks nd.condition every tick before child
+    TimerStart,  // leaf: as->timers[data>>24] = nowMs + (data & 0xFFFFFF)
+    TimerCheck,  // leaf condition: expired? clears timer on fire
+    FlagCheck,   // leaf condition: (flags & data) != 0; nd.flags=1 → check clear
+    FlagSet,     // leaf action: set(nd.flags=0) or clear(nd.flags=1) bits in data
+    SenseCheck   // leaf condition: activation[data>>24] >= (data & 0xFFFFFF)*0.001f
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -62,6 +69,13 @@ public:
     uint16_t addWait     (uint32_t ms);
     uint16_t addCondition(BTConditionFunc func);
     uint16_t addAction   (BTActionFunc    func);
+    // M21 extensions
+    uint16_t addBranch    (BTConditionFunc cond);
+    uint16_t addTimerStart(uint8_t timer_id, uint32_t duration_ms);
+    uint16_t addTimerCheck(uint8_t timer_id);
+    uint16_t addFlagCheck (uint32_t mask, bool check_set = true);
+    uint16_t addFlagSet   (uint32_t mask, bool do_set = true);
+    uint16_t addSenseCheck(uint8_t sense_idx, float threshold);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

@@ -52,21 +52,133 @@ FlowActionFunc FlowGraph::find_action(uint32_t node_id) const {
 
 // ── Variable accessors ────────────────────────────────────────────────────────
 
+// Coerce any FlowVar type to float (used by GetVar + Condition node evaluation).
+static float coerce_to_float(const FlowVar& v) noexcept {
+    switch (v.type) {
+    case FlowVarType::Float: return v.val.f;
+    case FlowVarType::Bool:  return v.val.b ? 1.f : 0.f;
+    case FlowVarType::Int:   return static_cast<float>(v.val.i);
+    case FlowVarType::Str:   return v.val.s[0] ? 1.f : 0.f;
+    }
+    return 0.f;
+}
+
+static FlowVar* find_var(FlowVar* vars, int count, uint32_t key) noexcept {
+    for (int i = 0; i < count; ++i)
+        if (vars[i].key == key) return &vars[i];
+    return nullptr;
+}
+
 float FlowGraph::GetVar(uint32_t key, float def) const {
     for (int i = 0; i < var_count; ++i)
-        if (vars[i].key == key) return vars[i].value;
+        if (vars[i].key == key) return coerce_to_float(vars[i]);
     return def;
 }
 
 void FlowGraph::SetVar(uint32_t key, float value) {
-    for (int i = 0; i < var_count; ++i) {
-        if (vars[i].key == key) { vars[i].value = value; return; }
+    if (FlowVar* v = find_var(vars, var_count, key)) {
+        v->type  = FlowVarType::Float;
+        v->val.f = value;
+        return;
     }
     if (var_count < MAX_VARS) {
-        vars[var_count++] = { key, value };
+        FlowVar& v = vars[var_count++];
+        v.key  = key;
+        v.type = FlowVarType::Float;
+        v.val.f = value;
     } else {
         MD_LOG(MD_LOG_WARNING, "FlowGraph: var table full, key=0x%08X dropped", key);
     }
+}
+
+void FlowGraph::SetVarBool(uint32_t key, bool value) {
+    if (FlowVar* v = find_var(vars, var_count, key)) {
+        v->type  = FlowVarType::Bool;
+        v->val.b = value;
+        return;
+    }
+    if (var_count < MAX_VARS) {
+        FlowVar& v = vars[var_count++];
+        v.key  = key;
+        v.type = FlowVarType::Bool;
+        v.val.b = value;
+    } else {
+        MD_LOG(MD_LOG_WARNING, "FlowGraph: var table full, key=0x%08X dropped", key);
+    }
+}
+
+void FlowGraph::SetVarInt(uint32_t key, int32_t value) {
+    if (FlowVar* v = find_var(vars, var_count, key)) {
+        v->type  = FlowVarType::Int;
+        v->val.i = value;
+        return;
+    }
+    if (var_count < MAX_VARS) {
+        FlowVar& v = vars[var_count++];
+        v.key  = key;
+        v.type = FlowVarType::Int;
+        v.val.i = value;
+    } else {
+        MD_LOG(MD_LOG_WARNING, "FlowGraph: var table full, key=0x%08X dropped", key);
+    }
+}
+
+void FlowGraph::SetVarStr(uint32_t key, const char* value) {
+    if (FlowVar* v = find_var(vars, var_count, key)) {
+        v->type = FlowVarType::Str;
+        strncpy(v->val.s, value ? value : "", sizeof(v->val.s) - 1);
+        v->val.s[sizeof(v->val.s) - 1] = '\0';
+        return;
+    }
+    if (var_count < MAX_VARS) {
+        FlowVar& v = vars[var_count++];
+        v.key  = key;
+        v.type = FlowVarType::Str;
+        strncpy(v.val.s, value ? value : "", sizeof(v.val.s) - 1);
+        v.val.s[sizeof(v.val.s) - 1] = '\0';
+    } else {
+        MD_LOG(MD_LOG_WARNING, "FlowGraph: var table full, key=0x%08X dropped", key);
+    }
+}
+
+bool FlowGraph::GetVarBool(uint32_t key, bool def) const {
+    for (int i = 0; i < var_count; ++i) {
+        if (vars[i].key != key) continue;
+        switch (vars[i].type) {
+        case FlowVarType::Bool:  return vars[i].val.b;
+        case FlowVarType::Float: return vars[i].val.f != 0.f;
+        case FlowVarType::Int:   return vars[i].val.i != 0;
+        case FlowVarType::Str:   return vars[i].val.s[0] != '\0';
+        }
+    }
+    return def;
+}
+
+int32_t FlowGraph::GetVarInt(uint32_t key, int32_t def) const {
+    for (int i = 0; i < var_count; ++i) {
+        if (vars[i].key != key) continue;
+        switch (vars[i].type) {
+        case FlowVarType::Int:   return vars[i].val.i;
+        case FlowVarType::Float: return static_cast<int32_t>(vars[i].val.f);
+        case FlowVarType::Bool:  return vars[i].val.b ? 1 : 0;
+        case FlowVarType::Str:   return 0;
+        }
+    }
+    return def;
+}
+
+const char* FlowGraph::GetVarStr(uint32_t key, const char* def) const {
+    for (int i = 0; i < var_count; ++i) {
+        if (vars[i].key == key && vars[i].type == FlowVarType::Str)
+            return vars[i].val.s;
+    }
+    return def;
+}
+
+FlowVarType FlowGraph::GetVarType(uint32_t key) const {
+    for (int i = 0; i < var_count; ++i)
+        if (vars[i].key == key) return vars[i].type;
+    return FlowVarType::Float;
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -307,6 +419,8 @@ bool FlowGraph::LoadFromJson(const char* path) {
     }
 
     // Parse variables array
+    // M45: each variable may have "type": "float"|"bool"|"int"|"str"
+    //      str vars use "str_value" instead of numeric "value".
     const char* vars_arr = strstr(buf, "\"variables\"");
     if (vars_arr) {
         const char* arr_end = strstr(vars_arr, "]");
@@ -319,9 +433,29 @@ bool FlowGraph::LoadFromJson(const char* path) {
             size_t blen = static_cast<size_t>(obj_end - obj_start); if (blen > 256) blen = 256;
             char block[256] = {}; memcpy(block, obj_start, blen);
 
-            vars[var_count].key   = jstr_id(block, "\"key\"");
-            vars[var_count].value = jfloat(block, "\"value\"");
-            if (vars[var_count].key) ++var_count;
+            uint32_t k = jstr_id(block, "\"key\"");
+            if (!k) { cursor = obj_end + 1; continue; }
+
+            // Detect type
+            char type_str[16] = {};
+            jstr(block, "\"type\"", type_str, sizeof(type_str));
+
+            FlowVar& fv = vars[var_count];
+            fv.key = k;
+            if (type_str[0] == 'b') {  // "bool"
+                fv.type  = FlowVarType::Bool;
+                fv.val.b = (jfloat(block, "\"value\"") != 0.f);
+            } else if (type_str[0] == 'i') {  // "int"
+                fv.type  = FlowVarType::Int;
+                fv.val.i = jint(block, "\"value\"");
+            } else if (type_str[0] == 's') {  // "str"
+                fv.type = FlowVarType::Str;
+                jstr(block, "\"str_value\"", fv.val.s, sizeof(fv.val.s));
+            } else {  // "float" or absent
+                fv.type  = FlowVarType::Float;
+                fv.val.f = jfloat(block, "\"value\"");
+            }
+            ++var_count;
             cursor = obj_end + 1;
         }
     }

@@ -33,10 +33,23 @@ struct FlowConn {
 };
 static_assert(sizeof(FlowConn) == 12, "FlowConn must be 12 bytes");
 
+// M45: typed flow variable (CATHODE cBool/cInt/cFloat/cString analog).
+// SaveSystem only persists Float-typed vars (FlowVarRecord).
+// Condition nodes coerce any type to float for evaluation.
+enum class FlowVarType : uint8_t { Float = 0, Bool = 1, Int = 2, Str = 3 };
+
 struct FlowVar {
-    uint32_t key;   // FNV-1a hash of variable name
-    float    value;
+    uint32_t    key;      // FNV-1a hash of variable name
+    FlowVarType type;
+    uint8_t     _pad[3];
+    union {
+        float   f;
+        bool    b;
+        int32_t i;
+        char    s[16];    // inline string (max 15 chars + NUL)
+    } val;
 };
+static_assert(sizeof(FlowVar) == 24, "FlowVar must be 24 bytes");;
 
 // CATHODE TriggerInfo analog: one pending event in the ring buffer.
 // fire_at_s = absolute game time (matches TriggerInfo::duration semantics).
@@ -87,9 +100,23 @@ struct FlowGraph {
     // Load graph structure from a *.flow.json file.
     bool LoadFromJson(const char* path);
 
-    // Variable accessors (FNV-1a key).
-    float GetVar(uint32_t key, float def = 0.f) const;
-    void  SetVar(uint32_t key, float value);
+    // Typed variable accessors (FNV-1a key).
+    // GetVar / SetVar (float) — backward-compatible; coerce any type to float.
+    float       GetVar    (uint32_t key, float def = 0.f) const;
+    void        SetVar    (uint32_t key, float value);
+
+    // Typed setters — create or update variable with exact type.
+    void        SetVarBool(uint32_t key, bool  value);
+    void        SetVarInt (uint32_t key, int32_t value);
+    void        SetVarStr (uint32_t key, const char* value);  // max 15 chars
+
+    // Typed getters — return typed value; falls back to def when missing/wrong type.
+    bool        GetVarBool(uint32_t key, bool        def = false) const;
+    int32_t     GetVarInt (uint32_t key, int32_t     def = 0)     const;
+    const char* GetVarStr (uint32_t key, const char* def = "")    const;
+
+    // Returns Float for unknown keys.
+    FlowVarType GetVarType(uint32_t key) const;
 
 private:
     bool  ring_push(const FlowPendingTrigger& t);

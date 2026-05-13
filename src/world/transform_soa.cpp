@@ -75,6 +75,7 @@ uint32_t TransformSoA::Alloc(entt::entity e, float x, float z, uint8_t faction_i
     dist_sq[slot] = 1e18f;
     faction[slot] = faction_id;
     slot_to_entity[slot] = e;
+    MarkFactionDirty(slot);
     return slot;
 }
 
@@ -94,6 +95,7 @@ void TransformSoA::Free(entt::entity e) {
         rot_y[slot]   = rot_y[last];
         dist_sq[slot] = dist_sq[last];
         faction[slot] = faction[last];
+        MarkFactionDirty(slot);
         entt::entity moved = slot_to_entity[last];
         slot_to_entity[slot] = moved;
         if (reg.valid(moved) && reg.all_of<WorldTransform>(moved))
@@ -134,11 +136,19 @@ void TransformSoA::UploadToGPU() {
     }
     transform_ring_.BindStorage(0);
 
-    // Faction data rarely changes → regular SSBO upload.
-    static uint32_t ff[MAX_SLOTS];
-    for (int i = 0; i < active_count; ++i)
-        ff[i] = (uint32_t)faction[i];
-    faction_ssbo_.Upload(ff, active_count * (int)sizeof(uint32_t), 0);
+    // Faction data rarely changes → upload only the dirty slot range.
+    if (faction_dirty_ && active_count > 0) {
+        uint32_t lo = faction_dirty_min_;
+        uint32_t hi = faction_dirty_max_;
+        if (hi >= (uint32_t)active_count) hi = (uint32_t)active_count - 1;
+        if (lo > hi) lo = hi;
+        uint32_t cnt = hi - lo + 1;
+        static uint32_t ff[MAX_SLOTS];
+        for (uint32_t i = lo; i <= hi; ++i) ff[i - lo] = (uint32_t)faction[i];
+        faction_ssbo_.Upload(ff, (int)(cnt * sizeof(uint32_t)),
+                             (int)(lo * sizeof(uint32_t)));
+        faction_dirty_ = false;
+    }
     faction_ssbo_.Bind(3);
 }
 
@@ -249,6 +259,7 @@ void TransformSoA::AssignSlot(entt::entity e, uint32_t slot,
     rot_y[slot] = 0.0f;
     dist_sq[slot] = 1e18f;
     faction[slot] = faction_id;
+    MarkFactionDirty(slot);
     slot_to_entity[slot] = e;
     if ((int)slot >= active_count) active_count = (int)slot + 1;
 }

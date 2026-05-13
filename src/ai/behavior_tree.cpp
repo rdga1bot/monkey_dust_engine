@@ -2,6 +2,7 @@
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/sense_component.h>
+#include <monkey_dust/components/npc_memory.h>
 #include <cstring>
 
 BehaviorTree::BehaviorTree() {
@@ -203,6 +204,19 @@ uint16_t BehaviorTree::addSetWithdraw(WithdrawState state) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::SetWithdraw);
     m_nodes[i].data = static_cast<uint32_t>(state);
+    return i;
+}
+
+uint16_t BehaviorTree::addMemoryCheck(uint8_t mode) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::MemoryCheck);
+    m_nodes[i].data = mode;
+    return i;
+}
+
+uint16_t BehaviorTree::addMemoryForget() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::MemoryForget);
     return i;
 }
 
@@ -631,6 +645,22 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         case BTNodeType::SetWithdraw: {
             AgentState* as = Registry::Get().try_get<AgentState>(e);
             if (as) as->withdraw_state = static_cast<WithdrawState>(nd.data);
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // Echo NpcMemory nodes
+        case BTNodeType::MemoryCheck: {
+            NpcMemoryComponent* mem = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (!mem) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            bool ok = (nd.data == 0) ? (mem->spatial_count > 0) : (mem->event_count > 0);
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::MemoryForget: {
+            NpcMemoryComponent* mem = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (mem) mem->ClearAll();
             result = BTStatus::Success;
             pc = nd.parent; continue;
         }

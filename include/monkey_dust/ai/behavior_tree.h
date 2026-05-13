@@ -93,6 +93,11 @@ enum class BTNodeType : uint8_t {
     //   SetWithdraw:   data=(WithdrawState)→writes and returns Success
     WithdrawCheck,
     SetWithdraw,
+    // Echo-inspired NpcMemory nodes
+    //   MemoryCheck: data=0→has_spatial_memory (spatial_count>0), data=1→has_event_memory
+    //   MemoryForget: clears all NpcMemoryComponent data → always Success
+    MemoryCheck,
+    MemoryForget,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -121,6 +126,7 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   RoleRelease:      NpcRole value
 //   WithdrawCheck:    WithdrawState value
 //   SetWithdraw:      WithdrawState value
+//   MemoryCheck:      0=has_spatial_memory, 1=has_event_memory
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -207,6 +213,9 @@ public:
     // C19: WithdrawState 3-stage retreat FSM
     uint16_t addWithdrawCheck(WithdrawState state);
     uint16_t addSetWithdraw  (WithdrawState state);
+    // Echo NpcMemory nodes
+    uint16_t addMemoryCheck (uint8_t mode);  // 0=has_spatial, 1=has_event
+    uint16_t addMemoryForget();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

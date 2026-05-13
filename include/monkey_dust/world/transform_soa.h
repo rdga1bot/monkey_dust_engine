@@ -73,8 +73,25 @@ public:
     uint32_t GetSlotForEntity(entt::entity e) const;
     void     AssignSlot(entt::entity e, uint32_t slot, float x, float z, uint8_t faction_id);
 
+    // Dirty-range tracking for faction SSBO.
+    // Faction changes are infrequent; upload only the dirty sub-range.
+    void MarkFactionDirty(uint32_t slot) noexcept {
+        if (!faction_dirty_) {
+            faction_dirty_     = true;
+            faction_dirty_min_ = slot;
+            faction_dirty_max_ = slot;
+            return;
+        }
+        if (slot < faction_dirty_min_) faction_dirty_min_ = slot;
+        if (slot > faction_dirty_max_) faction_dirty_max_ = slot;
+    }
+
 private:
     TransformSoA() = default;
+
+    bool     faction_dirty_     = true;  // true on first frame → full upload
+    uint32_t faction_dirty_min_ = 0;
+    uint32_t faction_dirty_max_ = 0;
 #ifdef MD_SDL_GPU
     SDL_GPUBuffer*         sdl_xzyr_buf_    = nullptr;
     SDL_GPUTransferBuffer* sdl_xzyr_stg_    = nullptr;

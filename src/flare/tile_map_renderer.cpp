@@ -136,6 +136,7 @@ void TileMapRenderer::Shutdown() {
 }
 
 void TileMapRenderer::SetAtlases(const FlareMap& map) {
+    dirty_ = true;
     for (int i = 0; i < atlas_count_; ++i) MdUnloadTexture(atlases_[i]);
     atlas_count_ = 0;
     for (int i = 0; i < map.tileset_atlas_count && i < MAX_ATLAS_COUNT; ++i) {
@@ -148,6 +149,7 @@ void TileMapRenderer::SetAtlases(const FlareMap& map) {
 }
 
 void TileMapRenderer::SetAtlas(const char* png_path) {
+    dirty_ = true;
     for (int i = 0; i < atlas_count_; ++i) MdUnloadTexture(atlases_[i]);
     atlas_count_ = 1;
     atlases_[0] = MdLoadTexturePixelArt(png_path);
@@ -196,7 +198,19 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
 
     static VisibleTile vbuf[MAX_VISIBLE_TILES];
     static uint8_t     ibuf[MAX_VISIBLE_TILES * TINST_STRIDE];
-    int n = 0;
+    static int     n_cached   = 0;
+    static float   last_now_s = -1.0f;
+
+    if (last_map_ != &map) { dirty_ = true; last_map_ = &map; }
+
+    bool has_anims    = (map.meta.anim_count > 0);
+    bool anim_changed = has_anims && (now_s != last_now_s);
+    int  n            = n_cached;
+
+    if (dirty_ || anim_changed) {
+    n = 0;
+    dirty_     = false;
+    last_now_s = now_s;
 
     // PASS 1: collect layers into vbuf.
     // layer_prio encodes render order within the same (col+row) depth bucket:
@@ -355,6 +369,9 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
         memcpy(p + TINST_OFF_YTOP,     &y_top, 4);
         memcpy(p + TINST_OFF_XOFF,     &x_off, 4);
     }
+
+    n_cached = n;
+    } // end rebuild block
 
     if (n == 0) return;
 

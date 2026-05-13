@@ -1,8 +1,7 @@
 #include <monkey_dust/ai/bt_json_loader.h>
 #include <monkey_dust/ai/bt_action_registry.h>
 #include <monkey_dust/platform/md_log.h>
-#include <cstdio>
-#include <cstdlib>
+#include <monkey_dust/platform/md_fs.h>
 #include <cstring>
 
 // ── String helpers ────────────────────────────────────────────────────────────
@@ -501,6 +500,15 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
         idx = bt.addSetWithdraw(parse_withdraw(s));
 
+    } else if (strcmp(type_str, "MemoryCheck") == 0) {
+        char mode_str[16] = "spatial";
+        read_str_r(obj, obj_end, "\"mode\"", mode_str, sizeof(mode_str));
+        uint8_t mode = (strcmp(mode_str, "event") == 0) ? 1u : 0u;
+        idx = bt.addMemoryCheck(mode);
+
+    } else if (strcmp(type_str, "MemoryForget") == 0) {
+        idx = bt.addMemoryForget();
+
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);
         return BehaviorTree::INVALID;
@@ -591,20 +599,12 @@ bool BTJsonLoader::LoadFromString(BehaviorTree& bt, const char* json) {
 }
 
 bool BTJsonLoader::LoadFromFile(BehaviorTree& bt, const char* path) {
-    FILE* f = fopen(path, "r");
-    if (!f) {
+    char* buf = md::fs_read_alloc(path, nullptr);
+    if (!buf) {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] file not found: %s", path);
         return false;
     }
-    fseek(f, 0, SEEK_END);
-    long len = ftell(f);
-    rewind(f);
-    char* buf = static_cast<char*>(malloc(static_cast<size_t>(len) + 1));
-    if (!buf) { fclose(f); return false; }
-    size_t n = fread(buf, 1, static_cast<size_t>(len), f);
-    buf[n] = '\0';
-    fclose(f);
     bool ok = LoadFromString(bt, buf);
-    free(buf);
+    md::fs_free(buf);
     return ok;
 }

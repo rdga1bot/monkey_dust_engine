@@ -45,6 +45,9 @@ public:
                 float aspect, float tile_world_size = 1.0f,
                 float ortho_size = 0.0f, float now_s = 0.0f);
 
+    // Invalidate the cached TINST buffer — call after editing map tiles at runtime.
+    void MarkDirty() noexcept { dirty_ = true; }
+
 private:
     TileMapRenderer() = default;
 
@@ -57,10 +60,11 @@ private:
     int loc_tile_size_ = -1;
     int loc_y_         = -1;
 
-    MdTexture atlases_[MAX_ATLAS_COUNT];
-    int       atlas_count_ = 0;
-
-    bool init_ = false;
+    MdTexture        atlases_[MAX_ATLAS_COUNT];
+    int              atlas_count_ = 0;
+    bool             init_        = false;
+    bool             dirty_       = true;   // true → rebuild TINST cache next Render()
+    const FlareMap*  last_map_    = nullptr;
 };
 
 } // namespace md::flare

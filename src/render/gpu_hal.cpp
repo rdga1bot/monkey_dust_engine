@@ -27,8 +27,6 @@ static char* ReadTextFile(const char* path) {
     return buf;
 }
 
-// stb_image declarations — implementation provided by Raylib (rtextures.c).
-// Included here (outside backend guards) so both OpenGL and SDL_GPU paths can call stbi_load.
 #include "stb_image.h"
 
 #ifdef MD_SDL_GPU

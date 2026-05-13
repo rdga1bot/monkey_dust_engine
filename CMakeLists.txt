@@ -57,11 +57,6 @@ if(USE_GLM AND NOT USE_SDL3)
     # without USE_SDL3 (uncommon but supported).
     target_compile_definitions(monkey_dust_engine PUBLIC USE_GLM)
 endif()
-if(MD_OPENGL43 AND NOT USE_SDL3)
-    # Legacy OpenGL 4.3+ path: only active for non-SDL3 builds.
-    target_compile_definitions(monkey_dust_engine PUBLIC
-        GRAPHICS_API_OPENGL_43 MD_OPENGL43_ENABLED)
-endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR MONKEY_DUST_EDITOR)
     target_compile_definitions(monkey_dust_engine PUBLIC DEBUG)
 endif()

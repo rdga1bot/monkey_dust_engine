@@ -9,9 +9,6 @@
 #include <cstdio>
 #include <cstdint>
 
-#ifdef MD_OPENGL43_ENABLED
-#include "glad.h"
-#endif
 
 #ifndef DEG2RAD
 #define DEG2RAD 0.01745329251f
@@ -161,49 +158,14 @@ public:
 #endif
 
     void Init(MdMesh npc_mesh) {
-#ifdef MD_OPENGL43_ENABLED
-        if (init_) return;
-        mesh_     = npc_mesh;
-        mesh_idx_ = npc_mesh.index_count;
-
-        // 3 cascade depth textures + FBOs — managed by GpuDepthTexture.
-        // shadow_border=true: GL_CLAMP_TO_BORDER + white border for PCF off-map reads.
-        for (int k = 0; k < NUM_CASCADES; ++k)
-            shadow_depth_[k].Init(MAP_SIZE, MAP_SIZE, /*shadow_border=*/true);
-
-        shadow_shader_ = MdLoadShader("shaders/shadow_csm.vert",
-                                      "shaders/shadow_csm.frag");
-        loc_lightVP_   = MdGetLoc(shadow_shader_, "lightViewProj");
-
-        // Shadow cull compute — GpuComputePipeline replaces raw ComputeShader.
-        // SDL_GPU SPIRV: set=0 ro[0]=Transform; set=1 rw[0]=ShadowVis, rw[1]=ShadowInd; set=2 UBO.
-        GpuComputePipeline::Desc sc_desc;
-        sc_desc.glsl_path                    = "shaders/shadow_cull.comp";
-        sc_desc.num_uniform_buffers          = 1; // camPos/maxDist/count (set=2 binding=0)
-        sc_desc.num_readonly_storage_buffers = 1; // TransformBuf (set=0 binding=0)
-        sc_desc.num_readwrite_storage_buffers= 2; // ShadowVisBuf(set=1,bind=0), ShadowIndBuf(bind=1)
-        shadow_cull_cs_.Create(sc_desc);
-        loc_svCamPos_  = shadow_cull_cs_.UniformLoc("camPos");
-        loc_svMaxDist_ = shadow_cull_cs_.UniformLoc("maxDistSq");
-        loc_svTotal_   = shadow_cull_cs_.UniformLoc("total_count");
-
-        // MAX_SLOTS = 8192, indirect = 5 uint32 = 20 bytes
-        shadow_vis_buf_.Init(8192 * (int)sizeof(uint32_t));
-        shadow_ind_buf_.Init(20, SSBO_INDIRECT);
-        init_ = true;
-#endif
     }
 
     // Recompute light-space VP matrices from camera frustum corners.
     // Pure CPU math — no GL calls; works in both OpenGL and SDL_GPU paths.
     void Update(const MdCamera& camera, Vec3 sun_dir, int sw, int sh) {
-#ifdef MD_OPENGL43_ENABLED
-        if (!init_) return;
-#elif defined(MD_SDL_GPU)
         if (!sdl_init_) return;
 #else
         return;
-#endif
         cam_pos_  = camera.pos;
         screen_w_ = (sw > 0) ? sw : 1280;
         screen_h_ = (sh > 0) ? sh : 720;
@@ -273,102 +235,14 @@ public:
     //          bindings.cmd=nullptr is a safe no-op (Step 9 wires SDL_GPUBuffer*).
     void RenderShadowPass(int active_npc_count,
                           const GpuComputePass::StorageBindings& bindings = {}) {
-#ifdef MD_OPENGL43_ENABLED
-        if (!init_ || active_npc_count <= 0) return;
-
-        // Reset indirect command (instanceCount = 0).
-        uint32_t cmd[5] = { (uint32_t)mesh_idx_, 0u, 0u, 0u, 0u };
-        shadow_ind_buf_.Upload(cmd, 20, 0);
-        shadow_vis_buf_.Bind(6);
-        shadow_ind_buf_.Bind(7);
-
-        // Shadow cull compute — GpuComputePass replaces raw ComputeShader dispatch.
-#ifdef MD_SDL_GPU
-        if (bindings.cmd) {
-            // SDL_GPU path: push camPos/maxDistSq/totalCount as UBO slot 0.
-            struct alignas(16) ShadowCullUBO {
-                float camPos[3]; float _p;
-                float maxDistSq; float _p2[3];
-                int   totalCount; int _p3[3];
-            } ubo = { { cam_pos_.x, cam_pos_.y, cam_pos_.z }, 0.f,
-                       60.f * 60.f, {}, active_npc_count, {} };
-            GpuComputePass cull;
-            cull.Begin(&shadow_cull_cs_, bindings);
-            cull.PushUniforms(0, &ubo, sizeof(ubo));
-            cull.Dispatch(((unsigned)active_npc_count + 63u) / 64u, 1u, 1u);
-            cull.End();
-        }
-#endif
-        {
-            float cpf[3] = { cam_pos_.x, cam_pos_.y, cam_pos_.z };
-            GpuComputePass cull;
-            cull.Begin(&shadow_cull_cs_);
-            cull.SetUniformVec3  (loc_svCamPos_,  cpf);
-            cull.SetUniformFloat (loc_svMaxDist_, 60.f * 60.f);
-            cull.SetUniformInt   (loc_svTotal_,   active_npc_count);
-            cull.Dispatch(((unsigned)active_npc_count + 63u) / 64u, 1u, 1u);
-            // STORAGE | COMMAND: indirect buffer written by compute, read by draw call.
-            cull.End(GpuComputePass::BARRIER_STORAGE_COMMAND);
-        }
-
-        // Depth pass per cascade — GpuRenderPass manages FBO bind/viewport/clear.
-        MdUseShader(shadow_shader_);
-        shadow_vis_buf_.Bind(6); // re-bind after compute (may have unbound SSBOs)
-        glBindVertexArray(mesh_.vao);
-
-        for (int k = 0; k < NUM_CASCADES; ++k) {
-            GpuRenderPass pass;
-            pass.BeginDepthOnly({ &shadow_depth_[k], 1.0f, /*cull_front=*/true });
-            glUniformMatrix4fv(loc_lightVP_, 1, GL_FALSE, mat4_ptr(lightViewProj[k]));
-            GpuDrawIndexedIndirect(shadow_ind_buf_.id);
-            pass.End();
-        }
-
-        glBindVertexArray(0);
-        MdStopShader();
-#endif
     }
 
     // Binds shadow maps to texture units 5/6/7 and sets CSM uniforms.
     // Caller must have the npc shader active (glUseProgram / MdUseShader).
     void BindShadowMaps(MdShader shader) {
-#ifdef MD_OPENGL43_ENABLED
-        if (!init_) return;
-
-        // GpuDepthTexture::Bind handles glActiveTexture + glBindTexture.
-        for (int k = 0; k < NUM_CASCADES; ++k)
-            shadow_depth_[k].Bind((uint32_t)(5 + k));
-        glActiveTexture(GL_TEXTURE0);
-
-        char nm[32];
-        for (int k = 0; k < NUM_CASCADES; ++k) {
-            snprintf(nm, sizeof(nm), "shadowMaps[%d]", k);
-            int loc = MdGetLoc(shader, nm);
-            if (loc >= 0) glUniform1i(loc, 5 + k);
-        }
-
-        for (int k = 0; k < NUM_CASCADES; ++k) {
-            snprintf(nm, sizeof(nm), "lightViewProj[%d]", k);
-            int loc = MdGetLoc(shader, nm);
-            if (loc >= 0) glUniformMatrix4fv(loc, 1, GL_FALSE, mat4_ptr(lightViewProj[k]));
-        }
-
-        int loc_s = MdGetLoc(shader, "cascadeSplits");
-        if (loc_s >= 0) glUniform1fv(loc_s, 3, cascade_splits);
-#endif
     }
 
     void Shutdown() {
-#ifdef MD_OPENGL43_ENABLED
-        if (!init_) return;
-        for (int k = 0; k < NUM_CASCADES; ++k)
-            shadow_depth_[k].Shutdown();
-        MdUnloadShader(shadow_shader_);
-        shadow_cull_cs_.Destroy();
-        shadow_vis_buf_.Shutdown();
-        shadow_ind_buf_.Shutdown();
-        init_ = false;
-#endif
     }
 
 private:

@@ -7,9 +7,6 @@
 #include <monkey_dust/platform/md_log.h>
 #endif
 
-#ifdef MD_OPENGL43_ENABLED
-#include "glad.h"
-#endif
 
 void SSBO::Init(int capacity_bytes, uint32_t extra_sdl_usage) {
 #ifdef MD_SDL_GPU
@@ -32,13 +29,6 @@ void SSBO::Init(int capacity_bytes, uint32_t extra_sdl_usage) {
         if (!sdl_transfer_)
             MD_LOG(MD_LOG_WARNING, "[SSBO] SDL_CreateGPUTransferBuffer failed: %s", SDL_GetError());
     }
-#endif
-#ifdef MD_OPENGL43_ENABLED
-    glGenBuffers(1, &id);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, id);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, capacity_bytes, nullptr, GL_DYNAMIC_DRAW);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    if (!id) fprintf(stderr, "[SSBO] creation failed (%d bytes)\n", capacity_bytes);
 #endif
 }
 
@@ -65,20 +55,10 @@ void SSBO::Upload(const void* data, int size_bytes, int offset) {
         SDL_SubmitGPUCommandBuffer(cmd);
     }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    if (!id) return;
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, id);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, offset, size_bytes, data);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-#endif
 }
 
 void SSBO::Bind(int binding_point) {
-#ifdef MD_OPENGL43_ENABLED
-    if (id) glBindBufferBase(GL_SHADER_STORAGE_BUFFER, (GLuint)binding_point, id);
-#else
     (void)binding_point;
-#endif
 }
 
 void SSBO::Shutdown() {
@@ -87,9 +67,6 @@ void SSBO::Shutdown() {
     if (sdl_transfer_) { SDL_ReleaseGPUTransferBuffer(dev, sdl_transfer_); sdl_transfer_ = nullptr; }
     if (sdl_buf_)      { SDL_ReleaseGPUBuffer        (dev, sdl_buf_);      sdl_buf_      = nullptr; }
     sdl_cap_ = 0;
-#endif
-#ifdef MD_OPENGL43_ENABLED
-    if (id) { glDeleteBuffers(1, &id); id = 0; }
 #endif
 }
 

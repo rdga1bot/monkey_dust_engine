@@ -1,7 +1,6 @@
 #include <monkey_dust/flare/tile_map_2d_renderer.h>
 #include <monkey_dust/render/md_shader.h>
 
-#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -471,14 +470,3 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
 
 } // namespace md::flare
 
-#else
-// Stubs for builds without OpenGL and without SDL_GPU.
-namespace md::flare {
-TileMap2DRenderer& TileMap2DRenderer::Get() { static TileMap2DRenderer i; return i; }
-void TileMap2DRenderer::Init()                                              {}
-void TileMap2DRenderer::Shutdown()                                          {}
-void TileMap2DRenderer::SetAtlases(const FlareMap&)                         {}
-void TileMap2DRenderer::Render(const FlareMap&, float,
-                                float, float, float, int, int, uint8_t)     {}
-} // namespace md::flare
-#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

@@ -14,7 +14,6 @@
 //   Both can be active simultaneously during migration (dual-backend).
 // ─────────────────────────────────────────────────────────────────────────────
 
-#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
 #include <monkey_dust/render/md_shader.h>
 #include <monkey_dust/render/gpu_ring_buffer.h>
@@ -111,20 +110,14 @@ public:
     bool Create(const Desc& desc);
     void Destroy();
 
-#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
     // OpenGL: glGetUniformLocation. SDL_GPU: always returns -1 (use PushUniforms instead).
     int UniformLoc(const char* name) const;
-#endif
 #ifdef MD_SDL_GPU
     SDL_GPUGraphicsPipeline* SDLPipeline() const { return sdl_pipeline_; }
 #endif
 
 private:
     friend class GpuCommandBuffer;
-#ifdef MD_OPENGL43_ENABLED
-    unsigned int vao_    = 0;
-    MdShader     shader_ = {};
-#endif
 #ifdef MD_SDL_GPU
     SDL_GPUGraphicsPipeline* sdl_pipeline_ = nullptr;
 #endif
@@ -537,4 +530,3 @@ private:
 #endif
 };
 
-#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

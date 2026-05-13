@@ -38,10 +38,6 @@ public:
     uint32_t size_bytes() const { return size_; }
     int      current()    const { return cur_; }
 
-#ifdef MD_OPENGL43_ENABLED
-    unsigned int GLBuffer() const { return gl_buf_; }
-    int64_t      GLOffset() const { return (int64_t)cur_ * size_; }
-#endif
 
 #ifdef MD_SDL_GPU
     // Map SDL_GPU transfer staging buffer for CPU writing (cycle=true).
@@ -54,13 +50,6 @@ public:
 #endif
 
 private:
-#ifdef MD_OPENGL43_ENABLED
-    void WaitFence(int slot);
-    unsigned int gl_buf_          = 0;
-    void*        base_ptr_        = nullptr;
-    void*        fences_[N_FRAMES]= {};
-    int          binding_         = -1;
-#endif
 #ifdef MD_SDL_GPU
     SDL_GPUBuffer*         sdl_device_  = nullptr;
     SDL_GPUTransferBuffer* sdl_staging_ = nullptr;

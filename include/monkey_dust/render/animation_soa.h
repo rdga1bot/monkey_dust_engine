@@ -147,14 +147,6 @@ public:
             pass.End();
         }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-        {
-            GpuComputePass pass;
-            pass.Begin(&skin_pipeline_);
-            pass.Dispatch(SKIN_GROUPS, 1u, 1u);
-            pass.End(GpuComputePass::BARRIER_STORAGE);
-        }
-#endif
     }
 
     // Call once per frame AFTER all draw/compute that read anim_state_ring_.

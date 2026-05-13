@@ -5,13 +5,9 @@
 #include <cstring>
 #include <cstdio>
 
-#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
-#endif
-#ifdef MD_OPENGL43_ENABLED
-#include "glad.h"
 #endif
 
 namespace md::flare {
@@ -97,52 +93,6 @@ void BillboardRenderer::Init() {
     }
 #endif // MD_SDL_GPU
 
-#ifdef MD_OPENGL43_ENABLED
-    static constexpr int INST_STRIDE = 40;
-    static const float QUAD_VERTS[8] = { -1.f,-1.f, 1.f,-1.f, 1.f,1.f, -1.f,1.f };
-
-    glGenBuffers(1, &quad_vbo_);
-    glBindBuffer(GL_ARRAY_BUFFER, quad_vbo_);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(QUAD_VERTS), QUAD_VERTS, GL_STATIC_DRAW);
-
-    glGenBuffers(1, &inst_vbo_);
-    glBindBuffer(GL_ARRAY_BUFFER, inst_vbo_);
-    glBufferData(GL_ARRAY_BUFFER, MAX_BILLBOARDS * INST_STRIDE, nullptr, GL_STREAM_DRAW);
-
-    glGenVertexArrays(1, &vao_);
-    glBindVertexArray(vao_);
-
-    glBindBuffer(GL_ARRAY_BUFFER, quad_vbo_);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, (void*)0);
-    glVertexAttribDivisor(0, 0);
-
-    glBindBuffer(GL_ARRAY_BUFFER, inst_vbo_);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, INST_STRIDE, (void*)0);
-    glVertexAttribDivisor(1, 1);
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, INST_STRIDE, (void*)12);
-    glVertexAttribDivisor(2, 1);
-    glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, INST_STRIDE, (void*)20);
-    glVertexAttribDivisor(3, 1);
-    glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 4, GL_UNSIGNED_BYTE, GL_TRUE, INST_STRIDE, (void*)36);
-    glVertexAttribDivisor(4, 1);
-    glBindVertexArray(0);
-
-    prog_ = MdLoadShader("shaders/billboard.vert", "shaders/billboard.frag").id;
-    if (!prog_) {
-        fprintf(stderr, "[Billboard] GL: failed to load shaders\n");
-    } else {
-        loc_view_      = glGetUniformLocation(prog_, "u_view");
-        loc_proj_      = glGetUniformLocation(prog_, "u_proj");
-        loc_cam_right_ = glGetUniformLocation(prog_, "u_camera_right");
-        loc_cam_up_    = glGetUniformLocation(prog_, "u_camera_up");
-        loc_alpha_thr_ = glGetUniformLocation(prog_, "u_alpha_threshold");
-    }
-#endif // MD_OPENGL43_ENABLED
 
     init_ = true;
 }
@@ -167,12 +117,6 @@ void BillboardRenderer::Shutdown() {
     }
 #endif
 
-#ifdef MD_OPENGL43_ENABLED
-    if (vao_)      { glDeleteVertexArrays(1, &vao_);  vao_      = 0; }
-    if (quad_vbo_) { glDeleteBuffers(1, &quad_vbo_);  quad_vbo_ = 0; }
-    if (inst_vbo_) { glDeleteBuffers(1, &inst_vbo_);  inst_vbo_ = 0; }
-    if (prog_)     { glDeleteProgram(prog_);           prog_     = 0; }
-#endif
 
     init_ = false;
 }
@@ -208,61 +152,7 @@ void BillboardRenderer::UnloadAllAtlases() {
 // ── OpenGL Render ─────────────────────────────────────────────────────────────
 
 void BillboardRenderer::Render(const MdCamera& cam, float aspect) {
-#ifdef MD_OPENGL43_ENABLED
-    if (!init_ || !prog_ || count_ == 0) return;
-
-    static BillboardInstance sorted[MAX_BILLBOARDS];
-    int atlas_start[MAX_ATLAS + 1] = {};
-    CountingSort(instances_, count_, sorted, atlas_start);
-
-    Mat4 view_m4 = cam.ViewMatrix();
-    Mat4 proj_m4 = cam.ProjMatrix(aspect);
-    const float* vf = mat4_ptr(view_m4);
-    const float* pf = mat4_ptr(proj_m4);
-    float right[3] = { vf[0], vf[4], vf[8] };
-    float up[3]    = { vf[1], vf[5], vf[9] };
-
-    static constexpr int INST_STRIDE = 40;
-    static uint8_t gpu_buf[MAX_BILLBOARDS * INST_STRIDE];
-
-    glEnable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glUseProgram(prog_);
-    glUniformMatrix4fv(loc_view_,      1, GL_FALSE, vf);
-    glUniformMatrix4fv(loc_proj_,      1, GL_FALSE, pf);
-    glUniform3fv(loc_cam_right_, 1, right);
-    glUniform3fv(loc_cam_up_,    1, up);
-    glUniform1f (loc_alpha_thr_, 0.5f);
-    glBindVertexArray(vao_);
-
-    for (int ai = 0; ai < MAX_ATLAS; ++ai) {
-        int start = atlas_start[ai];
-        int n     = atlas_start[ai + 1] - start;
-        if (n == 0 || !atlases_[ai].id) continue;
-
-        // Pack GL instance buffer: pos(12)+size(8)+uv(16)+tint(4) = stride 40
-        for (int i = 0; i < n && i < MAX_BILLBOARDS; ++i) {
-            uint8_t* p = gpu_buf + (size_t)i * INST_STRIDE;
-            const BillboardInstance& s = sorted[start + i];
-            memcpy(p +  0, &s.x,     12);
-            memcpy(p + 12, &s.width,  8);
-            memcpy(p + 20, &s.u0,    16);
-            p[36] = s.r; p[37] = s.g; p[38] = s.b; p[39] = s.a;
-        }
-        glBindBuffer(GL_ARRAY_BUFFER, inst_vbo_);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(n * INST_STRIDE), gpu_buf);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-        MdBindTexture(atlases_[ai], 0);
-        glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, n);
-    }
-
-    glBindVertexArray(0);
-    glUseProgram(0);
-    glDepthMask(GL_TRUE);
-#else
     (void)cam; (void)aspect;
-#endif
 }
 
 // ── SDL_GPU path ──────────────────────────────────────────────────────────────
@@ -368,19 +258,3 @@ void BillboardRenderer::RenderInPass(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer
 
 } // namespace md::flare
 
-#else // neither MD_OPENGL43_ENABLED nor MD_SDL_GPU
-
-// Minimal stubs — SubmitBillboards skips all instances when AtlasWidth returns 0.
-namespace md::flare {
-BillboardRenderer& BillboardRenderer::Get() { static BillboardRenderer i; return i; }
-void BillboardRenderer::Init()                              {}
-void BillboardRenderer::Shutdown()                         {}
-void BillboardRenderer::BeginFrame()                       { count_ = 0; }
-void BillboardRenderer::Submit(const BillboardInstance& i) { if (count_ < MAX_BILLBOARDS) instances_[count_++] = i; }
-int  BillboardRenderer::SubmittedCount() const             { return count_; }
-void BillboardRenderer::Render(const MdCamera&, float)     {}
-void BillboardRenderer::LoadSpriteAtlas(const char*, int)  {}
-void BillboardRenderer::UnloadAllAtlases()                 {}
-} // namespace md::flare
-
-#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

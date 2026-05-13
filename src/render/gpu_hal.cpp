@@ -1,6 +1,5 @@
 #include <monkey_dust/render/gpu_hal.h>
 
-#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 #include <monkey_dust/platform/md_log.h>
 #include <cstdlib>
 #include <cstdio>
@@ -153,51 +152,6 @@ static SDL_GPUShader* LoadSpvShader(SDL_GPUDevice* dev,
 
 // ── OpenGL helpers ─────────────────────────────────────────────────────────────
 
-#ifdef MD_OPENGL43_ENABLED
-
-static void ApplyAttribFormat(const GpuVertexAttrib& a) {
-    switch (a.fmt) {
-    case GpuAttribFmt::F1:
-        glVertexAttribFormat(a.location, 1, GL_FLOAT, GL_FALSE, a.offset); break;
-    case GpuAttribFmt::F2:
-        glVertexAttribFormat(a.location, 2, GL_FLOAT, GL_FALSE, a.offset); break;
-    case GpuAttribFmt::F3:
-        glVertexAttribFormat(a.location, 3, GL_FLOAT, GL_FALSE, a.offset); break;
-    case GpuAttribFmt::F4:
-        glVertexAttribFormat(a.location, 4, GL_FLOAT, GL_FALSE, a.offset); break;
-    case GpuAttribFmt::U8x4_NORM:
-        glVertexAttribFormat(a.location, 4, GL_UNSIGNED_BYTE, GL_TRUE, a.offset); break;
-    }
-    glVertexAttribBinding(a.location, 0);
-    glEnableVertexAttribArray(a.location);
-}
-
-static GLenum ToGL(GpuTopology t) {
-    switch (t) {
-    case GpuTopology::TRIANGLES: return GL_TRIANGLES;
-    case GpuTopology::POINTS:    return GL_POINTS;
-    case GpuTopology::LINES:     return GL_LINES;
-    }
-    return GL_TRIANGLES;
-}
-
-static GLenum ToGLBlend(GpuBlendFactor f) {
-    switch (f) {
-    case GpuBlendFactor::ZERO:                return GL_ZERO;
-    case GpuBlendFactor::ONE:                 return GL_ONE;
-    case GpuBlendFactor::SRC_COLOR:           return GL_SRC_COLOR;
-    case GpuBlendFactor::ONE_MINUS_SRC_COLOR: return GL_ONE_MINUS_SRC_COLOR;
-    case GpuBlendFactor::SRC_ALPHA:           return GL_SRC_ALPHA;
-    case GpuBlendFactor::ONE_MINUS_SRC_ALPHA: return GL_ONE_MINUS_SRC_ALPHA;
-    case GpuBlendFactor::DST_ALPHA:           return GL_DST_ALPHA;
-    case GpuBlendFactor::ONE_MINUS_DST_ALPHA: return GL_ONE_MINUS_DST_ALPHA;
-    case GpuBlendFactor::DST_COLOR:           return GL_DST_COLOR;
-    case GpuBlendFactor::ONE_MINUS_DST_COLOR: return GL_ONE_MINUS_DST_COLOR;
-    }
-    return GL_ONE;
-}
-
-#endif // MD_OPENGL43_ENABLED
 
 // ── GpuPipeline ───────────────────────────────────────────────────────────────
 
@@ -327,23 +281,6 @@ bool GpuPipeline::Create(const Desc& desc) {
     MD_LOG(MD_LOG_INFO, "[GpuPipeline] SDL_GPU pipeline created: %s / %s",
            desc.vert_path, desc.frag_path);
     return true;
-
-#elif defined(MD_OPENGL43_ENABLED)
-
-    shader_ = MdLoadShader(desc.vert_path, desc.frag_path);
-    if (!shader_.id) {
-        MD_LOG(MD_LOG_WARNING, "[GpuPipeline] MdLoadShader failed: %s", desc.vert_path);
-        return false;
-    }
-
-    glGenVertexArrays(1, &vao_);
-    glBindVertexArray(vao_);
-    for (uint32_t i = 0; i < desc.layout.count; ++i)
-        ApplyAttribFormat(desc.layout.attribs[i]);
-    glBindVertexArray(0);
-
-    return true;
-
 #else
     (void)desc;
     return false;
@@ -357,21 +294,11 @@ void GpuPipeline::Destroy() {
         sdl_pipeline_ = nullptr;
     }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    MdUnloadShader(shader_);
-    if (vao_) { glDeleteVertexArrays(1, &vao_); vao_ = 0; }
-#endif
 }
 
-#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 int GpuPipeline::UniformLoc(const char* name) const {
-#ifdef MD_OPENGL43_ENABLED
-    return MdGetLoc(shader_, name);
-#else
     (void)name; return -1;
-#endif
 }
-#endif
 
 // ── GpuVertexBuffer ───────────────────────────────────────────────────────────
 
@@ -394,8 +321,6 @@ void GpuVertexBuffer::Init(uint32_t max_vertices, uint32_t vertex_stride) {
     sdl_transfer_ = SDL_CreateGPUTransferBuffer(dev, &tbuf_info);
     if (!sdl_transfer_)
         MD_LOG(MD_LOG_WARNING, "[GpuVertexBuffer] SDL_CreateGPUTransferBuffer failed: %s", SDL_GetError());
-#elif defined(MD_OPENGL43_ENABLED)
-    ring_.Init(max_vertices * vertex_stride);
 #endif
 }
 
@@ -405,8 +330,6 @@ void GpuVertexBuffer::Shutdown() {
     if (sdl_buf_)      { SDL_ReleaseGPUBuffer(dev, sdl_buf_);                sdl_buf_      = nullptr; }
     if (sdl_transfer_) { SDL_ReleaseGPUTransferBuffer(dev, sdl_transfer_);   sdl_transfer_ = nullptr; }
     sdl_size_ = 0;
-#elif defined(MD_OPENGL43_ENABLED)
-    ring_.Shutdown();
 #endif
     stride_ = 0;
 }
@@ -416,8 +339,6 @@ void* GpuVertexBuffer::MapWrite() {
     if (!sdl_transfer_) return nullptr;
     return SDL_MapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(),
                                     sdl_transfer_, true /*cycle*/);
-#elif defined(MD_OPENGL43_ENABLED)
-    return ring_.MapWrite();
 #else
     return nullptr;
 #endif
@@ -427,8 +348,6 @@ void GpuVertexBuffer::Unmap() {
 #ifdef MD_SDL_GPU
     if (sdl_transfer_)
         SDL_UnmapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(), sdl_transfer_);
-#elif defined(MD_OPENGL43_ENABLED)
-    ring_.Unmap();
 #endif
 }
 
@@ -449,9 +368,6 @@ void GpuVertexBuffer::Upload(SDL_GPUCommandBuffer* cmd) {
 #endif
 
 void GpuVertexBuffer::Advance() {
-#ifdef MD_OPENGL43_ENABLED
-    ring_.Advance();
-#endif
     // SDL_GPU: cycle=true in MapWrite/Upload handles versioning — no explicit advance needed.
 }
 
@@ -467,19 +383,6 @@ void GpuCommandBuffer::BindPipeline(GpuPipeline* p) {
         return;  // dual-backend: skip GL path when SDL_GPU command buffer is active
     }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    MdUseShader(p->shader_);
-
-    const GpuRasterState& r = p->raster_;
-    if (r.blend_enable) {
-        glEnable(GL_BLEND);
-        glBlendFunc(ToGLBlend(r.src_factor), ToGLBlend(r.dst_factor));
-    }
-    if (!r.depth_test)  glDisable(GL_DEPTH_TEST);
-    if (!r.depth_write) glDepthMask(GL_FALSE);
-    if (!r.cull_back)   glDisable(GL_CULL_FACE);
-    if (r.point_size)   glEnable(GL_PROGRAM_POINT_SIZE);
-#endif
 }
 
 void GpuCommandBuffer::BindVertexBuffer(GpuVertexBuffer* buf) {
@@ -494,29 +397,15 @@ void GpuCommandBuffer::BindVertexBuffer(GpuVertexBuffer* buf) {
         return;
     }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    if (!pipeline_ || !buf) return;
-    glBindVertexArray(pipeline_->vao_);
-    glBindVertexBuffer(0, buf->ring_.GLBuffer(), buf->ring_.GLOffset(), (GLsizei)buf->stride_);
-#else
     (void)buf;
-#endif
 }
 
 void GpuCommandBuffer::SetUniformMat4(int loc, const float* m16) {
-#ifdef MD_OPENGL43_ENABLED
-    if (loc >= 0) glUniformMatrix4fv(loc, 1, GL_FALSE, m16);
-#else
     (void)loc; (void)m16;
-#endif
 }
 
 void GpuCommandBuffer::SetUniformVec3(int loc, const float* v3) {
-#ifdef MD_OPENGL43_ENABLED
-    if (loc >= 0) glUniform3fv(loc, 1, v3);
-#else
     (void)loc; (void)v3;
-#endif
 }
 
 void GpuCommandBuffer::Draw(uint32_t vertex_count, uint32_t first_vertex) {
@@ -526,13 +415,7 @@ void GpuCommandBuffer::Draw(uint32_t vertex_count, uint32_t first_vertex) {
         return;
     }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    if (!pipeline_) return;
-    glDrawArrays(ToGL(pipeline_->raster_.topology),
-                 (GLint)first_vertex, (GLsizei)vertex_count);
-#else
     (void)vertex_count; (void)first_vertex;
-#endif
 }
 
 void GpuCommandBuffer::EndPass() {
@@ -542,18 +425,6 @@ void GpuCommandBuffer::EndPass() {
         sdl_cmd_ = nullptr;
         pipeline_ = nullptr;
         return;  // dual-backend: skip GL path when SDL_GPU command buffer is active
-    }
-#endif
-#ifdef MD_OPENGL43_ENABLED
-    if (pipeline_) {
-        glBindVertexArray(0);
-        const GpuRasterState& r = pipeline_->raster_;
-        if (r.blend_enable)  glDisable(GL_BLEND);
-        if (!r.depth_test)   glEnable(GL_DEPTH_TEST);
-        if (!r.depth_write)  glDepthMask(GL_TRUE);
-        if (!r.cull_back)    glEnable(GL_CULL_FACE);
-        if (r.point_size)    glDisable(GL_PROGRAM_POINT_SIZE);
-        MdStopShader();
     }
 #endif
     pipeline_ = nullptr;
@@ -654,15 +525,7 @@ void GpuRenderPass::BeginColor(const ColorDesc& desc) {
         }
     }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    glGetIntegerv(GL_VIEWPORT, saved_vp_);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glClearColor(desc.clear[0], desc.clear[1], desc.clear[2], desc.clear[3]);
-    glClearDepthf(desc.clear_depth);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-#else
     (void)desc;
-#endif
 }
 
 // ── GpuComputePipeline + GpuComputePass (dual-backend) ────────────────────────
@@ -708,44 +571,7 @@ bool GpuComputePipeline::Create(const Desc& desc) {
     }
 #endif
 
-#ifdef MD_OPENGL43_ENABLED
-    {
-        char* src = ReadTextFile(desc.glsl_path);
-        if (!src) {
-            MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] file not found: %s", desc.glsl_path);
-            return false;
-        }
-        GLuint sh = glCreateShader(GL_COMPUTE_SHADER);
-        glShaderSource(sh, 1, (const GLchar**)&src, nullptr);
-        glCompileShader(sh);
-        free(src);
-
-        GLint ok = 0;
-        glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
-        if (!ok) {
-            char log[512]; glGetShaderInfoLog(sh, 512, nullptr, log);
-            MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] compile error %s: %s", desc.glsl_path, log);
-            glDeleteShader(sh);
-            return false;
-        }
-        program_ = glCreateProgram();
-        glAttachShader(program_, sh);
-        glLinkProgram(program_);
-        glDeleteShader(sh);
-
-        glGetProgramiv(program_, GL_LINK_STATUS, &ok);
-        if (!ok) {
-            char log[512]; glGetProgramInfoLog(program_, 512, nullptr, log);
-            MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] link error %s: %s", desc.glsl_path, log);
-            glDeleteProgram(program_);
-            program_ = 0;
-            return false;
-        }
-    }
-    return true;
-#else
     return sdl_pipeline_ != nullptr;
-#endif
 }
 
 void GpuComputePipeline::Destroy() {
@@ -755,18 +581,11 @@ void GpuComputePipeline::Destroy() {
         sdl_pipeline_ = nullptr;
     }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    if (program_) { glDeleteProgram(program_); program_ = 0; }
-#endif
 }
 
 int GpuComputePipeline::UniformLoc(const char* name) const {
-#ifdef MD_OPENGL43_ENABLED
-    return program_ ? (int)glGetUniformLocation(program_, name) : -1;
-#else
     (void)name;
     return -1; // SDL_GPU: use PushUniforms instead
-#endif
 }
 
 // ── GpuComputePass ────────────────────────────────────────────────────────────
@@ -791,41 +610,22 @@ void GpuComputePass::Begin(GpuComputePipeline* pipeline, const StorageBindings& 
 #else
     (void)bindings;
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    if (pipeline_ && pipeline_->program_) glUseProgram(pipeline_->program_);
-#endif
 }
 
 void GpuComputePass::SetUniformFloat(int loc, float v) {
-#ifdef MD_OPENGL43_ENABLED
-    if (loc >= 0) glUniform1f(loc, v);
-#else
     (void)loc; (void)v;
-#endif
 }
 
 void GpuComputePass::SetUniformInt(int loc, int v) {
-#ifdef MD_OPENGL43_ENABLED
-    if (loc >= 0) glUniform1i(loc, v);
-#else
     (void)loc; (void)v;
-#endif
 }
 
 void GpuComputePass::SetUniformVec3(int loc, const float* v3) {
-#ifdef MD_OPENGL43_ENABLED
-    if (loc >= 0) glUniform3fv(loc, 1, v3);
-#else
     (void)loc; (void)v3;
-#endif
 }
 
 void GpuComputePass::SetUniformVec4Array(int loc, const float* v4, int count) {
-#ifdef MD_OPENGL43_ENABLED
-    if (loc >= 0) glUniform4fv(loc, count, v4);
-#else
     (void)loc; (void)v4; (void)count;
-#endif
 }
 
 #ifdef MD_SDL_GPU
@@ -839,9 +639,6 @@ void GpuComputePass::Dispatch(uint32_t gx, uint32_t gy, uint32_t gz) {
 #ifdef MD_SDL_GPU
     if (sdl_pass_) SDL_DispatchGPUCompute(sdl_pass_, gx, gy, gz);
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    glDispatchCompute(gx, gy, gz);
-#endif
 }
 
 void GpuComputePass::End(uint32_t barrier_flags) {
@@ -852,21 +649,12 @@ void GpuComputePass::End(uint32_t barrier_flags) {
     }
     sdl_cmd_ = nullptr;
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    glUseProgram(0);
-    GLbitfield bits = 0;
-    if (barrier_flags & BARRIER_STORAGE) bits |= GL_SHADER_STORAGE_BARRIER_BIT;
-    if (barrier_flags & BARRIER_COMMAND)  bits |= GL_COMMAND_BARRIER_BIT;
-    if (bits) glMemoryBarrier(bits);
-#else
     (void)barrier_flags;
-#endif
     pipeline_ = nullptr;
 }
 
 // ── GpuDepthTexture ───────────────────────────────────────────────────────────
 
-#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
 void GpuDepthTexture::Init(int w, int h, bool shadow_border) {
     w_ = w; h_ = h;
@@ -899,33 +687,7 @@ void GpuDepthTexture::Init(int w, int h, bool shadow_border) {
     si.max_lod        = 0.0f;
     sdl_sampler_ = SDL_CreateGPUSampler(dev, &si);
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    glGenTextures(1, &tex_);
-    glBindTexture(GL_TEXTURE_2D, tex_);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0,
-                 GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    if (shadow_border) {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        float border[4] = { 1.f, 1.f, 1.f, 1.f };
-        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
-    } else {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    }
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    glGenFramebuffers(1, &fbo_);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, tex_, 0);
-    glDrawBuffer(GL_NONE);
-    glReadBuffer(GL_NONE);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-#else
     (void)shadow_border;
-#endif
 }
 
 void GpuDepthTexture::Shutdown() {
@@ -934,35 +696,15 @@ void GpuDepthTexture::Shutdown() {
     if (sdl_sampler_) { SDL_ReleaseGPUSampler(dev, sdl_sampler_); sdl_sampler_ = nullptr; }
     if (sdl_tex_)     { SDL_ReleaseGPUTexture(dev, sdl_tex_);     sdl_tex_     = nullptr; }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    if (fbo_) { glDeleteFramebuffers(1, &fbo_); fbo_ = 0; }
-    if (tex_) { glDeleteTextures(1,    &tex_); tex_ = 0; }
-#endif
     w_ = h_ = 0;
 }
 
 void GpuDepthTexture::Bind(uint32_t unit) const {
-#ifdef MD_OPENGL43_ENABLED
-    glActiveTexture(GL_TEXTURE0 + unit);
-    glBindTexture(GL_TEXTURE_2D, tex_);
-#else
     (void)unit; // SDL_GPU: binding via SDL_BindGPUFragmentSamplers in render pass (Step 6)
-#endif
 }
 
 // ── GpuRenderPass ─────────────────────────────────────────────────────────────
 
-#ifdef MD_OPENGL43_ENABLED
-void GpuRenderPass::BeginDepthOnly(const DepthDesc& desc) {
-    cull_front_ = desc.cull_front;
-    glGetIntegerv(GL_VIEWPORT, saved_vp_);
-    glBindFramebuffer(GL_FRAMEBUFFER, desc.target->FBO());
-    glViewport(0, 0, desc.target->Width(), desc.target->Height());
-    glClearDepthf(desc.clear_depth);
-    glClear(GL_DEPTH_BUFFER_BIT);
-    if (cull_front_) glCullFace(GL_FRONT);
-}
-#endif // MD_OPENGL43_ENABLED
 
 void GpuRenderPass::End() {
 #ifdef MD_SDL_GPU
@@ -971,24 +713,11 @@ void GpuRenderPass::End() {
         sdl_pass_ = nullptr;
     }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    if (cull_front_) glCullFace(GL_BACK);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(saved_vp_[0], saved_vp_[1], saved_vp_[2], saved_vp_[3]);
-#endif
     cull_front_ = false;
 }
 
 // ── GpuDrawIndexedIndirect ────────────────────────────────────────────────────
 
-#ifdef MD_OPENGL43_ENABLED
-void GpuDrawIndexedIndirect(unsigned int indirect_buf_id, uint32_t draw_count) {
-    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indirect_buf_id);
-    glMultiDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_INT, nullptr,
-                                (GLsizei)draw_count, 0);
-    glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
-}
-#endif // MD_OPENGL43_ENABLED
 
 // ── GpuStaticBuffer ───────────────────────────────────────────────────────────
 
@@ -1041,12 +770,6 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
     SDL_ReleaseGPUTransferBuffer(dev, transfer); // staging no longer needed
 #endif
 
-#ifdef MD_OPENGL43_ENABLED
-    glGenBuffers(1, &gl_buf_);
-    glBindBuffer(target, gl_buf_);
-    glBufferData(target, (GLsizeiptr)size, data, GL_STATIC_DRAW);
-    glBindBuffer(target, 0);
-#endif
 }
 
 void GpuStaticBuffer::Shutdown() {
@@ -1056,25 +779,14 @@ void GpuStaticBuffer::Shutdown() {
         sdl_buf_ = nullptr;
     }
 #endif
-#ifdef MD_OPENGL43_ENABLED
-    if (gl_buf_) { glDeleteBuffers(1, &gl_buf_); gl_buf_ = 0; }
-#endif
 }
 
 void GpuStaticBuffer::Bind(unsigned int target) const {
-#ifdef MD_OPENGL43_ENABLED
-    glBindBuffer(target, gl_buf_);
-#else
     (void)target;
-#endif
 }
 
 void GpuStaticBuffer::BindVertex(uint32_t slot, uint32_t stride, uint64_t offset) const {
-#ifdef MD_OPENGL43_ENABLED
-    glBindVertexBuffer((GLuint)slot, gl_buf_, (GLintptr)offset, (GLsizei)stride);
-#else
     (void)slot; (void)stride; (void)offset;
-#endif
 }
 
 // ── GpuTexture ────────────────────────────────────────────────────────────────
@@ -1190,6 +902,4 @@ void GpuTexture::Bind(uint32_t unit) const {
     }
 }
 
-#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU (GpuDepthTexture+GpuTexture+GpuStaticBuffer+GpuRenderPass)
 
-#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU (outer file guard)

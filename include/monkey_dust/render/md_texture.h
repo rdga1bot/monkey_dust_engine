@@ -17,7 +17,6 @@ struct MdTexture {
     void* sdl_sampler = nullptr;   // SDL_GPUSampler*  (null when not using SDL_GPU)
 };
 
-#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 
 // Load RGBA texture from file via stb_image.
 MdTexture MdLoadTexture(const char* path);
@@ -33,10 +32,3 @@ MdTexture MdLoadTextureFromMemory(const uint8_t* data, int w, int h);
 void MdUnloadTexture(MdTexture& t);
 void MdBindTexture  (MdTexture t, int unit);  // OpenGL only; no-op in SDL_GPU-only builds
 
-#else
-inline MdTexture MdLoadTexture(const char*)                        { return {}; }
-inline MdTexture MdLoadTexturePixelArt(const char*)                { return {}; }
-inline MdTexture MdLoadTextureFromMemory(const uint8_t*, int, int) { return {}; }
-inline void      MdUnloadTexture(MdTexture&)                       {}
-inline void      MdBindTexture  (MdTexture, int)                   {}
-#endif

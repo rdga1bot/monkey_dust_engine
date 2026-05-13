@@ -1,6 +1,5 @@
 #include <monkey_dust/render/md_texture.h>
 
-#if defined(MD_OPENGL43_ENABLED) || defined(MD_SDL_GPU)
 #include <monkey_dust/render/gpu_hal.h>
 #include "glad.h"
 #ifdef MD_SDL_GPU
@@ -77,4 +76,3 @@ void MdBindTexture(MdTexture t, int unit) {
     }
 }
 
-#endif // MD_OPENGL43_ENABLED || MD_SDL_GPU

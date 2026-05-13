@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <future>
+#include <cstring>
 
 // Engine-level save system: pure async atomic file writer.
 // Game registers a WriteCallback that serializes gameplay data;
@@ -47,6 +48,7 @@ private:
     SaveReadCallback   read_cb_       = nullptr;
     void*              userdata_      = nullptr;
     std::future<bool>  async_future_;
+    char               async_path_[256] = {};
     bool               async_pending_ = false;
     bool               last_async_ok_ = false;
 };

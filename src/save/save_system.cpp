@@ -1,6 +1,6 @@
 #include <monkey_dust/save/save_system.h>
 #include <cstdio>
-#include <string>
+#include <cstring>
 #include <chrono>
 
 bool SaveSystem::SaveSync(const char* path) {
@@ -11,11 +11,12 @@ bool SaveSystem::SaveSync(const char* path) {
 void SaveSystem::SaveAsync(const char* path) {
     if (async_pending_) return;
 
-    std::string path_str = path;
+    strncpy(async_path_, path, sizeof(async_path_) - 1);
+    async_path_[sizeof(async_path_) - 1] = '\0';
     async_pending_ = true;
     async_future_ = std::async(std::launch::async,
-        [this, path_str]() mutable -> bool {
-            return write_cb_ ? write_cb_(path_str.c_str(), userdata_) : false;
+        [this]() -> bool {
+            return write_cb_ ? write_cb_(async_path_, userdata_) : false;
         });
 }
 

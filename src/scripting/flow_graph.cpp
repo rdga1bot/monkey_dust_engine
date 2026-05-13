@@ -1,4 +1,5 @@
 #include <monkey_dust/scripting/flow_graph.h>
+#include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/platform/md_log.h>
 #include <cstring>
 #include <cstdio>
@@ -220,7 +221,7 @@ void FlowGraph::Tick(double now_s, entt::entity ctx, entt::registry& reg) {
     while (iterations++ < MAX_PENDING) {
         FlowPendingTrigger t;
         if (!ring_peek(t)) break;
-        if (t.fire_at_s > now_s) break;
+        if (MD_UNLIKELY(t.fire_at_s > now_s)) break;
         ring_pop(t);
 
         FlowNode* nd = find_node(t.node_id);

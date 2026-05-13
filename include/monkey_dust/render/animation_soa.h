@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/gpu_ring_buffer.h>
 #include <monkey_dust/render/gpu_hal.h>
@@ -101,7 +102,7 @@ public:
     }
 
     void SetClip(int slot, uint8_t clip_id) {
-        if (slot < 0 || slot >= MAX_ANIMATED_NPC) return;
+        if (MD_UNLIKELY(slot < 0 || slot >= MAX_ANIMATED_NPC)) return;
         if (states_[slot].clip_id == clip_id) return;
         states_[slot].clip_id = clip_id;
         states_[slot].time_s  = 0.0f;
@@ -189,7 +190,7 @@ public:
 private:
     AnimationSoA() = default;
 
-    AnimNpcState  states_[MAX_ANIMATED_NPC];
+    alignas(64) AnimNpcState  states_[MAX_ANIMATED_NPC];
     AnimationClip clips_[MAX_ANIM_CLIPS];
     int           clips_count_ = 0;
 

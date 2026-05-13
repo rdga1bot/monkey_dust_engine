@@ -1,5 +1,6 @@
 #include <monkey_dust/ai/director_system.h>
 #include <monkey_dust/ai/fnv.h>
+#include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/sense_component.h>
@@ -164,7 +165,7 @@ void DirectorSystem::Tick(float dt) {
     // 2. Accumulate/decay menace
     // Fill when any NPC perceives above their lo-threshold; decay otherwise.
     // Decay is half the fill rate so menace is "sticky" (CATHODE behavior).
-    if (max_activation > 0.3f) {
+    if (MD_UNLIKELY(max_activation > 0.3f)) {
         menace_ += pr.gauge_fill_rate * dt;
     } else {
         menace_ -= pr.gauge_fill_rate * 0.5f * dt;

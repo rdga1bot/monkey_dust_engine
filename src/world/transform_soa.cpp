@@ -2,6 +2,7 @@
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/platform/md_log.h>
+#include <monkey_dust/platform/md_hints.h>
 #include <cstring>
 #include <cmath>
 
@@ -9,9 +10,11 @@
 #include <monkey_dust/render/gpu_device.h>
 #endif
 
-#ifdef __SSE2__
-#include <xmmintrin.h>
-#include <emmintrin.h>
+#ifdef __AVX2__
+#  include <immintrin.h>   // AVX2 + FMA (Skylake / Intel HD 520)
+#elif defined(__SSE2__)
+#  include <xmmintrin.h>
+#  include <emmintrin.h>
 #endif
 
 void TransformSoA::Init() {
@@ -103,7 +106,8 @@ void TransformSoA::Free(entt::entity e) {
 
 void TransformSoA::FlushAoStoSoA(entt::registry& reg) {
     reg.view<WorldTransform>().each([](const WorldTransform& tr) {
-        if (tr.slot == INVALID_SLOT || tr.slot >= (uint32_t)TransformSoA::Get().active_count)
+        if (MD_UNLIKELY(tr.slot == INVALID_SLOT ||
+                        tr.slot >= (uint32_t)TransformSoA::Get().active_count))
             return;
         auto& s = TransformSoA::Get();
         s.px[tr.slot]    = tr.x;
@@ -142,8 +146,21 @@ void TransformSoA::AdvanceFrame() {
     transform_ring_.Advance();
 }
 
-void TransformSoA::BulkComputeDistSq(float cam_x, float cam_z) {
-#ifdef __SSE2__
+MD_HOT void TransformSoA::BulkComputeDistSq(float cam_x, float cam_z) {
+#ifdef __AVX2__
+    __m256 cx8 = _mm256_set1_ps(cam_x);
+    __m256 cz8 = _mm256_set1_ps(cam_z);
+    int n8 = active_count & ~7;
+    for (int i = 0; i < n8; i += 8) {
+        __m256 dx = _mm256_sub_ps(_mm256_load_ps(px + i), cx8);
+        __m256 dz = _mm256_sub_ps(_mm256_load_ps(pz + i), cz8);
+        _mm256_store_ps(dist_sq + i, _mm256_fmadd_ps(dx, dx, _mm256_mul_ps(dz, dz)));
+    }
+    for (int i = n8; i < active_count; ++i) {
+        float dx = px[i] - cam_x, dz = pz[i] - cam_z;
+        dist_sq[i] = dx*dx + dz*dz;
+    }
+#elif defined(__SSE2__)
     __m128 cx4 = _mm_set1_ps(cam_x);
     __m128 cz4 = _mm_set1_ps(cam_z);
     int n4 = active_count & ~3;
@@ -164,8 +181,21 @@ void TransformSoA::BulkComputeDistSq(float cam_x, float cam_z) {
 #endif
 }
 
-void TransformSoA::BulkComputeLOD(float near_sq, float far_sq, uint8_t* out_lod) const {
-#ifdef __SSE2__
+MD_HOT void TransformSoA::BulkComputeLOD(float near_sq, float far_sq, uint8_t* out_lod) const {
+#ifdef __AVX2__
+    __m256 near8 = _mm256_set1_ps(near_sq);
+    __m256 far8  = _mm256_set1_ps(far_sq);
+    int n8 = active_count & ~7;
+    for (int i = 0; i < n8; i += 8) {
+        __m256 d   = _mm256_load_ps(dist_sq + i);
+        int mask_n = _mm256_movemask_ps(_mm256_cmp_ps(d, near8, _CMP_LT_OQ));
+        int mask_f = _mm256_movemask_ps(_mm256_cmp_ps(d, far8,  _CMP_LT_OQ));
+        for (int j = 0; j < 8; ++j)
+            out_lod[i+j] = (mask_n >> j) & 1 ? 0 : ((mask_f >> j) & 1 ? 1 : 2);
+    }
+    for (int i = n8; i < active_count; ++i)
+        out_lod[i] = dist_sq[i] < near_sq ? 0 : (dist_sq[i] < far_sq ? 1 : 2);
+#elif defined(__SSE2__)
     __m128 near4 = _mm_set1_ps(near_sq);
     __m128 far4  = _mm_set1_ps(far_sq);
     int n4 = active_count & ~3;

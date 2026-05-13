@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/gpu_ring_buffer.h>
 #include <monkey_dust/ecs/registry.h>
@@ -27,12 +28,15 @@ public:
         return inst;
     }
 
-    // SoA position/rotation arrays (16-byte aligned for SSE2)
-    alignas(16) float px      [MAX_SLOTS];
-    alignas(16) float pz      [MAX_SLOTS];
-    alignas(16) float py      [MAX_SLOTS];
-    alignas(16) float rot_y   [MAX_SLOTS];
-    alignas(16) float dist_sq [MAX_SLOTS]; // filled by BulkComputeDistSq
+    // SoA position/rotation arrays.
+    // alignas(64) = one cache line; enables AVX2 vmovaps (32-byte aligned load)
+    // and prevents false sharing on the first lane. Each array is 65536*4 = 256 KB
+    // which is divisible by 64, so subsequent arrays are also 64-byte aligned.
+    alignas(64) float px      [MAX_SLOTS];
+    alignas(64) float pz      [MAX_SLOTS];
+    alignas(64) float py      [MAX_SLOTS];
+    alignas(64) float rot_y   [MAX_SLOTS];
+    alignas(64) float dist_sq [MAX_SLOTS]; // filled by BulkComputeDistSq
     uint8_t           faction [MAX_SLOTS];
 
     entt::entity slot_to_entity[MAX_SLOTS]; // reverse slot → entity
@@ -58,8 +62,8 @@ public:
     SDL_GPUBuffer* SDLTransformBuffer() const { return sdl_xzyr_buf_; }
     SDL_GPUBuffer* SDLFactionBuffer()   const { return sdl_faction_buf_; }
 #endif
-    void     BulkComputeDistSq(float cam_x, float cam_z);
-    void     BulkComputeLOD(float near_sq, float far_sq, uint8_t* out_lod) const;
+    MD_HOT void BulkComputeDistSq(float cam_x, float cam_z);
+    MD_HOT void BulkComputeLOD(float near_sq, float far_sq, uint8_t* out_lod) const;
     int      BuildMatrices(const uint8_t* lod, float far_sq,
                            Mat4* out_matrices, int max_out) const;
     Mat4     BuildSingleMatrix(uint32_t slot) const;

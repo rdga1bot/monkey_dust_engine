@@ -4,8 +4,19 @@
 #include <monkey_dust/ai/role_registry.h>
 #include <monkey_dust/ai/squad_signal.h>
 #include <monkey_dust/ai/named_branch.h>
+#include <monkey_dust/ai/npc_sound.h>
+#include <monkey_dust/components/npc_memory.h>
 #include <entt/entt.hpp>
 #include <cstdint>
+
+// ── SenseThresholdQualifier ───────────────────────────────────────────────────
+// Maps CATHODE ThresholdQualifier enum used by sense-activation BT conditions.
+enum class SenseThresholdQualifier : uint8_t {
+    Trace     = 0,  // any activation (activation > 0)
+    Lower     = 1,  // activation >= threshold_lo
+    Activated = 2,  // activation >= threshold_hi (was triggered)
+    Upper     = 3,  // activation >= 1.0 (fully saturated)
+};
 
 // ── Pattern 2: ShutdownSpeed ──────────────────────────────────────────────────
 enum class ShutdownSpeed : uint8_t {
@@ -154,6 +165,35 @@ enum class BTNodeType : uint8_t {
     //   flags = 0: run child only when active (gate); 1: run child only when inactive (inverted)
     //   returns child result; Failure if condition not met
     DecoratorNamedBranch,
+    // CATHODE_grok patterns — from BEHAVIOR XML analysis
+    //   ActionIdleTime: wait data milliseconds then Success (uses st.timer like Wait)
+    ActionIdleTime,
+    //   ConditionHaveTarget: Success if bb["target_entity"] holds a valid entity
+    ConditionHaveTarget,
+    //   ConditionHaveNextTarget: Success if bb["next_target_entity"] holds a valid entity
+    ConditionHaveNextTarget,
+    //   ActionTriggerSound: fire NpcSoundEvent via NpcSoundBus; always Success
+    //     data = NpcSoundEvent (uint8)
+    ActionTriggerSound,
+    //   ConditionIsSenseActivationAbove: check sc->activation[sense_idx] vs threshold qualifier
+    //     data = (sense_idx << 8) | SenseThresholdQualifier
+    ConditionIsSenseActivationAbove,
+    //   ConditionHasAnySenseBeenAbove: check if any sense was ever triggered
+    //     data = SenseThresholdQualifier; checks last_activated_ms[i] != 0 (ACTIVATED/UPPER)
+    //     or activation[i] > 0 (TRACE) or activation[i] >= threshold_lo (LOWER)
+    ConditionHasAnySenseBeenAbove,
+    //   ActionSuspiciousItemDoneStage: set investigation_stage on most recent NpcEventRecord
+    //     data = SuspiciousItemStage; requires NpcMemoryComponent with event_count > 0
+    ActionSuspiciousItemDoneStage,
+    //   ConditionSuspiciousItemBTPriority: Success if any event has intensity >= data
+    //     data = min_intensity (0=low, 1=medium, 2=high)
+    ConditionSuspiciousItemBTPriority,
+    //   ConditionLastTimeSquadNotified: Success if squad channel has signal within time threshold
+    //     data = (uint8_t(signal) << 8) | time_threshold_s; checks channel.timestamp
+    ConditionLastTimeSquadNotified,
+    //   DecoratorAggressionEscalation: gate child on as->aggro_level != None
+    //     data = 0; propagates child result; Failure if aggro_level == None or no AgentState
+    DecoratorAggressionEscalation,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -201,6 +241,15 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionExpireTimer:   timer_id & 0x1F
 //   TargetFlagCheck:     bit_idx & 0x3F; reads target from bb key fnv1a("target_entity")
 //   SetLocomotionState:  LocomotionState value (uint8_t)
+//   ActionIdleTime:      duration_ms (uses st.timer, same as Wait)
+//   ConditionHaveTarget/HaveNextTarget: 0 (no param)
+//   ActionTriggerSound:  NpcSoundEvent (uint8)
+//   ConditionIsSenseActivationAbove: (sense_idx<<8)|SenseThresholdQualifier
+//   ConditionHasAnySenseBeenAbove:   SenseThresholdQualifier (uint8)
+//   ActionSuspiciousItemDoneStage:   SuspiciousItemStage (uint8)
+//   ConditionSuspiciousItemBTPriority: min_intensity (0=low,1=med,2=high)
+//   ConditionLastTimeSquadNotified:  (uint8_t(signal)<<8)|time_threshold_s
+//   DecoratorAggressionEscalation:  0 (no param)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -334,6 +383,27 @@ public:
     // inverted=false → child runs when branch active; true → when inactive.
     uint16_t addDecoratorNamedBranch(const char* branch_name, bool inverted = false);
     uint16_t addDecoratorNamedBranch(uint32_t name_hash,      bool inverted = false);
+    // CATHODE_grok: 10 new patterns from BEHAVIOR XML analysis
+    // ActionIdleTime: waits duration_ms then returns Success (uses internal st.timer).
+    uint16_t addActionIdleTime(uint32_t duration_ms);
+    // ConditionHaveTarget: Success if blackboard key "target_entity" holds a valid entity.
+    uint16_t addConditionHaveTarget();
+    // ConditionHaveNextTarget: same for "next_target_entity".
+    uint16_t addConditionHaveNextTarget();
+    // ActionTriggerSound: fires NpcSoundEvent via NpcSoundBus; always Success.
+    uint16_t addActionTriggerSound(NpcSoundEvent ev);
+    // ConditionIsSenseActivationAbove: check sc->activation[sense_idx] vs qualifier.
+    uint16_t addConditionIsSenseActivationAbove(uint8_t sense_idx, SenseThresholdQualifier q);
+    // ConditionHasAnySenseBeenAbove: Success if any sense was ever triggered at qualifier level.
+    uint16_t addConditionHasAnySenseBeenAbove(SenseThresholdQualifier q);
+    // ActionSuspiciousItemDoneStage: set investigation_stage on latest NpcEventRecord.
+    uint16_t addActionSuspiciousItemDoneStage(SuspiciousItemStage stage);
+    // ConditionSuspiciousItemBTPriority: Success if any event intensity >= min_intensity.
+    uint16_t addConditionSuspiciousItemBTPriority(uint8_t min_intensity);
+    // ConditionLastTimeSquadNotified: Success if squad channel received signal within time_s.
+    uint16_t addConditionLastTimeSquadNotified(SquadSignal signal, uint8_t time_threshold_s);
+    // DecoratorAggressionEscalation: gate child on as->aggro_level != None.
+    uint16_t addDecoratorAggressionEscalation();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

@@ -3,7 +3,9 @@
 #include <monkey_dust/ai/fnv.h>
 #include <monkey_dust/ai/squad_signal.h>
 #include <monkey_dust/ai/named_branch.h>
+#include <monkey_dust/ai/npc_sound.h>
 #include <monkey_dust/components/agent_state.h>
+#include <monkey_dust/components/npc_memory.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/md_fs.h>
 #include <cstring>
@@ -371,6 +373,39 @@ static LocomotionState parse_locomotion_state(const char* s) {
     return LocomotionState::Walking;
 }
 
+// ── CATHODE_grok enum parsers ─────────────────────────────────────────────────
+
+static NpcSoundEvent parse_npc_sound_event(const char* s) {
+    if (strcmp(s, "SuspectWarning")  == 0) return NpcSoundEvent::SuspectWarning;
+    if (strcmp(s, "EngageEnemy")     == 0) return NpcSoundEvent::EngageEnemy;
+    if (strcmp(s, "ChargeToAttack")  == 0) return NpcSoundEvent::ChargeToAttack;
+    if (strcmp(s, "Investigate")     == 0) return NpcSoundEvent::Investigate;
+    if (strcmp(s, "LostContact")     == 0) return NpcSoundEvent::LostContact;
+    if (strcmp(s, "SearchStart")     == 0) return NpcSoundEvent::SearchStart;
+    if (strcmp(s, "SearchEnd")       == 0) return NpcSoundEvent::SearchEnd;
+    if (strcmp(s, "Alert")           == 0) return NpcSoundEvent::Alert;
+    if (strcmp(s, "StartSearching")  == 0) return NpcSoundEvent::StartSearching;
+    return NpcSoundEvent::None;
+}
+
+static SenseThresholdQualifier parse_sense_qualifier(const char* s) {
+    if (strcmp(s, "Lower")     == 0) return SenseThresholdQualifier::Lower;
+    if (strcmp(s, "Activated") == 0) return SenseThresholdQualifier::Activated;
+    if (strcmp(s, "Upper")     == 0) return SenseThresholdQualifier::Upper;
+    return SenseThresholdQualifier::Trace;
+}
+
+static SuspiciousItemStage parse_suspicious_item_stage(const char* s) {
+    if (strcmp(s, "FirstSensed")                == 0) return SuspiciousItemStage::FirstSensed;
+    if (strcmp(s, "InitialReaction")            == 0) return SuspiciousItemStage::InitialReaction;
+    if (strcmp(s, "WaitForTeamMembersRouting")  == 0) return SuspiciousItemStage::WaitForTeamMembersRouting;
+    if (strcmp(s, "MoveCloseTo")               == 0) return SuspiciousItemStage::MoveCloseTo;
+    if (strcmp(s, "CloseToReaction")           == 0) return SuspiciousItemStage::CloseToReaction;
+    if (strcmp(s, "CloseToWaitForGroupMembers") == 0) return SuspiciousItemStage::CloseToWaitForGroupMembers;
+    if (strcmp(s, "SearchArea")                == 0) return SuspiciousItemStage::SearchArea;
+    return SuspiciousItemStage::None;
+}
+
 // ── Fallback functions for unregistered actions/conditions ────────────────────
 static bool         s_cond_false  (md::EngineContext&, entt::entity) { return false; }
 static BTStatus     s_act_failure (md::EngineContext&, entt::entity) { return BTStatus::Failure; }
@@ -384,7 +419,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] max nesting depth %d exceeded — aborting subtree", MAX_JSON_DEPTH);
         return BehaviorTree::INVALID;
     }
-    char type_str[32] = "";
+    char type_str[64] = "";
     read_str_r(obj, obj_end, "\"type\"", type_str, sizeof(type_str));
     if (!type_str[0]) {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] node missing 'type' field");
@@ -711,6 +746,62 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
           read_str_r(obj, obj_end, "\"inverted\"", inv_s, sizeof(inv_s));
           inv = (inv_s[0] == 't' || inv_s[0] == '1'); }
         idx = bt.addDecoratorNamedBranch(name[0] ? md::fnv1a_rt(name) : 0u, inv);
+
+    // G1: ActionIdleTime — wait for duration_ms
+    } else if (strcmp(type_str, "ActionIdleTime") == 0) {
+        int dur = read_int_r(obj, obj_end, "\"duration_ms\"", 0);
+        idx = bt.addActionIdleTime(static_cast<uint32_t>(dur));
+
+    // G2: ConditionHaveTarget — target_entity bb key holds a valid entity
+    } else if (strcmp(type_str, "ConditionHaveTarget") == 0) {
+        idx = bt.addConditionHaveTarget();
+
+    // G3: ConditionHaveNextTarget — next_target_entity bb key holds a valid entity
+    } else if (strcmp(type_str, "ConditionHaveNextTarget") == 0) {
+        idx = bt.addConditionHaveNextTarget();
+
+    // G4: ActionTriggerSound — fire NpcSoundBus event
+    } else if (strcmp(type_str, "ActionTriggerSound") == 0) {
+        char ev_s[24] = "";
+        read_str_r(obj, obj_end, "\"sound\"", ev_s, sizeof(ev_s));
+        idx = bt.addActionTriggerSound(parse_npc_sound_event(ev_s));
+
+    // G5: ConditionIsSenseActivationAbove — current sense[i] vs qualifier
+    } else if (strcmp(type_str, "ConditionIsSenseActivationAbove") == 0) {
+        int  sense_i = read_int_r(obj, obj_end, "\"sense\"", 0);
+        char qual_s[16] = "Trace";
+        read_str_r(obj, obj_end, "\"qualifier\"", qual_s, sizeof(qual_s));
+        idx = bt.addConditionIsSenseActivationAbove(
+            static_cast<uint8_t>(sense_i), parse_sense_qualifier(qual_s));
+
+    // G6: ConditionHasAnySenseBeenAbove — any sense ever fired above qualifier
+    } else if (strcmp(type_str, "ConditionHasAnySenseBeenAbove") == 0) {
+        char qual_s[16] = "Activated";
+        read_str_r(obj, obj_end, "\"qualifier\"", qual_s, sizeof(qual_s));
+        idx = bt.addConditionHasAnySenseBeenAbove(parse_sense_qualifier(qual_s));
+
+    // G7: ActionSuspiciousItemDoneStage — stamp investigation_stage on latest event
+    } else if (strcmp(type_str, "ActionSuspiciousItemDoneStage") == 0) {
+        char stage_s[32] = "None";
+        read_str_r(obj, obj_end, "\"stage\"", stage_s, sizeof(stage_s));
+        idx = bt.addActionSuspiciousItemDoneStage(parse_suspicious_item_stage(stage_s));
+
+    // G8: ConditionSuspiciousItemBTPriority — any event intensity >= min_intensity
+    } else if (strcmp(type_str, "ConditionSuspiciousItemBTPriority") == 0) {
+        int min_i = read_int_r(obj, obj_end, "\"min_intensity\"", 0);
+        idx = bt.addConditionSuspiciousItemBTPriority(static_cast<uint8_t>(min_i));
+
+    // G9: ConditionLastTimeSquadNotified — squad channel signal is recent
+    } else if (strcmp(type_str, "ConditionLastTimeSquadNotified") == 0) {
+        char sig_s[24]  = "";
+        read_str_r(obj, obj_end, "\"signal\"", sig_s, sizeof(sig_s));
+        int time_s = read_int_r(obj, obj_end, "\"time_s\"", 0);
+        idx = bt.addConditionLastTimeSquadNotified(
+            parse_squad_signal(sig_s), static_cast<uint8_t>(time_s));
+
+    // G10: DecoratorAggressionEscalation — pass through if aggro_level != None
+    } else if (strcmp(type_str, "DecoratorAggressionEscalation") == 0) {
+        idx = bt.addDecoratorAggressionEscalation();
 
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);

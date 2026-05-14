@@ -8,8 +8,9 @@
 #include <monkey_dust/ai/fnv.h>
 #include <cstring>
 
-// Compile-time key for target entity stored in AgentBlackboard
-static constexpr uint32_t TARGET_ENTITY_BB_KEY = md::fnv1a("target_entity");
+// Compile-time keys for entity references stored in AgentBlackboard
+static constexpr uint32_t TARGET_ENTITY_BB_KEY      = md::fnv1a("target_entity");
+static constexpr uint32_t NEXT_TARGET_ENTITY_BB_KEY = md::fnv1a("next_target_entity");
 
 BehaviorTree::BehaviorTree() {
     memset(m_nodes,    0, sizeof(m_nodes));
@@ -391,6 +392,66 @@ uint16_t BehaviorTree::addDecoratorNamedBranch(uint32_t name_hash, bool inverted
 }
 uint16_t BehaviorTree::addDecoratorNamedBranch(const char* name, bool inverted) {
     return addDecoratorNamedBranch(md::fnv1a_rt(name), inverted);
+}
+
+// ── CATHODE_grok factories ────────────────────────────────────────────────────
+
+uint16_t BehaviorTree::addActionIdleTime(uint32_t duration_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionIdleTime);
+    m_nodes[i].data = duration_ms;
+    return i;
+}
+uint16_t BehaviorTree::addConditionHaveTarget() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHaveTarget);
+    return i;
+}
+uint16_t BehaviorTree::addConditionHaveNextTarget() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHaveNextTarget);
+    return i;
+}
+uint16_t BehaviorTree::addActionTriggerSound(NpcSoundEvent ev) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionTriggerSound);
+    m_nodes[i].data = static_cast<uint32_t>(ev);
+    return i;
+}
+uint16_t BehaviorTree::addConditionIsSenseActivationAbove(uint8_t sense_idx, SenseThresholdQualifier q) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionIsSenseActivationAbove);
+    m_nodes[i].data = (static_cast<uint32_t>(sense_idx) << 8) | static_cast<uint32_t>(q);
+    return i;
+}
+uint16_t BehaviorTree::addConditionHasAnySenseBeenAbove(SenseThresholdQualifier q) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHasAnySenseBeenAbove);
+    m_nodes[i].data = static_cast<uint32_t>(q);
+    return i;
+}
+uint16_t BehaviorTree::addActionSuspiciousItemDoneStage(SuspiciousItemStage stage) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionSuspiciousItemDoneStage);
+    m_nodes[i].data = static_cast<uint32_t>(stage);
+    return i;
+}
+uint16_t BehaviorTree::addConditionSuspiciousItemBTPriority(uint8_t min_intensity) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionSuspiciousItemBTPriority);
+    m_nodes[i].data = min_intensity;
+    return i;
+}
+uint16_t BehaviorTree::addConditionLastTimeSquadNotified(SquadSignal signal, uint8_t time_threshold_s) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionLastTimeSquadNotified);
+    m_nodes[i].data = (static_cast<uint32_t>(signal) << 8) | static_cast<uint32_t>(time_threshold_s);
+    return i;
+}
+uint16_t BehaviorTree::addDecoratorAggressionEscalation() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorAggressionEscalation);
+    return i;
 }
 
 // ── Existing factories ────────────────────────────────────────────────────────
@@ -1114,6 +1175,138 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
                 pc = m_children[nd.childStart]; continue;
             }
             // returning from child — propagate as-is
+            pc = nd.parent; continue;
+        }
+
+        // G1: ActionIdleTime — wait duration_ms like Wait but named for CATHODE clarity
+        case BTNodeType::ActionIdleTime: {
+            BTState& st = m_state[pc];
+            if (st.timer == 0u)
+                st.timer = nowMs + nd.data;
+            if (static_cast<int32_t>(nowMs - st.timer) >= 0) {
+                st.timer = 0u;
+                result = BTStatus::Success;
+            } else {
+                result = BTStatus::Running;
+            }
+            pc = nd.parent; continue;
+        }
+
+        // G2: ConditionHaveTarget — Success if "target_entity" bb key holds a valid entity
+        case BTNodeType::ConditionHaveTarget: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            result = Registry::Get().valid(tgt) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // G3: ConditionHaveNextTarget — Success if "next_target_entity" bb key holds valid entity
+        case BTNodeType::ConditionHaveNextTarget: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, NEXT_TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            result = Registry::Get().valid(tgt) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // G4: ActionTriggerSound — fire NpcSoundBus event; always Success
+        case BTNodeType::ActionTriggerSound: {
+            NpcSoundBus::Get().Fire(static_cast<NpcSoundEvent>(nd.data),
+                                    static_cast<uint32_t>(static_cast<uint64_t>(e) & 0xFFFFFFFFu));
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // G5: ConditionIsSenseActivationAbove — current activation vs qualifier threshold
+        case BTNodeType::ConditionIsSenseActivationAbove: {
+            SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint8_t sense_idx = static_cast<uint8_t>((nd.data >> 8) & 0x1u);
+            auto    q         = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
+            float   act       = sc->activation[sense_idx];
+            bool    ok        = false;
+            switch (q) {
+                case SenseThresholdQualifier::Trace:     ok = (act > 0.0f);               break;
+                case SenseThresholdQualifier::Lower:     ok = (act >= sc->threshold_lo);  break;
+                case SenseThresholdQualifier::Activated: ok = (act >= sc->threshold_hi);  break;
+                case SenseThresholdQualifier::Upper:     ok = (act >= 1.0f);              break;
+            }
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // G6: ConditionHasAnySenseBeenAbove — any sense ever reached qualifier (last_activated_ms set)
+        case BTNodeType::ConditionHasAnySenseBeenAbove: {
+            SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            auto q = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
+            bool ok = false;
+            for (int ii = 0; ii < 2 && !ok; ++ii) {
+                switch (q) {
+                    case SenseThresholdQualifier::Trace:
+                    case SenseThresholdQualifier::Lower:
+                        ok = (sc->activation[ii] > 0.0f); break;
+                    case SenseThresholdQualifier::Activated:
+                    case SenseThresholdQualifier::Upper:
+                        ok = (sc->last_activated_ms[ii] != 0u); break;
+                }
+            }
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // G7: ActionSuspiciousItemDoneStage — stamp investigation_stage on most-recent event
+        case BTNodeType::ActionSuspiciousItemDoneStage: {
+            NpcMemoryComponent* nmc = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (!nmc || nmc->event_count == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            nmc->events[nmc->event_count - 1].investigation_stage =
+                static_cast<SuspiciousItemStage>(nd.data);
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // G8: ConditionSuspiciousItemBTPriority — any event intensity >= min_intensity
+        case BTNodeType::ConditionSuspiciousItemBTPriority: {
+            NpcMemoryComponent* nmc = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (!nmc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint8_t min_i = static_cast<uint8_t>(nd.data & 0xFFu);
+            bool    ok    = false;
+            for (uint8_t ii = 0; ii < nmc->event_count && !ok; ++ii)
+                ok = (nmc->events[ii].intensity >= min_i);
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // G9: ConditionLastTimeSquadNotified — Success if squad channel signal matches and is recent
+        case BTNodeType::ConditionLastTimeSquadNotified: {
+            SquadMemberComponent* sm = Registry::Get().try_get<SquadMemberComponent>(e);
+            if (!sm) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            auto    expected  = static_cast<SquadSignal>((nd.data >> 8) & 0xFFu);
+            uint8_t thresh_s  = static_cast<uint8_t>(nd.data & 0xFFu);
+            const SquadChannel& ch = SquadSignalBus::Get().GetChannel(sm->squad_id);
+            bool ok = (ch.signal == expected) &&
+                      (static_cast<uint32_t>(nowMs) - ch.timestamp) / 1000u <= static_cast<uint32_t>(thresh_s);
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // G10: DecoratorAggressionEscalation — pass through if aggro_level != None
+        case BTNodeType::DecoratorAggressionEscalation: {
+            if (result == BTStatus::Running) {
+                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                if (!as || as->aggro_level == NpcAggroLevel::None) {
+                    result = BTStatus::Failure; pc = nd.parent; continue;
+                }
+                if (nd.childStart == INVALID || nd.childCount == 0) {
+                    result = BTStatus::Success; pc = nd.parent; continue;
+                }
+                pc = m_children[nd.childStart]; continue;
+            }
             pc = nd.parent; continue;
         }
 

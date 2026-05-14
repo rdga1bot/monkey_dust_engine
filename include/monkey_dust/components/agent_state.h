@@ -280,6 +280,18 @@ enum class MoodIntensity : uint8_t { Low = 0, Medium = 1, High = 2, Unknown = 0x
 // Rate of NpcAggroLevel escalation on player detection events.
 enum class AggressionGain : uint8_t { Low = 0, Med = 1, High = 2 };
 
+// ── Batch 4: EventType ────────────────────────────────────────────────────────
+// Timestamped NPC event categories used by ConditionEventAOccuredAfterB.
+// AgentState::event_ts[i] is set to nowMs when event i fires; 0 = never occurred.
+enum class EventType : uint8_t {
+    SensedTarget           = 0,
+    SensedSuspiciousItem   = 1,
+    TargetHiding           = 2,
+    SuspectTargetResponse  = 3,
+    COUNT                  = 4,
+};
+static constexpr uint8_t MAX_EVENT_TYPES = static_cast<uint8_t>(EventType::COUNT);
+
 // ── ff:: frame-flag bit indices ───────────────────────────────────────────────
 // MD FRAME_FLAGS enum — single-tick signals cleared at logic tick start.
 // Use with AgentState::frame_flags (same mechanism as C13 pattern).
@@ -358,6 +370,8 @@ struct AgentState {
     NpcAggroLevel       aggro_level;                // deepseek: NPC_AGGRO_LEVEL escalation
     NpcCombatState      combat_state;               // deepseek: combat phase sub-state
     MoodIntensity       mood_intensity;             // deepseek: intensity of current mood
+    uint8_t             _pad_as[1];
+    uint32_t            event_ts[MAX_EVENT_TYPES];  // Batch 4: ms when EventType[i] last fired; 0=never
 };
 
 // ── AgentStateSnapshot ────────────────────────────────────────────────────────

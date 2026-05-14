@@ -5,6 +5,7 @@
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/components/npc_memory.h>
 #include <monkey_dust/ai/squad_signal.h>
+#include <monkey_dust/ai/suspicious_item_group.h>
 #include <monkey_dust/ai/fnv.h>
 #include <cstring>
 
@@ -908,6 +909,118 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
             if (ab) bb_set_bool(*ab, DONE_SYSTEMATIC_SEARCH_BB_KEY, true);
             result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // ── Batch 4: EventOrder ───────────────────────────────────────────────
+
+        case BTNodeType::ConditionEventAOccuredAfterB: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint8_t ea = static_cast<uint8_t>((nd.data >> 8) & 0x3u);
+            uint8_t eb = static_cast<uint8_t>(nd.data & 0x3u);
+            if (ea >= MAX_EVENT_TYPES || eb >= MAX_EVENT_TYPES) {
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            // A must have occurred (ts != 0) and be strictly newer than B
+            result = (as->event_ts[ea] != 0u && as->event_ts[ea] > as->event_ts[eb])
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // ── Batch 5: Squad extensions ─────────────────────────────────────────
+
+        case BTNodeType::ConditionSquadDoingEscalation: {
+            SquadMemberComponent* smc = Registry::Get().try_get<SquadMemberComponent>(e);
+            if (!smc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (SquadSignalBus::Get().GetSignal(smc->squad_id) == SquadSignal::Escalating)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionSquadDoingSuspiciousWarning: {
+            SquadMemberComponent* smc = Registry::Get().try_get<SquadMemberComponent>(e);
+            if (!smc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (SquadSignalBus::Get().GetSignal(smc->squad_id) == SquadSignal::SuspiciousWarn)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::DecoratorSquadSearch:
+            if (result == BTStatus::Running) {
+                SquadMemberComponent* smc = Registry::Get().try_get<SquadMemberComponent>(e);
+                if (smc) SquadSignalBus::Get().Set(smc->squad_id,
+                                                   SquadSignal::Warning,
+                                                   static_cast<uint32_t>(static_cast<uint64_t>(e)),
+                                                   nowMs);
+                if (nd.childCount > 0) { pc = m_children[nd.childStart]; result = BTStatus::Running; continue; }
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            pc = nd.parent; continue; // propagate child result
+
+        // ── Batch 6: SuspiciousItem Group system ──────────────────────────────
+
+        case BTNodeType::ConditionSuspiciousItemShouldDoStage: {
+            NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (!nm || nm->event_count == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            auto expected = static_cast<SuspiciousItemStage>(nd.data & 0xFFu);
+            result = (nm->events[0].investigation_stage == expected)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionSuspiciousItemIsWithinDistance: {
+            NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+            SenseComponent*     sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!nm || nm->event_count == 0 || !sc) {
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            float max_m  = static_cast<float>(nd.data) * 0.01f;
+            float dx     = sc->last_known_x - nm->events[0].x;
+            float dz     = sc->last_known_z - nm->events[0].z;
+            result = (dx * dx + dz * dz <= max_m * max_m)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionSuspiciousItemFirstGroupMember: {
+            SuspiciousItemGroupComponent* gc = Registry::Get().try_get<SuspiciousItemGroupComponent>(e);
+            if (!gc || gc->group_id == SuspiciousItemGroupComponent::INVALID_GROUP) {
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            result = SuspiciousItemGroupRegistry::Get().IsFirstMember(
+                         gc->group_id, static_cast<uint32_t>(static_cast<uint64_t>(e)))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionSuspiciousItemGroupAllowedToProgress: {
+            SuspiciousItemGroupComponent* gc = Registry::Get().try_get<SuspiciousItemGroupComponent>(e);
+            if (!gc || gc->group_id == SuspiciousItemGroupComponent::INVALID_GROUP) {
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            result = SuspiciousItemGroupRegistry::Get().IsAllowedToProgress(gc->group_id)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionSuspiciousItemGroupMembersRoutingTo: {
+            SuspiciousItemGroupComponent* gc = Registry::Get().try_get<SuspiciousItemGroupComponent>(e);
+            if (!gc || gc->group_id == SuspiciousItemGroupComponent::INVALID_GROUP) {
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            result = SuspiciousItemGroupRegistry::Get().AllRoutingTo(gc->group_id)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionSuspiciousItemWaitForGroupRouting: {
+            SuspiciousItemGroupComponent* gc = Registry::Get().try_get<SuspiciousItemGroupComponent>(e);
+            if (!gc || gc->group_id == SuspiciousItemGroupComponent::INVALID_GROUP) {
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            result = SuspiciousItemGroupRegistry::Get().WaitingForRouting(gc->group_id)
+                     ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
 

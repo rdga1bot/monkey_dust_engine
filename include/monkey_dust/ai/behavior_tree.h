@@ -6,6 +6,7 @@
 #include <monkey_dust/ai/named_branch.h>
 #include <monkey_dust/ai/npc_sound.h>
 #include <monkey_dust/components/npc_memory.h>
+#include <monkey_dust/ai/suspicious_item_group.h>
 #include <entt/entt.hpp>
 #include <cstdint>
 
@@ -216,6 +217,33 @@ enum class BTNodeType : uint8_t {
     ActionSwitchToNextTarget,
     //   ActionDoneSystematicSearch:       Sets bb["done_systematic_search"]=true; data=0
     ActionDoneSystematicSearch,
+
+    // ── Batch 4: EventOrder ───────────────────────────────────────────────────
+    //   ConditionEventAOccuredAfterB:     Success if as->event_ts[A]>as->event_ts[B] and A!=0
+    //                                     data=(EventType_A<<8)|EventType_B
+    ConditionEventAOccuredAfterB,
+
+    // ── Batch 5: Squad extensions ─────────────────────────────────────────────
+    //   ConditionSquadDoingEscalation:    Success if squad channel signal == Escalating; data=0
+    //   ConditionSquadDoingSuspiciousWarning: Success if channel == SuspiciousWarn; data=0
+    //   DecoratorSquadSearch:             On entry: notify squad Warning; then run child
+    ConditionSquadDoingEscalation,
+    ConditionSquadDoingSuspiciousWarning,
+    DecoratorSquadSearch,
+
+    // ── Batch 6: SuspiciousItem Group system ──────────────────────────────────
+    //   ConditionSuspiciousItemShouldDoStage:    nm->events[0].investigation_stage==data
+    //   ConditionSuspiciousItemIsWithinDistance: dist(sc->last_known,ev->x/z)<=data*0.01m
+    //   ConditionSuspiciousItemFirstGroupMember: SuspiciousItemGroupRegistry::IsFirstMember
+    //   ConditionSuspiciousItemGroupAllowedToProgress: IsAllowedToProgress
+    //   ConditionSuspiciousItemGroupMembersRoutingTo:  routing_count==member_count
+    //   ConditionSuspiciousItemWaitForGroupRouting:    routing_count<member_count
+    ConditionSuspiciousItemShouldDoStage,
+    ConditionSuspiciousItemIsWithinDistance,
+    ConditionSuspiciousItemFirstGroupMember,
+    ConditionSuspiciousItemGroupAllowedToProgress,
+    ConditionSuspiciousItemGroupMembersRoutingTo,
+    ConditionSuspiciousItemWaitForGroupRouting,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -272,6 +300,9 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionSuspiciousItemBTPriority: min_intensity (0=low,1=med,2=high)
 //   ConditionLastTimeSquadNotified:  (uint8_t(signal)<<8)|time_threshold_s
 //   DecoratorAggressionEscalation:  0 (no param)
+//   ConditionEventAOccuredAfterB: (EventType_A<<8)|EventType_B (4-value enum each)
+//   ConditionSuspiciousItemShouldDoStage: SuspiciousItemStage value (uint8_t)
+//   ConditionSuspiciousItemIsWithinDistance: max_dist_cm (uint32, metres*100)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -438,6 +469,22 @@ public:
     uint16_t addConditionHasDoneSuspectMoveTo();
     uint16_t addActionSwitchToNextTarget();
     uint16_t addActionDoneSystematicSearch();
+
+    // ── Batch 4: EventOrder ───────────────────────────────────────────────────
+    uint16_t addConditionEventAOccuredAfterB(EventType a, EventType b);
+
+    // ── Batch 5: Squad extensions ─────────────────────────────────────────────
+    uint16_t addConditionSquadDoingEscalation();
+    uint16_t addConditionSquadDoingSuspiciousWarning();
+    uint16_t addDecoratorSquadSearch();
+
+    // ── Batch 6: SuspiciousItem Group system ──────────────────────────────────
+    uint16_t addConditionSuspiciousItemShouldDoStage(SuspiciousItemStage stage);
+    uint16_t addConditionSuspiciousItemIsWithinDistance(float max_dist_m);
+    uint16_t addConditionSuspiciousItemFirstGroupMember();
+    uint16_t addConditionSuspiciousItemGroupAllowedToProgress();
+    uint16_t addConditionSuspiciousItemGroupMembersRoutingTo();
+    uint16_t addConditionSuspiciousItemWaitForGroupRouting();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

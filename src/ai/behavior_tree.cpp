@@ -525,6 +525,54 @@ uint16_t BehaviorTree::addActionDoneSystematicSearch() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionDoneSystematicSearch); return i;
 }
 
+// ── Batch 4: EventOrder ───────────────────────────────────────────────────────
+
+uint16_t BehaviorTree::addConditionEventAOccuredAfterB(EventType a, EventType b) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionEventAOccuredAfterB);
+    m_nodes[i].data = (static_cast<uint32_t>(a) << 8) | static_cast<uint32_t>(b);
+    return i;
+}
+
+// ── Batch 5: Squad extensions ─────────────────────────────────────────────────
+
+uint16_t BehaviorTree::addConditionSquadDoingEscalation() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionSquadDoingEscalation); return i;
+}
+uint16_t BehaviorTree::addConditionSquadDoingSuspiciousWarning() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionSquadDoingSuspiciousWarning); return i;
+}
+uint16_t BehaviorTree::addDecoratorSquadSearch() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::DecoratorSquadSearch); return i;
+}
+
+// ── Batch 6: SuspiciousItem Group system ──────────────────────────────────────
+
+uint16_t BehaviorTree::addConditionSuspiciousItemShouldDoStage(SuspiciousItemStage stage) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionSuspiciousItemShouldDoStage);
+    m_nodes[i].data = static_cast<uint32_t>(stage);
+    return i;
+}
+uint16_t BehaviorTree::addConditionSuspiciousItemIsWithinDistance(float max_dist_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionSuspiciousItemIsWithinDistance);
+    m_nodes[i].data = static_cast<uint32_t>(max_dist_m * 100.f + 0.5f); // cm
+    return i;
+}
+uint16_t BehaviorTree::addConditionSuspiciousItemFirstGroupMember() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionSuspiciousItemFirstGroupMember); return i;
+}
+uint16_t BehaviorTree::addConditionSuspiciousItemGroupAllowedToProgress() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionSuspiciousItemGroupAllowedToProgress); return i;
+}
+uint16_t BehaviorTree::addConditionSuspiciousItemGroupMembersRoutingTo() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionSuspiciousItemGroupMembersRoutingTo); return i;
+}
+uint16_t BehaviorTree::addConditionSuspiciousItemWaitForGroupRouting() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionSuspiciousItemWaitForGroupRouting); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

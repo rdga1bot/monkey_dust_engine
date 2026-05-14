@@ -7,6 +7,7 @@
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/npc_memory.h>
 #include <monkey_dust/components/sense_component.h>
+#include <monkey_dust/ai/suspicious_item_group.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/md_fs.h>
 #include <cstring>
@@ -434,6 +435,26 @@ static SuspiciousItemStage parse_suspicious_item_stage(const char* s) {
     if (strcmp(s, "CloseToWaitForGroupMembers") == 0) return SuspiciousItemStage::CloseToWaitForGroupMembers;
     if (strcmp(s, "SearchArea")                == 0) return SuspiciousItemStage::SearchArea;
     return SuspiciousItemStage::None;
+}
+
+static EventType parse_event_type(const char* s) {
+    if (strcmp(s, "SensedTarget")          == 0) return EventType::SensedTarget;
+    if (strcmp(s, "SensedSuspiciousItem")  == 0) return EventType::SensedSuspiciousItem;
+    if (strcmp(s, "TargetHiding")          == 0) return EventType::TargetHiding;
+    if (strcmp(s, "SuspectTargetResponse") == 0) return EventType::SuspectTargetResponse;
+    // Integer fallback
+    if (s[0] >= '0' && s[0] <= '9') {
+        int v = atoi(s);
+        return (v >= 0 && v < MAX_EVENT_TYPES) ? static_cast<EventType>(v) : EventType::SensedTarget;
+    }
+    return EventType::SensedTarget;
+}
+
+static EventType read_event_type_r(const char* obj, const char* obj_end, const char* key) {
+    char buf[32] = "0";
+    read_str_r(obj, obj_end, key, buf, sizeof(buf));
+    if (!buf[0]) { int v = read_int_r(obj, obj_end, key, 0); return static_cast<EventType>(v & 0x3u); }
+    return parse_event_type(buf);
 }
 
 // ── MD XML alias helpers ─────────────────────────────────────────────────
@@ -979,6 +1000,43 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         idx = bt.addActionSwitchToNextTarget();
     } else if (strcmp(type_str, "ActionDoneSystematicSearch") == 0) {
         idx = bt.addActionDoneSystematicSearch();
+
+    // ── Batch 4: EventOrder ───────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionEventAOccuredAfterB") == 0) {
+        char ea_s[32] = "SensedTarget"; char eb_s[32] = "SensedTarget";
+        read_str_r(obj, obj_end, "\"event_a\"", ea_s, sizeof(ea_s));
+        read_str_r(obj, obj_end, "\"event_b\"", eb_s, sizeof(eb_s));
+        EventType ea = parse_event_type(ea_s);
+        EventType eb = parse_event_type(eb_s);
+        // Also accept integer fallback via read_int_r if string fields absent
+        if (!ea_s[0]) ea = static_cast<EventType>(read_int_r(obj, obj_end, "\"event_a\"", 0) & 0x3u);
+        if (!eb_s[0]) eb = static_cast<EventType>(read_int_r(obj, obj_end, "\"event_b\"", 0) & 0x3u);
+        idx = bt.addConditionEventAOccuredAfterB(ea, eb);
+
+    // ── Batch 5: Squad extensions ─────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionSquadDoingEscalation") == 0) {
+        idx = bt.addConditionSquadDoingEscalation();
+    } else if (strcmp(type_str, "ConditionSquadDoingSuspiciousWarning") == 0) {
+        idx = bt.addConditionSquadDoingSuspiciousWarning();
+    } else if (strcmp(type_str, "DecoratorSquadSearch") == 0) {
+        idx = bt.addDecoratorSquadSearch();
+
+    // ── Batch 6: SuspiciousItem Group system ──────────────────────────────────
+    } else if (strcmp(type_str, "ConditionSuspiciousItemShouldDoStage") == 0) {
+        char stage_s[32] = "None";
+        read_str_r(obj, obj_end, "\"stage\"", stage_s, sizeof(stage_s));
+        idx = bt.addConditionSuspiciousItemShouldDoStage(parse_suspicious_item_stage(stage_s));
+    } else if (strcmp(type_str, "ConditionSuspiciousItemIsWithinDistance") == 0) {
+        float dist = read_float_r(obj, obj_end, "\"max_dist_m\"", 3.f);
+        idx = bt.addConditionSuspiciousItemIsWithinDistance(dist);
+    } else if (strcmp(type_str, "ConditionSuspiciousItemFirstGroupMember") == 0) {
+        idx = bt.addConditionSuspiciousItemFirstGroupMember();
+    } else if (strcmp(type_str, "ConditionSuspiciousItemGroupAllowedToProgress") == 0) {
+        idx = bt.addConditionSuspiciousItemGroupAllowedToProgress();
+    } else if (strcmp(type_str, "ConditionSuspiciousItemGroupMembersRoutingTo") == 0) {
+        idx = bt.addConditionSuspiciousItemGroupMembersRoutingTo();
+    } else if (strcmp(type_str, "ConditionSuspiciousItemWaitForGroupRouting") == 0) {
+        idx = bt.addConditionSuspiciousItemWaitForGroupRouting();
 
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);

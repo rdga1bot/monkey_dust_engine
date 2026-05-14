@@ -567,9 +567,10 @@ bool GpuComputePipeline::Create(const Desc& desc) {
             MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] SPIR-V not found: %s", spv);
         }
     }
-#endif
-
     return sdl_pipeline_ != nullptr;
+#else
+    return false;
+#endif
 }
 
 void GpuComputePipeline::Destroy() {

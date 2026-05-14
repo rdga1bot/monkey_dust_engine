@@ -450,13 +450,6 @@ static EventType parse_event_type(const char* s) {
     return EventType::SensedTarget;
 }
 
-static EventType read_event_type_r(const char* obj, const char* obj_end, const char* key) {
-    char buf[32] = "0";
-    read_str_r(obj, obj_end, key, buf, sizeof(buf));
-    if (!buf[0]) { int v = read_int_r(obj, obj_end, key, 0); return static_cast<EventType>(v & 0x3u); }
-    return parse_event_type(buf);
-}
-
 // ── MD XML alias helpers ─────────────────────────────────────────────────
 
 // Extracts the integer after the last ':' in "NAME:N" format (MD enum serialization).
@@ -724,7 +717,8 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
 
     } else if (strcmp(type_str, "DecoratorPercentage") == 0) {
         int pct = read_int_r(obj, obj_end, "\"percentage\"", 50);
-        if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+        if (pct < 0) pct = 0;
+        if (pct > 100) pct = 100;
         idx = bt.addDecoratorPercentage(static_cast<uint8_t>(pct));
 
     } else if (strcmp(type_str, "SelectorPercentage") == 0) {

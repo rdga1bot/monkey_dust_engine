@@ -164,8 +164,6 @@ public:
     // Pure CPU math — no GL calls; works in both OpenGL and SDL_GPU paths.
     void Update(const MdCamera& camera, Vec3 sun_dir, int sw, int sh) {
         if (!sdl_init_) return;
-#else
-        return;
         cam_pos_  = camera.pos;
         screen_w_ = (sw > 0) ? sw : 1280;
         screen_h_ = (sh > 0) ? sh : 720;

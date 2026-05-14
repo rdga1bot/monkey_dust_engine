@@ -406,6 +406,57 @@ static SuspiciousItemStage parse_suspicious_item_stage(const char* s) {
     return SuspiciousItemStage::None;
 }
 
+// ── CATHODE XML alias helpers ─────────────────────────────────────────────────
+
+// Extracts the integer after the last ':' in "NAME:N" format (CATHODE enum serialization).
+// Returns -1 if no colon found.
+static int parse_colon_index(const char* s) {
+    if (!s || !*s) return -1;
+    const char* c = strrchr(s, ':');
+    if (!c) return -1;
+    return atoi(c + 1);
+}
+
+// Maps CATHODE MotivationType XML names → monkey_dust MotivationType enum.
+// CATHODE indices (ATTACK_MOTIVATION:1) do NOT match our values (Attack=3);
+// name-based matching is required.
+static MotivationType parse_cathode_motivation(const char* s) {
+    if (strncmp(s, "BACKSTAGE_STALK_MOTIVATION", 26) == 0) return MotivationType::BackstageStalk;
+    if (strncmp(s, "ATTACK_MOTIVATION",          17) == 0) return MotivationType::Attack;
+    if (strncmp(s, "STALK_MOTIVATION",           16) == 0) return MotivationType::Stalk;
+    if (strncmp(s, "THREAT_AWARE_MOTIVATION",    23) == 0) return MotivationType::ThreatAware;
+    if (strncmp(s, "SEARCH",                      6) == 0) return MotivationType::Search;
+    if (strncmp(s, "FLEE_MOTIVATION",            15) == 0) return MotivationType::Flee;
+    if (strncmp(s, "SCRIPT_MOTIVATION",          17) == 0) return MotivationType::Script;
+    if (strncmp(s, "DESPAWN_MOTIVATION",         18) == 0) return MotivationType::Despawn;
+    if (strncmp(s, "SUSPICIOUS_MOTIVATION",      21) == 0) return MotivationType::Suspicious;
+    if (strncmp(s, "AMBUSH_MOTIVATION",          17) == 0) return MotivationType::Ambush;
+    if (strncmp(s, "BREAKOUT_MOTIVATION",        19) == 0) return MotivationType::Breakout;
+    if (strncmp(s, "PLAYER_HIDING_MOTIVATION",   24) == 0) return MotivationType::PlayerHiding;
+    if (strncmp(s, "IDLE_MOTIVATION",            15) == 0) return MotivationType::Idle;
+    return MotivationType::None;
+}
+
+// Maps CATHODE GaugeAmountType (name or ":N" index) → float threshold.
+// GAUGE_NONE:0=0.0, GAUGE_TRACE:1=0.01, GAUGE_LOWER:2=0.25, GAUGE_ACTIVATED:3=0.5, GAUGE_UPPER:4=0.9
+static float parse_gauge_amount(const char* s) {
+    int idx = parse_colon_index(s);
+    if (idx >= 0) {
+        switch (idx) {
+            case 1: return 0.01f;
+            case 2: return 0.25f;
+            case 3: return 0.5f;
+            case 4: return 0.9f;
+            default: return 0.0f;
+        }
+    }
+    if (strncmp(s, "GAUGE_UPPER",     11) == 0) return 0.9f;
+    if (strncmp(s, "GAUGE_ACTIVATED", 15) == 0) return 0.5f;
+    if (strncmp(s, "GAUGE_LOWER",     11) == 0) return 0.25f;
+    if (strncmp(s, "GAUGE_TRACE",     11) == 0) return 0.01f;
+    return 0.0f;
+}
+
 // ── Fallback functions for unregistered actions/conditions ────────────────────
 static bool         s_cond_false  (md::EngineContext&, entt::entity) { return false; }
 static BTStatus     s_act_failure (md::EngineContext&, entt::entity) { return BTStatus::Failure; }
@@ -802,6 +853,83 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
     // G10: DecoratorAggressionEscalation — pass through if aggro_level != None
     } else if (strcmp(type_str, "DecoratorAggressionEscalation") == 0) {
         idx = bt.addDecoratorAggressionEscalation();
+
+    // ── Batch 1: CATHODE XML aliases ──────────────────────────────────────────
+    // These map CATHODE LegendPlugin class names to existing BT VM node types.
+    // Attribute format: "NAME:N" — the :N suffix is the authoritative enum index.
+
+    // B1-1: ActionSetLogicCharacterFlags → FlagSet
+    // XML: <ActionSetLogicCharacterFlags FlagType="SHOULD_ATTACK:10" Flag="True"/>
+    } else if (strcmp(type_str, "ActionSetLogicCharacterFlags") == 0) {
+        char ft[64] = "";
+        read_str_r(obj, obj_end, "\"flag_type\"", ft, sizeof(ft));
+        char val_s[8] = "True";
+        read_str_r(obj, obj_end, "\"value\"",    val_s, sizeof(val_s));
+        int bit_idx = parse_colon_index(ft);
+        if (bit_idx < 0) bit_idx = static_cast<int>(parse_flag(ft));
+        bool do_set = !(val_s[0] == 'F' || val_s[0] == 'f');
+        idx = bt.addFlagSet(static_cast<uint8_t>(bit_idx < 0 ? 0 : bit_idx), do_set);
+
+    // B1-2: ActionSetFrameFlag → FrameFlagSet
+    // XML: <ActionSetFrameFlag FrameFlag="COULD_SEARCH:3" Flag="True"/>
+    } else if (strcmp(type_str, "ActionSetFrameFlag") == 0) {
+        char ff[64] = "";
+        read_str_r(obj, obj_end, "\"flag\"",  ff, sizeof(ff));
+        char val_s[8] = "True";
+        read_str_r(obj, obj_end, "\"value\"", val_s, sizeof(val_s));
+        int bit_idx = parse_colon_index(ff);
+        if (bit_idx < 0) bit_idx = static_cast<int>(parse_flag(ff));
+        bool do_set = !(val_s[0] == 'F' || val_s[0] == 'f');
+        idx = bt.addFrameFlagSet(static_cast<uint8_t>(bit_idx < 0 ? 0 : bit_idx), do_set);
+
+    // B1-3: ConditionIsFrameFlagSet → FrameFlagCheck (always check_set=true)
+    // XML: <ConditionIsFrameFlagSet FrameFlag="COULD_SEARCH:3"/>
+    } else if (strcmp(type_str, "ConditionIsFrameFlagSet") == 0) {
+        char ff[64] = "";
+        read_str_r(obj, obj_end, "\"flag\"", ff, sizeof(ff));
+        int bit_idx = parse_colon_index(ff);
+        if (bit_idx < 0) bit_idx = static_cast<int>(parse_flag(ff));
+        idx = bt.addFrameFlagCheck(static_cast<uint8_t>(bit_idx < 0 ? 0 : bit_idx), true);
+
+    // B1-4: ActionSetWithdrawState → SetWithdraw
+    // XML: <ActionSetWithdrawState WithdrawState="NEEDS_TO_WITHDRAW:1"/>
+    // CATHODE: NOT_WITHDRAWING:0, NEEDS_TO_WITHDRAW:1, WITHDRAWING:2
+    } else if (strcmp(type_str, "ActionSetWithdrawState") == 0) {
+        char ws[64] = "";
+        read_str_r(obj, obj_end, "\"state\"", ws, sizeof(ws));
+        int w_idx = parse_colon_index(ws);
+        WithdrawState ws_val = (w_idx == 1) ? WithdrawState::NeedsToWithdraw
+                             : (w_idx == 2) ? WithdrawState::Withdrawing
+                             : WithdrawState::NotWithdrawing;
+        idx = bt.addSetWithdraw(ws_val);
+
+    // B1-5: ConditionHasMotivation → MotivationCheck
+    // XML: <ConditionHasMotivation MotivationType="ATTACK_MOTIVATION:1"/>
+    // CATHODE indices ≠ monkey_dust values — must use name mapping
+    } else if (strcmp(type_str, "ConditionHasMotivation") == 0) {
+        char m[64] = "";
+        read_str_r(obj, obj_end, "\"motivation\"", m, sizeof(m));
+        idx = bt.addMotivationCheck(parse_cathode_motivation(m));
+
+    // B1-6: ConditionIsGaugeAmountAbove → GaugeCheck
+    // XML: <ConditionIsGaugeAmountAbove GaugeType="RETREAT_GAUGE:0" GaugeAmount="GAUGE_ACTIVATED:3"/>
+    } else if (strcmp(type_str, "ConditionIsGaugeAmountAbove") == 0) {
+        char g[64] = "", amt[64] = "";
+        read_str_r(obj, obj_end, "\"gauge\"",  g,   sizeof(g));
+        read_str_r(obj, obj_end, "\"amount\"", amt, sizeof(amt));
+        int g_idx = parse_colon_index(g);
+        GaugeType gt = (g_idx == 1) ? GaugeType::StunDamage : GaugeType::Retreat;
+        idx = bt.addGaugeCheck(gt, parse_gauge_amount(amt));
+
+    // B1-7: ActionSetGaugeAmount → GaugeSet
+    // XML: <ActionSetGaugeAmount GaugeType="RETREAT_GAUGE:0" GaugeAmount="GAUGE_NONE:0"/>
+    } else if (strcmp(type_str, "ActionSetGaugeAmount") == 0) {
+        char g[64] = "", amt[64] = "";
+        read_str_r(obj, obj_end, "\"gauge\"",  g,   sizeof(g));
+        read_str_r(obj, obj_end, "\"amount\"", amt, sizeof(amt));
+        int g_idx = parse_colon_index(g);
+        GaugeType gt = (g_idx == 1) ? GaugeType::StunDamage : GaugeType::Retreat;
+        idx = bt.addGaugeSet(gt, parse_gauge_amount(amt));
 
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);

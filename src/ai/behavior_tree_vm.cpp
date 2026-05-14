@@ -193,7 +193,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t sense_idx = static_cast<uint8_t>(nd.data >> 24);
             float   threshold = static_cast<float>(nd.data & 0x00FFFFFFu) * 0.001f;
-            if (sense_idx > 1u) sense_idx = 0u;
+            if (sense_idx >= MAX_SENSES) sense_idx = 0u;
             result = (sc->activation[sense_idx] >= threshold)
                      ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
@@ -463,7 +463,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t  sense_idx      = static_cast<uint8_t>((nd.data >> 24) & 0xFFu);
             uint32_t max_elapsed_ms = nd.data & 0x00FFFFFFu;
-            if (sense_idx >= 2u) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            if (sense_idx >= MAX_SENSES) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint32_t elapsed = nowMs - sc->last_activated_ms[sense_idx];
             result = (elapsed <= max_elapsed_ms) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
@@ -623,14 +623,14 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint32_t time_ms  = nd.data & 0x0FFFFFFFu;
-            uint8_t  sense_idx= static_cast<uint8_t>((nd.data >> 28) & 0x1u);
+            uint8_t  sense_idx= static_cast<uint8_t>((nd.data >> 28) & 0xFu);
             bool     specific = (nd.flags != 0u);
             bool     ok       = false;
             if (specific) {
                 uint32_t ts = sc->last_activated_ms[sense_idx];
                 ok = (ts != 0u && static_cast<uint32_t>(nowMs) - ts <= time_ms);
             } else {
-                for (int ii = 0; ii < 2 && !ok; ++ii) {
+                for (uint8_t ii = 0; ii < MAX_SENSES && !ok; ++ii) {
                     uint32_t ts = sc->last_activated_ms[ii];
                     ok = (ts != 0u && static_cast<uint32_t>(nowMs) - ts <= time_ms);
                 }
@@ -740,7 +740,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         case BTNodeType::ConditionIsSenseActivationAbove: {
             SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            uint8_t sense_idx = static_cast<uint8_t>((nd.data >> 8) & 0x1u);
+            uint8_t sense_idx = static_cast<uint8_t>((nd.data >> 8) & 0xFu);
             auto    q         = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
             float   act       = sc->activation[sense_idx];
             bool    ok        = false;
@@ -760,7 +760,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             auto q = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
             bool ok = false;
-            for (int ii = 0; ii < 2 && !ok; ++ii) {
+            for (uint8_t ii = 0; ii < MAX_SENSES && !ok; ++ii) {
                 switch (q) {
                     case SenseThresholdQualifier::Trace:
                     case SenseThresholdQualifier::Lower:

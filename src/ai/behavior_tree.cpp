@@ -65,7 +65,7 @@ uint16_t BehaviorTree::addSenseCheck(uint8_t sense_idx, float threshold) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::SenseCheck);
     uint32_t t_fixed = static_cast<uint32_t>(threshold * 1000.f + 0.5f);
-    m_nodes[i].data  = (static_cast<uint32_t>(sense_idx & 1u) << 24) | (t_fixed & 0x00FFFFFFu);
+    m_nodes[i].data  = (static_cast<uint32_t>(sense_idx & 0xFu) << 24) | (t_fixed & 0x00FFFFFFu);
     return i;
 }
 
@@ -350,8 +350,8 @@ uint16_t BehaviorTree::addConditionAnySenseWithinTime(uint32_t time_ms, bool spe
                                                        uint8_t sense_idx) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::ConditionAnySenseWithinTime);
-    // data bits 0-27 = time_window_ms; bit 28 = sense_idx (0 or 1)
-    m_nodes[i].data  = (time_ms & 0x0FFFFFFFu) | (static_cast<uint32_t>(sense_idx & 1u) << 28);
+    // data bits 0-27 = time_window_ms; bits 28-31 = sense_idx (0-8)
+    m_nodes[i].data  = (time_ms & 0x0FFFFFFFu) | (static_cast<uint32_t>(sense_idx & 0xFu) << 28);
     m_nodes[i].flags = specific ? 1u : 0u;
     return i;
 }

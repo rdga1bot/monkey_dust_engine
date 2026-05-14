@@ -6,6 +6,7 @@
 #include <monkey_dust/ai/npc_sound.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/npc_memory.h>
+#include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/md_fs.h>
 #include <cstring>
@@ -395,6 +396,35 @@ static SenseThresholdQualifier parse_sense_qualifier(const char* s) {
     return SenseThresholdQualifier::Trace;
 }
 
+static uint8_t parse_sense_type(const char* s) {
+    if (strcmp(s, "Visual")     == 0) return 0u;
+    if (strcmp(s, "Audio")      == 0) return 1u;
+    if (strcmp(s, "Smell")      == 0) return 2u;
+    if (strcmp(s, "Vibration")  == 0) return 3u;
+    if (strcmp(s, "Touch")      == 0) return 4u;
+    if (strcmp(s, "Peripheral") == 0) return 5u;
+    if (strcmp(s, "Motion")     == 0) return 6u;
+    if (strcmp(s, "Anxiety")    == 0) return 7u;
+    if (strcmp(s, "Background") == 0) return 8u;
+    return 0u;
+}
+// Returns 0-8, or def when field absent. Accepts integer or SenseType name string.
+static uint8_t read_sense_idx_r(const char* obj, const char* obj_end, uint8_t def = 0u) {
+    int v = read_int_r(obj, obj_end, "\"sense\"", -1);
+    if (v >= 0) return (v < MAX_SENSES) ? static_cast<uint8_t>(v) : 0u;
+    char buf[16] = "";
+    read_str_r(obj, obj_end, "\"sense\"", buf, sizeof(buf));
+    return buf[0] ? parse_sense_type(buf) : def;
+}
+// Returns -1 when field absent, 0-8 when present. Used where absence means "any sense".
+static int read_sense_optional_r(const char* obj, const char* obj_end) {
+    int v = read_int_r(obj, obj_end, "\"sense\"", -1);
+    if (v >= 0) return (v < MAX_SENSES) ? v : 0;
+    char buf[16] = "";
+    read_str_r(obj, obj_end, "\"sense\"", buf, sizeof(buf));
+    return buf[0] ? static_cast<int>(parse_sense_type(buf)) : -1;
+}
+
 static SuspiciousItemStage parse_suspicious_item_stage(const char* s) {
     if (strcmp(s, "FirstSensed")                == 0) return SuspiciousItemStage::FirstSensed;
     if (strcmp(s, "InitialReaction")            == 0) return SuspiciousItemStage::InitialReaction;
@@ -596,9 +626,9 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
 
     // ── SenseCheck ────────────────────────────────────────────────────────────
     } else if (strcmp(type_str, "SenseCheck") == 0) {
-        int   sense = read_int_r  (obj, obj_end, "\"sense\"",     0);
-        float thr   = read_float_r(obj, obj_end, "\"threshold\"", 0.5f);
-        idx = bt.addSenseCheck(static_cast<uint8_t>(sense & 1), thr);
+        uint8_t sense = read_sense_idx_r(obj, obj_end);
+        float   thr   = read_float_r(obj, obj_end, "\"threshold\"", 0.5f);
+        idx = bt.addSenseCheck(sense, thr);
 
     // ── Gauges (C6) ───────────────────────────────────────────────────────────
     } else if (strcmp(type_str, "GaugeCheck") == 0) {
@@ -680,12 +710,10 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         idx = bt.addSelectorPercentage();
 
     } else if (strcmp(type_str, "SenseTimeCheck") == 0) {
-        int sense_idx      = read_int_r(obj, obj_end, "\"sense\"",          0);
-        int max_elapsed_ms = read_int_r(obj, obj_end, "\"max_elapsed_ms\"", 3000);
-        if (sense_idx < 0) sense_idx = 0;
+        uint8_t sense_idx      = read_sense_idx_r(obj, obj_end);
+        int     max_elapsed_ms = read_int_r(obj, obj_end, "\"max_elapsed_ms\"", 3000);
         if (max_elapsed_ms < 0) max_elapsed_ms = 0;
-        idx = bt.addSenseTimeCheck(static_cast<uint8_t>(sense_idx),
-                                   static_cast<uint32_t>(max_elapsed_ms));
+        idx = bt.addSenseTimeCheck(sense_idx, static_cast<uint32_t>(max_elapsed_ms));
 
     } else if (strcmp(type_str, "ActionSetDead") == 0) {
         idx = bt.addActionSetDead();
@@ -761,13 +789,13 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
 
     // Z7: ConditionAnySenseWithinTime — any/specific sense within time window
     } else if (strcmp(type_str, "ConditionAnySenseWithinTime") == 0) {
-        int  time_ms  = read_int_r (obj, obj_end, "\"time_ms\"", 5000);
-        int  sense    = read_int_r (obj, obj_end, "\"sense\"",  -1);
-        bool specific = (sense >= 0);
+        int  time_ms   = read_int_r(obj, obj_end, "\"time_ms\"", 5000);
+        int  sense_opt = read_sense_optional_r(obj, obj_end);
+        bool specific  = (sense_opt >= 0);
         idx = bt.addConditionAnySenseWithinTime(
                 static_cast<uint32_t>(time_ms),
                 specific,
-                specific ? static_cast<uint8_t>(sense & 1) : 0u);
+                specific ? static_cast<uint8_t>(sense_opt) : 0u);
 
     // Z8: ActionExpireTimer — force-expire a timer slot
     } else if (strcmp(type_str, "ActionExpireTimer") == 0) {
@@ -819,11 +847,10 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
 
     // G5: ConditionIsSenseActivationAbove — current sense[i] vs qualifier
     } else if (strcmp(type_str, "ConditionIsSenseActivationAbove") == 0) {
-        int  sense_i = read_int_r(obj, obj_end, "\"sense\"", 0);
-        char qual_s[16] = "Trace";
+        uint8_t sense_i = read_sense_idx_r(obj, obj_end);
+        char    qual_s[16] = "Trace";
         read_str_r(obj, obj_end, "\"qualifier\"", qual_s, sizeof(qual_s));
-        idx = bt.addConditionIsSenseActivationAbove(
-            static_cast<uint8_t>(sense_i), parse_sense_qualifier(qual_s));
+        idx = bt.addConditionIsSenseActivationAbove(sense_i, parse_sense_qualifier(qual_s));
 
     // G6: ConditionHasAnySenseBeenAbove — any sense ever fired above qualifier
     } else if (strcmp(type_str, "ConditionHasAnySenseBeenAbove") == 0) {

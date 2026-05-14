@@ -931,6 +931,28 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         GaugeType gt = (g_idx == 1) ? GaugeType::StunDamage : GaugeType::Retreat;
         idx = bt.addGaugeSet(gt, parse_gauge_amount(amt));
 
+    // ── Batch 2: MD BEHAVIOR XML zero-param nodes ─────────────────────────────
+    } else if (strcmp(type_str, "ConditionIsDead") == 0) {
+        idx = bt.addConditionIsDead();
+    } else if (strcmp(type_str, "ConditionIsInVent") == 0) {
+        idx = bt.addConditionIsInVent();
+    } else if (strcmp(type_str, "ConditionCanBreakout") == 0) {
+        idx = bt.addConditionCanBreakout();
+    } else if (strcmp(type_str, "ConditionIsBackstage") == 0) {
+        idx = bt.addConditionIsBackstage();
+    } else if (strcmp(type_str, "ConditionIsPartOfNPCGroup") == 0) {
+        idx = bt.addConditionIsPartOfNPCGroup();
+    } else if (strcmp(type_str, "ConditionAnotherAlienIsAttacking") == 0) {
+        idx = bt.addConditionAnotherAlienIsAttacking();
+    } else if (strcmp(type_str, "ConditionHasSearchedPos") == 0) {
+        idx = bt.addConditionHasSearchedPos();
+    } else if (strcmp(type_str, "ConditionHasDoneSuspectMoveTo") == 0) {
+        idx = bt.addConditionHasDoneSuspectMoveTo();
+    } else if (strcmp(type_str, "ActionSwitchToNextTarget") == 0) {
+        idx = bt.addActionSwitchToNextTarget();
+    } else if (strcmp(type_str, "ActionDoneSystematicSearch") == 0) {
+        idx = bt.addActionDoneSystematicSearch();
+
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);
         return BehaviorTree::INVALID;

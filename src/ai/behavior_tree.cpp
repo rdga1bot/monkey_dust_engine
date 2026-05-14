@@ -492,6 +492,39 @@ void BehaviorTree::addChild(uint16_t parent, uint16_t child) {
 
 void BehaviorTree::setRoot(uint16_t node) { m_root = node; }
 
+// ── Batch 2 factories ────────────────────────────────────────────────────────
+
+uint16_t BehaviorTree::addConditionIsDead() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsDead); return i;
+}
+uint16_t BehaviorTree::addConditionIsInVent() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsInVent); return i;
+}
+uint16_t BehaviorTree::addConditionCanBreakout() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionCanBreakout); return i;
+}
+uint16_t BehaviorTree::addConditionIsBackstage() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsBackstage); return i;
+}
+uint16_t BehaviorTree::addConditionIsPartOfNPCGroup() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsPartOfNPCGroup); return i;
+}
+uint16_t BehaviorTree::addConditionAnotherAlienIsAttacking() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionAnotherAlienIsAttacking); return i;
+}
+uint16_t BehaviorTree::addConditionHasSearchedPos() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasSearchedPos); return i;
+}
+uint16_t BehaviorTree::addConditionHasDoneSuspectMoveTo() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasDoneSuspectMoveTo); return i;
+}
+uint16_t BehaviorTree::addActionSwitchToNextTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionSwitchToNextTarget); return i;
+}
+uint16_t BehaviorTree::addActionDoneSystematicSearch() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionDoneSystematicSearch); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

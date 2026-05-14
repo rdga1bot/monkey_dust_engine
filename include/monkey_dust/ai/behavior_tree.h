@@ -194,6 +194,28 @@ enum class BTNodeType : uint8_t {
     //   DecoratorAggressionEscalation: gate child on as->aggro_level != None
     //     data = 0; propagates child result; Failure if aggro_level == None or no AgentState
     DecoratorAggressionEscalation,
+
+    // ── Batch 2: MD patterns — BEHAVIOR XML conditions/actions ─────────────────
+    //   ConditionIsDead:                  Success if lcf::IS_DEAD set; data=0
+    ConditionIsDead,
+    //   ConditionIsInVent:                Success if lcf::IS_IN_VENT set; data=0
+    ConditionIsInVent,
+    //   ConditionCanBreakout:             Success if SHOULD_BREAKOUT && !DONE_BREAKOUT; data=0
+    ConditionCanBreakout,
+    //   ConditionIsBackstage:             Success if lcf::CLOSE_TO_BACKSTAGE set; data=0
+    ConditionIsBackstage,
+    //   ConditionIsPartOfNPCGroup:        Success if SquadMemberComponent present; data=0
+    ConditionIsPartOfNPCGroup,
+    //   ConditionAnotherAlienIsAttacking: Success if RoleRegistry Stalk/Attack owner != null && != self; data=0
+    ConditionAnotherAlienIsAttacking,
+    //   ConditionHasSearchedPos:          Success if bb["has_searched_pos"] == true; data=0
+    ConditionHasSearchedPos,
+    //   ConditionHasDoneSuspectMoveTo:    Success if bb["done_suspect_moveto"] == true; data=0
+    ConditionHasDoneSuspectMoveTo,
+    //   ActionSwitchToNextTarget:         Copies bb[next_target_entity] → bb[target_entity]; data=0
+    ActionSwitchToNextTarget,
+    //   ActionDoneSystematicSearch:       Sets bb["done_systematic_search"]=true; data=0
+    ActionDoneSystematicSearch,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -404,6 +426,18 @@ public:
     uint16_t addConditionLastTimeSquadNotified(SquadSignal signal, uint8_t time_threshold_s);
     // DecoratorAggressionEscalation: gate child on as->aggro_level != None.
     uint16_t addDecoratorAggressionEscalation();
+
+    // ── Batch 2 factories ─────────────────────────────────────────────────────
+    uint16_t addConditionIsDead();
+    uint16_t addConditionIsInVent();
+    uint16_t addConditionCanBreakout();
+    uint16_t addConditionIsBackstage();
+    uint16_t addConditionIsPartOfNPCGroup();
+    uint16_t addConditionAnotherAlienIsAttacking();
+    uint16_t addConditionHasSearchedPos();
+    uint16_t addConditionHasDoneSuspectMoveTo();
+    uint16_t addActionSwitchToNextTarget();
+    uint16_t addActionDoneSystematicSearch();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

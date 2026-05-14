@@ -8,8 +8,11 @@
 #include <monkey_dust/ai/fnv.h>
 #include <cstring>
 
-static constexpr uint32_t TARGET_ENTITY_BB_KEY      = md::fnv1a("target_entity");
-static constexpr uint32_t NEXT_TARGET_ENTITY_BB_KEY = md::fnv1a("next_target_entity");
+static constexpr uint32_t TARGET_ENTITY_BB_KEY            = md::fnv1a("target_entity");
+static constexpr uint32_t NEXT_TARGET_ENTITY_BB_KEY       = md::fnv1a("next_target_entity");
+static constexpr uint32_t HAS_SEARCHED_POS_BB_KEY         = md::fnv1a("has_searched_pos");
+static constexpr uint32_t DONE_SUSPECT_MOVETO_BB_KEY      = md::fnv1a("done_suspect_moveto");
+static constexpr uint32_t DONE_SYSTEMATIC_SEARCH_BB_KEY   = md::fnv1a("done_systematic_search");
 
 // ── Stackless VM tick ─────────────────────────────────────────────────────────
 BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t nowMs) {
@@ -818,6 +821,93 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
                 }
                 pc = m_children[nd.childStart]; continue;
             }
+            pc = nd.parent; continue;
+        }
+
+        // ── Batch 2: MD BEHAVIOR XML patterns ────────────────────────────────
+
+        case BTNodeType::ConditionIsDead: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = as->lcflags.test(lcf::IS_DEAD) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionIsInVent: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = as->lcflags.test(lcf::IS_IN_VENT) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionCanBreakout: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            bool ok = as->lcflags.test(lcf::SHOULD_BREAKOUT) &&
+                     !as->lcflags.test(lcf::DONE_BREAKOUT);
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionIsBackstage: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = as->lcflags.test(lcf::CLOSE_TO_BACKSTAGE) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionIsPartOfNPCGroup: {
+            result = Registry::Get().try_get<SquadMemberComponent>(e)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionAnotherAlienIsAttacking: {
+            // Stalk = closest role to "attacking/pursuing"; Flanker = second approach vector
+            const auto& rr = RoleRegistry::Get();
+            bool another_stalk   = !rr.could_perform(NpcRole::Stalk)   &&
+                                   !rr.is_performing(NpcRole::Stalk,   e);
+            bool another_flanker = !rr.could_perform(NpcRole::Flanker) &&
+                                   !rr.is_performing(NpcRole::Flanker, e);
+            result = (another_stalk || another_flanker) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasSearchedPos: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = bb_get_bool(*ab, HAS_SEARCHED_POS_BB_KEY)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasDoneSuspectMoveTo: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = bb_get_bool(*ab, DONE_SUSPECT_MOVETO_BB_KEY)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionSwitchToNextTarget: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* next = bb_find(*ab, NEXT_TARGET_ENTITY_BB_KEY);
+            if (!next) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint32_t next_val = next->val.e;
+            // Write target_entity = next entity; clear next_target_entity (type=3 = entity slot)
+            if (BlackboardEntry* tgt = bb_insert(*ab, TARGET_ENTITY_BB_KEY, 3))
+                tgt->val.e = next_val;
+            if (BlackboardEntry* nxt = bb_insert(*ab, NEXT_TARGET_ENTITY_BB_KEY, 3))
+                nxt->val.e = static_cast<uint32_t>(entt::tombstone);
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionDoneSystematicSearch: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (ab) bb_set_bool(*ab, DONE_SYSTEMATIC_SEARCH_BB_KEY, true);
+            result = BTStatus::Success;
             pc = nd.parent; continue;
         }
 

@@ -4,7 +4,6 @@
 #include <cstdint>
 
 // ── FlowGraph ─────────────────────────────────────────────────────────────────
-// CATHODE TriggerInfo + EntityInterface dispatch analog.
 // Event-driven graph: nodes fire triggers that propagate through connections.
 // All storage is fixed-size (BSS) — no malloc in Tick path.
 //
@@ -33,7 +32,7 @@ struct FlowConn {
 };
 static_assert(sizeof(FlowConn) == 12, "FlowConn must be 12 bytes");
 
-// M45: typed flow variable (CATHODE cBool/cInt/cFloat/cString analog).
+// M45: typed flow variable.
 // SaveSystem only persists Float-typed vars (FlowVarRecord).
 // Condition nodes coerce any type to float for evaluation.
 enum class FlowVarType : uint8_t { Float = 0, Bool = 1, Int = 2, Str = 3 };
@@ -51,7 +50,7 @@ struct FlowVar {
 };
 static_assert(sizeof(FlowVar) == 24, "FlowVar must be 24 bytes");;
 
-// CATHODE TriggerInfo analog: one pending event in the ring buffer.
+// one pending event in the ring buffer.
 // fire_at_s = absolute game time (matches TriggerInfo::duration semantics).
 struct FlowPendingTrigger {
     uint32_t node_id;    // target node to fire
@@ -63,7 +62,6 @@ static constexpr uint32_t FLOW_INVALID_CONN  = 0xFFFFFFFFu;
 static constexpr uint8_t  FLOW_INVALID_DURABLE = 0xFFu;
 
 // ── C20: FlowDurableTrigger ───────────────────────────────────────────────────
-// CATHODE TriggerInfo refcount + linked-list analog.
 // One-shot FlowPendingTriggers fire once and are discarded.
 // Durable triggers persist for `duration` seconds and can be ref-counted by
 // multiple consumers. Released when ref_count reaches 0 OR duration expires.
@@ -113,7 +111,7 @@ struct FlowGraph {
     void    AddRef (uint8_t slot);    // increment ref_count (no-op on invalid slot)
     void    Release(uint8_t slot);    // decrement ref_count; free slot when reaches 0
 
-    // External trigger: fire node at fire_at_s (CATHODE queue_level analog).
+    // External trigger: fire node at fire_at_s.
     // fire_at_s == 0.0 → fire on next Tick.
     void FireTrigger(uint32_t node_id, double fire_at_s);
 

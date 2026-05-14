@@ -15,7 +15,6 @@ struct PointLight {
 namespace md {
 
 // Deferred point light volumes — icosphere (80 tris) per light.
-// CATHODE DEFERREDPOINTLIGHTING analog.
 //
 // Each light draws a world-space sphere (scale*translate × view_proj).
 // Additive blend into swapchain; depth sampled from GBuffer as texture.

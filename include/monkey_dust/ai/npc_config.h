@@ -2,7 +2,6 @@
 
 // ── NpcConfig ─────────────────────────────────────────────────────────────────
 // Per-NPC-type configuration loaded from data/characters/npc_configs.json.
-// CATHODE: equivalent to per-entity property bundles referenced by EntityInterface.
 // $inherit: one level only — child inherits base, then overrides non-zero/non-empty fields.
 struct NpcConfig {
     char  name[32];
@@ -11,7 +10,7 @@ struct NpcConfig {
     char  director_profile[24];// DirectorSystem profile name (e.g. "default")
     char  bt_day[32];          // BT template id for daytime behaviour
     char  bt_night[32];        // BT template id for nighttime behaviour
-    // Pattern 9: per-stage BT override (CATHODE ALIENCONFIGS per-mood analog).
+    // Pattern 9: per-stage BT override.
     // If bt_stage[i] is non-empty, DirectorSystem activates it when stage == i.
     // Stage order: 0=Unaware 1=Suspicious 2=Hunting 3=Intense.
     // Empty string = fall back to bt_day/bt_night.

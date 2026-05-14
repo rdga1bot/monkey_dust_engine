@@ -2,7 +2,6 @@
 #include <cstdint>
 
 // ── DirectorStage ─────────────────────────────────────────────────────────────
-// CATHODE ALIENCONFIGS menace_gauge analog.
 // Stages are driven by menace_ [0..1]; thresholds: 0.25 / 0.50 / 0.75.
 enum class DirectorStage : uint8_t {
     Unaware,    // menace < 0.25
@@ -13,7 +12,6 @@ enum class DirectorStage : uint8_t {
 
 // ── DirectorProfile ───────────────────────────────────────────────────────────
 // Loaded from data/ai/director_profiles.json.
-// CATHODE ALIENCONFIGS/*.BML field mapping documented in CLAUDE_SDL_CATHODE_MIGRATION_PLAN.md §III.
 struct DirectorProfile {
     char  name[24];
     float gauge_fill_rate;    // menace/sec while threat perceived (=1/gauge_fill_s)

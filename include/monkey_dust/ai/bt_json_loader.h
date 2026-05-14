@@ -2,11 +2,11 @@
 #include <monkey_dust/ai/behavior_tree.h>
 
 // ── BTJsonLoader ──────────────────────────────────────────────────────────────
-// Loads CATHODE-style JSON behavior trees into BehaviorTree objects.
+// Loads JSON behavior trees into BehaviorTree objects.
 // Parser: custom strstr-based, no external JSON libraries (project rule).
 // Actions/conditions resolved via md::BTActionRegistry::Get() at load time.
 //
-// JSON format (mirror of CATHODE BEHAVIOR XML, adapted to JSON):
+// JSON format (mirror of AI BEHAVIOR XML, adapted to JSON):
 //   {
 //     "name": "systematic_search",
 //     "root": {

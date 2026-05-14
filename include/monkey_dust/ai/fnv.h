@@ -3,7 +3,7 @@
 
 // FNV-1a 32-bit — compile-time and runtime key hashing.
 // Used by AgentBlackboard (M18) and FlowGraph (M23).
-// Replaces CATHODE SHA1-based ShortGuid; single-pass, no deps.
+// Replaces AI SHA1-based ShortGuid; single-pass, no deps.
 namespace md {
 
 constexpr uint32_t fnv1a(const char* s, uint32_t h = 2166136261u) noexcept {
@@ -16,7 +16,7 @@ inline uint32_t fnv1a_rt(const char* s) noexcept {
     return h;
 }
 
-// Pattern 7: fnv_combine — hierarchical path hash (CATHODE ShortGuid::combine analog).
+// Pattern 7: fnv_combine — hierarchical path hash.
 // fnv_combine(parent, child) produces a stable hash for "parent.child" style paths
 // without allocating a string. Used for nested entity/component references in FlowGraph.
 constexpr uint32_t fnv_combine(uint32_t parent, uint32_t child) noexcept {

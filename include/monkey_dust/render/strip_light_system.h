@@ -15,7 +15,7 @@ struct StripLight {
 
 namespace md {
 
-// Deferred strip (capsule) lights — CATHODE DEFERREDSTRIPLIGHTING analog.
+// Deferred strip (capsule) lights — AI DEFERREDSTRIPLIGHTING analog.
 // Each strip is drawn as an AABB bounding the capsule volume; the fragment
 // shader evaluates the capsule SDF for per-pixel occlusion + attenuation.
 // Additive blend into swapchain; depth sampled from GBuffer texture.

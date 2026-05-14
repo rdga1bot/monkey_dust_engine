@@ -5,7 +5,6 @@
 // ── SenseRegistry ─────────────────────────────────────────────────────────────
 // Singleton. Loads view_cone_sets.json and holds named ViewConeSet entries.
 // SenseComponent::cone_set_idx is a direct index into sets[].
-// CATHODE analog: VIEW_CONE_SETS/ directory — 6 named perception profiles.
 
 static constexpr int MAX_VIEW_CONE_TYPES = 4;  // Close/Focused/Normal/Peripheral
 static constexpr int MAX_CONE_SETS       = 8;

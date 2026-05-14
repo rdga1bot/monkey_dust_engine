@@ -5,7 +5,7 @@
 // ── AmbientProbe ──────────────────────────────────────────────────────────────
 // 128-byte GPU-side probe (aligned to 128 for SSBO std430 array).
 // Stores L1 spherical harmonics (4 coefficients per channel — cheap to eval).
-// CATHODE RADIOSITY_SETTINGS.TXT analog: approximates indirect + emissive light.
+// approximates indirect + emissive light.
 //
 // SH layout: sh_*[0]=L0(constant)  sh_*[1]=L1x  sh_*[2]=L1y  sh_*[3]=L1z
 // Shader eval (deferred_lighting.frag):
@@ -33,7 +33,7 @@ static_assert(sizeof(AmbientProbe) == 128, "AmbientProbe must be 128 bytes");
 //   Upload()             — after any probe change, before draw
 //
 // Shader: set=1, binding=0 AmbientProbeBuf readonly buffer (M28 deferred pass).
-// RADIOSITY constants from CATHODE:
+// RADIOSITY constants from AI:
 //   deferred_emissive_scale = 1.4875  (apply in shader)
 //   deferred_emissive_exp   = 0.5635  (apply in shader)
 

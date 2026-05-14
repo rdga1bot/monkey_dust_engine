@@ -13,7 +13,7 @@ enum class RenderTier : uint8_t {
     Deferred_High= 3,  // Iris Plus 640/650: + eDRAM GBuffer fit (~1.4 TB/s)
 };
 
-// PCI-ID based tier lookup (per CLAUDE_SDL_GPU_PREP_CATHODE.md §I).
+// PCI-ID based tier lookup (per CLAUDE_SDL_GPU_PREP_AI.md §I).
 // vendor: 0x8086=Intel  0x1002=AMD  0x10DE=NVIDIA
 // vram_mb: 0 = unknown (uses conservative heuristic)
 RenderTier DetectTier(uint16_t vendor_id, uint16_t device_id, uint32_t vram_mb);

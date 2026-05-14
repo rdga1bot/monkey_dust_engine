@@ -164,7 +164,7 @@ void DirectorSystem::Tick(float dt) {
 
     // 2. Accumulate/decay menace
     // Fill when any NPC perceives above their lo-threshold; decay otherwise.
-    // Decay is half the fill rate so menace is "sticky" (CATHODE behavior).
+    // Decay is half the fill rate so menace is "sticky".
     if (MD_UNLIKELY(max_activation > 0.3f)) {
         menace_ += pr.gauge_fill_rate * dt;
     } else {

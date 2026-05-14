@@ -6,7 +6,7 @@
 #include <cstdint>
 
 // ── BTSystem ──────────────────────────────────────────────────────────────────
-// Main BT execution loop (CATHODE BehaviorManager analog).
+// Main BT execution loop.
 // Call Tick() once per logic tick (10 TPS).
 //
 // Per-entity sequence:

@@ -2,7 +2,7 @@
 #include <cstdint>
 
 // ── ViewCone ─────────────────────────────────────────────────────────────────
-// Single perception cone. CATHODE VIEW_CONE_SETS/*.xml analog.
+// Single perception cone. AI VIEW_CONE_SETS/*.xml analog.
 // dist/exposure/movement/stance pairs = [lower, upper] activation modifiers.
 struct ViewCone {
     float h_angle_deg, v_angle_deg;  // field of view

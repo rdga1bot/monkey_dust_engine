@@ -3,7 +3,6 @@
 #include <cstdint>
 
 // ── C18: RoleSystem ───────────────────────────────────────────────────────────
-// CATHODE ConditionIsPerformingRoleOrCouldPerformRole + ActionPerformRole analog.
 // Prevents multiple NPCs competing for the same exclusive behaviour slot
 // (e.g. only one Alien in STALK at a time, only one in SUSPECT_RESPONSE_MOVE_TO).
 //

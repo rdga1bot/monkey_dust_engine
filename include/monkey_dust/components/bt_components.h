@@ -44,7 +44,6 @@ struct BehaviorTreeComponent {
 };
 
 // ── DirectorHintComponent ─────────────────────────────────────────────────────
-// CATHODE ActionPerformRole + ConditionIsPerformingRoleOrCouldPerformRole analog.
 // DirectorSystem writes this; BT RoleClaim nodes consume and clear it.
 //
 // Flow:

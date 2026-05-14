@@ -162,7 +162,7 @@
     <div class="nav-section">AI / Scripting</div>
     <a href="#ai"           class="nav-link"><span class="nav-icon">🧠</span> BehaviorTree + LOD</a>
     <a href="#ai-systems"   class="nav-link"><span class="nav-icon">🎭</span> Director / FlowGraph / Sense</a>
-    <a href="#cathode"      class="nav-link"><span class="nav-icon">👾</span> CATHODE-1–20 Patterns</a>
+    <a href="#ai-patterns"  class="nav-link"><span class="nav-icon">🧠</span> Extended AI Patterns (C1–C20)</a>
     <a href="#btvm"         class="nav-link"><span class="nav-icon">🤖</span> BT VM (Pool/System/Loader)</a>
     <a href="#improvements" class="nav-link"><span class="nav-icon">🔬</span> 9 Multi-Engine Improvements</a>
     <a href="#lua"          class="nav-link"><span class="nav-icon">📜</span> Lua Sandbox</a>
@@ -191,7 +191,7 @@
     <a href="#pitfalls"     class="nav-link"><span class="nav-icon">⚠️</span> Відомі pitfalls</a>
 
     <div class="nav-section">Довідник</div>
-    <a href="#roadmap"      class="nav-link"><span class="nav-icon">🗓️</span> Roadmap (CATHODE ✅)</a>
+    <a href="#roadmap"      class="nav-link"><span class="nav-icon">🗓️</span> Roadmap</a>
     <a href="#bindings"     class="nav-link"><span class="nav-icon">🔗</span> SSBO / Texture bindings</a>
     <a href="#license"      class="nav-link"><span class="nav-icon">©</span> Ліцензія</a>
   </nav>
@@ -203,10 +203,10 @@
 <section class="doc-section" id="intro">
   <div class="breadcrumb"><span>Документація</span> <span class="sep">›</span> Огляд</div>
   <div class="hero">
-    <div class="version-badge">v7.0 · M46+CATHODE-1–20+BT VM+IMP-1–9 · C++17 · SDL3 + SDL_GPU (Vulkan) · EnTT · Recast/Detour · AVX2</div>
+    <div class="version-badge">v7.0 · M46+AI-Ext-1–20+BT VM+IMP-1–9 · C++17 · SDL3 + SDL_GPU (Vulkan) · EnTT · Recast/Detour · AVX2</div>
     <h1>monkey_dust</h1>
     <p style="font-size:17px;color:var(--text);margin-bottom:0;">
-      Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Бекенд: SDL3 + SDL_GPU (Vulkan), виключний — OpenGL/Raylib повністю видалено (FIX-8). AI архітектура адаптована з CATHODE (Alien: Isolation). 9 нових покращень з аналізу CATHODE/OGRE/Echo/Cocos2d-x. Цільове залізо: Intel HD 520 (AVX2).
+      Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Бекенд: SDL3 + SDL_GPU (Vulkan), виключний — OpenGL/Raylib повністю видалено (FIX-8). AI архітектура натхненна механіками Alien: Isolation. 9 нових покращень з аналізу механік OGRE/Echo/Cocos2d-x. Цільове залізо: Intel HD 520 (AVX2).
     </p>
     <div class="hero-meta">
       <div class="hero-meta-item"><span class="dot">●</span> C++17, без C++20</div>
@@ -221,9 +221,9 @@
     <div class="card"><div class="card-icon">⚡</div><div class="card-title">SDL_GPU Exclusive</div><div class="card-desc">Vulkan через SDL_GPU HAL. SPIR-V шейдери (#version 460). MD_OPENGL43_ENABLED видалено повністю (FIX-8: −1449 рядків).</div></div>
     <div class="card"><div class="card-icon">🗺️</div><div class="card-title">Isometric Flare</div><div class="card-desc">Flare-сумісні мапи: TileMapRenderer (3D ізометрія) + TileMap2DRenderer (2D SDL_GPU). Multi-atlas, billboard, FRINGE.</div></div>
     <div class="card"><div class="card-icon">🧩</div><div class="card-title">ECS (EnTT)</div><div class="card-desc">500+ NPC, всі компоненти — чистий POD. Collect→apply патерн. Split-ready engine/include/monkey_dust/.</div></div>
-    <div class="card"><div class="card-icon">🧠</div><div class="card-title">AI Systems</div><div class="card-desc">Stackless BT VM + BTSystem + BTJsonLoader + DirectorSystem + FlowGraph + SenseSystem. CATHODE-20 patterns.</div></div>
+    <div class="card"><div class="card-icon">🧠</div><div class="card-title">AI Systems</div><div class="card-desc">Stackless BT VM + BTSystem + BTJsonLoader + DirectorSystem + FlowGraph + SenseSystem. Extended AI patterns (C1–C20).</div></div>
     <div class="card"><div class="card-icon">🔒</div><div class="card-title">Security Audit</div><div class="card-desc">10 fixes: Lua 8MB sandbox, CRC32 SaveHeader v8, POSIX mkdir, _mm_pause spinlock, MAX_BONES 128→6.</div></div>
-    <div class="card"><div class="card-icon">👾</div><div class="card-title">CATHODE Patterns</div><div class="card-desc">20 AI patterns з Alien: Isolation — MotivationType, RoleRegistry, AwarenessState, FlowDurableTrigger, BTJsonLoader, BTNodePool.</div></div>
+    <div class="card"><div class="card-icon">👾</div><div class="card-title">Extended AI Patterns</div><div class="card-desc">20 Extended AI patterns — MotivationType, RoleRegistry, AwarenessState, FlowDurableTrigger, BTJsonLoader, BTNodePool.</div></div>
     <div class="card"><div class="card-icon">🤖</div><div class="card-title">BT VM повний</div><div class="card-desc">BTNodePool 32KB arena · BTSystem ECS driver · BTJsonLoader strstr parser · 30+ node types · data/bt/ JSON trees.</div></div>
     <div class="card"><div class="card-icon">🔬</div><div class="card-title">9 Improvements</div><div class="card-desc">ACES tonemapping · Live BT reload · NpcMemory · Dirty TINST · Dirty SSBO · WorldSim 1Hz · MaterialDesc · UtilityScorer · md::fs</div></div>
   </div>
@@ -312,7 +312,7 @@ bash scripts/compile_shaders.sh</code></pre>
 
 <!-- ═══ STRUCTURE ═══ -->
 <section class="doc-section" id="structure">
-  <h2>📁 Monorepo структура (M46 + CATHODE-1–20 + BT VM + IMP-1–9)</h2>
+  <h2>📁 Monorepo структура (M46 + AI-Ext-1–20 + BT VM + IMP-1–9)</h2>
 
   <div class="file-tree">
 <span class="dir">monkey_dust/</span>
@@ -727,7 +727,7 @@ DirectorStage s = DirectorSystem::Get().stage();  // CALM/TENSE/ALERT/CRISIS
 // DirectorProfile з JSON (data/ai/director_profile.json):
 // { "gauge_fill_rate": 0.05, "gauge_decay_rate": 0.025, ... }</code></pre>
 
-  <h3>AgentState (M18 + CATHODE C1,C4,C5,C6,C8)</h3>
+  <h3>AgentState (M18 + AI patterns C1,C4,C5,C6,C8)</h3>
   <pre><code>// engine/include/monkey_dust/components/agent_state.h
 // C5: 26 named timer slots
 enum class AgentTimerSlot : uint8_t {
@@ -818,18 +818,18 @@ struct NpcConfig {
   "bt_stage_2": "guard_hunting" }   // Hunting stage override</code></pre>
 </section>
 
-<!-- ═══ CATHODE PATTERNS ═══ -->
-<section class="doc-section" id="cathode">
-  <h2>👾 CATHODE-1–20 — AI Patterns з Alien: Isolation</h2>
+<!-- ═══ EXTENDED AI PATTERNS ═══ -->
+<section class="doc-section" id="ai-patterns">
+  <h2>🧠 Extended AI Patterns (C1–C20)</h2>
 
   <div class="callout ok">
-    <div class="callout-title">Адаптовано з CATHODE engine (Creative Assembly, 2014)</div>
-    20 архітектурних паттернів реалізовано в monkey_dust без CATHODE runtime. Джерело: ALIEN_BEHAVE.XML + OpenIsolation headers. Підтверджено 131 GTests.
+    <div class="callout-title">Extended AI Patterns — розширена система AI поведінки</div>
+    20 архітектурних паттернів AI, реалізованих у monkey_dust незалежно. Підтверджено 131 GTests.
   </div>
 
   <h3>C1–C10 (базові структури)</h3>
   <table>
-    <tr><th>Pattern</th><th>CATHODE origin</th><th>monkey_dust реалізація</th><th>Файл</th></tr>
+    <tr><th>Pattern</th><th>Pattern</th><th>monkey_dust реалізація</th><th>Файл</th></tr>
     <tr><td><strong>C1</strong> MotivationGate</td><td>ALIEN_BEHAVE.XML SelectorLinear + MOTIVATION_TYPE</td><td><code>MotivationType</code> (14 values) + <code>MotivationCheck</code>/<code>SetMotivation</code> BT nodes; <code>BuildMotivationGateBT()</code></td><td>agent_state.h, behavior_tree.h</td></tr>
     <tr><td><strong>C2</strong> BranchType</td><td>DecoratorBranch + named interrupt categories</td><td><code>BranchType</code> enum (17 values) + <code>ShutdownSpeed</code>; <code>addBranch(cond, btype, speed)</code></td><td>behavior_tree.h</td></tr>
     <tr><td><strong>C3</strong> Reference node</td><td>ReferencedBehavior (sub-tree delegation)</td><td><code>BTNodeType::Reference</code> + <code>addReference(BehaviorTree*)</code>; ptr у <code>nd._padding[2]</code>; null → Failure</td><td>behavior_tree.h</td></tr>
@@ -844,15 +844,15 @@ struct NpcConfig {
 
   <h3>C11–C20 (розширені AI примітиви)</h3>
   <table>
-    <tr><th>Pattern</th><th>CATHODE origin</th><th>monkey_dust реалізація</th><th>Файл</th></tr>
+    <tr><th>Pattern</th><th>Pattern</th><th>monkey_dust реалізація</th><th>Файл</th></tr>
     <tr><td><strong>C11</strong> SequenceStateless</td><td>ALIEN_BEHAVE.XML SequenceStateless — no resume</td><td><code>BTNodeType::SequenceStateless</code>; на Running скидає <code>currentChild=0</code> (на відміну від Sequence)</td><td>behavior_tree.h/.cpp</td></tr>
     <tr><td><strong>C12</strong> TimerOnlyIncrease</td><td>TIMER_ONLY_INCREASE flag у DecoratorTimer</td><td><code>addTimerStartOnlyIncrease(slot, dur)</code>; flags bit0=1; не вкорочує активний таймер</td><td>behavior_tree.h/.cpp</td></tr>
-    <tr><td><strong>C13</strong> FrameFlag</td><td>Frame-scoped signal flags у CATHODE</td><td><code>frame_flags uint64</code> в AgentState; <code>FrameFlagCheck/Set</code>; BTSystem скидає на початку кожного tick</td><td>agent_state.h, bt_system.h</td></tr>
+    <tr><td><strong>C13</strong> FrameFlag</td><td>Frame-scoped signal flags</td><td><code>frame_flags uint64</code> в AgentState; <code>FrameFlagCheck/Set</code>; BTSystem скидає на початку кожного tick</td><td>agent_state.h, bt_system.h</td></tr>
     <tr><td><strong>C14</strong> WeightedSelector</td><td>ALIEN_BEHAVE.XML WeightedRandomSelector</td><td>4 ваги packed у data uint32; LCG RNG = <code>entity ^ frame_index</code>; max 4 дочірніх</td><td>behavior_tree.h/.cpp</td></tr>
-    <tr><td><strong>C15</strong> AwarenessState</td><td>AWARENESS_STATE enum у CATHODE AI core</td><td><code>AwarenessState</code> (Dead…Aware, 7 рівнів) + поле в AgentState + <code>AwarenessCheck</code></td><td>agent_state.h, behavior_tree.h</td></tr>
+    <tr><td><strong>C15</strong> AwarenessState</td><td>Awareness state enum</td><td><code>AwarenessState</code> (Dead…Aware, 7 рівнів) + поле в AgentState + <code>AwarenessCheck</code></td><td>agent_state.h, behavior_tree.h</td></tr>
     <tr><td><strong>C16</strong> AlertnessState</td><td>ALERTNESS_STATE enum (Relaxed→Combat)</td><td><code>AlertnessState</code> (4 рівні) + поле + <code>AlertnessCheck</code></td><td>agent_state.h, behavior_tree.h</td></tr>
     <tr><td><strong>C17</strong> NpcMood</td><td>NPC_MOOD (Neutral/Curious/Panicked...)</td><td><code>NpcMood</code> (6 значень) + поле mood в AgentState + <code>MoodCheck</code></td><td>agent_state.h, behavior_tree.h</td></tr>
-    <tr><td><strong>C18</strong> RoleSystem</td><td>RoleClaim/RoleCheck у CATHODE multi-NPC</td><td><code>NpcRole</code> enum (8 ролей) + <code>RoleRegistry</code> singleton + <code>RoleCheck/RoleClaim/RoleRelease</code> BT nodes</td><td>role_registry.h, behavior_tree.h</td></tr>
+    <tr><td><strong>C18</strong> RoleSystem</td><td>RoleClaim/RoleCheck для multi-NPC</td><td><code>NpcRole</code> enum (8 ролей) + <code>RoleRegistry</code> singleton + <code>RoleCheck/RoleClaim/RoleRelease</code> BT nodes</td><td>role_registry.h, behavior_tree.h</td></tr>
     <tr><td><strong>C19</strong> WithdrawState</td><td>WITHDRAW_STATE у NPC_RETREAT.XML</td><td><code>WithdrawState</code> (3 стани) + <code>withdraw_state</code> поле + <code>WithdrawCheck/SetWithdraw</code></td><td>agent_state.h, behavior_tree.h</td></tr>
     <tr><td><strong>C20</strong> FlowDurableTrigger</td><td>TriggerInfo refcounted у FlowGraph</td><td><code>FlowDurableTrigger{node_id, duration, ref_count}</code>; MAX=16; <code>AcquireDurable/AddRef/Release</code>; Tick() decay</td><td>flow_graph.h/.cpp</td></tr>
   </table>
@@ -948,7 +948,7 @@ bt_sys.Tick(ctx, reg, nowMs);
 
   <h3>BTJsonLoader — strstr recursive parser</h3>
   <pre><code>// engine/include/monkey_dust/ai/bt_json_loader.h
-// Формат JSON (CATHODE XML → JSON):
+// JSON format:
 {
   "name": "systematic_search",
   "root": {
@@ -1010,14 +1010,14 @@ BTJsonLoader::LoadFromFile(bt, "data/bt/systematic_search.bt.json");
   <h2>🔬 9 Multi-Engine Improvements</h2>
 
   <div class="callout ok">
-    <div class="callout-title">Аналіз CATHODE · OGRE v1 · OGRE-Next · Echo · Banshee 3D · Cocos2d-x</div>
+    <div class="callout-title">Аналіз механік OGRE v1 · OGRE-Next · Echo · Banshee 3D · Cocos2d-x</div>
     9 патернів адаптовано з 6 engine'ів після порівняльного аналізу (2026-05-13). Всі реалізовані без нових зовнішніх залежностей.
   </div>
 
   <table>
     <tr><th>#</th><th>Джерело</th><th>Фіча</th><th>Файли</th></tr>
-    <tr><td><strong>IMP-1</strong></td><td>CATHODE</td><td><strong>ACES filmic tonemapping</strong> замінює Reinhard: <code>clamp((c*(2.51c+0.03))/(c*(2.43c+0.59)+0.14), 0, 1)</code> + gamma pow(c, 1/2.2)</td><td>shaders/pbr.frag, shaders/npc_instanced.frag</td></tr>
-    <tr><td><strong>IMP-2</strong></td><td>CATHODE</td><td><strong>Live BT reload</strong>: <code>BTLoader::WatchFile(path)</code> → HotReload watcher; <code>PollReload()</code> у logic tick (main thread safety, volatile flag)</td><td>game/src/ai/bt_loader.h, game/src/logic_tick.cpp</td></tr>
+    <tr><td><strong>IMP-1</strong></td><td>Filmic tonemapping</td><td><strong>ACES filmic tonemapping</strong> замінює Reinhard: <code>clamp((c*(2.51c+0.03))/(c*(2.43c+0.59)+0.14), 0, 1)</code> + gamma pow(c, 1/2.2)</td><td>shaders/pbr.frag, shaders/npc_instanced.frag</td></tr>
+    <tr><td><strong>IMP-2</strong></td><td>Live BT reload</td><td><strong>Live BT reload</strong>: <code>BTLoader::WatchFile(path)</code> → HotReload watcher; <code>PollReload()</code> у logic tick (main thread safety, volatile flag)</td><td>game/src/ai/bt_loader.h, game/src/logic_tick.cpp</td></tr>
     <tr><td><strong>IMP-3</strong></td><td>Echo</td><td><strong>NpcMemoryComponent</strong> POD: <code>SpatialMemory[8]</code> (LRU evict, timestamp+confidence) + <code>events[8]</code> (FNV IDs, ring overwrite); <code>MemoryCheck/MemoryForget</code> BT nodes</td><td>engine/include/monkey_dust/components/npc_memory.h, engine/src/ai/behavior_tree.cpp, engine/src/ai/bt_json_loader.cpp</td></tr>
     <tr><td><strong>IMP-4</strong></td><td>OGRE-Next</td><td><strong>Dirty TINST</strong>: TileMapRenderer кешує vbuf/ibuf між кадрами; PASS1–3 пропускаються коли <code>!dirty_ && !anim_changed</code></td><td>engine/include/monkey_dust/flare/tile_map_renderer.h, engine/src/flare/tile_map_renderer.cpp</td></tr>
     <tr><td><strong>IMP-5</strong></td><td>OGRE-Next</td><td><strong>Dirty faction SSBO</strong>: <code>TransformSoA::MarkFactionDirty(slot)</code> відслідковує <code>faction_dirty_min_/max_</code>; завантажує тільки брудний діапазон слотів</td><td>engine/include/monkey_dust/world/transform_soa.h, engine/src/world/transform_soa.cpp</td></tr>
@@ -1347,7 +1347,7 @@ Panel: ViewCone Inspector      Panel: FlowGraph      ...</code></pre>
 
 <!-- ═══ TESTS ═══ -->
 <section class="doc-section" id="tests">
-  <h2>🧪 Test Suite (M43–M45 + CATHODE-11–20 + BT VM)</h2>
+  <h2>🧪 Test Suite (M43–M45 + AI-Ext-11–20 + BT VM)</h2>
 
   <pre><code>ninja -C build md_tests && build/tests/md_tests
 # [==========] 131 tests from 13 test suites ran. (all PASSED)</code></pre>
@@ -1361,7 +1361,7 @@ Panel: ViewCone Inspector      Panel: FlowGraph      ...</code></pre>
     <tr><td>PowerSlotManagerTest</td><td>11</td><td>Slot assign, cooldowns, use, Lua API</td></tr>
     <tr><td>NpcConfigTest</td><td>6</td><td>JSON parse, $inherit, field override, bt_stage (C9)</td></tr>
     <tr><td>HotReloadTest</td><td>7</td><td>POSIX stat, change detection, PollOnce</td></tr>
-    <tr><td>BTCathodeTest</td><td>20</td><td>C11–C19: SequenceStateless, TimerOnlyIncrease, FrameFlag, WeightedSelector, AwarenessCheck, AlertnessCheck, MoodCheck, RoleSystem, WithdrawState</td></tr>
+    <tr><td>BTAIPatternTest</td><td>20</td><td>C11–C19: SequenceStateless, TimerOnlyIncrease, FrameFlag, WeightedSelector, AwarenessCheck, AlertnessCheck, MoodCheck, RoleSystem, WithdrawState</td></tr>
     <tr><td>FlowDurableTriggerTest</td><td>3</td><td>C20: AcquireDurable, AddRef, Release decay</td></tr>
     <tr><td>BTJsonLoaderTest</td><td>13</td><td>LoadFromString/File; ReadName; MotivationCheck; TimerStart only_increase; AwarenessCheck; WeightedSelector; RoleCheck; unknown action fallback; SystematicSearch JSON</td></tr>
     <tr><td>BTSystemTest</td><td>5</td><td>frame_flags cleared; disabled tree skipped; enabled tree executes; multiple entities all ticked</td></tr>
@@ -1741,7 +1741,7 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
 <section class="doc-section" id="roadmap">
   <h2>🗓️ Roadmap — стан на 2026-05-13</h2>
 
-  <h3>Завершено (M0–M46 + FIX-1–10 + CATHODE-1–20 + BT VM + IMP-1–9)</h3>
+  <h3>Завершено (M0–M46 + FIX-1–10 + AI-Ext-1–20 + BT VM + IMP-1–9)</h3>
   <table>
     <tr><th>Milestone</th><th>Зміст</th><th>Статус</th></tr>
     <tr><td>M0–M34</td><td>Core gameplay: ECS, AI, Nav, Combat, Build, Save, Dialog, Quest, Editor, Chunk, GPU</td><td><span class="badge done">✅</span></td></tr>
@@ -1766,8 +1766,8 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
     <tr><td>FIX-4</td><td>SaveHeader v8: CRC32 + data_size integrity</td><td><span class="badge done">✅</span></td></tr>
     <tr><td>FIX-5/6</td><td>shadow_cull #version 460; MAX_BONES 128→6 (4MB→192KB)</td><td><span class="badge done">✅</span></td></tr>
     <tr><td>FIX-7/8/9/10</td><td>_mm_pause spinlock; MD_OPENGL43 cleanup -1449 LOC; SaveAsync char[256]; stale comment</td><td><span class="badge done">✅</span></td></tr>
-    <tr><td><strong>CATHODE-1–10</strong></td><td>C1 MotivationGate; C2 BranchType+ShutdownSpeed; C3 Reference sub-tree; C4 LogicCharacterFlags uint64+lcf; C5 AgentTimerSlot×26; C6 GaugeType+AgentGauges; C7 fnv_combine+fnv_path; C8 EntityStateFlag; C9 bt_stage[4][32]; C10 LogicTickContext</td><td><span class="badge done">✅ 2026-05-13</span></td></tr>
-    <tr><td><strong>CATHODE-11–20</strong></td><td>C11 SequenceStateless; C12 TimerOnlyIncrease; C13 FrameFlag (per-tick, BTSystem reset); C14 WeightedSelector (LCG rng); C15 AwarenessState×7; C16 AlertnessState×4; C17 NpcMood×6; C18 RoleRegistry+RoleCheck/Claim/Release; C19 WithdrawState×3; C20 FlowDurableTrigger (MAX=16, refcount)</td><td><span class="badge done">✅ 2026-05-13 · 105/105 tests</span></td></tr>
+    <tr><td><strong>AI-Ext-1–10</strong></td><td>C1 MotivationGate; C2 BranchType+ShutdownSpeed; C3 Reference sub-tree; C4 LogicCharacterFlags uint64+lcf; C5 AgentTimerSlot×26; C6 GaugeType+AgentGauges; C7 fnv_combine+fnv_path; C8 EntityStateFlag; C9 bt_stage[4][32]; C10 LogicTickContext</td><td><span class="badge done">✅ 2026-05-13</span></td></tr>
+    <tr><td><strong>AI-Ext-11–20</strong></td><td>C11 SequenceStateless; C12 TimerOnlyIncrease; C13 FrameFlag (per-tick, BTSystem reset); C14 WeightedSelector (LCG rng); C15 AwarenessState×7; C16 AlertnessState×4; C17 NpcMood×6; C18 RoleRegistry+RoleCheck/Claim/Release; C19 WithdrawState×3; C20 FlowDurableTrigger (MAX=16, refcount)</td><td><span class="badge done">✅ 2026-05-13 · 105/105 tests</span></td></tr>
     <tr><td><strong>BT VM повний</strong></td><td>BTNodePool (flat 32KB arena, sizeof(BT)=4616); BTSystem (phase1 frame_flags+hints, phase2 bare, phase3 tick); BTJsonLoader (strstr recursive, 30+ node types, 11 enum tables); role_registry.h (8 NpcRoles, singleton); bt_components.h (BehaviorTreeComponent+DirectorHintComponent); data/bt/systematic_search.bt.json</td><td><span class="badge done">✅ 2026-05-13 · 131/131 tests</span></td></tr>
     <tr><td><strong>IMP-1–9</strong></td><td><strong>IMP-1</strong> ACES tonemapping (pbr.frag+npc_instanced.frag) · <strong>IMP-2</strong> Live BT reload (WatchFile+PollReload) · <strong>IMP-3</strong> NpcMemoryComponent POD (SpatialMemory[8]+events[8], MemoryCheck/Forget BT) · <strong>IMP-4</strong> Dirty TINST tile cache (skip PASS1–3) · <strong>IMP-5</strong> Dirty faction SSBO partial upload · <strong>IMP-6</strong> WorldSimulation 1Hz economy · <strong>IMP-7</strong> MaterialDesc OGRE-style JSON→GpuPipeline::Desc · <strong>IMP-8</strong> UtilityScorer Echo-style goal scoring · <strong>IMP-9</strong> md::fs thin FS abstraction</td><td><span class="badge done">✅ 2026-05-13</span></td></tr>
   </table>

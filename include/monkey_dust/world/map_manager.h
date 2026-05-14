@@ -1,7 +1,6 @@
 #pragma once
 
 // ── MapManager ────────────────────────────────────────────────────────────────
-// CATHODE GAME_LEVEL_MANAGER analog.
 // Singleton. Loads a manifest of map names; queues transitions.
 // Actual map load/unload is done by the game layer via registered callbacks.
 //

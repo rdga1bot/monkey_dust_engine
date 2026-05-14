@@ -4,7 +4,6 @@
 
 // ── GBuffer ───────────────────────────────────────────────────────────────────
 // Compact 2-RT deferred G-Buffer (8 bytes/pixel at 720p = 7.4 MB).
-// CATHODE DEFERREDSHADERS_DX11.PAK analog.
 //
 // RT0 RGBA8: albedo(RGB) + roughness(A)
 // RT1 RGBA8: oct-normal(RG) + metallic(B) + flags(A)

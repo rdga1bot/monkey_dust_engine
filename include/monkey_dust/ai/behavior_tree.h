@@ -6,7 +6,6 @@
 #include <cstdint>
 
 // ── Pattern 2: ShutdownSpeed ──────────────────────────────────────────────────
-// CATHODE RequestShutDownSpeed analog. Stored in BTNode::flags for Branch nodes.
 enum class ShutdownSpeed : uint8_t {
     Graceful = 0,  // SST_GRACEFULL — finish current action before stopping
     Normal   = 1,  // SST_NORMAL
@@ -14,7 +13,6 @@ enum class ShutdownSpeed : uint8_t {
 };
 
 // ── Pattern 2: BranchType ─────────────────────────────────────────────────────
-// CATHODE BEHAVIOR_TREE_BRANCH_TYPE analog.
 // Stored in BTNode::data (lower byte) for Branch nodes — purely semantic/debug.
 // The BT VM does not change behaviour based on BranchType; the type names the gate
 // so profiling/debugging can identify which interrupt is active.
@@ -53,20 +51,20 @@ enum class BTNodeType : uint8_t {
     Inverter,
     Repeat,
     Wait,
-    // M21 — CATHODE LegendPlugin analogs
+    // M21 — Extended AI node types
     Branch,         // persistent interrupt: re-checks nd.condition every tick before child
     TimerStart,     // leaf: as->timers[slot] = nowMs + duration_ms
     TimerCheck,     // leaf condition: expired? clears timer on fire
     FlagCheck,      // leaf condition: as->lcflags.test(bit_idx); nd.flags=1 → check clear
     FlagSet,        // leaf action: set(nd.flags=0) or clear(nd.flags=1) bit at nd.data
     SenseCheck,     // leaf condition: activation[idx] >= threshold
-    // CATHODE adaptations (Patterns 1, 3, 6)
+    // AI adaptations (Patterns 1, 3, 6)
     MotivationCheck,// leaf condition: as->motivation == (MotivationType)data
     SetMotivation,  // leaf action: as->motivation = (MotivationType)data → Success
     Reference,      // delegates tick to another BehaviorTree* stored in _padding
     GaugeCheck,     // leaf condition: as->gauges.get(type) >= threshold
     GaugeSet,       // leaf action: as->gauges.set(type, value) → Success
-    // ── CATHODE-11–20 adaptations ──────────────────────────────────────────────
+    // ── Extended AI node types ──────────────────────────────────────────────
     // C11: SequenceStateless — always restarts children from index 0 on re-entry
     SequenceStateless,
     // C13: FrameFlag — single-tick signal; frame_flags cleared each logic tick
@@ -190,7 +188,7 @@ public:
     uint16_t addGaugeCheck(GaugeType gauge, float threshold);
     uint16_t addGaugeSet  (GaugeType gauge, float value);
 
-    // ── CATHODE-11–20 factories ────────────────────────────────────────────────
+    // ── Extended AI node types ────────────────────────────────────────────────
     // C11: SequenceStateless — children always re-evaluated from index 0 on entry
     uint16_t addSequenceStateless();
     // C12: TimerStart with OnlyIncrease flag — does not shorten an existing timer

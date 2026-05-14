@@ -345,7 +345,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         int dur = read_int_r(obj, obj_end, "\"duration_ms\"", 1000);
         idx = bt.addWait(static_cast<uint32_t>(dur));
 
-    // ── DecoratorBranch (CATHODE DecoratorBranch) ─────────────────────────────
+    // ── DecoratorBranch ─────────────────────────────
     } else if (strcmp(type_str, "DecoratorBranch") == 0) {
         char cond_str[32] = "", branch_str[32] = "Standard", speed_str[16] = "Graceful";
         read_str_r(obj, obj_end, "\"condition\"",    cond_str,   sizeof(cond_str));
@@ -380,7 +380,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         }
         idx = bt.addAction(act);
 
-    // ── ReferencedBehavior (CATHODE ReferencedBehavior) ───────────────────────
+    // ── ReferencedBehavior ───────────────────────
     } else if (strcmp(type_str, "ReferencedBehavior") == 0) {
         // Deferred resolution: pointer set to nullptr → BT VM returns Failure (safe)
         char tree_name[32] = "";
@@ -389,7 +389,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
             MD_LOG(MD_LOG_INFO, "[BTJsonLoader] ReferencedBehavior '%s' deferred — resolve manually", tree_name);
         idx = bt.addReference(nullptr);
 
-    // ── Timer nodes (CATHODE DecoratorTimer) ──────────────────────────────────
+    // ── Timer nodes ──────────────────────────────────
     } else if (strcmp(type_str, "TimerStart") == 0) {
         char slot_str[32] = "";
         read_str_r(obj, obj_end, "\"timer_slot\"", slot_str, sizeof(slot_str));
@@ -403,7 +403,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         read_str_r(obj, obj_end, "\"timer_slot\"", slot_str, sizeof(slot_str));
         idx = bt.addTimerCheck(parse_timer_slot(slot_str));
 
-    // ── Motivation (CATHODE ConditionHasMotivation / SetMotivation) ───────────
+    // ── Motivation ───────────
     } else if (strcmp(type_str, "MotivationCheck") == 0) {
         char m[32] = "";
         read_str_r(obj, obj_end, "\"motivation\"", m, sizeof(m));
@@ -413,7 +413,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         read_str_r(obj, obj_end, "\"motivation\"", m, sizeof(m));
         idx = bt.addSetMotivation(parse_motivation(m));
 
-    // ── LogicCharacterFlags (CATHODE ConditionLogicCharacterFlags) ────────────
+    // ── LogicCharacterFlags ────────────
     } else if (strcmp(type_str, "FlagCheck") == 0) {
         char f[32] = "";
         read_str_r(obj, obj_end, "\"flag\"", f, sizeof(f));

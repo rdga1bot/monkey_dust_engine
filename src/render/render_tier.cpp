@@ -8,7 +8,7 @@
 #include <cstdlib>
 
 // ── DetectTier ────────────────────────────────────────────────────────────────
-// PCI-ID based classification (CLAUDE_SDL_GPU_PREP_CATHODE.md §I).
+// PCI-ID based classification (CLAUDE_SDL_GPU_PREP_AI.md §I).
 
 RenderTier DetectTier(uint16_t vendor_id, uint16_t device_id, uint32_t vram_mb) {
     if (vendor_id == 0x8086) { // Intel

@@ -104,7 +104,7 @@ uint16_t BehaviorTree::addGaugeSet(GaugeType gauge, float value) {
     return i;
 }
 
-// ── CATHODE-11–20 factories ───────────────────────────────────────────────────
+// ── Extended AI node types ───────────────────────────────────────────────────
 
 // C11
 uint16_t BehaviorTree::addSequenceStateless() {
@@ -451,7 +451,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
-        // ── CATHODE pattern adaptations ───────────────────────────────────────
+        // ── AI behavior patterns adaptations ───────────────────────────────────────
 
         // Pattern 1: check current motivation matches expected
         case BTNodeType::MotivationCheck: {
@@ -502,7 +502,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
-        // ── CATHODE-11–20 ─────────────────────────────────────────────────────
+        // ── AI-11–20 ─────────────────────────────────────────────────────
 
         // C11: SequenceStateless — always restarts from child 0 on re-entry
         case BTNodeType::SequenceStateless:

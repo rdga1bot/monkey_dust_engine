@@ -3,7 +3,7 @@
 #include <cstdint>
 
 // ── Pattern 1: MotivationType ─────────────────────────────────────────────────
-// CATHODE MOTIVATION_TYPE analog — determines which BT branch is active.
+// determines which BT branch is active.
 // DirectorSystem/FlowGraph write this; BT MotivationCheck nodes read it.
 enum class MotivationType : uint8_t {
     None           =  0,
@@ -24,7 +24,7 @@ enum class MotivationType : uint8_t {
 };
 
 // ── Pattern 5: AgentTimerSlot ─────────────────────────────────────────────────
-// CATHODE LOGIC_CHARACTER_TIMER_TYPE analog — 26 named per-agent timer slots.
+// 26 named per-agent timer slots.
 // BT TimerStart/TimerCheck nodes index by slot enum cast to uint8_t.
 enum class AgentTimerSlot : uint8_t {
     SuspectTargetResponse =  0,
@@ -58,7 +58,7 @@ enum class AgentTimerSlot : uint8_t {
 static constexpr int MAX_AGENT_TIMERS = static_cast<int>(AgentTimerSlot::COUNT);  // 26
 
 // ── Pattern 4: LogicCharacterFlags ───────────────────────────────────────────
-// CATHODE LOGIC_CHARACTER_FLAGS analog — 40-bit flat bitmask per agent.
+// 40-bit flat bitmask per agent.
 // Index by lcf::* constants (uint8_t bit position 0-63).
 // Replaces the old uint32_t flags field. O(1) test/set/clear, trivially serializable.
 namespace lcf {
@@ -113,7 +113,7 @@ struct LogicCharacterFlags {
 };
 
 // ── Pattern 6: AgentGauges ────────────────────────────────────────────────────
-// CATHODE RETREAT_GAUGE / STUN_DAMAGE_GAUGE analog — float [0..1] per agent.
+// float [0..1] per agent.
 // GaugeCheck BT node fires when val >= threshold; GaugeSet resets to 0.
 enum class GaugeType : uint8_t { Retreat = 0, StunDamage = 1, COUNT };
 static constexpr int MAX_AGENT_GAUGES = static_cast<int>(GaugeType::COUNT);
@@ -126,7 +126,7 @@ struct AgentGauges {
 };
 
 // ── Pattern 8: EntityStateFlag ────────────────────────────────────────────────
-// CATHODE EntityState bitmask analog — 23 lifecycle flags per entity.
+// 23 lifecycle flags per entity.
 // entity_state field in AgentState stores the current OR of active flags.
 enum class EntityStateFlag : uint32_t {
     None         = 0x000000,
@@ -159,7 +159,7 @@ inline bool esf_test(uint32_t state, EntityStateFlag f) noexcept {
 }
 
 // ── C15: AwarenessState ───────────────────────────────────────────────────────
-// CATHODE DecoratorAwarenessState analog — cognitive state (knows where threat is?).
+// cognitive state (knows where threat is?).
 // BT AwarenessCheck node gates branches by exact state equality.
 // DirectorSystem writes; BT reads.
 enum class AwarenessState : uint8_t {
@@ -173,7 +173,7 @@ enum class AwarenessState : uint8_t {
 };
 
 // ── C16: AlertnessState ───────────────────────────────────────────────────────
-// CATHODE ConditionHasAlertnessState analog — behavioural alertness level.
+// behavioural alertness level.
 // Orthogonal to AwarenessState: Android can be ALERT but not Aware.
 // DirectorSystem/damage handler writes; BT reads.
 enum class AlertnessState : uint8_t {
@@ -184,7 +184,7 @@ enum class AlertnessState : uint8_t {
 };
 
 // ── C17: NpcMood ──────────────────────────────────────────────────────────────
-// CATHODE DecoratorMood / MoodSet analog — affective state driving animation blending.
+// affective state driving animation blending.
 // DirectorSystem / FlowGraph writes; BT MoodCheck gates branches; AnimSystem reads.
 enum class NpcMood : uint8_t {
     Neutral    = 0,
@@ -196,7 +196,7 @@ enum class NpcMood : uint8_t {
 };
 
 // ── C19: WithdrawState ────────────────────────────────────────────────────────
-// CATHODE ActionSetWithdrawState / ConditionWithdrawState analog — 3-stage retreat FSM.
+// 3-stage retreat FSM.
 // Prevents attack continuation after cinematic/script hand-off.
 // Invariant: actionMeleeAttack must call SetWithdraw(NotWithdrawing) before attacking.
 enum class WithdrawState : uint8_t {
@@ -206,7 +206,7 @@ enum class WithdrawState : uint8_t {
 };
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────
-// CATHODE EntityInterface analog: typed parameter slot keyed by FNV-1a hash.
+// typed parameter slot keyed by FNV-1a hash.
 // type: 0=bool  1=int  2=float  3=vec3  4=enum
 struct BlackboardEntry {
     uint32_t key;   // md::fnv1a("field_name") — compile-time or runtime
@@ -228,14 +228,14 @@ static_assert(sizeof(BlackboardEntry) == 20, "BlackboardEntry must be 20 bytes")
 // timers:        absolute deadline in game-ms; 0 = inactive. Indexed by AgentTimerSlot.
 // lcflags:       Pattern 4 — 40-bit LogicCharacterFlags bitmask (replaces old uint32 flags).
 // frame_flags:   C13 — single-tick signal bits between BT branches; cleared each logic tick.
-// motivation:    Pattern 1 — current CATHODE-style motivation; BT MotivationCheck reads this.
+// motivation:    Pattern 1 — current motivation; BT MotivationCheck reads this.
 // entity_state:  Pattern 8 — EntityStateFlag lifecycle bitmask.
 // gauges:        Pattern 6 — retreat/stun float gauges [0..1].
 // awareness:     C15 — cognitive state (Unaware→Aware); DirectorSystem writes.
 // alertness:     C16 — behavioural alertness (Relaxed→Fleeing); damage handler writes.
 // mood:          C17 — affective state for anim blending; DirectorSystem/FlowGraph writes.
 // withdraw_state:C19 — 3-stage retreat FSM; clears to NotWithdrawing before melee attack.
-// bb:            CATHODE-style blackboard; MAX_BB_ENTRIES=24.
+// bb:            blackboard; MAX_BB_ENTRIES=24.
 static constexpr int MAX_BB_ENTRIES = 24;
 
 struct AgentState {

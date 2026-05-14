@@ -2,7 +2,7 @@
 #include <cstdint>
 
 // ── ProceduralModulator ───────────────────────────────────────────────────────
-// CATHODE FLOAT_MODULATE_RANDOM analog: sinusoidal float modulation.
+// sinusoidal float modulation.
 // POD — store directly in NPC data or AgentBlackboard via bb_set_float.
 //
 // Usage: float val = ProceduralModulator::Eval(mod, now_s);

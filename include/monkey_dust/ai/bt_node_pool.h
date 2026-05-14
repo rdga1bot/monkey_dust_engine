@@ -5,7 +5,7 @@
 
 // ── BTNodePool ────────────────────────────────────────────────────────────────
 // Cache-aligned bump allocator for BehaviorTree template objects.
-// Mirrors CATHODE BlockAllocator: allocation from 4KB-aligned blocks,
+// Mirrors AI BlockAllocator: allocation from 4KB-aligned blocks,
 // O(1) Reset (resets used counters without touching allocations).
 //
 // Primary use: load-time allocation of BT template instances.

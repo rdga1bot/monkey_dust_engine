@@ -24,7 +24,7 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, and a custom stackless 
 
 ### AI — Behavior Tree VM
 - Stackless BT VM (`BehaviorTree.h`) — 30+ node types, zero heap allocations
-- CATHODE patterns (C1–C20) — MotivationType · LogicCharacterFlags · AgentTimerSlot · GaugeType · AwarenessState · AlertnessState · NpcMood · NpcRole · WithdrawState · EntityStateFlag
+- Extended AI patterns (C1–C20) — MotivationType · LogicCharacterFlags · AgentTimerSlot · GaugeType · AwarenessState · AlertnessState · NpcMood · NpcRole · WithdrawState · EntityStateFlag
 - BTNodePool — flat 32 KB arena bump-allocator
 - BTSystem — 3-phase tick (frame\_flags reset → hint expiry → tree tick)
 - BTJsonLoader — recursive strstr parser; 11 enum tables; no external JSON library
@@ -95,7 +95,7 @@ ninja -C build monkey_dust_tests
 ./build/tests/monkey_dust_tests          # 131 tests, 6 suites
 ```
 
-Suites: FNV, AgentBlackboard, FlowGraph, DirectorSystem, PowerSlotManager, NpcConfig, HotReload, FlowVar, CATHODE-1–10/11–20, BT VM
+Suites: FNV, AgentBlackboard, FlowGraph, DirectorSystem, PowerSlotManager, NpcConfig, HotReload, FlowVar, AIPatterns-1–20, BT VM
 
 ---
 

@@ -76,6 +76,7 @@ uint32_t TransformSoA::Alloc(entt::entity e, float x, float z, uint8_t faction_i
     faction[slot] = faction_id;
     slot_to_entity[slot] = e;
     MarkFactionDirty(slot);
+    MarkTransformDirty(slot);
     return slot;
 }
 
@@ -112,10 +113,15 @@ void TransformSoA::FlushAoStoSoA(entt::registry& reg) {
                         tr.slot >= (uint32_t)TransformSoA::Get().active_count))
             return;
         auto& s = TransformSoA::Get();
+        // Skip SoA write + dirty mark if position unchanged (static NPCs).
+        if (s.px[tr.slot]    == tr.x   && s.pz[tr.slot] == tr.z &&
+            s.py[tr.slot]    == tr.y   && s.rot_y[tr.slot] == tr.rot_y)
+            return;
         s.px[tr.slot]    = tr.x;
         s.pz[tr.slot]    = tr.z;
         s.py[tr.slot]    = tr.y;
         s.rot_y[tr.slot] = tr.rot_y;
+        s.MarkTransformDirty(tr.slot);
     });
 }
 
@@ -269,11 +275,19 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
     if (!cmd || active_count <= 0) return;
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
 
-    // Upload xzyr transform data
-    if (sdl_xzyr_stg_ && sdl_xzyr_buf_) {
+    // Upload xzyr — only if dirty, and only the changed slot range.
+    if (xzyr_dirty_ && sdl_xzyr_stg_ && sdl_xzyr_buf_) {
+        uint32_t lo = xzyr_dirty_min_;
+        uint32_t hi = xzyr_dirty_max_;
+        if (hi >= (uint32_t)active_count) hi = (uint32_t)active_count - 1;
+        if (lo > hi) lo = hi;
+        uint32_t cnt     = hi - lo + 1;
+        uint32_t byte_off = lo * 4 * (uint32_t)sizeof(float);
+        uint32_t byte_sz  = cnt * 4 * (uint32_t)sizeof(float);
+
         float* dst = (float*)SDL_MapGPUTransferBuffer(dev, sdl_xzyr_stg_, true);
         if (dst) {
-            for (int i = 0; i < active_count; ++i) {
+            for (uint32_t i = lo; i <= hi; ++i) {
                 dst[i*4+0] = px[i];
                 dst[i*4+1] = pz[i];
                 dst[i*4+2] = py[i];
@@ -284,11 +298,14 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
         SDL_GPUCopyPass* cpass = SDL_BeginGPUCopyPass(cmd);
         SDL_GPUTransferBufferLocation src = {};
         src.transfer_buffer = sdl_xzyr_stg_;
+        src.offset           = byte_off;
         SDL_GPUBufferRegion dst_r = {};
         dst_r.buffer = sdl_xzyr_buf_;
-        dst_r.size   = (Uint32)(active_count * 4 * sizeof(float));
-        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, true);
+        dst_r.offset = byte_off;
+        dst_r.size   = byte_sz;
+        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, false);
         SDL_EndGPUCopyPass(cpass);
+        xzyr_dirty_ = false;
     }
 
     // Upload faction data

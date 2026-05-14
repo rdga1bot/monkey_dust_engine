@@ -260,7 +260,7 @@ bool GpuPipeline::Create(const Desc& desc) {
                                      ? SDL_GPU_CULLMODE_BACK
                                      : SDL_GPU_CULLMODE_NONE;
     ci.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-    ci.depth_stencil_state.compare_op         = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+    ci.depth_stencil_state.compare_op         = desc.raster.depth_compare_op;
     ci.depth_stencil_state.enable_depth_test  = desc.raster.depth_test  ? true : false;
     ci.depth_stencil_state.enable_depth_write = desc.raster.depth_write ? true : false;
     ci.target_info = target_info;
@@ -511,7 +511,7 @@ void GpuRenderPass::BeginColor(const ColorDesc& desc) {
                 SDL_GPUDepthStencilTargetInfo depth_info = {};
                 depth_info.texture          = desc.depth->SDLTexture();
                 depth_info.clear_depth      = desc.clear_depth;
-                depth_info.load_op          = SDL_GPU_LOADOP_CLEAR;
+                depth_info.load_op          = desc.load_depth ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
                 depth_info.store_op         = SDL_GPU_STOREOP_STORE;
                 depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
                 depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;

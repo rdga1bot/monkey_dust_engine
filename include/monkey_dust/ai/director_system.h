@@ -55,4 +55,8 @@ private:
     int           profile_idx_  = 0;
     int           profile_count_= 0;
     DirectorProfile profiles_[MAX_PROFILES] = {};
+
+    // Last-broadcast values: skip AgentState iteration when nothing changed.
+    float         last_bc_menace_ = -1.f;
+    DirectorStage last_bc_stage_  = DirectorStage::Unaware;
 };

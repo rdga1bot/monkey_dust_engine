@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <cstring>
 #include <atomic>
+#include <thread>
+#include <chrono>
 #ifdef __x86_64__
 #  include <immintrin.h>  // _mm_pause
 #endif
@@ -90,14 +92,22 @@ private:
 
     void AcquireLock() const {
         bool expected = false;
+        int  spins    = 0;
         while (!lock_.compare_exchange_weak(
                    expected, true,
                    std::memory_order_acquire,
                    std::memory_order_relaxed)) {
             expected = false;
+            ++spins;
+            if (spins <= 16) {
 #ifdef __x86_64__
-            _mm_pause(); // yield HT sibling core during contention
+                _mm_pause();
 #endif
+            } else if (spins <= 64) {
+                std::this_thread::yield();
+            } else {
+                std::this_thread::sleep_for(std::chrono::microseconds(50));
+            }
         }
     }
     void ReleaseLock() const {

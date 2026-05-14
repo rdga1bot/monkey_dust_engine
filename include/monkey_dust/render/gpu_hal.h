@@ -77,6 +77,11 @@ struct GpuRasterState {
     bool  depth_write          = true;
     bool  cull_back            = true;
     bool  point_size           = false; // GL_PROGRAM_POINT_SIZE
+#ifdef MD_SDL_GPU
+    // Depth compare function. Default LESS_OR_EQUAL matches the prepass write.
+    // Set to EQUAL for main pass after an Early-Z prepass (depth_write=false).
+    SDL_GPUCompareOp depth_compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+#endif
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -394,6 +399,7 @@ public:
         float            clear[4]    = {0.f, 0.f, 0.f, 1.f};
         float            clear_depth = 1.0f;
         GpuDepthTexture* depth       = nullptr; // optional depth attachment
+        bool             load_depth  = false;   // true = LOAD (e.g. after Early-Z prepass)
 #ifdef MD_SDL_GPU
         // SDL_GPU: frame command buffer acquired from GpuDevice::AcquireCommandBuffer().
         SDL_GPUCommandBuffer* cmd = nullptr;

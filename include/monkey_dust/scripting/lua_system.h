@@ -12,7 +12,7 @@ extern "C" {
 // Engine provides: Init/Shutdown, CallAction, RegisterFunction.
 // Game registers its component-aware C functions via RegisterFunction().
 // Sandbox guarantees:
-//   - Instruction limit:   10 000 instructions/call (LUA_MASKCOUNT hook)
+//   - Instruction limit:   50 000 instructions/call (LUA_MASKCOUNT hook)
 //   - Memory limit:        8 MB heap for the entire Lua state
 //   - Blocked libraries:   io, os, package, debug, load, loadfile, dofile
 static constexpr size_t LUA_MEM_LIMIT_BYTES = 8u * 1024u * 1024u; // 8 MB
@@ -32,6 +32,9 @@ public:
 
     // Calls named Lua function(entity_id) → BTStatus
     BTStatus CallAction(const char* func_name, entt::entity e);
+
+    // Execute arbitrary Lua source; returns false on parse/runtime error. For tests only.
+    bool Exec(const char* lua_code);
 
     bool IsReady() const { return L_ != nullptr; }
 

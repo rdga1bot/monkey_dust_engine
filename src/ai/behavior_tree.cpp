@@ -1,6 +1,7 @@
 #include <monkey_dust/ai/behavior_tree.h>
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/components/agent_state.h>
+#include <monkey_dust/components/bt_components.h>
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/components/npc_memory.h>
 #include <cstring>
@@ -81,11 +82,19 @@ uint16_t BehaviorTree::addSetMotivation(MotivationType mot) {
 }
 
 // ── Pattern 3: Reference ──────────────────────────────────────────────────────
-uint16_t BehaviorTree::addReference(BehaviorTree* other) {
+uint16_t BehaviorTree::addReference(BehaviorTree* other, uint32_t name_hash) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::Reference);
     m_nodes[i]._padding = other;
+    m_nodes[i].data     = name_hash;
     return i;
+}
+
+void BehaviorTree::PatchReference(uint32_t name_hash, BehaviorTree* target) noexcept {
+    for (uint16_t i = 0; i < m_nodeCount; ++i) {
+        if (m_nodes[i].type == BTNodeType::Reference && m_nodes[i].data == name_hash)
+            m_nodes[i]._padding = target;
+    }
 }
 
 // ── Pattern 6: GaugeCheck / GaugeSet ─────────────────────────────────────────
@@ -217,6 +226,71 @@ uint16_t BehaviorTree::addMemoryCheck(uint8_t mode) {
 uint16_t BehaviorTree::addMemoryForget() {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::MemoryForget);
+    return i;
+}
+
+uint16_t BehaviorTree::addAreaSweepCheck(AreaSweepType type) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::AreaSweepCheck);
+    m_nodes[i].data = static_cast<uint32_t>(type);
+    return i;
+}
+
+uint16_t BehaviorTree::addDecoratorPercentage(uint8_t pct) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorPercentage);
+    m_nodes[i].data = pct;
+    return i;
+}
+
+uint16_t BehaviorTree::addSelectorPercentage() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SelectorPercentage);
+    return i;
+}
+
+uint16_t BehaviorTree::addSenseTimeCheck(uint8_t sense_idx, uint32_t max_elapsed_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SenseTimeCheck);
+    m_nodes[i].data = (static_cast<uint32_t>(sense_idx) << 24) | (max_elapsed_ms & 0x00FFFFFFu);
+    return i;
+}
+
+uint16_t BehaviorTree::addActionSetDead() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionSetDead);
+    return i;
+}
+
+uint16_t BehaviorTree::addActionDespawn() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionDespawn);
+    return i;
+}
+
+// CATHODE_deepseek: AggroLevelCheck / SetAggroLevel / NpcCombatStateCheck / SetNpcCombatState
+uint16_t BehaviorTree::addAggroLevelCheck(NpcAggroLevel level) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::AggroLevelCheck);
+    m_nodes[i].data = static_cast<uint32_t>(level);
+    return i;
+}
+uint16_t BehaviorTree::addSetAggroLevel(NpcAggroLevel level) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SetAggroLevel);
+    m_nodes[i].data = static_cast<uint32_t>(level);
+    return i;
+}
+uint16_t BehaviorTree::addNpcCombatStateCheck(NpcCombatState state) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::NpcCombatStateCheck);
+    m_nodes[i].data = static_cast<uint32_t>(state);
+    return i;
+}
+uint16_t BehaviorTree::addSetNpcCombatState(NpcCombatState state) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SetNpcCombatState);
+    m_nodes[i].data = static_cast<uint32_t>(state);
     return i;
 }
 
@@ -621,6 +695,13 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         case BTNodeType::RoleClaim: {
             auto     role     = static_cast<NpcRole>(nd.data & 0xFFu);
             uint32_t query_id = nd.data >> 8;
+            // Prefer dynamic query_id from DirectorHintComponent when the hint
+            // targets this same role — scopes the claim to the Director's session.
+            if (const DirectorHintComponent* hint =
+                    Registry::Get().try_get<DirectorHintComponent>(e)) {
+                if (hint->role_pending && hint->suggested_role == role)
+                    query_id = hint->query_id;
+            }
             result = RoleRegistry::Get().claim(role, query_id, e)
                      ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
@@ -661,6 +742,102 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         case BTNodeType::MemoryForget: {
             NpcMemoryComponent* mem = Registry::Get().try_get<NpcMemoryComponent>(e);
             if (mem) mem->ClearAll();
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::AreaSweepCheck: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (static_cast<uint8_t>(as->area_sweep_type) == static_cast<uint8_t>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // CATHODE_gemini: DecoratorPercentage — run child with data% probability
+        case BTNodeType::DecoratorPercentage:
+            if (result == BTStatus::Running) {
+                // LCG seeded by entity XOR frame_index (same pattern as WeightedSelector)
+                uint32_t rng = static_cast<uint32_t>(static_cast<uint64_t>(e)) ^ ctx.frame_index;
+                rng = rng * 1664525u + 1013904223u;
+                uint8_t pct = static_cast<uint8_t>(nd.data & 0xFFu);
+                if ((rng % 100u) < pct && nd.childCount > 0) {
+                    pc = m_children[nd.childStart];
+                    result = BTStatus::Running; continue;
+                }
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            pc = nd.parent; continue;  // propagate child result as-is
+
+        // CATHODE_gemini: SelectorPercentage — pick one random child, return its result
+        case BTNodeType::SelectorPercentage:
+            if (result == BTStatus::Success || result == BTStatus::Failure) {
+                pc = nd.parent; continue;  // propagate child result
+            }
+            {
+                if (nd.childCount == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
+                uint32_t rng = static_cast<uint32_t>(static_cast<uint64_t>(e)) ^ ctx.frame_index;
+                rng = rng * 1664525u + 1013904223u;
+                uint16_t chosen = static_cast<uint16_t>(rng % nd.childCount);
+                pc = m_children[nd.childStart + chosen];
+                result = BTStatus::Running; continue;
+            }
+
+        // CATHODE_gemini: SenseTimeCheck — Success if sense was triggered recently
+        case BTNodeType::SenseTimeCheck: {
+            auto* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint8_t  sense_idx      = static_cast<uint8_t>((nd.data >> 24) & 0xFFu);
+            uint32_t max_elapsed_ms = nd.data & 0x00FFFFFFu;
+            if (sense_idx >= 2u) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint32_t elapsed = nowMs - sc->last_activated_ms[sense_idx];
+            result = (elapsed <= max_elapsed_ms) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // CATHODE_gemini: ActionSetDead / ActionDespawn — deferred lifecycle via lcf flags
+        case BTNodeType::ActionSetDead: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            as->lcflags.set(lcf::IS_DEAD);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionDespawn: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            as->lcflags.set(lcf::SHOULD_DESPAWN);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        // CATHODE_deepseek: AggroLevelCheck / SetAggroLevel
+        case BTNodeType::AggroLevelCheck: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->aggro_level == static_cast<NpcAggroLevel>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::SetAggroLevel: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->aggro_level = static_cast<NpcAggroLevel>(nd.data);
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // CATHODE_deepseek: NpcCombatStateCheck / SetNpcCombatState
+        case BTNodeType::NpcCombatStateCheck: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->combat_state == static_cast<NpcCombatState>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::SetNpcCombatState: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->combat_state = static_cast<NpcCombatState>(nd.data);
             result = BTStatus::Success;
             pc = nd.parent; continue;
         }

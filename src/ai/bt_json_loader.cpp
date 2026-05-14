@@ -1,23 +1,28 @@
 #include <monkey_dust/ai/bt_json_loader.h>
 #include <monkey_dust/ai/bt_action_registry.h>
+#include <monkey_dust/ai/fnv.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/md_fs.h>
 #include <cstring>
 
+// Maximum JSON nesting depth to prevent stack overflow on hostile/malformed input.
+static constexpr int MAX_JSON_DEPTH = 32;
+
 // ── String helpers ────────────────────────────────────────────────────────────
 // All helpers operate on [start, end) slices — no null termination required.
 
-static const char* find_object_end(const char* p) {
-    // p points to '{'  — returns pointer to matching '}'
+// p points to '{' — returns pointer to matching '}', or nullptr if not found
+// before end or if end is reached without closure.
+static const char* find_object_end(const char* p, const char* end) {
     int  depth  = 0;
     bool in_str = false;
-    while (*p) {
+    while (p < end && *p) {
         if (!in_str) {
             if      (*p == '{') ++depth;
             else if (*p == '}') { if (--depth == 0) return p; }
             else if (*p == '"') in_str = true;
         } else {
-            if (*p == '\\' && *(p + 1)) ++p;  // skip escaped char
+            if (*p == '\\' && (p + 1) < end) ++p;  // skip escaped char
             else if (*p == '"') in_str = false;
         }
         ++p;
@@ -306,6 +311,40 @@ static WithdrawState parse_withdraw(const char* s) {
     return WithdrawState::NotWithdrawing;
 }
 
+static AreaSweepType parse_area_sweep_type(const char* s) {
+    if (strcmp(s, "FixedRadiusAroundPosition") == 0) return AreaSweepType::FixedRadiusAroundPosition;
+    if (strcmp(s, "AroundTarget")              == 0) return AreaSweepType::AroundTarget;
+    return AreaSweepType::InAndOutBetweenTargetAndPosition;
+}
+
+static NpcAggroLevel parse_aggro_level(const char* s) {
+    if (strcmp(s, "StandDown")     == 0) return NpcAggroLevel::StandDown;
+    if (strcmp(s, "Interrogative") == 0) return NpcAggroLevel::Interrogative;
+    if (strcmp(s, "Warning")       == 0) return NpcAggroLevel::Warning;
+    if (strcmp(s, "LastChance")    == 0) return NpcAggroLevel::LastChance;
+    if (strcmp(s, "NoLimit")       == 0) return NpcAggroLevel::NoLimit;
+    return NpcAggroLevel::None;
+}
+
+static NpcCombatState parse_npc_combat_state(const char* s) {
+    if (strcmp(s, "Warning")                 == 0) return NpcCombatState::Warning;
+    if (strcmp(s, "Attacking")               == 0) return NpcCombatState::Attacking;
+    if (strcmp(s, "ReachedObjective")        == 0) return NpcCombatState::ReachedObjective;
+    if (strcmp(s, "EnteredCover")            == 0) return NpcCombatState::EnteredCover;
+    if (strcmp(s, "LeaveCover")              == 0) return NpcCombatState::LeaveCover;
+    if (strcmp(s, "StartRetreating")         == 0) return NpcCombatState::StartRetreating;
+    if (strcmp(s, "ReachedRetreat")          == 0) return NpcCombatState::ReachedRetreat;
+    if (strcmp(s, "LostSense")               == 0) return NpcCombatState::LostSense;
+    if (strcmp(s, "SuspiciousWarning")       == 0) return NpcCombatState::SuspiciousWarning;
+    if (strcmp(s, "SuspiciousWarningFailed") == 0) return NpcCombatState::SuspiciousWarningFailed;
+    if (strcmp(s, "StartAdvance")            == 0) return NpcCombatState::StartAdvance;
+    if (strcmp(s, "DoneAdvance")             == 0) return NpcCombatState::DoneAdvance;
+    if (strcmp(s, "Blocking")                == 0) return NpcCombatState::Blocking;
+    if (strcmp(s, "HeardBackstageAlien")     == 0) return NpcCombatState::HeardBackstageAlien;
+    if (strcmp(s, "AlienSighted")            == 0) return NpcCombatState::AlienSighted;
+    return NpcCombatState::None;
+}
+
 // ── Fallback functions for unregistered actions/conditions ────────────────────
 static bool         s_cond_false  (md::EngineContext&, entt::entity) { return false; }
 static BTStatus     s_act_failure (md::EngineContext&, entt::entity) { return BTStatus::Failure; }
@@ -314,7 +353,11 @@ static BTStatus     s_act_failure (md::EngineContext&, entt::entity) { return BT
 // obj:     points AFTER '{' of the node object
 // obj_end: points TO   '}' of the node object
 // Returns the allocated node index, or BehaviorTree::INVALID on error.
-static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_end) {
+static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_end, int depth = 0) {
+    if (depth > MAX_JSON_DEPTH) {
+        MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] max nesting depth %d exceeded — aborting subtree", MAX_JSON_DEPTH);
+        return BehaviorTree::INVALID;
+    }
     char type_str[32] = "";
     read_str_r(obj, obj_end, "\"type\"", type_str, sizeof(type_str));
     if (!type_str[0]) {
@@ -382,12 +425,14 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
 
     // ── ReferencedBehavior ───────────────────────
     } else if (strcmp(type_str, "ReferencedBehavior") == 0) {
-        // Deferred resolution: pointer set to nullptr → BT VM returns Failure (safe)
+        // Deferred resolution: store FNV hash in data; BTLoader::ResolveRefs()
+        // patches the pointer after all templates are loaded. Until then → Failure.
         char tree_name[32] = "";
         read_str_r(obj, obj_end, "\"tree\"", tree_name, sizeof(tree_name));
+        uint32_t h = tree_name[0] ? md::fnv1a_rt(tree_name) : 0u;
         if (tree_name[0])
-            MD_LOG(MD_LOG_INFO, "[BTJsonLoader] ReferencedBehavior '%s' deferred — resolve manually", tree_name);
-        idx = bt.addReference(nullptr);
+            MD_LOG(MD_LOG_INFO, "[BTJsonLoader] ReferencedBehavior '%s' (hash=0x%08x) deferred", tree_name, h);
+        idx = bt.addReference(nullptr, h);
 
     // ── Timer nodes ──────────────────────────────────
     } else if (strcmp(type_str, "TimerStart") == 0) {
@@ -509,6 +554,54 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
     } else if (strcmp(type_str, "MemoryForget") == 0) {
         idx = bt.addMemoryForget();
 
+    } else if (strcmp(type_str, "AreaSweepCheck") == 0) {
+        char s[64] = "InAndOutBetweenTargetAndPosition";
+        read_str_r(obj, obj_end, "\"sweep_type\"", s, sizeof(s));
+        idx = bt.addAreaSweepCheck(parse_area_sweep_type(s));
+
+    } else if (strcmp(type_str, "DecoratorPercentage") == 0) {
+        int pct = read_int_r(obj, obj_end, "\"percentage\"", 50);
+        if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+        idx = bt.addDecoratorPercentage(static_cast<uint8_t>(pct));
+
+    } else if (strcmp(type_str, "SelectorPercentage") == 0) {
+        idx = bt.addSelectorPercentage();
+
+    } else if (strcmp(type_str, "SenseTimeCheck") == 0) {
+        int sense_idx      = read_int_r(obj, obj_end, "\"sense\"",          0);
+        int max_elapsed_ms = read_int_r(obj, obj_end, "\"max_elapsed_ms\"", 3000);
+        if (sense_idx < 0) sense_idx = 0;
+        if (max_elapsed_ms < 0) max_elapsed_ms = 0;
+        idx = bt.addSenseTimeCheck(static_cast<uint8_t>(sense_idx),
+                                   static_cast<uint32_t>(max_elapsed_ms));
+
+    } else if (strcmp(type_str, "ActionSetDead") == 0) {
+        idx = bt.addActionSetDead();
+
+    } else if (strcmp(type_str, "ActionDespawn") == 0) {
+        idx = bt.addActionDespawn();
+
+    // ── CATHODE_deepseek ──────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "AggroLevelCheck") == 0) {
+        char l[32] = "None";
+        read_str_r(obj, obj_end, "\"level\"", l, sizeof(l));
+        idx = bt.addAggroLevelCheck(parse_aggro_level(l));
+
+    } else if (strcmp(type_str, "SetAggroLevel") == 0) {
+        char l[32] = "None";
+        read_str_r(obj, obj_end, "\"level\"", l, sizeof(l));
+        idx = bt.addSetAggroLevel(parse_aggro_level(l));
+
+    } else if (strcmp(type_str, "NpcCombatStateCheck") == 0) {
+        char s[32] = "None";
+        read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
+        idx = bt.addNpcCombatStateCheck(parse_npc_combat_state(s));
+
+    } else if (strcmp(type_str, "SetNpcCombatState") == 0) {
+        char s[32] = "None";
+        read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
+        idx = bt.addSetNpcCombatState(parse_npc_combat_state(s));
+
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);
         return BehaviorTree::INVALID;
@@ -537,9 +630,9 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
                                      || *cp == ',')) ++cp;
                 if (cp >= obj_end || *cp == ']') break;
                 if (*cp == '{') {
-                    const char* child_end = find_object_end(cp);
+                    const char* child_end = find_object_end(cp, obj_end);
                     if (!child_end) break;
-                    uint16_t ci = parse_node(bt, cp + 1, child_end);
+                    uint16_t ci = parse_node(bt, cp + 1, child_end, depth + 1);
                     if (ci != BehaviorTree::INVALID)
                         bt.addChild(idx, ci);
                     cp = child_end + 1;
@@ -565,7 +658,17 @@ bool BTJsonLoader::ReadName(const char* json, char* out_name, int name_max) {
 
 bool BTJsonLoader::LoadFromString(BehaviorTree& bt, const char* json) {
     if (!json) return false;
+
+    // Reject inputs with embedded control characters (NUL, STX, etc.)
     const char* end = json + strlen(json);
+    for (const char* q = json; q < end; ++q) {
+        unsigned char c = static_cast<unsigned char>(*q);
+        if (c < 0x09 || (c > 0x0D && c < 0x20)) {
+            MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] control character 0x%02x at offset %zu — rejected",
+                   c, static_cast<size_t>(q - json));
+            return false;
+        }
+    }
 
     // Find "root": { ... }
     const char* kw   = "\"root\"";
@@ -579,7 +682,7 @@ bool BTJsonLoader::LoadFromString(BehaviorTree& bt, const char* json) {
                 MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] 'root' object not found");
                 return false;
             }
-            const char* root_end = find_object_end(v);
+            const char* root_end = find_object_end(v, end);
             if (!root_end) {
                 MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] 'root' object not closed");
                 return false;

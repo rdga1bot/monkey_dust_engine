@@ -1,4 +1,13 @@
 #include <monkey_dust/ai/bt_system.h>
+#include <monkey_dust/world/world_transform.h>
+#include <monkey_dust/world/transform_soa.h>
+
+// BT tick-rate LOD thresholds (squared metres).
+// Near  < 20m  → always tick at 10 TPS
+// Mid  20-60m  → tick every 2nd logic tick (5 TPS)
+// Far   > 60m  → tick every 5th logic tick (2 TPS)
+static constexpr float BT_LOD_NEAR_SQ = 20.0f * 20.0f;
+static constexpr float BT_LOD_FAR_SQ  = 60.0f * 60.0f;
 
 void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs) {
     // Phase 1: clear frame_flags + expire stale DirectorHints
@@ -21,10 +30,27 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
         as.frame_flags = 0;
     });
 
-    // Phase 3: tick all active behavior trees
+    // Phase 3: tick active behavior trees with distance-based LOD.
+    // Frame_flags already cleared in phases 1+2 for ALL entities regardless of LOD.
+    const auto& tsoa  = TransformSoA::Get();
+    const uint32_t fi = ctx.frame_index;
     auto bt_view = reg.view<AgentState, BehaviorTreeComponent>();
     bt_view.each([&](entt::entity e, AgentState&, BehaviorTreeComponent& btc) {
         if (!btc.enabled || !btc.tree || !btc.tree->isValid()) return;
+
+        // LOD: read dist_sq from TransformSoA if entity has a valid slot.
+        const auto* wt = reg.try_get<WorldTransform>(e);
+        if (wt && wt->slot < (uint32_t)tsoa.active_count) {
+            float dsq = tsoa.dist_sq[wt->slot];
+            if (dsq > BT_LOD_FAR_SQ) {
+                // Far: distribute across 5 phases via entity id so load is even.
+                if ((entt::to_integral(e) % 5u) != (fi % 5u)) return;
+            } else if (dsq > BT_LOD_NEAR_SQ) {
+                // Mid: every other tick.
+                if ((entt::to_integral(e) % 2u) != (fi % 2u)) return;
+            }
+        }
+
         btc.tree->tick(ctx, e, nowMs);
     });
 }

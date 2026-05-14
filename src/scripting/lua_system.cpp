@@ -68,7 +68,7 @@ bool LuaSystem::Init(const char* scripts_dir) {
     }
 
     lua_register(L_, "md_log", md_log);
-    lua_sethook(L_, hook, LUA_MASKCOUNT, 10000);
+    lua_sethook(L_, hook, LUA_MASKCOUNT, 50000);
 
     if (!scripts_dir || scripts_dir[0] == '\0') return true;
 
@@ -109,7 +109,7 @@ BTStatus LuaSystem::CallAction(const char* func_name, entt::entity e) {
     }
 
     lua_pushinteger(L_, static_cast<lua_Integer>(static_cast<uint32_t>(e)));
-    lua_sethook(L_, hook, LUA_MASKCOUNT, 10000);
+    lua_sethook(L_, hook, LUA_MASKCOUNT, 50000);
 
     if (lua_pcall(L_, 1, 1, 0) != LUA_OK) {
         const char* err = lua_tostring(L_, -1);
@@ -127,4 +127,16 @@ BTStatus LuaSystem::CallAction(const char* func_name, entt::entity e) {
     }
     lua_pop(L_, 1);
     return result;
+}
+
+bool LuaSystem::Exec(const char* lua_code) {
+    if (!L_ || !lua_code) return false;
+    lua_sethook(L_, hook, LUA_MASKCOUNT, 50000);
+    if (luaL_dostring(L_, lua_code) != LUA_OK) {
+        const char* err = lua_tostring(L_, -1);
+        MD_LOG(MD_LOG_WARNING, "[LuaSystem] Exec error: %s", err ? err : "?");
+        lua_pop(L_, 1);
+        return false;
+    }
+    return true;
 }

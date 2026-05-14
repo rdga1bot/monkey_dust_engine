@@ -19,12 +19,13 @@ struct ViewCone {
 // SenseCheck BT node (M21) reads activation[param_a] > param_b threshold.
 // last_known_x/z updated whenever activation crosses threshold_hi.
 struct SenseComponent {
-    uint8_t cone_set_idx;         // index into SenseRegistry::sets[]
-    uint8_t _pad[3];
-    float   activation[2];        // [0]=Visual  [1]=Audio
-    float   threshold_lo;         // activation below → Unaware
-    float   threshold_hi;         // activation above → Full alert
-    float   last_known_x;
-    float   last_known_z;
+    uint8_t  cone_set_idx;            // index into SenseRegistry::sets[]
+    uint8_t  _pad[3];
+    float    activation[2];           // [0]=Visual  [1]=Audio
+    float    threshold_lo;            // activation below → Unaware
+    float    threshold_hi;            // activation above → Full alert
+    float    last_known_x;
+    float    last_known_z;
+    uint32_t last_activated_ms[2];    // timestamp when activation[i] last crossed threshold_hi
 };
-static_assert(sizeof(SenseComponent) == 28, "SenseComponent must be 28 bytes");
+static_assert(sizeof(SenseComponent) == 36, "SenseComponent must be 36 bytes");

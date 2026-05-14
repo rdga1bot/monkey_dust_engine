@@ -83,12 +83,12 @@ private:
     // Flat 32KB arena — 2D array is contiguous, supports allocations that
     // span across block boundaries (sizeof(BehaviorTree) = 4616 > BLOCK_SIZE).
     alignas(64) uint8_t m_data[MAX_BLOCKS][BLOCK_SIZE];
-    uint32_t            m_flat_offset;      // bump pointer into flat arena
-    uint32_t            m_total_allocated;
+    uint32_t            m_flat_offset      = 0;
+    uint32_t            m_total_allocated  = 0;
 
     void*      m_alloc_ptrs [MAX_ALLOCS];
     AllocType  m_alloc_types[MAX_ALLOCS];
-    uint8_t    m_alloc_count;
+    uint8_t    m_alloc_count = 0;  // must be 0 before Reset() in constructor
 
     void* alloc_raw(uint32_t bytes, uint32_t align) noexcept {
         uint8_t* base    = &m_data[0][0];

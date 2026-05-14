@@ -74,7 +74,6 @@ public:
     void     AssignSlot(entt::entity e, uint32_t slot, float x, float z, uint8_t faction_id);
 
     // Dirty-range tracking for faction SSBO.
-    // Faction changes are infrequent; upload only the dirty sub-range.
     void MarkFactionDirty(uint32_t slot) noexcept {
         if (!faction_dirty_) {
             faction_dirty_     = true;
@@ -86,12 +85,29 @@ public:
         if (slot > faction_dirty_max_) faction_dirty_max_ = slot;
     }
 
+    // Dirty-range tracking for xzyr transform SSBO.
+    // FlushAoStoSoA marks slots that actually changed position/rotation.
+    void MarkTransformDirty(uint32_t slot) noexcept {
+        if (!xzyr_dirty_) {
+            xzyr_dirty_     = true;
+            xzyr_dirty_min_ = slot;
+            xzyr_dirty_max_ = slot;
+            return;
+        }
+        if (slot < xzyr_dirty_min_) xzyr_dirty_min_ = slot;
+        if (slot > xzyr_dirty_max_) xzyr_dirty_max_ = slot;
+    }
+
 private:
     TransformSoA() = default;
 
-    bool     faction_dirty_     = true;  // true on first frame → full upload
+    bool     faction_dirty_     = true;
     uint32_t faction_dirty_min_ = 0;
     uint32_t faction_dirty_max_ = 0;
+
+    bool     xzyr_dirty_     = true;  // true on first frame → full upload
+    uint32_t xzyr_dirty_min_ = 0;
+    uint32_t xzyr_dirty_max_ = 0;
 #ifdef MD_SDL_GPU
     SDL_GPUBuffer*         sdl_xzyr_buf_    = nullptr;
     SDL_GPUTransferBuffer* sdl_xzyr_stg_    = nullptr;

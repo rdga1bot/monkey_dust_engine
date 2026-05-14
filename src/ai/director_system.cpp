@@ -151,14 +151,18 @@ void DirectorSystem::Tick(float dt) {
     if (profile_count_ == 0) return;
     const DirectorProfile& pr = profiles_[profile_idx_];
 
-    // 1. Find max visual activation across all sensed entities
+    // 1. Find max visual activation — stop early once max_menaces NPCs found.
     float max_activation = 0.f;
     auto& reg = Registry::Get();
     {
+        const int max_m = pr.max_menaces > 0 ? pr.max_menaces : 1;
+        int found = 0;
         auto view = reg.view<SenseComponent>();
         for (auto [e, sc] : view.each()) {
             if (sc.activation[0] > max_activation)
                 max_activation = sc.activation[0];
+            if (sc.activation[0] > 0.3f && ++found >= max_m)
+                break;  // enough threat sources found — no need to scan further
         }
     }
 
@@ -178,12 +182,19 @@ void DirectorSystem::Tick(float dt) {
     else if (menace_ < 0.75f) stage_ = DirectorStage::Hunting;
     else                       stage_ = DirectorStage::Intense;
 
-    // 4. Broadcast to all AgentBlackboards
-    {
-        auto view = reg.view<AgentState>();
-        for (auto [e, as] : view.each()) {
-            bb_set_float(as, K_MENACE, menace_);
-            bb_set_int  (as, K_STAGE,  static_cast<int32_t>(stage_));
+    // 4. Broadcast to all AgentBlackboards — skip if nothing changed.
+    // Threshold 0.005 avoids per-tick broadcast for tiny float drift.
+    const bool menace_changed = (menace_ - last_bc_menace_) > 0.005f ||
+                                (last_bc_menace_ - menace_) > 0.005f;
+    const bool stage_changed  = stage_ != last_bc_stage_;
+    if (menace_changed || stage_changed) {
+        // Broadcast only to entities that have an AgentBlackboard (cold component).
+        auto view = reg.view<AgentBlackboard>();
+        for (auto [e, bb] : view.each()) {
+            bb_set_float(bb, K_MENACE, menace_);
+            bb_set_int  (bb, K_STAGE,  static_cast<int32_t>(stage_));
         }
+        last_bc_menace_ = menace_;
+        last_bc_stage_  = stage_;
     }
 }

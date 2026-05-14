@@ -102,6 +102,7 @@ namespace lcf {
     static constexpr uint8_t IS_IN_EXPLOITABLE_AREA = 37;
     static constexpr uint8_t IS_ON_LADDER           = 38;
     static constexpr uint8_t HAS_PATH_FAIL          = 39;
+    static constexpr uint8_t IS_DEAD                = 40;
 }
 
 struct LogicCharacterFlags {
@@ -205,6 +206,94 @@ enum class WithdrawState : uint8_t {
     Withdrawing     = 2,  // WITHDRAWING:2 — actively retreating
 };
 
+// ── C: LocomotionState ────────────────────────────────────────────────────────
+// CATHODE LOCOMOTION_STATE enum — animation & physics system reads this.
+// BT writes via actEnterVent (IS_IN_VENT maps to InVent).
+enum class LocomotionState : uint8_t {
+    Walking    = 0,
+    Running    = 1,
+    Crouching  = 2,
+    InVent     = 3,  // mirrors lcf::IS_IN_VENT; kept in sync by actEnterVent/actExitVent
+    Aiming     = 4,
+    Traversing = 6,
+    Idling     = 7,
+};
+
+// CATHODE LOCOMOTION_TARGET_SPEED — NavSystem uses this to select speed profile.
+enum class LocomotionTargetSpeed : uint8_t {
+    Slowest = 0,
+    Slow    = 1,
+    Fast    = 2,
+    Fastest = 3,
+};
+
+// ── C: AreaSweepType ──────────────────────────────────────────────────────────
+// CATHODE AREA_SWEEP_TYPE_CODE — controls the search pattern when motivation==Search.
+// DirectorSystem writes; AreaSweepCheck BT node gates branches by type.
+enum class AreaSweepType : uint8_t {
+    InAndOutBetweenTargetAndPosition = 0,  // alternates between target and known position
+    FixedRadiusAroundPosition        = 1,  // fixed-radius sweep around a fixed point
+    AroundTarget                     = 2,  // continuous orbit around last-seen target
+};
+
+// ── CATHODE_deepseek: NpcAggroLevel ───────────────────────────────────────────
+// CATHODE NPC_AGGRO_LEVEL — NPC escalation toward lethal engagement.
+// Orthogonal to AlertnessState: androids escalate through verbal warnings before shooting.
+enum class NpcAggroLevel : uint8_t {
+    None          = 0,  // passive / off-duty
+    StandDown     = 1,  // de-escalation order
+    Interrogative = 2,  // verbal challenge — who are you?
+    Warning       = 3,  // explicit warning shot / back off
+    LastChance    = 4,  // final warning before lethal
+    NoLimit       = 5,  // shoot on sight (same value as Aggressive in CATHODE)
+    Unknown       = 0xFF,
+};
+
+// ── CATHODE_deepseek: NpcCombatState ──────────────────────────────────────────
+// CATHODE NPC_COMBAT_STATE — fine-grained combat phase within AlertnessState::Combat.
+// Written by CombatSystem; BT reads via NpcCombatStateCheck/SetNpcCombatState.
+enum class NpcCombatState : uint8_t {
+    None                    =  0,
+    Warning                 =  1,
+    Attacking               =  2,
+    ReachedObjective        =  3,
+    EnteredCover            =  4,
+    LeaveCover              =  5,
+    StartRetreating         =  6,
+    ReachedRetreat          =  7,
+    LostSense               =  8,
+    SuspiciousWarning       =  9,
+    SuspiciousWarningFailed = 10,
+    StartAdvance            = 11,
+    DoneAdvance             = 12,
+    Blocking                = 13,
+    HeardBackstageAlien     = 14,
+    AlienSighted            = 15,
+    Unknown                 = 0xFF,
+};
+
+// ── CATHODE_deepseek: MoodIntensity ───────────────────────────────────────────
+// Intensity level of the current NpcMood — modulates animation blend weights.
+enum class MoodIntensity : uint8_t { Low = 0, Medium = 1, High = 2, Unknown = 0xFF };
+
+// ── CATHODE_deepseek: AggressionGain ─────────────────────────────────────────
+// Rate of NpcAggroLevel escalation on player detection events.
+enum class AggressionGain : uint8_t { Low = 0, Med = 1, High = 2 };
+
+// ── ff:: frame-flag bit indices ───────────────────────────────────────────────
+// CATHODE FRAME_FLAGS enum — single-tick signals cleared at logic tick start.
+// Use with AgentState::frame_flags (same mechanism as C13 pattern).
+// Parallel to lcf::* but for per-frame transient signals only.
+namespace ff {
+    static constexpr uint8_t SUSPICIOUS_ITEM_LOW_PRIORITY          = 0;
+    static constexpr uint8_t SUSPICIOUS_ITEM_MEDIUM_PRIORITY       = 1;
+    static constexpr uint8_t SUSPICIOUS_ITEM_HIGH_PRIORITY         = 2;
+    static constexpr uint8_t COULD_SEARCH                          = 3;
+    static constexpr uint8_t COULD_RESPOND_TO_HIDING_PLAYER        = 4;
+    static constexpr uint8_t COULD_DO_SUSPICIOUS_ITEM_HIGH         = 5;
+    static constexpr uint8_t COULD_DO_SUSPECT_TARGET_RESPONSE_MOVETO = 6;
+}
+
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────
 // typed parameter slot keyed by FNV-1a hash.
 // type: 0=bool  1=int  2=float  3=vec3  4=enum
@@ -222,22 +311,36 @@ struct BlackboardEntry {
 };
 static_assert(sizeof(BlackboardEntry) == 20, "BlackboardEntry must be 20 bytes");
 
+// ── AgentBlackboard ───────────────────────────────────────────────────────────
+// Cold component — separate ECS component from AgentState.
+// Only loaded when BT nodes or DirectorSystem need keyed dynamic values.
+// Keeping it separate reduces AgentState from 728B → 244B, allowing 4× more
+// AgentState entries to fit in Intel HD 520 L2 (1 MB).
+static constexpr int MAX_BB_ENTRIES = 24;
+
+struct AgentBlackboard {
+    int             bb_count = 0;
+    BlackboardEntry bb[MAX_BB_ENTRIES];
+};
+
 // ── AgentState ────────────────────────────────────────────────────────────────
-// M18 component. Pairs with BTComponent on every AI entity.
+// Hot component (~244 bytes). Pairs with BehaviorTreeComponent on every AI entity.
+// Accessed every BT tick; must stay cache-line-friendly.
 //
 // timers:        absolute deadline in game-ms; 0 = inactive. Indexed by AgentTimerSlot.
-// lcflags:       Pattern 4 — 40-bit LogicCharacterFlags bitmask (replaces old uint32 flags).
-// frame_flags:   C13 — single-tick signal bits between BT branches; cleared each logic tick.
+// lcflags:       Pattern 4 — 40-bit LogicCharacterFlags bitmask.
+// frame_flags:   C13 — single-tick signal bits; cleared each logic tick.
 // motivation:    Pattern 1 — current motivation; BT MotivationCheck reads this.
 // entity_state:  Pattern 8 — EntityStateFlag lifecycle bitmask.
 // gauges:        Pattern 6 — retreat/stun float gauges [0..1].
-// awareness:     C15 — cognitive state (Unaware→Aware); DirectorSystem writes.
-// alertness:     C16 — behavioural alertness (Relaxed→Fleeing); damage handler writes.
-// mood:          C17 — affective state for anim blending; DirectorSystem/FlowGraph writes.
-// withdraw_state:C19 — 3-stage retreat FSM; clears to NotWithdrawing before melee attack.
-// bb:            blackboard; MAX_BB_ENTRIES=24.
-static constexpr int MAX_BB_ENTRIES = 24;
-
+// awareness:     C15 — cognitive state (Unaware→Aware).
+// alertness:     C16 — behavioural alertness (Relaxed→Fleeing).
+// mood:          C17 — affective state for anim blending.
+// withdraw_state:C19 — 3-stage retreat FSM.
+// locomotion_state: CATHODE LocomotionState — animation & physics system reads this.
+// target_speed:     CATHODE LocomotionTargetSpeed — nav speed profile.
+// area_sweep_type:  CATHODE AreaSweepType — current search pattern for Search motivation.
+// Blackboard (bb): now in separate AgentBlackboard component (cold path).
 struct AgentState {
     uint64_t            timers[MAX_AGENT_TIMERS];  // ms deadlines; 0 = inactive
     LogicCharacterFlags lcflags;                    // Pattern 4: 40-bit flag bitmask
@@ -249,25 +352,64 @@ struct AgentState {
     AlertnessState      alertness;                  // C16: behavioural alertness level
     NpcMood             mood;                       // C17: affective state / anim layer
     WithdrawState       withdraw_state;             // C19: 3-stage retreat FSM
-    int                 bb_count;
-    BlackboardEntry     bb[MAX_BB_ENTRIES];
+    LocomotionState     locomotion_state;           // CATHODE: anim/physics locomotion
+    LocomotionTargetSpeed target_speed;             // CATHODE: nav speed profile
+    AreaSweepType       area_sweep_type;            // CATHODE: search pattern for Search
+    NpcAggroLevel       aggro_level;                // deepseek: NPC_AGGRO_LEVEL escalation
+    NpcCombatState      combat_state;               // deepseek: combat phase sub-state
+    MoodIntensity       mood_intensity;             // deepseek: intensity of current mood
 };
 
+// ── AgentStateSnapshot ────────────────────────────────────────────────────────
+// POD snapshot of policy fields in AgentState for M48 persistence and
+// interrupt-safe hand-off (CATHODE EntityState snapshot/restore pattern).
+// Timers and gauges are intentionally excluded — they reset on restore.
+struct AgentStateSnapshot {
+    uint64_t       lc_flags;        // lcflags.bits
+    uint32_t       entity_state;    // EntityStateFlag bitmask
+    MotivationType motivation;
+    AwarenessState awareness;
+    AlertnessState alertness;
+    WithdrawState  withdraw_state;
+
+    static AgentStateSnapshot Capture(const AgentState& s) noexcept {
+        AgentStateSnapshot snap{};
+        snap.lc_flags      = s.lcflags.bits;
+        snap.entity_state  = s.entity_state;
+        snap.motivation    = s.motivation;
+        snap.awareness     = s.awareness;
+        snap.alertness     = s.alertness;
+        snap.withdraw_state= s.withdraw_state;
+        return snap;
+    }
+
+    static void Restore(AgentState& s, const AgentStateSnapshot& snap) noexcept {
+        s.lcflags.bits   = snap.lc_flags;
+        s.entity_state   = snap.entity_state;
+        s.motivation     = snap.motivation;
+        s.awareness      = snap.awareness;
+        s.alertness      = snap.alertness;
+        s.withdraw_state = snap.withdraw_state;
+    }
+};
+static_assert(sizeof(AgentStateSnapshot) == 16, "AgentStateSnapshot must be 16 bytes");
+
 // ── Blackboard helpers ────────────────────────────────────────────────────────
+// All helpers operate on AgentBlackboard (cold component), not AgentState.
 
-inline BlackboardEntry* bb_find(AgentState& s, uint32_t key) noexcept {
+inline BlackboardEntry* bb_find(AgentBlackboard& s, uint32_t key) noexcept {
     for (int i = 0; i < s.bb_count; ++i)
         if (s.bb[i].key == key) return &s.bb[i];
     return nullptr;
 }
 
-inline const BlackboardEntry* bb_find(const AgentState& s, uint32_t key) noexcept {
+inline const BlackboardEntry* bb_find(const AgentBlackboard& s, uint32_t key) noexcept {
     for (int i = 0; i < s.bb_count; ++i)
         if (s.bb[i].key == key) return &s.bb[i];
     return nullptr;
 }
 
-inline BlackboardEntry* bb_insert(AgentState& s, uint32_t key, uint8_t type) noexcept {
+inline BlackboardEntry* bb_insert(AgentBlackboard& s, uint32_t key, uint8_t type) noexcept {
     BlackboardEntry* e = bb_find(s, key);
     if (e) return e;
     if (s.bb_count >= MAX_BB_ENTRIES) return nullptr;
@@ -277,25 +419,25 @@ inline BlackboardEntry* bb_insert(AgentState& s, uint32_t key, uint8_t type) noe
     return e;
 }
 
-inline void bb_set_float(AgentState& s, uint32_t key, float val) noexcept {
+inline void bb_set_float(AgentBlackboard& s, uint32_t key, float val) noexcept {
     if (BlackboardEntry* e = bb_insert(s, key, 2)) { e->val.f = val; }
 }
 
-inline void bb_set_bool(AgentState& s, uint32_t key, bool val) noexcept {
+inline void bb_set_bool(AgentBlackboard& s, uint32_t key, bool val) noexcept {
     if (BlackboardEntry* e = bb_insert(s, key, 0)) { e->val.b = val; }
 }
 
-inline void bb_set_int(AgentState& s, uint32_t key, int32_t val) noexcept {
+inline void bb_set_int(AgentBlackboard& s, uint32_t key, int32_t val) noexcept {
     if (BlackboardEntry* e = bb_insert(s, key, 1)) { e->val.i = val; }
 }
 
-inline float bb_get_float(const AgentState& s, uint32_t key, float def = 0.f) noexcept {
+inline float bb_get_float(const AgentBlackboard& s, uint32_t key, float def = 0.f) noexcept {
     for (int i = 0; i < s.bb_count; ++i)
         if (s.bb[i].key == key) return s.bb[i].val.f;
     return def;
 }
 
-inline bool bb_get_bool(const AgentState& s, uint32_t key, bool def = false) noexcept {
+inline bool bb_get_bool(const AgentBlackboard& s, uint32_t key, bool def = false) noexcept {
     for (int i = 0; i < s.bb_count; ++i)
         if (s.bb[i].key == key) return s.bb[i].val.b;
     return def;

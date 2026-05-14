@@ -96,6 +96,29 @@ enum class BTNodeType : uint8_t {
     //   MemoryForget: clears all NpcMemoryComponent data → always Success
     MemoryCheck,
     MemoryForget,
+    // CathodeDump: AreaSweepCheck — gates on as->area_sweep_type == (AreaSweepType)data
+    AreaSweepCheck,
+    // CATHODE_gemini patterns:
+    //   DecoratorPercentage: succeeds child execution with data% probability (LCG)
+    DecoratorPercentage,
+    //   SelectorPercentage: picks one random child (equal probability), returns its result
+    SelectorPercentage,
+    //   SenseTimeCheck: Success if now_ms - sc->last_activated_ms[sense_idx] <= max_elapsed_ms
+    //     data = (sense_idx << 24) | max_elapsed_ms (24 bits → max ~16.7s)
+    SenseTimeCheck,
+    //   ActionSetDead:    sets lcf::IS_DEAD → entity lifecycle end
+    ActionSetDead,
+    //   ActionDespawn:    sets lcf::SHOULD_DESPAWN → deferred entity removal
+    ActionDespawn,
+    // CATHODE_deepseek patterns:
+    //   AggroLevelCheck: data=(NpcAggroLevel)→Success if as->aggro_level matches
+    //   SetAggroLevel:   data=(NpcAggroLevel)→writes and returns Success
+    AggroLevelCheck,
+    SetAggroLevel,
+    //   NpcCombatStateCheck: data=(NpcCombatState)→Success if as->combat_state matches
+    //   SetNpcCombatState:   data=(NpcCombatState)→writes and returns Success
+    NpcCombatStateCheck,
+    SetNpcCombatState,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -125,6 +148,14 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   WithdrawCheck:    WithdrawState value
 //   SetWithdraw:      WithdrawState value
 //   MemoryCheck:      0=has_spatial_memory, 1=has_event_memory
+//   AreaSweepCheck:      AreaSweepType value (uint8_t cast from AgentState::area_sweep_type)
+//   DecoratorPercentage: percentage 0-100 (child runs if LCG % 100 < data)
+//   SelectorPercentage:  unused (child count determines range)
+//   SenseTimeCheck:      (sense_idx << 24) | max_elapsed_ms (24 bits)
+//   AggroLevelCheck:     NpcAggroLevel value (uint8_t)
+//   SetAggroLevel:       NpcAggroLevel value (uint8_t)
+//   NpcCombatStateCheck: NpcCombatState value (uint8_t)
+//   SetNpcCombatState:   NpcCombatState value (uint8_t)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -182,8 +213,12 @@ public:
     // Pattern 1: MotivationCheck / SetMotivation
     uint16_t addMotivationCheck(MotivationType mot);
     uint16_t addSetMotivation  (MotivationType mot);
-    // Pattern 3: Reference — delegates to another tree (resolved at build time)
-    uint16_t addReference(BehaviorTree* other);
+    // Pattern 3: Reference — delegates to another tree (resolved at build time).
+    // name_hash: FNV-1a of the tree name, used by BTLoader::ResolveRefs() to
+    // patch deferred nullptr references after all templates are loaded.
+    uint16_t addReference(BehaviorTree* other, uint32_t name_hash = 0);
+    // Patch all Reference nodes whose data == name_hash to point at target.
+    void PatchReference(uint32_t name_hash, BehaviorTree* target) noexcept;
     // Pattern 6: GaugeCheck / GaugeSet
     uint16_t addGaugeCheck(GaugeType gauge, float threshold);
     uint16_t addGaugeSet  (GaugeType gauge, float value);
@@ -214,6 +249,19 @@ public:
     // Echo NpcMemory nodes
     uint16_t addMemoryCheck (uint8_t mode);  // 0=has_spatial, 1=has_event
     uint16_t addMemoryForget();
+    // CathodeDump: AreaSweepCheck
+    uint16_t addAreaSweepCheck(AreaSweepType type);
+    // CATHODE_gemini patterns
+    uint16_t addDecoratorPercentage(uint8_t pct);
+    uint16_t addSelectorPercentage();
+    uint16_t addSenseTimeCheck(uint8_t sense_idx, uint32_t max_elapsed_ms);
+    uint16_t addActionSetDead();
+    uint16_t addActionDespawn();
+    // CATHODE_deepseek
+    uint16_t addAggroLevelCheck    (NpcAggroLevel level);
+    uint16_t addSetAggroLevel      (NpcAggroLevel level);
+    uint16_t addNpcCombatStateCheck(NpcCombatState state);
+    uint16_t addSetNpcCombatState  (NpcCombatState state);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

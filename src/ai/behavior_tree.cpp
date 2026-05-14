@@ -4,7 +4,12 @@
 #include <monkey_dust/components/bt_components.h>
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/components/npc_memory.h>
+#include <monkey_dust/ai/squad_signal.h>
+#include <monkey_dust/ai/fnv.h>
 #include <cstring>
+
+// Compile-time key for target entity stored in AgentBlackboard
+static constexpr uint32_t TARGET_ENTITY_BB_KEY = md::fnv1a("target_entity");
 
 BehaviorTree::BehaviorTree() {
     memset(m_nodes,    0, sizeof(m_nodes));
@@ -290,6 +295,88 @@ uint16_t BehaviorTree::addNpcCombatStateCheck(NpcCombatState state) {
 uint16_t BehaviorTree::addSetNpcCombatState(NpcCombatState state) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::SetNpcCombatState);
+    m_nodes[i].data = static_cast<uint32_t>(state);
+    return i;
+}
+
+// ── CATHODE_z factory implementations ────────────────────────────────────────
+
+uint16_t BehaviorTree::addDecoratorMood(NpcMood mood) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorMood);
+    m_nodes[i].data = static_cast<uint32_t>(mood);
+    return i;
+}
+
+uint16_t BehaviorTree::addDecoratorAwareness(AwarenessState state) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorAwareness);
+    m_nodes[i].data = static_cast<uint32_t>(state);
+    return i;
+}
+
+uint16_t BehaviorTree::addDecoratorTimerAuto(uint8_t timer_id, uint32_t duration_ms,
+                                              bool only_increase) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorTimerAuto);
+    m_nodes[i].data  = (static_cast<uint32_t>(timer_id) << 24) | (duration_ms & 0x00FFFFFFu);
+    m_nodes[i].flags = only_increase ? 0x01u : 0x00u;
+    return i;
+}
+
+uint16_t BehaviorTree::addActionTimerRandom(uint8_t timer_id, uint32_t min_ms, uint32_t max_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionTimerRandom);
+    // Round to nearest 100ms unit (12 bits each, max 4095*100=409,500ms)
+    uint32_t min_u = (min_ms / 100u) & 0xFFFu;
+    uint32_t max_u = (max_ms / 100u) & 0xFFFu;
+    if (max_u < min_u) max_u = min_u;
+    m_nodes[i].data = (static_cast<uint32_t>(timer_id) << 24) | (max_u << 12) | min_u;
+    return i;
+}
+
+uint16_t BehaviorTree::addActionSquadNotify(SquadSignal signal) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionSquadNotify);
+    m_nodes[i].data = static_cast<uint32_t>(signal);
+    return i;
+}
+
+uint16_t BehaviorTree::addConditionSquadSignal(SquadSignal signal) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionSquadSignal);
+    m_nodes[i].data = static_cast<uint32_t>(signal);
+    return i;
+}
+
+uint16_t BehaviorTree::addConditionAnySenseWithinTime(uint32_t time_ms, bool specific,
+                                                       uint8_t sense_idx) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionAnySenseWithinTime);
+    // data bits 0-27 = time_window_ms; bit 28 = sense_idx (0 or 1)
+    m_nodes[i].data  = (time_ms & 0x0FFFFFFFu) | (static_cast<uint32_t>(sense_idx & 1u) << 28);
+    m_nodes[i].flags = specific ? 1u : 0u;
+    return i;
+}
+
+uint16_t BehaviorTree::addActionExpireTimer(uint8_t timer_id) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionExpireTimer);
+    m_nodes[i].data = timer_id & 0x1Fu;
+    return i;
+}
+
+uint16_t BehaviorTree::addTargetFlagCheck(uint8_t bit_idx, bool check_set) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::TargetFlagCheck);
+    m_nodes[i].data  = bit_idx & 0x3Fu;
+    m_nodes[i].flags = check_set ? 0u : 1u;
+    return i;
+}
+
+uint16_t BehaviorTree::addSetLocomotionState(LocomotionState state) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SetLocomotionState);
     m_nodes[i].data = static_cast<uint32_t>(state);
     return i;
 }
@@ -838,6 +925,165 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         case BTNodeType::SetNpcCombatState: {
             AgentState* as = Registry::Get().try_get<AgentState>(e);
             if (as) as->combat_state = static_cast<NpcCombatState>(nd.data);
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // ── CATHODE_z VM cases ─────────────────────────────────────────────────
+
+        // Z1: DecoratorMood — run child only when as->mood matches
+        case BTNodeType::DecoratorMood: {
+            if (result == BTStatus::Running) {
+                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                if (!as || as->mood != static_cast<NpcMood>(nd.data)) {
+                    result = BTStatus::Failure; pc = nd.parent; continue;
+                }
+                if (nd.childCount > 0) {
+                    pc = m_children[nd.childStart];
+                    result = BTStatus::Running; continue;
+                }
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            pc = nd.parent; continue;  // propagate child result as-is
+        }
+
+        // Z2: DecoratorAwareness — run child only when as->awareness matches
+        case BTNodeType::DecoratorAwareness: {
+            if (result == BTStatus::Running) {
+                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                if (!as || as->awareness != static_cast<AwarenessState>(nd.data)) {
+                    result = BTStatus::Failure; pc = nd.parent; continue;
+                }
+                if (nd.childCount > 0) {
+                    pc = m_children[nd.childStart];
+                    result = BTStatus::Running; continue;
+                }
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            pc = nd.parent; continue;  // propagate child result as-is
+        }
+
+        // Z3: DecoratorTimerAuto — start timer on every entry, propagate child result
+        case BTNodeType::DecoratorTimerAuto: {
+            if (result == BTStatus::Running) {
+                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                if (as) {
+                    uint8_t  tid    = static_cast<uint8_t>(nd.data >> 24);
+                    uint32_t dur_ms = nd.data & 0x00FFFFFFu;
+                    if (tid < MAX_AGENT_TIMERS) {
+                        uint64_t new_end = static_cast<uint64_t>(nowMs) + dur_ms;
+                        if ((nd.flags & 0x01u) && as->timers[tid] > new_end) {
+                            // only_increase: leave longer deadline intact
+                        } else {
+                            as->timers[tid] = new_end;
+                        }
+                    }
+                }
+                if (nd.childCount > 0) {
+                    pc = m_children[nd.childStart];
+                    result = BTStatus::Running; continue;
+                }
+                result = BTStatus::Success; pc = nd.parent; continue;
+            }
+            pc = nd.parent; continue;  // propagate child result as-is
+        }
+
+        // Z4: ActionTimerRandom — start timer with LCG-random duration [min_ms, max_ms]
+        case BTNodeType::ActionTimerRandom: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                uint8_t  tid   = static_cast<uint8_t>(nd.data >> 24);
+                uint32_t max_u = (nd.data >> 12) & 0xFFFu;   // 12 bits, unit=100ms
+                uint32_t min_u =  nd.data        & 0xFFFu;
+                if (tid < MAX_AGENT_TIMERS) {
+                    uint32_t range = (max_u > min_u) ? (max_u - min_u) : 0u;
+                    uint32_t rng   = static_cast<uint32_t>(static_cast<uint64_t>(e)) ^ nowMs;
+                    rng = rng * 1664525u + 1013904223u;
+                    uint32_t dur_u   = min_u + (range > 0u ? rng % range : 0u);
+                    uint64_t new_end = static_cast<uint64_t>(nowMs)
+                                     + static_cast<uint64_t>(dur_u) * 100u;
+                    as->timers[tid] = new_end;
+                }
+            }
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // Z5: ActionSquadNotify — broadcast SquadSignal to entity's squad channel
+        case BTNodeType::ActionSquadNotify: {
+            SquadMemberComponent* sm = Registry::Get().try_get<SquadMemberComponent>(e);
+            if (sm) {
+                auto sig = static_cast<SquadSignal>(nd.data & 0xFFu);
+                uint32_t raw_id = static_cast<uint32_t>(static_cast<uint64_t>(e) & 0xFFFFFFFFu);
+                SquadSignalBus::Get().Set(sm->squad_id, sig, raw_id, nowMs);
+            }
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // Z6: ConditionSquadSignal — check squad channel for expected signal
+        case BTNodeType::ConditionSquadSignal: {
+            SquadMemberComponent* sm = Registry::Get().try_get<SquadMemberComponent>(e);
+            if (!sm) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            auto expected = static_cast<SquadSignal>(nd.data & 0xFFu);
+            result = (SquadSignalBus::Get().GetSignal(sm->squad_id) == expected)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // Z7: ConditionAnySenseWithinTime — any (or specific) sense fired within time_ms
+        case BTNodeType::ConditionAnySenseWithinTime: {
+            SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint32_t time_ms  = nd.data & 0x0FFFFFFFu;
+            uint8_t  sense_idx= static_cast<uint8_t>((nd.data >> 28) & 0x1u);
+            bool     specific = (nd.flags != 0u);
+            bool     ok       = false;
+            if (specific) {
+                uint32_t ts = sc->last_activated_ms[sense_idx];
+                ok = (ts != 0u && static_cast<uint32_t>(nowMs) - ts <= time_ms);
+            } else {
+                for (int ii = 0; ii < 2 && !ok; ++ii) {
+                    uint32_t ts = sc->last_activated_ms[ii];
+                    ok = (ts != 0u && static_cast<uint32_t>(nowMs) - ts <= time_ms);
+                }
+            }
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // Z8: ActionExpireTimer — immediately mark timer slot as expired
+        case BTNodeType::ActionExpireTimer: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                uint8_t tid = static_cast<uint8_t>(nd.data & 0x1Fu);
+                if (tid < MAX_AGENT_TIMERS)
+                    as->timers[tid] = 1u;  // past-deadline: nowMs >= 1 always true
+            }
+            result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // Z9: TargetFlagCheck — check lcflags on target entity from blackboard
+        case BTNodeType::TargetFlagCheck: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity target = static_cast<entt::entity>(en->val.e);
+            AgentState*  as_t   = Registry::Get().try_get<AgentState>(target);
+            if (!as_t) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
+            bool    is_set  = as_t->lcflags.test(bit_idx);
+            result = (nd.flags == 0u ? is_set : !is_set)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // Z10: SetLocomotionState — write as->locomotion_state
+        case BTNodeType::SetLocomotionState: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->locomotion_state = static_cast<LocomotionState>(nd.data);
             result = BTStatus::Success;
             pc = nd.parent; continue;
         }

@@ -1,6 +1,8 @@
 #include <monkey_dust/ai/bt_json_loader.h>
 #include <monkey_dust/ai/bt_action_registry.h>
 #include <monkey_dust/ai/fnv.h>
+#include <monkey_dust/ai/squad_signal.h>
+#include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/md_fs.h>
 #include <cstring>
@@ -345,6 +347,29 @@ static NpcCombatState parse_npc_combat_state(const char* s) {
     return NpcCombatState::None;
 }
 
+// ── CATHODE_z enum parsers ────────────────────────────────────────────────────
+
+static SquadSignal parse_squad_signal(const char* s) {
+    if (strcmp(s, "Warning")         == 0) return SquadSignal::Warning;
+    if (strcmp(s, "EnteredCover")    == 0) return SquadSignal::EnteredCover;
+    if (strcmp(s, "StartRetreating") == 0) return SquadSignal::StartRetreating;
+    if (strcmp(s, "SuspiciousWarn")  == 0) return SquadSignal::SuspiciousWarn;
+    if (strcmp(s, "HearingBSAlien")  == 0) return SquadSignal::HearingBSAlien;
+    if (strcmp(s, "Escalating")      == 0) return SquadSignal::Escalating;
+    if (strcmp(s, "CombatStart")     == 0) return SquadSignal::CombatStart;
+    return SquadSignal::None;
+}
+
+static LocomotionState parse_locomotion_state(const char* s) {
+    if (strcmp(s, "Running")    == 0) return LocomotionState::Running;
+    if (strcmp(s, "Crouching")  == 0) return LocomotionState::Crouching;
+    if (strcmp(s, "InVent")     == 0) return LocomotionState::InVent;
+    if (strcmp(s, "Aiming")     == 0) return LocomotionState::Aiming;
+    if (strcmp(s, "Traversing") == 0) return LocomotionState::Traversing;
+    if (strcmp(s, "Idling")     == 0) return LocomotionState::Idling;
+    return LocomotionState::Walking;
+}
+
 // ── Fallback functions for unregistered actions/conditions ────────────────────
 static bool         s_cond_false  (md::EngineContext&, entt::entity) { return false; }
 static BTStatus     s_act_failure (md::EngineContext&, entt::entity) { return BTStatus::Failure; }
@@ -601,6 +626,80 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         char s[32] = "None";
         read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
         idx = bt.addSetNpcCombatState(parse_npc_combat_state(s));
+
+    // ── CATHODE_z nodes ───────────────────────────────────────────────────────
+
+    // Z1: DecoratorMood — decorator: run child only when mood matches
+    } else if (strcmp(type_str, "DecoratorMood") == 0) {
+        char m[24] = "Neutral";
+        read_str_r(obj, obj_end, "\"mood\"", m, sizeof(m));
+        idx = bt.addDecoratorMood(parse_mood(m));
+
+    // Z2: DecoratorAwareness — decorator: run child only when awareness matches
+    } else if (strcmp(type_str, "DecoratorAwareness") == 0) {
+        char s[24] = "Unaware";
+        read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
+        idx = bt.addDecoratorAwareness(parse_awareness(s));
+
+    // Z3: DecoratorTimerAuto — auto-start timer on every entry, propagate child
+    } else if (strcmp(type_str, "DecoratorTimerAuto") == 0) {
+        char slot_str[32] = "";
+        read_str_r(obj, obj_end, "\"timer_slot\"", slot_str, sizeof(slot_str));
+        int  dur      = read_int_r (obj, obj_end, "\"duration_ms\"",  1000);
+        bool only_inc = read_bool_r(obj, obj_end, "\"only_increase\"", false);
+        idx = bt.addDecoratorTimerAuto(parse_timer_slot(slot_str),
+                                        static_cast<uint32_t>(dur), only_inc);
+
+    // Z4: ActionTimerRandom — random duration [min_ms, max_ms]
+    } else if (strcmp(type_str, "ActionTimerRandom") == 0) {
+        char slot_str[32] = "";
+        read_str_r(obj, obj_end, "\"timer_slot\"", slot_str, sizeof(slot_str));
+        int min_ms = read_int_r(obj, obj_end, "\"min_ms\"", 500);
+        int max_ms = read_int_r(obj, obj_end, "\"max_ms\"", 2000);
+        idx = bt.addActionTimerRandom(parse_timer_slot(slot_str),
+                                       static_cast<uint32_t>(min_ms),
+                                       static_cast<uint32_t>(max_ms));
+
+    // Z5: ActionSquadNotify — broadcast squad signal
+    } else if (strcmp(type_str, "ActionSquadNotify") == 0) {
+        char sig_str[24] = "None";
+        read_str_r(obj, obj_end, "\"signal\"", sig_str, sizeof(sig_str));
+        idx = bt.addActionSquadNotify(parse_squad_signal(sig_str));
+
+    // Z6: ConditionSquadSignal — check squad channel
+    } else if (strcmp(type_str, "ConditionSquadSignal") == 0) {
+        char sig_str[24] = "None";
+        read_str_r(obj, obj_end, "\"signal\"", sig_str, sizeof(sig_str));
+        idx = bt.addConditionSquadSignal(parse_squad_signal(sig_str));
+
+    // Z7: ConditionAnySenseWithinTime — any/specific sense within time window
+    } else if (strcmp(type_str, "ConditionAnySenseWithinTime") == 0) {
+        int  time_ms  = read_int_r (obj, obj_end, "\"time_ms\"", 5000);
+        int  sense    = read_int_r (obj, obj_end, "\"sense\"",  -1);
+        bool specific = (sense >= 0);
+        idx = bt.addConditionAnySenseWithinTime(
+                static_cast<uint32_t>(time_ms),
+                specific,
+                specific ? static_cast<uint8_t>(sense & 1) : 0u);
+
+    // Z8: ActionExpireTimer — force-expire a timer slot
+    } else if (strcmp(type_str, "ActionExpireTimer") == 0) {
+        char slot_str[32] = "";
+        read_str_r(obj, obj_end, "\"timer_slot\"", slot_str, sizeof(slot_str));
+        idx = bt.addActionExpireTimer(parse_timer_slot(slot_str));
+
+    // Z9: TargetFlagCheck — check lcflags on target from blackboard "target_entity"
+    } else if (strcmp(type_str, "TargetFlagCheck") == 0) {
+        char f[32] = "";
+        read_str_r(obj, obj_end, "\"flag\"", f, sizeof(f));
+        bool cs = read_bool_r(obj, obj_end, "\"check_set\"", true);
+        idx = bt.addTargetFlagCheck(parse_flag(f), cs);
+
+    // Z10: SetLocomotionState — write as->locomotion_state
+    } else if (strcmp(type_str, "SetLocomotionState") == 0) {
+        char s[24] = "Walking";
+        read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
+        idx = bt.addSetLocomotionState(parse_locomotion_state(s));
 
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);

@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
-#include <dirent.h>
+#include <monkey_dust/compat/md_dirent.h>
 #include <sys/stat.h>
 
 namespace md::flare {

@@ -12,7 +12,7 @@
 static int64_t file_mtime(const char* path) {
     struct stat st;
     if (stat(path, &st) != 0) return -1;
-#ifdef __APPLE__
+#if defined(_WIN32) || defined(__APPLE__)
     return (int64_t)st.st_mtime;
 #else
     return (int64_t)st.st_mtim.tv_sec;

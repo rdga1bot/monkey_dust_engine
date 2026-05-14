@@ -3,9 +3,15 @@
 #include <entt/entt.hpp>
 
 extern "C" {
+#ifdef _WIN32
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+#else
 #include <lua5.4/lua.h>
 #include <lua5.4/lauxlib.h>
 #include <lua5.4/lualib.h>
+#endif
 }
 
 // LuaSystem — Lua 5.4 scripting host.

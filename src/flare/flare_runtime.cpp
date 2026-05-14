@@ -4,7 +4,7 @@
 #include <monkey_dust/render/md_camera.h>
 #include <cstdio>
 #include <cstring>
-#include <dirent.h>
+#include <monkey_dust/compat/md_dirent.h>
 #include <sys/stat.h>
 
 namespace md::flare {

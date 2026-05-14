@@ -2,6 +2,7 @@
 #include <monkey_dust/ecs/engine_context.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/ai/role_registry.h>
+#include <monkey_dust/ai/squad_signal.h>
 #include <entt/entt.hpp>
 #include <cstdint>
 
@@ -119,6 +120,34 @@ enum class BTNodeType : uint8_t {
     //   SetNpcCombatState:   data=(NpcCombatState)→writes and returns Success
     NpcCombatStateCheck,
     SetNpcCombatState,
+    // CATHODE_z patterns:
+    //   DecoratorMood:     decorator — run child only when as->mood == (NpcMood)data
+    //   DecoratorAwareness:decorator — run child only when as->awareness == (AwarenessState)data
+    DecoratorMood,
+    DecoratorAwareness,
+    //   DecoratorTimerAuto: decorator — auto-start timer on every entry, propagate child result
+    //     data=(timer_id<<24)|duration_ms; flags bit0=only_increase
+    DecoratorTimerAuto,
+    //   ActionTimerRandom: start timer with LCG-random duration in [min, max]
+    //     data=(timer_id<<24)|(max_u12<<12)|min_u12; unit=100ms; LCG seeded by entity^nowMs
+    ActionTimerRandom,
+    //   ActionSquadNotify: broadcast SquadSignal to entity's squad channel
+    //     data=(SquadSignal)value; reads SquadMemberComponent::squad_id
+    ActionSquadNotify,
+    //   ConditionSquadSignal: check squad channel for expected signal
+    //     data=(SquadSignal)value; reads SquadMemberComponent::squad_id
+    ConditionSquadSignal,
+    //   ConditionAnySenseWithinTime: Success if any (or specific) sense fired within time_ms
+    //     data=(sense_idx<<28)|time_window_ms; flags=0→any sense, 1→specific sense_idx
+    ConditionAnySenseWithinTime,
+    //   ActionExpireTimer: immediately mark a timer slot as expired (sets timers[id]=1)
+    //     data=timer_id & 0x1F
+    ActionExpireTimer,
+    //   TargetFlagCheck: check lcflags on target entity stored in blackboard "target_entity" key
+    //     data=bit_idx & 0x3F; flags=0→check set, 1→check clear
+    TargetFlagCheck,
+    //   SetLocomotionState: write as->locomotion_state = (LocomotionState)data
+    SetLocomotionState,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -156,12 +185,25 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   SetAggroLevel:       NpcAggroLevel value (uint8_t)
 //   NpcCombatStateCheck: NpcCombatState value (uint8_t)
 //   SetNpcCombatState:   NpcCombatState value (uint8_t)
+//   DecoratorMood:       NpcMood value (uint8_t)
+//   DecoratorAwareness:  AwarenessState value (uint8_t)
+//   DecoratorTimerAuto:  (timer_id<<24)|duration_ms (24-bit ms)
+//   ActionTimerRandom:   (timer_id<<24)|(max_u12<<12)|min_u12; unit=100ms each (max 409.5s)
+//   ActionSquadNotify:   SquadSignal value (uint8_t)
+//   ConditionSquadSignal:SquadSignal value (uint8_t)
+//   ConditionAnySenseWithinTime: (sense_idx<<28)|time_window_ms (28-bit ms ~3 days)
+//   ActionExpireTimer:   timer_id & 0x1F
+//   TargetFlagCheck:     bit_idx & 0x3F; reads target from bb key fnv1a("target_entity")
+//   SetLocomotionState:  LocomotionState value (uint8_t)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
 //   FrameFlagCheck:   0=check set, 1=check clear
 //   FrameFlagSet:     0=set bit, 1=clear bit
 //   TimerStart:       bit 0 = only_increase (C12: don't shorten existing timer)
+//   DecoratorTimerAuto: bit 0 = only_increase (same semantics)
+//   ConditionAnySenseWithinTime: 0=any sense, 1=specific sense (idx in data bits 28-31)
+//   TargetFlagCheck:  0=check set, 1=check clear
 //   Branch:           ShutdownSpeed (upper nibble, currently unused in VM)
 struct BTNode {
     BTNodeType type;
@@ -262,6 +304,26 @@ public:
     uint16_t addSetAggroLevel      (NpcAggroLevel level);
     uint16_t addNpcCombatStateCheck(NpcCombatState state);
     uint16_t addSetNpcCombatState  (NpcCombatState state);
+    // CATHODE_z
+    uint16_t addDecoratorMood      (NpcMood mood);
+    uint16_t addDecoratorAwareness (AwarenessState state);
+    // DecoratorTimerAuto: auto-start timer on every entry; propagate child result.
+    // only_increase=true → never shorten an already-running timer (C12 semantics).
+    uint16_t addDecoratorTimerAuto (uint8_t timer_id, uint32_t duration_ms,
+                                    bool only_increase = false);
+    // ActionTimerRandom: start timer with random duration in [min_ms, max_ms].
+    // Both values are rounded to nearest 100ms (unit=100ms, 12-bit range, max=409.5s).
+    uint16_t addActionTimerRandom  (uint8_t timer_id, uint32_t min_ms, uint32_t max_ms);
+    uint16_t addActionSquadNotify  (SquadSignal signal);
+    uint16_t addConditionSquadSignal(SquadSignal signal);
+    // ConditionAnySenseWithinTime: Success if any sense fired within time_ms of nowMs.
+    // With sense_idx set (specific=true), only that sense is checked.
+    uint16_t addConditionAnySenseWithinTime(uint32_t time_ms, bool specific = false,
+                                            uint8_t sense_idx = 0);
+    uint16_t addActionExpireTimer  (uint8_t timer_id);
+    // TargetFlagCheck: reads target entity from bb key fnv1a("target_entity"), checks lcflags.
+    uint16_t addTargetFlagCheck    (uint8_t bit_idx, bool check_set = true);
+    uint16_t addSetLocomotionState (LocomotionState state);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

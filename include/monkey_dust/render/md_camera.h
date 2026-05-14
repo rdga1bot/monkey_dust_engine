@@ -4,9 +4,7 @@
 //
 // ViewMatrix()/ProjMatrix(): platform-neutral via mat4_lookat/mat4_perspective.
 // Raylib adapters (ToRaylib/FromRaylib/GetViewProjRaylib/FrustumPlanes):
-//   activated when RAYLIB_H is defined. In non-USE_GLM builds math_types.h
-//   already pulls raylib.h so adapters are always available. For USE_GLM
-//   builds include <monkey_dust/render/md_to_raylib.h> instead.
+//   activated when RAYLIB_H is defined (non-USE_SDL3 legacy path only).
 
 #include <monkey_dust/platform/math_types.h>
 

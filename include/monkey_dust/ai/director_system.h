@@ -20,7 +20,7 @@ struct DirectorProfile {
     float ambush_wait_s;      // seconds to wait at ambush position
     float trap_trigger_s;     // seconds until killtrap fires
     float sweep_radius_m;     // search radius in world units
-    int   max_menaces;        // max simultaneous threat sources (Alien=1)
+    int   max_menaces;        // max simultaneous threat sources (default=1)
 };
 
 // ── DirectorSystem ────────────────────────────────────────────────────────────

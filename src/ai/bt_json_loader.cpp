@@ -227,7 +227,7 @@ static uint8_t parse_flag(const char* s) {
         {"DONE_HIT_AND_RUN",       lcf::DONE_HIT_AND_RUN},
         {"PLAYER_HIDING",          lcf::PLAYER_HIDING},
         {"ATTACK_HIDING_PLAYER",   lcf::ATTACK_HIDING_PLAYER},
-        {"ALIEN_KNOWS_VENT",       lcf::ALIEN_KNOWS_VENT},
+        {"NPC_KNOWS_VENT",         lcf::NPC_KNOWS_VENT},
         {"IS_CORPSE_TRAP",         lcf::IS_CORPSE_TRAP},
         {"SHOULD_DESPAWN",         lcf::SHOULD_DESPAWN},
         {"ATTACK_IN_THRESHOLD",    lcf::ATTACK_IN_THRESHOLD},

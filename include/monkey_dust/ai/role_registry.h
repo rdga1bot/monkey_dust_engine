@@ -4,7 +4,7 @@
 
 // ── C18: RoleSystem ───────────────────────────────────────────────────────────
 // Prevents multiple NPCs competing for the same exclusive behaviour slot
-// (e.g. only one Alien in STALK at a time, only one in SUSPECT_RESPONSE_MOVE_TO).
+// (e.g. only one NPC in Stalk at a time, only one in SuspectMoveTo).
 //
 // Usage in BT:
 //   RoleCheck(role, check_could_perform=false) → Success if entity owns the slot

@@ -830,7 +830,7 @@ struct NpcConfig {
   <h3>C1–C10 (базові структури)</h3>
   <table>
     <tr><th>Pattern</th><th>Pattern</th><th>monkey_dust реалізація</th><th>Файл</th></tr>
-    <tr><td><strong>C1</strong> MotivationGate</td><td>ALIEN_BEHAVE.XML SelectorLinear + MOTIVATION_TYPE</td><td><code>MotivationType</code> (14 values) + <code>MotivationCheck</code>/<code>SetMotivation</code> BT nodes; <code>BuildMotivationGateBT()</code></td><td>agent_state.h, behavior_tree.h</td></tr>
+    <tr><td><strong>C1</strong> MotivationGate</td><td>Priority selector with motivation gate</td><td><code>MotivationType</code> (14 values) + <code>MotivationCheck</code>/<code>SetMotivation</code> BT nodes; <code>BuildMotivationGateBT()</code></td><td>agent_state.h, behavior_tree.h</td></tr>
     <tr><td><strong>C2</strong> BranchType</td><td>DecoratorBranch + named interrupt categories</td><td><code>BranchType</code> enum (17 values) + <code>ShutdownSpeed</code>; <code>addBranch(cond, btype, speed)</code></td><td>behavior_tree.h</td></tr>
     <tr><td><strong>C3</strong> Reference node</td><td>ReferencedBehavior (sub-tree delegation)</td><td><code>BTNodeType::Reference</code> + <code>addReference(BehaviorTree*)</code>; ptr у <code>nd._padding[2]</code>; null → Failure</td><td>behavior_tree.h</td></tr>
     <tr><td><strong>C4</strong> LogicCharacterFlags</td><td>LOGIC_CHARACTER_FLAGS 40-bit bitmask</td><td><code>LogicCharacterFlags{uint64_t}</code> + <code>namespace lcf</code>, 40 named bits; FlagCheck/FlagSet — bit-index uint8 (НЕ bitmask)</td><td>agent_state.h</td></tr>
@@ -838,17 +838,17 @@ struct NpcConfig {
     <tr><td><strong>C6</strong> Gauge system</td><td>Retreat/StunDamage gauges</td><td><code>GaugeType</code> + <code>AgentGauges{val[2]}</code> + <code>GaugeCheck</code>/<code>GaugeSet</code></td><td>agent_state.h, behavior_tree.h</td></tr>
     <tr><td><strong>C7</strong> Hierarchical IDs</td><td>ShortGuid::combine() SHA1-based</td><td><code>fnv_combine(parent, child)</code> + <code>fnv_path(a,b,c)</code> — pure FNV, без SHA1</td><td>fnv.h</td></tr>
     <tr><td><strong>C8</strong> EntityState</td><td>EntityStateFlag 23-flag bitmask</td><td><code>EntityStateFlag</code> enum (23 flags) + <code>entity_state uint32</code> + <code>esf_test()</code></td><td>agent_state.h</td></tr>
-    <tr><td><strong>C9</strong> Per-stage BT</td><td>ALIENCONFIGS BML per-mood bt override</td><td><code>NpcConfig::bt_stage[4][32]</code> — per-DirectorStage override; empty = fall back to bt_day/bt_night</td><td>npc_config.h</td></tr>
+    <tr><td><strong>C9</strong> Per-stage BT</td><td>Per-stage BT override in NPC config</td><td><code>NpcConfig::bt_stage[4][32]</code> — per-DirectorStage override; empty = fall back to bt_day/bt_night</td><td>npc_config.h</td></tr>
     <tr><td><strong>C10</strong> LogicTickContext</td><td>TriggerProcessingContext::begin_cycle()</td><td><code>LogicTickContext{dt, frame_index, active}</code>; <code>active</code> guard re-entrant RunLogicTick</td><td>logic_tick.h</td></tr>
   </table>
 
   <h3>C11–C20 (розширені AI примітиви)</h3>
   <table>
     <tr><th>Pattern</th><th>Pattern</th><th>monkey_dust реалізація</th><th>Файл</th></tr>
-    <tr><td><strong>C11</strong> SequenceStateless</td><td>ALIEN_BEHAVE.XML SequenceStateless — no resume</td><td><code>BTNodeType::SequenceStateless</code>; на Running скидає <code>currentChild=0</code> (на відміну від Sequence)</td><td>behavior_tree.h/.cpp</td></tr>
+    <tr><td><strong>C11</strong> SequenceStateless</td><td>Stateless sequence — restarts from child 0 on re-entry</td><td><code>BTNodeType::SequenceStateless</code>; на Running скидає <code>currentChild=0</code> (на відміну від Sequence)</td><td>behavior_tree.h/.cpp</td></tr>
     <tr><td><strong>C12</strong> TimerOnlyIncrease</td><td>TIMER_ONLY_INCREASE flag у DecoratorTimer</td><td><code>addTimerStartOnlyIncrease(slot, dur)</code>; flags bit0=1; не вкорочує активний таймер</td><td>behavior_tree.h/.cpp</td></tr>
     <tr><td><strong>C13</strong> FrameFlag</td><td>Frame-scoped signal flags</td><td><code>frame_flags uint64</code> в AgentState; <code>FrameFlagCheck/Set</code>; BTSystem скидає на початку кожного tick</td><td>agent_state.h, bt_system.h</td></tr>
-    <tr><td><strong>C14</strong> WeightedSelector</td><td>ALIEN_BEHAVE.XML WeightedRandomSelector</td><td>4 ваги packed у data uint32; LCG RNG = <code>entity ^ frame_index</code>; max 4 дочірніх</td><td>behavior_tree.h/.cpp</td></tr>
+    <tr><td><strong>C14</strong> WeightedSelector</td><td>Weighted random child selector</td><td>4 ваги packed у data uint32; LCG RNG = <code>entity ^ frame_index</code>; max 4 дочірніх</td><td>behavior_tree.h/.cpp</td></tr>
     <tr><td><strong>C15</strong> AwarenessState</td><td>Awareness state enum</td><td><code>AwarenessState</code> (Dead…Aware, 7 рівнів) + поле в AgentState + <code>AwarenessCheck</code></td><td>agent_state.h, behavior_tree.h</td></tr>
     <tr><td><strong>C16</strong> AlertnessState</td><td>ALERTNESS_STATE enum (Relaxed→Combat)</td><td><code>AlertnessState</code> (4 рівні) + поле + <code>AlertnessCheck</code></td><td>agent_state.h, behavior_tree.h</td></tr>
     <tr><td><strong>C17</strong> NpcMood</td><td>NPC_MOOD (Neutral/Curious/Panicked...)</td><td><code>NpcMood</code> (6 значень) + поле mood в AgentState + <code>MoodCheck</code></td><td>agent_state.h, behavior_tree.h</td></tr>
@@ -905,7 +905,7 @@ as.lcflags.test (lcf::SHOULD_ATTACK);       // → bool
 // НЕПРАВИЛЬНО: bt.addFlagCheck(0x400) ← bitmask більше не підтримується</code></pre>
 
   <h3>C7 — Hierarchical FNV IDs</h3>
-  <pre><code>constexpr uint32_t K_AI_ALIEN_HUNT = fnv_path("ai", "alien", "hunt");
+  <pre><code>constexpr uint32_t K_AI_NPC_HUNT   = fnv_path("ai", "npc",   "hunt");
 uint32_t node_id = fnv_combine(fnv1a_rt(zone_name), fnv1a("on_enter"));</code></pre>
 </section>
 
@@ -1687,7 +1687,7 @@ if (AgentState* as = reg.try_get&lt;AgentState&gt;(npc))
 
 // Compile-time ієрархічний ключ:
 constexpr uint32_t K_ZONE_A_ENTER = fnv_path("zone_a", "on_enter");
-constexpr uint32_t K_AI_PATROL    = fnv_path("ai", "alien", "patrol");
+constexpr uint32_t K_AI_PATROL    = fnv_path("ai", "npc",   "patrol");
 
 // Blackboard key combination:
 uint32_t k = fnv_combine(fnv1a_rt(npc_name), fnv1a("speed"));

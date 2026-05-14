@@ -77,7 +77,7 @@ namespace lcf {
     static constexpr uint8_t DONE_HIT_AND_RUN       = 12;
     static constexpr uint8_t PLAYER_HIDING          = 13;
     static constexpr uint8_t ATTACK_HIDING_PLAYER   = 14;
-    static constexpr uint8_t ALIEN_KNOWS_VENT       = 15;
+    static constexpr uint8_t NPC_KNOWS_VENT         = 15;
     static constexpr uint8_t IS_CORPSE_TRAP         = 16;
     static constexpr uint8_t SHOULD_DESPAWN         = 17;
     static constexpr uint8_t ATTACK_IN_THRESHOLD    = 18;

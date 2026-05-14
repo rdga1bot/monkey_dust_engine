@@ -10,7 +10,7 @@
 #include <cstdint>
 
 // ── SenseThresholdQualifier ───────────────────────────────────────────────────
-// Maps CATHODE ThresholdQualifier enum used by sense-activation BT conditions.
+// Maps MD ThresholdQualifier enum used by sense-activation BT conditions.
 enum class SenseThresholdQualifier : uint8_t {
     Trace     = 0,  // any activation (activation > 0)
     Lower     = 1,  // activation >= threshold_lo
@@ -109,9 +109,9 @@ enum class BTNodeType : uint8_t {
     //   MemoryForget: clears all NpcMemoryComponent data → always Success
     MemoryCheck,
     MemoryForget,
-    // CathodeDump: AreaSweepCheck — gates on as->area_sweep_type == (AreaSweepType)data
+    // MdDump: AreaSweepCheck — gates on as->area_sweep_type == (AreaSweepType)data
     AreaSweepCheck,
-    // CATHODE_gemini patterns:
+    // MD_gemini patterns:
     //   DecoratorPercentage: succeeds child execution with data% probability (LCG)
     DecoratorPercentage,
     //   SelectorPercentage: picks one random child (equal probability), returns its result
@@ -123,7 +123,7 @@ enum class BTNodeType : uint8_t {
     ActionSetDead,
     //   ActionDespawn:    sets lcf::SHOULD_DESPAWN → deferred entity removal
     ActionDespawn,
-    // CATHODE_deepseek patterns:
+    // MD_deepseek patterns:
     //   AggroLevelCheck: data=(NpcAggroLevel)→Success if as->aggro_level matches
     //   SetAggroLevel:   data=(NpcAggroLevel)→writes and returns Success
     AggroLevelCheck,
@@ -132,7 +132,7 @@ enum class BTNodeType : uint8_t {
     //   SetNpcCombatState:   data=(NpcCombatState)→writes and returns Success
     NpcCombatStateCheck,
     SetNpcCombatState,
-    // CATHODE_z patterns:
+    // MD_z patterns:
     //   DecoratorMood:     decorator — run child only when as->mood == (NpcMood)data
     //   DecoratorAwareness:decorator — run child only when as->awareness == (AwarenessState)data
     DecoratorMood,
@@ -160,12 +160,12 @@ enum class BTNodeType : uint8_t {
     TargetFlagCheck,
     //   SetLocomotionState: write as->locomotion_state = (LocomotionState)data
     SetLocomotionState,
-    // CATHODE_arch Pattern 4 — DecoratorNamedBranch:
+    // MD_arch Pattern 4 — DecoratorNamedBranch:
     //   data  = fnv1a(branch_name); checks NamedBranchRegistry::IsActive(data)
     //   flags = 0: run child only when active (gate); 1: run child only when inactive (inverted)
     //   returns child result; Failure if condition not met
     DecoratorNamedBranch,
-    // CATHODE_grok patterns — from BEHAVIOR XML analysis
+    // MD_grok patterns — from BEHAVIOR XML analysis
     //   ActionIdleTime: wait data milliseconds then Success (uses st.timer like Wait)
     ActionIdleTime,
     //   ConditionHaveTarget: Success if bb["target_entity"] holds a valid entity
@@ -346,20 +346,20 @@ public:
     // Echo NpcMemory nodes
     uint16_t addMemoryCheck (uint8_t mode);  // 0=has_spatial, 1=has_event
     uint16_t addMemoryForget();
-    // CathodeDump: AreaSweepCheck
+    // MdDump: AreaSweepCheck
     uint16_t addAreaSweepCheck(AreaSweepType type);
-    // CATHODE_gemini patterns
+    // MD_gemini patterns
     uint16_t addDecoratorPercentage(uint8_t pct);
     uint16_t addSelectorPercentage();
     uint16_t addSenseTimeCheck(uint8_t sense_idx, uint32_t max_elapsed_ms);
     uint16_t addActionSetDead();
     uint16_t addActionDespawn();
-    // CATHODE_deepseek
+    // MD_deepseek
     uint16_t addAggroLevelCheck    (NpcAggroLevel level);
     uint16_t addSetAggroLevel      (NpcAggroLevel level);
     uint16_t addNpcCombatStateCheck(NpcCombatState state);
     uint16_t addSetNpcCombatState  (NpcCombatState state);
-    // CATHODE_z
+    // MD_z
     uint16_t addDecoratorMood      (NpcMood mood);
     uint16_t addDecoratorAwareness (AwarenessState state);
     // DecoratorTimerAuto: auto-start timer on every entry; propagate child result.
@@ -379,11 +379,11 @@ public:
     // TargetFlagCheck: reads target entity from bb key fnv1a("target_entity"), checks lcflags.
     uint16_t addTargetFlagCheck    (uint8_t bit_idx, bool check_set = true);
     uint16_t addSetLocomotionState (LocomotionState state);
-    // Pattern 4 (CATHODE_arch): named branch gate from NamedBranchRegistry.
+    // Pattern 4 (MD_arch): named branch gate from NamedBranchRegistry.
     // inverted=false → child runs when branch active; true → when inactive.
     uint16_t addDecoratorNamedBranch(const char* branch_name, bool inverted = false);
     uint16_t addDecoratorNamedBranch(uint32_t name_hash,      bool inverted = false);
-    // CATHODE_grok: 10 new patterns from BEHAVIOR XML analysis
+    // MD_grok: 10 new patterns from BEHAVIOR XML analysis
     // ActionIdleTime: waits duration_ms then returns Success (uses internal st.timer).
     uint16_t addActionIdleTime(uint32_t duration_ms);
     // ConditionHaveTarget: Success if blackboard key "target_entity" holds a valid entity.

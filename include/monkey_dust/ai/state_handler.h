@@ -4,7 +4,7 @@
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/platform/md_log.h>
 
-// StateHandlerRegistry — CATHODE pattern: each EntityStateFlag bit change
+// StateHandlerRegistry — MD pattern: each EntityStateFlag bit change
 // dispatches to a registered callback instead of a generic set_flag(bool).
 // MAX_HANDLERS slots; no heap allocation; raw function pointers only.
 //

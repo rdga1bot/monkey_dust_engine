@@ -2,7 +2,7 @@
 #include <cstdint>
 
 // ── AlienConfigurationType ────────────────────────────────────────────────────
-// CATHODE ALIEN_CONFIGURATION_TYPE — maps to DATA/ALIENCONFIGS/*.BML presets.
+// MD ALIEN_CONFIGURATION_TYPE — maps to DATA/ALIENCONFIGS/*.BML presets.
 // DirectorSystem selects the active preset based on gameplay phase.
 enum class AlienConfigurationType : uint8_t {
     Default           = 0,

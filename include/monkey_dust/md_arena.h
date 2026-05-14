@@ -75,7 +75,7 @@ inline MdArenaSlot md_make_arena_slot(MdArena<N>& arena) noexcept {
 }
 
 // MdArenaRegistry: Meyers singleton; up to MAX_ARENAS named arenas.
-// Inspired by CATHODE MemoryPool + MemoryTracker pattern.
+// Inspired by MD MemoryPool + MemoryTracker pattern.
 class MdArenaRegistry {
 public:
     static constexpr uint8_t MAX_ARENAS = 8;

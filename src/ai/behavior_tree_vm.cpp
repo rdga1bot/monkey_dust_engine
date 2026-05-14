@@ -425,7 +425,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
-        // CATHODE_gemini: DecoratorPercentage — run child with data% probability
+        // MD_gemini: DecoratorPercentage — run child with data% probability
         case BTNodeType::DecoratorPercentage:
             if (result == BTStatus::Running) {
                 // LCG seeded by entity XOR frame_index (same pattern as WeightedSelector)
@@ -440,7 +440,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             }
             pc = nd.parent; continue;  // propagate child result as-is
 
-        // CATHODE_gemini: SelectorPercentage — pick one random child, return its result
+        // MD_gemini: SelectorPercentage — pick one random child, return its result
         case BTNodeType::SelectorPercentage:
             if (result == BTStatus::Success || result == BTStatus::Failure) {
                 pc = nd.parent; continue;  // propagate child result
@@ -454,7 +454,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
                 result = BTStatus::Running; continue;
             }
 
-        // CATHODE_gemini: SenseTimeCheck — Success if sense was triggered recently
+        // MD_gemini: SenseTimeCheck — Success if sense was triggered recently
         case BTNodeType::SenseTimeCheck: {
             auto* sc = Registry::Get().try_get<SenseComponent>(e);
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -466,7 +466,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
-        // CATHODE_gemini: ActionSetDead / ActionDespawn — deferred lifecycle via lcf flags
+        // MD_gemini: ActionSetDead / ActionDespawn — deferred lifecycle via lcf flags
         case BTNodeType::ActionSetDead: {
             AgentState* as = Registry::Get().try_get<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -481,7 +481,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             result = BTStatus::Success; pc = nd.parent; continue;
         }
 
-        // CATHODE_deepseek: AggroLevelCheck / SetAggroLevel
+        // MD_deepseek: AggroLevelCheck / SetAggroLevel
         case BTNodeType::AggroLevelCheck: {
             AgentState* as = Registry::Get().try_get<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -497,7 +497,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
-        // CATHODE_deepseek: NpcCombatStateCheck / SetNpcCombatState
+        // MD_deepseek: NpcCombatStateCheck / SetNpcCombatState
         case BTNodeType::NpcCombatStateCheck: {
             AgentState* as = Registry::Get().try_get<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -513,7 +513,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
-        // ── CATHODE_z VM cases ─────────────────────────────────────────────────
+        // ── MD_z VM cases ─────────────────────────────────────────────────
 
         // Z1: DecoratorMood — run child only when as->mood matches
         case BTNodeType::DecoratorMood: {
@@ -672,7 +672,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
-        // CATHODE_arch P4: DecoratorNamedBranch — gate child on NamedBranchRegistry
+        // MD_arch P4: DecoratorNamedBranch — gate child on NamedBranchRegistry
         case BTNodeType::DecoratorNamedBranch: {
             if (result == BTStatus::Running) {
                 // first entry: check branch
@@ -689,7 +689,7 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
-        // G1: ActionIdleTime — wait duration_ms like Wait but named for CATHODE clarity
+        // G1: ActionIdleTime — wait duration_ms like Wait but named for MD clarity
         case BTNodeType::ActionIdleTime: {
             BTState& st = m_state[pc];
             if (st.timer == 0u)

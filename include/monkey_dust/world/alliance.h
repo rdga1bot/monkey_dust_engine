@@ -2,7 +2,7 @@
 #include <cstdint>
 
 // ── AllianceGroup ─────────────────────────────────────────────────────────────
-// CATHODE ALLIANCE_GROUP — faction membership categories.
+// MD ALLIANCE_GROUP — faction membership categories.
 enum class AllianceGroup : uint8_t {
     Unaligned    = 0,
     Player       = 1,

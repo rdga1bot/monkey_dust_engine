@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <entt/entt.hpp>
 
-// EntityProxyComponent — CATHODE EntityProxy pattern:
+// EntityProxyComponent — MD EntityProxy pattern:
 // Lightweight stand-in for a streamed-out entity.
 // Holds template GUID (FNV-1a) + desired spawn position.
 // SpawnState tracks the lazy-load lifecycle.

@@ -2,7 +2,7 @@
 #include <cstdint>
 
 // ── NpcDevelopmentStage ───────────────────────────────────────────────────────
-// CATHODE ALIEN_DEVELOPMENT_MANAGER_STAGES — NPC learns player's habits over time.
+// MD ALIEN_DEVELOPMENT_MANAGER_STAGES — NPC learns player's habits over time.
 enum class NpcDevelopmentStage : uint16_t {
     Naive          =   0,
     ThreatAware    =   2,
@@ -11,7 +11,7 @@ enum class NpcDevelopmentStage : uint16_t {
 };
 
 // ── npc_ability ───────────────────────────────────────────────────────────────
-// CATHODE ALIEN_DEVELOPMENT_MANAGER_ABILITIES — bitmask capability flags.
+// MD ALIEN_DEVELOPMENT_MANAGER_ABILITIES — bitmask capability flags.
 namespace npc_ability {
     static constexpr uint16_t ThreatAware                  =   2;
     static constexpr uint16_t ClosesViaBackstage           =   4;

@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <monkey_dust/platform/md_log.h>
 
-// DirectorHandle — CATHODE GlobalSingleton weak-ref pattern:
+// DirectorHandle — MD GlobalSingleton weak-ref pattern:
 // Entities hold a DirectorHandle (8 bytes) instead of a raw pointer.
 // The handle is valid only while the DirectorSystem's generation matches.
 // On level unload, generation is bumped → all handles become invalid.

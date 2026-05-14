@@ -2,7 +2,7 @@
 #include <cstdint>
 
 // ── SuspiciousItemStage ───────────────────────────────────────────────────────
-// CATHODE SUSPICIOUS_ITEM_STAGE — NPC investigation phase for a witnessed item.
+// MD SUSPICIOUS_ITEM_STAGE — NPC investigation phase for a witnessed item.
 // Stored in NpcEventRecord::investigation_stage; updated by AI response system.
 enum class SuspiciousItemStage : uint8_t {
     None                          = 0,
@@ -17,7 +17,7 @@ enum class SuspiciousItemStage : uint8_t {
 };
 
 // ── SuspiciousItemType ────────────────────────────────────────────────────────
-// CATHODE SUSPICIOUS_ITEM enum — typed stimulus categories for NPC event memory.
+// MD SUSPICIOUS_ITEM enum — typed stimulus categories for NPC event memory.
 // Replaces raw uint32_t FNV IDs: structured type lets BT nodes gate on stimulus class.
 enum class SuspiciousItemType : uint8_t {
     Explosion        =  0,

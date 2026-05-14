@@ -4,7 +4,7 @@
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/platform/md_log.h>
 
-// StateTransitionTable — CATHODE EntityState 40+ methods pattern:
+// StateTransitionTable — MD EntityState 40+ methods pattern:
 // Maps (required_flags_mask, forbidden_flags_mask) → action callback.
 // Transitions are evaluated in priority order; first matching rule fires.
 // MAX_RULES=16; no heap; raw function pointers.

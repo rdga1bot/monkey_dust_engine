@@ -3,7 +3,7 @@
 #include <monkey_dust/ai/fnv.h>
 #include <monkey_dust/platform/md_log.h>
 
-// NamedBranchRegistry — CATHODE DecoratorBranch pattern.
+// NamedBranchRegistry — MD DecoratorBranch pattern.
 // Each named branch (e.g. "THREAT_AWARE_BRANCH") maps to a bool slot.
 // BT DecoratorNamedBranch checks the registry on every tick;
 // external systems (DirectorSystem, FlowGraph) activate/deactivate branches.

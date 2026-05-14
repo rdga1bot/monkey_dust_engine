@@ -1,8 +1,8 @@
 #pragma once
 #include <cstdint>
 
-// ── CATHODE_z: SquadSignalBus ─────────────────────────────────────────────────
-// NPC squad pub/sub channel — maps CATHODE ActionNotifySquad / ConditionSquadSignal.
+// ── MD_z: SquadSignalBus ─────────────────────────────────────────────────
+// NPC squad pub/sub channel — maps MD ActionNotifySquad / ConditionSquadSignal.
 // MAX_SQUADS=8 channels; each channel stores the latest signal + sender + timestamp.
 // ActionSquadNotify BT node writes to the entity's squad channel.
 // ConditionSquadSignal BT node reads and checks the entity's squad channel.

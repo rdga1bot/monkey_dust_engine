@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <monkey_dust/components/agent_state.h>  // MotivationType
 
-// MotivationSet — CATHODE ConditionHasMotivation pattern:
+// MotivationSet — MD ConditionHasMotivation pattern:
 // Multiple simultaneous motivations, each with a uint8 priority (0=lowest).
 // BestFrom() returns the active motivation with the highest priority.
 // Replaces the single MotivationType field in AgentState for entities

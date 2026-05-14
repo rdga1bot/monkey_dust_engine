@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <monkey_dust/platform/md_log.h>
 
-// TypedParamRegistry — CATHODE EntityInterface pattern:
+// TypedParamRegistry — MD EntityInterface pattern:
 // 7 separate find_parameter<T> specializations → one unified registry.
 // Maps uint16_t param_id to a type tag + 4-byte value (covers int/float/bool/enum).
 // MAX_PARAMS=32 slots; no heap allocation.

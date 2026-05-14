@@ -270,7 +270,7 @@ uint16_t BehaviorTree::addActionDespawn() {
     return i;
 }
 
-// CATHODE_deepseek: AggroLevelCheck / SetAggroLevel / NpcCombatStateCheck / SetNpcCombatState
+// MD_deepseek: AggroLevelCheck / SetAggroLevel / NpcCombatStateCheck / SetNpcCombatState
 uint16_t BehaviorTree::addAggroLevelCheck(NpcAggroLevel level) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::AggroLevelCheck);
@@ -296,7 +296,7 @@ uint16_t BehaviorTree::addSetNpcCombatState(NpcCombatState state) {
     return i;
 }
 
-// ── CATHODE_z factory implementations ────────────────────────────────────────
+// ── MD_z factory implementations ────────────────────────────────────────
 
 uint16_t BehaviorTree::addDecoratorMood(NpcMood mood) {
     uint16_t i = m_nodeCount++;
@@ -378,7 +378,7 @@ uint16_t BehaviorTree::addSetLocomotionState(LocomotionState state) {
     return i;
 }
 
-// CATHODE_arch Pattern 4: DecoratorNamedBranch
+// MD_arch Pattern 4: DecoratorNamedBranch
 uint16_t BehaviorTree::addDecoratorNamedBranch(uint32_t name_hash, bool inverted) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::DecoratorNamedBranch);
@@ -390,7 +390,7 @@ uint16_t BehaviorTree::addDecoratorNamedBranch(const char* name, bool inverted) 
     return addDecoratorNamedBranch(md::fnv1a_rt(name), inverted);
 }
 
-// ── CATHODE_grok factories ────────────────────────────────────────────────────
+// ── MD_grok factories ────────────────────────────────────────────────────
 
 uint16_t BehaviorTree::addActionIdleTime(uint32_t duration_ms) {
     uint16_t i = m_nodeCount++;

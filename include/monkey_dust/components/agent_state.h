@@ -207,7 +207,7 @@ enum class WithdrawState : uint8_t {
 };
 
 // ── C: LocomotionState ────────────────────────────────────────────────────────
-// CATHODE LOCOMOTION_STATE enum — animation & physics system reads this.
+// MD LOCOMOTION_STATE enum — animation & physics system reads this.
 // BT writes via actEnterVent (IS_IN_VENT maps to InVent).
 enum class LocomotionState : uint8_t {
     Walking    = 0,
@@ -219,7 +219,7 @@ enum class LocomotionState : uint8_t {
     Idling     = 7,
 };
 
-// CATHODE LOCOMOTION_TARGET_SPEED — NavSystem uses this to select speed profile.
+// MD LOCOMOTION_TARGET_SPEED — NavSystem uses this to select speed profile.
 enum class LocomotionTargetSpeed : uint8_t {
     Slowest = 0,
     Slow    = 1,
@@ -228,7 +228,7 @@ enum class LocomotionTargetSpeed : uint8_t {
 };
 
 // ── C: AreaSweepType ──────────────────────────────────────────────────────────
-// CATHODE AREA_SWEEP_TYPE_CODE — controls the search pattern when motivation==Search.
+// MD AREA_SWEEP_TYPE_CODE — controls the search pattern when motivation==Search.
 // DirectorSystem writes; AreaSweepCheck BT node gates branches by type.
 enum class AreaSweepType : uint8_t {
     InAndOutBetweenTargetAndPosition = 0,  // alternates between target and known position
@@ -236,8 +236,8 @@ enum class AreaSweepType : uint8_t {
     AroundTarget                     = 2,  // continuous orbit around last-seen target
 };
 
-// ── CATHODE_deepseek: NpcAggroLevel ───────────────────────────────────────────
-// CATHODE NPC_AGGRO_LEVEL — NPC escalation toward lethal engagement.
+// ── MD_deepseek: NpcAggroLevel ───────────────────────────────────────────
+// MD NPC_AGGRO_LEVEL — NPC escalation toward lethal engagement.
 // Orthogonal to AlertnessState: androids escalate through verbal warnings before shooting.
 enum class NpcAggroLevel : uint8_t {
     None          = 0,  // passive / off-duty
@@ -245,12 +245,12 @@ enum class NpcAggroLevel : uint8_t {
     Interrogative = 2,  // verbal challenge — who are you?
     Warning       = 3,  // explicit warning shot / back off
     LastChance    = 4,  // final warning before lethal
-    NoLimit       = 5,  // shoot on sight (same value as Aggressive in CATHODE)
+    NoLimit       = 5,  // shoot on sight (same value as Aggressive in MD)
     Unknown       = 0xFF,
 };
 
-// ── CATHODE_deepseek: NpcCombatState ──────────────────────────────────────────
-// CATHODE NPC_COMBAT_STATE — fine-grained combat phase within AlertnessState::Combat.
+// ── MD_deepseek: NpcCombatState ──────────────────────────────────────────
+// MD NPC_COMBAT_STATE — fine-grained combat phase within AlertnessState::Combat.
 // Written by CombatSystem; BT reads via NpcCombatStateCheck/SetNpcCombatState.
 enum class NpcCombatState : uint8_t {
     None                    =  0,
@@ -272,16 +272,16 @@ enum class NpcCombatState : uint8_t {
     Unknown                 = 0xFF,
 };
 
-// ── CATHODE_deepseek: MoodIntensity ───────────────────────────────────────────
+// ── MD_deepseek: MoodIntensity ───────────────────────────────────────────
 // Intensity level of the current NpcMood — modulates animation blend weights.
 enum class MoodIntensity : uint8_t { Low = 0, Medium = 1, High = 2, Unknown = 0xFF };
 
-// ── CATHODE_deepseek: AggressionGain ─────────────────────────────────────────
+// ── MD_deepseek: AggressionGain ─────────────────────────────────────────
 // Rate of NpcAggroLevel escalation on player detection events.
 enum class AggressionGain : uint8_t { Low = 0, Med = 1, High = 2 };
 
 // ── ff:: frame-flag bit indices ───────────────────────────────────────────────
-// CATHODE FRAME_FLAGS enum — single-tick signals cleared at logic tick start.
+// MD FRAME_FLAGS enum — single-tick signals cleared at logic tick start.
 // Use with AgentState::frame_flags (same mechanism as C13 pattern).
 // Parallel to lcf::* but for per-frame transient signals only.
 namespace ff {
@@ -337,9 +337,9 @@ struct AgentBlackboard {
 // alertness:     C16 — behavioural alertness (Relaxed→Fleeing).
 // mood:          C17 — affective state for anim blending.
 // withdraw_state:C19 — 3-stage retreat FSM.
-// locomotion_state: CATHODE LocomotionState — animation & physics system reads this.
-// target_speed:     CATHODE LocomotionTargetSpeed — nav speed profile.
-// area_sweep_type:  CATHODE AreaSweepType — current search pattern for Search motivation.
+// locomotion_state: MD LocomotionState — animation & physics system reads this.
+// target_speed:     MD LocomotionTargetSpeed — nav speed profile.
+// area_sweep_type:  MD AreaSweepType — current search pattern for Search motivation.
 // Blackboard (bb): now in separate AgentBlackboard component (cold path).
 struct AgentState {
     uint64_t            timers[MAX_AGENT_TIMERS];  // ms deadlines; 0 = inactive
@@ -352,9 +352,9 @@ struct AgentState {
     AlertnessState      alertness;                  // C16: behavioural alertness level
     NpcMood             mood;                       // C17: affective state / anim layer
     WithdrawState       withdraw_state;             // C19: 3-stage retreat FSM
-    LocomotionState     locomotion_state;           // CATHODE: anim/physics locomotion
-    LocomotionTargetSpeed target_speed;             // CATHODE: nav speed profile
-    AreaSweepType       area_sweep_type;            // CATHODE: search pattern for Search
+    LocomotionState     locomotion_state;           // MD: anim/physics locomotion
+    LocomotionTargetSpeed target_speed;             // MD: nav speed profile
+    AreaSweepType       area_sweep_type;            // MD: search pattern for Search
     NpcAggroLevel       aggro_level;                // deepseek: NPC_AGGRO_LEVEL escalation
     NpcCombatState      combat_state;               // deepseek: combat phase sub-state
     MoodIntensity       mood_intensity;             // deepseek: intensity of current mood
@@ -362,7 +362,7 @@ struct AgentState {
 
 // ── AgentStateSnapshot ────────────────────────────────────────────────────────
 // POD snapshot of policy fields in AgentState for M48 persistence and
-// interrupt-safe hand-off (CATHODE EntityState snapshot/restore pattern).
+// interrupt-safe hand-off (MD EntityState snapshot/restore pattern).
 // Timers and gauges are intentionally excluded — they reset on restore.
 struct AgentStateSnapshot {
     uint64_t       lc_flags;        // lcflags.bits

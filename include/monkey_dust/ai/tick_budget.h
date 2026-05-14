@@ -1,13 +1,13 @@
 #pragma once
 #include <cstdint>
 
-// TickBudget — CATHODE TriggerProcessingContext::begin_cycle pattern:
+// TickBudget — MD TriggerProcessingContext::begin_cycle pattern:
 // Tracks per-frame trigger budget; rejects low-priority triggers when over budget.
 // begin_frame() resets counters; try_consume(priority) returns true only if
 // budget allows. Higher priority (lower value) always granted first.
 // Zero-overhead to query; no allocations.
 //
-// Maps to CATHODE's per-cycle trigger usage reporting (report_trigger_usage).
+// Maps to MD's per-cycle trigger usage reporting (report_trigger_usage).
 
 static constexpr uint8_t TICK_PRIORITY_HIGH   = 0;
 static constexpr uint8_t TICK_PRIORITY_NORMAL = 128;

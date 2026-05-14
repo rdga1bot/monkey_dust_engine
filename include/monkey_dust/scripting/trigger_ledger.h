@@ -2,13 +2,13 @@
 #include <cstdint>
 #include <monkey_dust/ai/fnv.h>
 
-// TriggerLedger — CATHODE TriggerInfo pattern adapted as a persistent
+// TriggerLedger — MD TriggerInfo pattern adapted as a persistent
 // ring buffer of trigger events for replay/save context (M48).
 //
 // Each TriggerRecord is a 16-byte POD storing: FNV-1a trigger ID,
 // entity sender (raw uint32), timestamp (ms), and duration (ms).
 // MAX_ENTRIES is the ring capacity; oldest entry is overwritten.
-// "Immutable" in the CATHODE sense: past entries are never mutated,
+// "Immutable" in the MD sense: past entries are never mutated,
 // only the write head advances.
 
 static constexpr uint8_t TRIGGER_LEDGER_MAX = 32;

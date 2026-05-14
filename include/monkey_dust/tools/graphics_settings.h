@@ -7,7 +7,7 @@
 enum class GraphicsPreset : uint8_t { Low = 0, Medium = 1, High = 2 };
 
 // ── GraphicsOverlay ───────────────────────────────────────────────────────────
-// CATHODE cPostProcessing analog: Director / cutscenes push named overlays.
+// MD cPostProcessing analog: Director / cutscenes push named overlays.
 // Negative field values mean "no override" — base GraphicsSettings value is used.
 // id=0 → inactive slot.  priority: higher value wins per field.
 struct GraphicsOverlay {
@@ -92,7 +92,7 @@ struct GraphicsSettings {
     }
 #endif
 
-    // ── Overlay stack (CATHODE cPostProcessing) ───────────────────────────────
+    // ── Overlay stack (MD cPostProcessing) ───────────────────────────────
     static constexpr int MAX_OVERLAYS = 4;
 
     // Add or replace an overlay by id. id=0 is reserved (inactive).

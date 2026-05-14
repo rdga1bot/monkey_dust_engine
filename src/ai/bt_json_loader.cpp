@@ -350,7 +350,7 @@ static NpcCombatState parse_npc_combat_state(const char* s) {
     return NpcCombatState::None;
 }
 
-// ── CATHODE_z enum parsers ────────────────────────────────────────────────────
+// ── MD_z enum parsers ────────────────────────────────────────────────────
 
 static SquadSignal parse_squad_signal(const char* s) {
     if (strcmp(s, "Warning")         == 0) return SquadSignal::Warning;
@@ -373,7 +373,7 @@ static LocomotionState parse_locomotion_state(const char* s) {
     return LocomotionState::Walking;
 }
 
-// ── CATHODE_grok enum parsers ─────────────────────────────────────────────────
+// ── MD_grok enum parsers ─────────────────────────────────────────────────
 
 static NpcSoundEvent parse_npc_sound_event(const char* s) {
     if (strcmp(s, "SuspectWarning")  == 0) return NpcSoundEvent::SuspectWarning;
@@ -406,9 +406,9 @@ static SuspiciousItemStage parse_suspicious_item_stage(const char* s) {
     return SuspiciousItemStage::None;
 }
 
-// ── CATHODE XML alias helpers ─────────────────────────────────────────────────
+// ── MD XML alias helpers ─────────────────────────────────────────────────
 
-// Extracts the integer after the last ':' in "NAME:N" format (CATHODE enum serialization).
+// Extracts the integer after the last ':' in "NAME:N" format (MD enum serialization).
 // Returns -1 if no colon found.
 static int parse_colon_index(const char* s) {
     if (!s || !*s) return -1;
@@ -417,10 +417,10 @@ static int parse_colon_index(const char* s) {
     return atoi(c + 1);
 }
 
-// Maps CATHODE MotivationType XML names → monkey_dust MotivationType enum.
-// CATHODE indices (ATTACK_MOTIVATION:1) do NOT match our values (Attack=3);
+// Maps MD MotivationType XML names → monkey_dust MotivationType enum.
+// MD indices (ATTACK_MOTIVATION:1) do NOT match our values (Attack=3);
 // name-based matching is required.
-static MotivationType parse_cathode_motivation(const char* s) {
+static MotivationType parse_md_motivation(const char* s) {
     if (strncmp(s, "BACKSTAGE_STALK_MOTIVATION", 26) == 0) return MotivationType::BackstageStalk;
     if (strncmp(s, "ATTACK_MOTIVATION",          17) == 0) return MotivationType::Attack;
     if (strncmp(s, "STALK_MOTIVATION",           16) == 0) return MotivationType::Stalk;
@@ -437,7 +437,7 @@ static MotivationType parse_cathode_motivation(const char* s) {
     return MotivationType::None;
 }
 
-// Maps CATHODE GaugeAmountType (name or ":N" index) → float threshold.
+// Maps MD GaugeAmountType (name or ":N" index) → float threshold.
 // GAUGE_NONE:0=0.0, GAUGE_TRACE:1=0.01, GAUGE_LOWER:2=0.25, GAUGE_ACTIVATED:3=0.5, GAUGE_UPPER:4=0.9
 static float parse_gauge_amount(const char* s) {
     int idx = parse_colon_index(s);
@@ -693,7 +693,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
     } else if (strcmp(type_str, "ActionDespawn") == 0) {
         idx = bt.addActionDespawn();
 
-    // ── CATHODE_deepseek ──────────────────────────────────────────────────────
+    // ── MD_deepseek ──────────────────────────────────────────────────────
     } else if (strcmp(type_str, "AggroLevelCheck") == 0) {
         char l[32] = "None";
         read_str_r(obj, obj_end, "\"level\"", l, sizeof(l));
@@ -714,7 +714,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
         idx = bt.addSetNpcCombatState(parse_npc_combat_state(s));
 
-    // ── CATHODE_z nodes ───────────────────────────────────────────────────────
+    // ── MD_z nodes ───────────────────────────────────────────────────────
 
     // Z1: DecoratorMood — decorator: run child only when mood matches
     } else if (strcmp(type_str, "DecoratorMood") == 0) {
@@ -788,7 +788,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
         idx = bt.addSetLocomotionState(parse_locomotion_state(s));
 
-    // CATHODE_arch P4: DecoratorNamedBranch — gate subtree on NamedBranchRegistry
+    // MD_arch P4: DecoratorNamedBranch — gate subtree on NamedBranchRegistry
     } else if (strcmp(type_str, "DecoratorNamedBranch") == 0) {
         char name[48] = "";
         read_str_r(obj, obj_end, "\"branch\"", name, sizeof(name));
@@ -854,8 +854,8 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
     } else if (strcmp(type_str, "DecoratorAggressionEscalation") == 0) {
         idx = bt.addDecoratorAggressionEscalation();
 
-    // ── Batch 1: CATHODE XML aliases ──────────────────────────────────────────
-    // These map CATHODE LegendPlugin class names to existing BT VM node types.
+    // ── Batch 1: MD XML aliases ──────────────────────────────────────────
+    // These map MD LegendPlugin class names to existing BT VM node types.
     // Attribute format: "NAME:N" — the :N suffix is the authoritative enum index.
 
     // B1-1: ActionSetLogicCharacterFlags → FlagSet
@@ -893,7 +893,7 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
 
     // B1-4: ActionSetWithdrawState → SetWithdraw
     // XML: <ActionSetWithdrawState WithdrawState="NEEDS_TO_WITHDRAW:1"/>
-    // CATHODE: NOT_WITHDRAWING:0, NEEDS_TO_WITHDRAW:1, WITHDRAWING:2
+    // MD: NOT_WITHDRAWING:0, NEEDS_TO_WITHDRAW:1, WITHDRAWING:2
     } else if (strcmp(type_str, "ActionSetWithdrawState") == 0) {
         char ws[64] = "";
         read_str_r(obj, obj_end, "\"state\"", ws, sizeof(ws));
@@ -905,11 +905,11 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
 
     // B1-5: ConditionHasMotivation → MotivationCheck
     // XML: <ConditionHasMotivation MotivationType="ATTACK_MOTIVATION:1"/>
-    // CATHODE indices ≠ monkey_dust values — must use name mapping
+    // MD indices ≠ monkey_dust values — must use name mapping
     } else if (strcmp(type_str, "ConditionHasMotivation") == 0) {
         char m[64] = "";
         read_str_r(obj, obj_end, "\"motivation\"", m, sizeof(m));
-        idx = bt.addMotivationCheck(parse_cathode_motivation(m));
+        idx = bt.addMotivationCheck(parse_md_motivation(m));
 
     // B1-6: ConditionIsGaugeAmountAbove → GaugeCheck
     // XML: <ConditionIsGaugeAmountAbove GaugeType="RETREAT_GAUGE:0" GaugeAmount="GAUGE_ACTIVATED:3"/>

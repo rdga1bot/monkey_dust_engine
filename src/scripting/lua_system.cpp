@@ -2,7 +2,7 @@
 #include <monkey_dust/platform/md_log.h>
 #include <cstring>
 #include <cstdint>
-#include <dirent.h>
+#include <monkey_dust/compat/md_dirent.h>
 
 // Custom allocator: enforce LUA_MEM_LIMIT_BYTES.
 // Returns nullptr when limit exceeded — Lua handles OOM gracefully.

@@ -3,6 +3,7 @@
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/ai/role_registry.h>
 #include <monkey_dust/ai/squad_signal.h>
+#include <monkey_dust/ai/named_branch.h>
 #include <entt/entt.hpp>
 #include <cstdint>
 
@@ -148,6 +149,11 @@ enum class BTNodeType : uint8_t {
     TargetFlagCheck,
     //   SetLocomotionState: write as->locomotion_state = (LocomotionState)data
     SetLocomotionState,
+    // CATHODE_arch Pattern 4 — DecoratorNamedBranch:
+    //   data  = fnv1a(branch_name); checks NamedBranchRegistry::IsActive(data)
+    //   flags = 0: run child only when active (gate); 1: run child only when inactive (inverted)
+    //   returns child result; Failure if condition not met
+    DecoratorNamedBranch,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -324,6 +330,10 @@ public:
     // TargetFlagCheck: reads target entity from bb key fnv1a("target_entity"), checks lcflags.
     uint16_t addTargetFlagCheck    (uint8_t bit_idx, bool check_set = true);
     uint16_t addSetLocomotionState (LocomotionState state);
+    // Pattern 4 (CATHODE_arch): named branch gate from NamedBranchRegistry.
+    // inverted=false → child runs when branch active; true → when inactive.
+    uint16_t addDecoratorNamedBranch(const char* branch_name, bool inverted = false);
+    uint16_t addDecoratorNamedBranch(uint32_t name_hash,      bool inverted = false);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

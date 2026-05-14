@@ -2,6 +2,7 @@
 #include <monkey_dust/ai/bt_action_registry.h>
 #include <monkey_dust/ai/fnv.h>
 #include <monkey_dust/ai/squad_signal.h>
+#include <monkey_dust/ai/named_branch.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/md_fs.h>
@@ -700,6 +701,16 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         char s[24] = "Walking";
         read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
         idx = bt.addSetLocomotionState(parse_locomotion_state(s));
+
+    // CATHODE_arch P4: DecoratorNamedBranch — gate subtree on NamedBranchRegistry
+    } else if (strcmp(type_str, "DecoratorNamedBranch") == 0) {
+        char name[48] = "";
+        read_str_r(obj, obj_end, "\"branch\"", name, sizeof(name));
+        bool inv = false;
+        { char inv_s[8] = "false";
+          read_str_r(obj, obj_end, "\"inverted\"", inv_s, sizeof(inv_s));
+          inv = (inv_s[0] == 't' || inv_s[0] == '1'); }
+        idx = bt.addDecoratorNamedBranch(name[0] ? md::fnv1a_rt(name) : 0u, inv);
 
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);

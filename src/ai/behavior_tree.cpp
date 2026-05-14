@@ -381,6 +381,18 @@ uint16_t BehaviorTree::addSetLocomotionState(LocomotionState state) {
     return i;
 }
 
+// CATHODE_arch Pattern 4: DecoratorNamedBranch
+uint16_t BehaviorTree::addDecoratorNamedBranch(uint32_t name_hash, bool inverted) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorNamedBranch);
+    m_nodes[i].data  = name_hash;
+    m_nodes[i].flags = inverted ? 1u : 0u;
+    return i;
+}
+uint16_t BehaviorTree::addDecoratorNamedBranch(const char* name, bool inverted) {
+    return addDecoratorNamedBranch(md::fnv1a_rt(name), inverted);
+}
+
 // ── Existing factories ────────────────────────────────────────────────────────
 
 uint16_t BehaviorTree::addSelector()  { uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::Selector);  return i; }
@@ -1085,6 +1097,23 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             AgentState* as = Registry::Get().try_get<AgentState>(e);
             if (as) as->locomotion_state = static_cast<LocomotionState>(nd.data);
             result = BTStatus::Success;
+            pc = nd.parent; continue;
+        }
+
+        // CATHODE_arch P4: DecoratorNamedBranch — gate child on NamedBranchRegistry
+        case BTNodeType::DecoratorNamedBranch: {
+            if (result == BTStatus::Running) {
+                // first entry: check branch
+                bool active   = NamedBranchRegistry::Get().IsActive(nd.data);
+                bool inverted = (nd.flags & 1u) != 0u;
+                bool gate_ok  = inverted ? !active : active;
+                if (!gate_ok) { result = BTStatus::Failure; pc = nd.parent; continue; }
+                if (nd.childStart == INVALID || nd.childCount == 0) {
+                    result = BTStatus::Success; pc = nd.parent; continue;
+                }
+                pc = m_children[nd.childStart]; continue;
+            }
+            // returning from child — propagate as-is
             pc = nd.parent; continue;
         }
 

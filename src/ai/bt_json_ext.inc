@@ -247,3 +247,59 @@
         idx = bt.addActionMeleeAttack(static_cast<uint8_t>(attack_type));
     } else if (strcmp(type_str, "ConditionIsCurrentCoverValid") == 0) {
         idx = bt.addConditionIsCurrentCoverValid();
+
+    // ── Batch 22 — new types ──────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionLastTimeSensed") == 0) {
+        uint8_t si     = read_sense_idx_r(obj, obj_end, 0u);
+        int     max_ms = read_int_r(obj, obj_end, "\"max_elapsed_ms\"", 2000);
+        idx = bt.addConditionLastTimeSensed(si, static_cast<uint32_t>(max_ms < 0 ? 0 : max_ms));
+    } else if (strcmp(type_str, "ActionPerformRole") == 0) {
+        char role_s[32] = "";
+        read_str_r(obj, obj_end, "\"role\"", role_s, sizeof(role_s));
+        idx = bt.addActionPerformRole(parse_role(role_s));
+    } else if (strcmp(type_str, "ConditionWasSenseThresholdLastIncreaseActivationAbove") == 0) {
+        uint8_t si = read_sense_idx_r(obj, obj_end, 0u);
+        char thr[16] = "Activated";
+        read_str_r(obj, obj_end, "\"threshold\"", thr, sizeof(thr));
+        idx = bt.addConditionWasSenseThresholdLastIncreaseActivationAbove(
+            si, parse_sense_qualifier(thr));
+    } else if (strcmp(type_str, "ConditionTargetsWeaponHasAmmo") == 0) {
+        idx = bt.addConditionTargetsWeaponHasAmmo();
+    } else if (strcmp(type_str, "ConditionTargetsWeaponHasProperty") == 0) {
+        int wtype = read_int_r(obj, obj_end, "\"weapon_type\"", 0);
+        if (wtype < 0 || wtype > 255) wtype = 0;
+        idx = bt.addConditionTargetsWeaponHasProperty(static_cast<uint8_t>(wtype));
+    } else if (strcmp(type_str, "ConditionHasSearchedMostRecentSensedPosition") == 0) {
+        idx = bt.addConditionHasSearchedMostRecentSensedPosition();
+    // ── Batch 22 — JSON aliases (no new BTNodeType) ───────────────────────────
+    } else if (strcmp(type_str, "ConditionIsPerformingRoleOrCouldPerformRole") == 0) {
+        char role_s[32] = "";
+        read_str_r(obj, obj_end, "\"role\"", role_s, sizeof(role_s));
+        idx = bt.addRoleCheck(parse_role(role_s), true);  // could_perform mode
+    } else if (strcmp(type_str, "ActionNotifySquad") == 0) {
+        char sig[24] = "None";
+        read_str_r(obj, obj_end, "\"signal\"", sig, sizeof(sig));
+        idx = bt.addActionSquadNotify(parse_squad_signal(sig));
+    } else if (strcmp(type_str, "ConditionTargetLogicCharacterFlags") == 0) {
+        char f[64] = "";
+        read_str_r(obj, obj_end, "\"flag\"", f, sizeof(f));
+        bool cs = read_bool_r(obj, obj_end, "\"check_set\"", true);
+        int bit = parse_colon_index(f);
+        if (bit < 0) bit = static_cast<int>(parse_flag(f));
+        idx = bt.addTargetFlagCheck(static_cast<uint8_t>(bit), cs);
+    } else if (strcmp(type_str, "ConditionWithdrawState") == 0) {
+        char s[16] = "";
+        read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
+        idx = bt.addWithdrawCheck(parse_withdraw(s));
+    } else if (strcmp(type_str, "ActionStartTimerRandom") == 0) {
+        char slot[32] = "0";
+        read_str_r(obj, obj_end, "\"timer_slot\"", slot, sizeof(slot));
+        int min_ms = read_int_r(obj, obj_end, "\"min_ms\"", 0);
+        int max_ms = read_int_r(obj, obj_end, "\"max_ms\"", 3000);
+        idx = bt.addActionTimerRandom(parse_timer_slot(slot),
+                                      static_cast<uint32_t>(min_ms < 0 ? 0 : min_ms),
+                                      static_cast<uint32_t>(max_ms < 0 ? 0 : max_ms));
+    } else if (strcmp(type_str, "ConditionAngleToTargetLessThan") == 0) {
+        float angle = read_float_r(obj, obj_end, "\"angle\"", 45.f);
+        if (angle < 0.f) angle = 0.f;
+        idx = bt.addConditionAngleToTarget(angle);

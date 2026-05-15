@@ -420,6 +420,27 @@ enum class BTNodeType : uint8_t {
     ActionMeleeAttack,
     //   ConditionIsCurrentCoverValid: Success if lcf::IS_IN_COVER is set; data=0
     ConditionIsCurrentCoverValid,
+
+    // ── Batch 22 ──────────────────────────────────────────────────────────────
+    //   ConditionLastTimeSensed: Success if now_ms - sc->last_activated_ms[idx] <= max_ms
+    //     data = (sense_idx<<24)|max_elapsed_ms (24-bit ms, same as SenseTimeCheck)
+    ConditionLastTimeSensed,
+    //   ActionPerformRole: atomically claims role slot (query_id=0); Success/Failure
+    //     data = NpcRole value (uint8_t)
+    ActionPerformRole,
+    //   ConditionWasSenseThresholdLastIncreaseActivationAbove:
+    //     Success if sc->activation[sense_idx] >= qualifier threshold
+    //     data = (sense_idx<<8)|SenseThresholdQualifier
+    ConditionWasSenseThresholdLastIncreaseActivationAbove,
+    //   ConditionTargetsWeaponHasAmmo: Success if target's weapon !needs_reload
+    //     data = 0; target from bb["target_entity"]
+    ConditionTargetsWeaponHasAmmo,
+    //   ConditionTargetsWeaponHasProperty: Success if target's weapon_type == data
+    //     data = weapon_type (uint8_t)
+    ConditionTargetsWeaponHasProperty,
+    //   ConditionHasSearchedMostRecentSensedPosition:
+    //     Success if lcf::HAS_SEARCHED_RECENT_SENSED_POS set; data=0
+    ConditionHasSearchedMostRecentSensedPosition,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -535,6 +556,12 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionDead:                    0 (unused)
 //   ActionMeleeAttack:             attack_type uint8 (0=Any,1=Light,2=Heavy,3=Special)
 //   ConditionIsCurrentCoverValid:  0 (checks lcf::IS_IN_COVER)
+//   ConditionLastTimeSensed:       (sense_idx<<24)|max_elapsed_ms (24-bit ms)
+//   ActionPerformRole:             NpcRole value (uint8_t)
+//   ConditionWasSenseThresholdLastIncreaseActivationAbove: (sense_idx<<8)|SenseThresholdQualifier
+//   ConditionTargetsWeaponHasAmmo: 0 (checks target WeaponComponent::needs_reload==false)
+//   ConditionTargetsWeaponHasProperty: weapon_type (uint8_t)
+//   ConditionHasSearchedMostRecentSensedPosition: 0 (lcf::HAS_SEARCHED_RECENT_SENSED_POS)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -835,6 +862,15 @@ public:
     uint16_t addActionDead();
     uint16_t addActionMeleeAttack(uint8_t attack_type = 0);
     uint16_t addConditionIsCurrentCoverValid();
+
+    // ── Batch 22 ──────────────────────────────────────────────────────────────
+    uint16_t addConditionLastTimeSensed(uint8_t sense_idx, uint32_t max_elapsed_ms);
+    uint16_t addActionPerformRole(NpcRole role);
+    uint16_t addConditionWasSenseThresholdLastIncreaseActivationAbove(uint8_t sense_idx,
+                                                                       SenseThresholdQualifier q);
+    uint16_t addConditionTargetsWeaponHasAmmo();
+    uint16_t addConditionTargetsWeaponHasProperty(uint8_t weapon_type);
+    uint16_t addConditionHasSearchedMostRecentSensedPosition();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

@@ -106,6 +106,7 @@ namespace lcf {
     static constexpr uint8_t IS_SUSPENDED           = 41;  // Batch 11 P8: BT tick skipped when set
     static constexpr uint8_t IS_PLAYER              = 42;  // Batch 15: marks the player-controlled entity
     static constexpr uint8_t IS_IN_COVER            = 43;  // Batch 17: entity is currently in cover
+    static constexpr uint8_t HAS_SEARCHED_RECENT_SENSED_POS = 44;  // Batch 22: searched most recent sensed position
 }
 
 struct LogicCharacterFlags {

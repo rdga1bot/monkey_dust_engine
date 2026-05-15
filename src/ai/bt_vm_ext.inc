@@ -524,3 +524,72 @@
             result = as->lcflags.test(lcf::IS_IN_COVER) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
+
+        // ── Batch 22 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ConditionLastTimeSensed: {
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint8_t  idx       = static_cast<uint8_t>(nd.data >> 24);
+            uint32_t max_ms    = nd.data & 0x00FFFFFFu;
+            if (idx >= MAX_SENSES) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint32_t last = sc->last_activated_ms[idx];
+            result = (last != 0u && (nowMs - last) <= max_ms) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionPerformRole: {
+            auto role = static_cast<NpcRole>(static_cast<uint8_t>(nd.data));
+            bool ok   = RoleRegistry::Get().claim(role, 0u, e);
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionWasSenseThresholdLastIncreaseActivationAbove: {
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint8_t sense_idx = static_cast<uint8_t>((nd.data >> 8) & 0xFu);
+            auto    q         = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
+            if (sense_idx >= MAX_SENSES) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float act = sc->activation[sense_idx];
+            bool  ok  = false;
+            switch (q) {
+                case SenseThresholdQualifier::Trace:     ok = (act > 0.0f);              break;
+                case SenseThresholdQualifier::Lower:     ok = (act >= sc->threshold_lo); break;
+                case SenseThresholdQualifier::Activated: ok = (act >= sc->threshold_hi); break;
+                case SenseThresholdQualifier::Upper:     ok = (act >= 1.0f);             break;
+            }
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionTargetsWeaponHasAmmo: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity target       = static_cast<entt::entity>(en->val.e);
+            const WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(target);
+            if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (!wc->needs_reload) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionTargetsWeaponHasProperty: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity target       = static_cast<entt::entity>(en->val.e);
+            const WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(target);
+            if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (wc->weapon_type == static_cast<uint8_t>(nd.data)) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasSearchedMostRecentSensedPosition: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = as->lcflags.test(lcf::HAS_SEARCHED_RECENT_SENSED_POS) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }

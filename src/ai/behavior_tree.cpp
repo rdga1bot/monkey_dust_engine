@@ -853,6 +853,39 @@ uint16_t BehaviorTree::addConditionIsCurrentCoverValid() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsCurrentCoverValid); return i;
 }
 
+// ── Batch 22 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionLastTimeSensed(uint8_t sense_idx, uint32_t max_elapsed_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionLastTimeSensed);
+    m_nodes[i].data = (static_cast<uint32_t>(sense_idx) << 24) | (max_elapsed_ms & 0x00FFFFFFu);
+    return i;
+}
+uint16_t BehaviorTree::addActionPerformRole(NpcRole role) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionPerformRole);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(role));
+    return i;
+}
+uint16_t BehaviorTree::addConditionWasSenseThresholdLastIncreaseActivationAbove(
+    uint8_t sense_idx, SenseThresholdQualifier q) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionWasSenseThresholdLastIncreaseActivationAbove);
+    m_nodes[i].data = (static_cast<uint32_t>(sense_idx) << 8) | static_cast<uint32_t>(static_cast<uint8_t>(q));
+    return i;
+}
+uint16_t BehaviorTree::addConditionTargetsWeaponHasAmmo() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionTargetsWeaponHasAmmo); return i;
+}
+uint16_t BehaviorTree::addConditionTargetsWeaponHasProperty(uint8_t weapon_type) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionTargetsWeaponHasProperty);
+    m_nodes[i].data = static_cast<uint32_t>(weapon_type);
+    return i;
+}
+uint16_t BehaviorTree::addConditionHasSearchedMostRecentSensedPosition() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasSearchedMostRecentSensedPosition); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

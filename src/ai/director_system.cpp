@@ -1,4 +1,5 @@
 #include <monkey_dust/ai/director_system.h>
+#include <monkey_dust/ai/utility_scorer.h>
 #include <monkey_dust/ai/fnv.h>
 #include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/ecs/registry.h>
@@ -146,6 +147,22 @@ void DirectorSystem::SetProfile(const char* name) {
 
 static constexpr uint32_t K_MENACE = md::fnv1a("menace");
 static constexpr uint32_t K_STAGE  = md::fnv1a("director_stage");
+
+// ── M52: ChooseMotivation ─────────────────────────────────────────────────────
+
+MotivationType DirectorSystem::ChooseMotivation(AgentState& as,
+                                                 uint32_t now_ms) noexcept {
+    MotivationType chosen = UtilityScorer::SelectMotivation(as, now_ms);
+    if (chosen == as.motivation) {
+        // Same motivation: grow inertia counter, cap at 255 to prevent overflow.
+        if (as.motivation_ticks < 255u) ++as.motivation_ticks;
+    } else {
+        // Motivation changed: commit and reset inertia so the new choice starts fresh.
+        as.motivation       = chosen;
+        as.motivation_ticks = 0;
+    }
+    return chosen;
+}
 
 void DirectorSystem::AdjustMenace(float delta, uint8_t mode) {
     if      (mode == 1) menace_  = delta;

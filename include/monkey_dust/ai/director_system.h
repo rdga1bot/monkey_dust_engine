@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <monkey_dust/ai/alien_config.h>
+#include <monkey_dust/components/agent_state.h>
 
 // ── DirectorStage ─────────────────────────────────────────────────────────────
 // Stages are driven by menace_ [0..1]; thresholds: 0.25 / 0.50 / 0.75.
@@ -46,6 +47,13 @@ public:
 
     // Batch 10 P9: BT-driven menace override. mode: 0=add, 1=set, 2=subtract. Clamps [0..1].
     void AdjustMenace(float delta, uint8_t mode = 0);
+
+    // M52: Select the best motivation for an agent using UtilityScorer.
+    // Writes chosen motivation to as.motivation.
+    // Increments as.motivation_ticks when motivation stays the same;
+    // resets to 0 when it changes (used by UtilityScorer inertia Bias).
+    // Call once per logic tick per NPC, after Tick().
+    MotivationType ChooseMotivation(AgentState& as, uint32_t now_ms) noexcept;
 
     const DirectorProfile* GetCurrentProfile() const;
 

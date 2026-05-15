@@ -86,10 +86,12 @@ FlowActionFunc FlowGraph::find_action(uint32_t node_id) const {
 // Coerce any FlowVar type to float (used by GetVar + Condition node evaluation).
 static float coerce_to_float(const FlowVar& v) noexcept {
     switch (v.type) {
-    case FlowVarType::Float: return v.val.f;
-    case FlowVarType::Bool:  return v.val.b ? 1.f : 0.f;
-    case FlowVarType::Int:   return static_cast<float>(v.val.i);
-    case FlowVarType::Str:   return v.val.s[0] ? 1.f : 0.f;
+    case FlowVarType::Float:     return v.val.f;
+    case FlowVarType::Bool:      return v.val.b ? 1.f : 0.f;
+    case FlowVarType::Int:       return static_cast<float>(v.val.i);
+    case FlowVarType::Str:       return v.val.s[0] ? 1.f : 0.f;
+    case FlowVarType::Vec3:      return v.val.v3[0];  // x component only
+    case FlowVarType::EntityRef: return static_cast<float>(v.val.entity_ref);
     }
     return 0.f;
 }
@@ -176,10 +178,12 @@ bool FlowGraph::GetVarBool(uint32_t key, bool def) const {
     for (int i = 0; i < var_count; ++i) {
         if (vars[i].key != key) continue;
         switch (vars[i].type) {
-        case FlowVarType::Bool:  return vars[i].val.b;
-        case FlowVarType::Float: return vars[i].val.f != 0.f;
-        case FlowVarType::Int:   return vars[i].val.i != 0;
-        case FlowVarType::Str:   return vars[i].val.s[0] != '\0';
+        case FlowVarType::Bool:      return vars[i].val.b;
+        case FlowVarType::Float:     return vars[i].val.f != 0.f;
+        case FlowVarType::Int:       return vars[i].val.i != 0;
+        case FlowVarType::Str:       return vars[i].val.s[0] != '\0';
+        case FlowVarType::Vec3:      return vars[i].val.v3[0] != 0.f;
+        case FlowVarType::EntityRef: return vars[i].val.entity_ref != 0u;
         }
     }
     return def;
@@ -189,10 +193,12 @@ int32_t FlowGraph::GetVarInt(uint32_t key, int32_t def) const {
     for (int i = 0; i < var_count; ++i) {
         if (vars[i].key != key) continue;
         switch (vars[i].type) {
-        case FlowVarType::Int:   return vars[i].val.i;
-        case FlowVarType::Float: return static_cast<int32_t>(vars[i].val.f);
-        case FlowVarType::Bool:  return vars[i].val.b ? 1 : 0;
-        case FlowVarType::Str:   return 0;
+        case FlowVarType::Int:       return vars[i].val.i;
+        case FlowVarType::Float:     return static_cast<int32_t>(vars[i].val.f);
+        case FlowVarType::Bool:      return vars[i].val.b ? 1 : 0;
+        case FlowVarType::Str:       return 0;
+        case FlowVarType::Vec3:      return static_cast<int32_t>(vars[i].val.v3[0]);
+        case FlowVarType::EntityRef: return static_cast<int32_t>(vars[i].val.entity_ref);
         }
     }
     return def;
@@ -210,6 +216,77 @@ FlowVarType FlowGraph::GetVarType(uint32_t key) const {
     for (int i = 0; i < var_count; ++i)
         if (vars[i].key == key) return vars[i].type;
     return FlowVarType::Float;
+}
+
+// ── P16: Vec3 + EntityRef variable accessors ──────────────────────────────────
+
+void FlowGraph::SetVarVec3(uint32_t key, float x, float y, float z) {
+    if (FlowVar* v = find_var(vars, var_count, key)) {
+        v->type = FlowVarType::Vec3;
+        v->val.v3[0] = x; v->val.v3[1] = y; v->val.v3[2] = z;
+        return;
+    }
+    if (var_count < MAX_VARS) {
+        FlowVar& v = vars[var_count++];
+        v.key = key; v.type = FlowVarType::Vec3;
+        v.val.v3[0] = x; v.val.v3[1] = y; v.val.v3[2] = z;
+    } else {
+        MD_LOG(MD_LOG_WARNING, "FlowGraph: var table full, key=0x%08X dropped", key);
+    }
+}
+
+void FlowGraph::GetVarVec3(uint32_t key, float& x, float& y, float& z) const {
+    for (int i = 0; i < var_count; ++i) {
+        if (vars[i].key == key && vars[i].type == FlowVarType::Vec3) {
+            x = vars[i].val.v3[0]; y = vars[i].val.v3[1]; z = vars[i].val.v3[2];
+            return;
+        }
+    }
+    x = y = z = 0.f;
+}
+
+void FlowGraph::SetVarEntity(uint32_t key, uint32_t entity_id) {
+    if (FlowVar* v = find_var(vars, var_count, key)) {
+        v->type = FlowVarType::EntityRef;
+        v->val.entity_ref = entity_id;
+        return;
+    }
+    if (var_count < MAX_VARS) {
+        FlowVar& v = vars[var_count++];
+        v.key = key; v.type = FlowVarType::EntityRef;
+        v.val.entity_ref = entity_id;
+    } else {
+        MD_LOG(MD_LOG_WARNING, "FlowGraph: var table full, key=0x%08X dropped", key);
+    }
+}
+
+uint32_t FlowGraph::GetVarEntity(uint32_t key, uint32_t def) const {
+    for (int i = 0; i < var_count; ++i)
+        if (vars[i].key == key && vars[i].type == FlowVarType::EntityRef)
+            return vars[i].val.entity_ref;
+    return def;
+}
+
+// ── P17: FlowAlias ────────────────────────────────────────────────────────────
+
+void FlowGraph::RegisterAlias(uint32_t name_hash, uint32_t target_node_id) {
+    for (int i = 0; i < alias_count_; ++i) {
+        if (aliases_[i].name_hash == name_hash) {
+            aliases_[i].target_node_id = target_node_id;
+            return;
+        }
+    }
+    if (alias_count_ < MAX_ALIASES) {
+        aliases_[alias_count_++] = {name_hash, target_node_id};
+    } else {
+        MD_LOG(MD_LOG_WARNING, "FlowGraph: alias table full");
+    }
+}
+
+uint32_t FlowGraph::ResolveAlias(uint32_t name_hash) const {
+    for (int i = 0; i < alias_count_; ++i)
+        if (aliases_[i].name_hash == name_hash) return aliases_[i].target_node_id;
+    return name_hash;  // identity passthrough
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────

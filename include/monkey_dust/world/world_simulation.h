@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cstring>
 
 // ── WorldSimulation ───────────────────────────────────────────────────────────
 // Echo-inspired 1 Hz world-state simulation: faction economy + trade routes.
@@ -7,14 +8,14 @@
 //
 // FactionState[MAX_FACTIONS]: faction-level economy metrics updated each sim tick.
 // TradeRoute[MAX_ROUTES]:     directed trade between two factions; active flag.
+// FactionRaidEvent[MAX_RAIDS]:one-shot raid events processed on next 1 Hz tick.
 //
 // Integration: call Tick(now_s) from logic_tick.cpp (~every 10 logic ticks = 1s).
 // Access: WorldSimulation::Get() singleton; all arrays are fixed BSS.
-//
-// Lua hooks: fire "world_sim_tick" event after each Tick() via LuaEventBus.
 
 static constexpr int WS_MAX_FACTIONS = 8;
 static constexpr int WS_MAX_ROUTES   = 32;
+static constexpr int WS_MAX_RAIDS    = 4;
 
 struct FactionState {
     uint8_t  faction_id    = 0;
@@ -33,6 +34,18 @@ struct TradeRoute {
     uint8_t active       = 0;   // 0=closed, 1=open
 };
 static_assert(sizeof(TradeRoute) == 4, "");
+
+// ── Batch 13 P12: FactionRaidEvent ────────────────────────────────────────────
+// One-shot raid processed on the next 1 Hz WorldSimulation tick.
+// Attacker steals (defender.gold * strength / 255) gold from defender.
+// Slot is freed (active=0) after processing.
+struct FactionRaidEvent {
+    uint8_t attacker_faction = 0;
+    uint8_t defender_faction = 0;
+    uint8_t strength         = 0;  // raid intensity 0–255; proportional gold taken
+    uint8_t active           = 0;  // 0=free slot, 1=pending
+};
+static_assert(sizeof(FactionRaidEvent) == 4, "");
 
 class WorldSimulation {
 public:
@@ -69,12 +82,28 @@ public:
                 routes_[i].active = 0;
     }
 
-    FactionState factions_[WS_MAX_FACTIONS] = {};
-    TradeRoute   routes_  [WS_MAX_ROUTES]   = {};
-    int          faction_count_ = 0;
-    int          route_count_   = 0;
+    // P12: Queue a one-shot raid event. Processed on next 1 Hz tick.
+    // Drops silently if all WS_MAX_RAIDS slots are occupied.
+    void QueueRaid(uint8_t attacker, uint8_t defender, uint8_t strength) noexcept;
+
+    // Reset all state — use in tests between test cases.
+    void Reset() noexcept {
+        faction_count_ = route_count_ = 0;
+        accum_s_       = 0.f;
+        tick_count_    = 0;
+        memset(factions_,     0, sizeof(factions_));
+        memset(routes_,       0, sizeof(routes_));
+        memset(pending_raids_, 0, sizeof(pending_raids_));
+    }
+
+    FactionState     factions_    [WS_MAX_FACTIONS] = {};
+    TradeRoute       routes_      [WS_MAX_ROUTES]   = {};
+    FactionRaidEvent pending_raids_[WS_MAX_RAIDS]   = {};
+    int              faction_count_ = 0;
+    int              route_count_   = 0;
 
 private:
     WorldSimulation() = default;
-    float accum_s_ = 0.f;
+    float    accum_s_    = 0.f;
+    uint32_t tick_count_ = 0;
 };

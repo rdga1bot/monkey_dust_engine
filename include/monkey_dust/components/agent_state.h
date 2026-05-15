@@ -410,7 +410,7 @@ struct AgentState {
     NpcAggroLevel       aggro_level;                // deepseek: NPC_AGGRO_LEVEL escalation
     NpcCombatState      combat_state;               // deepseek: combat phase sub-state
     MoodIntensity       mood_intensity;             // deepseek: intensity of current mood
-    uint8_t             _pad_as[1];
+    uint8_t             motivation_ticks;           // Batch 13 P13: consecutive ticks on current motivation
     uint32_t            event_ts[MAX_EVENT_TYPES];   // Batch 4: ms when EventType[i] last fired; 0=never
     SuspiciousItemReaction si_reaction;               // Batch 7: NPC reaction decision for SI
     AmbushType             ambush_type;               // Batch 7: subtype of ambush approach

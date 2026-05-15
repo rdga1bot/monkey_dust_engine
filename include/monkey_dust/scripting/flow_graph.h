@@ -32,23 +32,32 @@ struct FlowConn {
 };
 static_assert(sizeof(FlowConn) == 12, "FlowConn must be 12 bytes");
 
-// M45: typed flow variable.
+// M45/Batch13: typed flow variable.
 // SaveSystem only persists Float-typed vars (FlowVarRecord).
 // Condition nodes coerce any type to float for evaluation.
-enum class FlowVarType : uint8_t { Float = 0, Bool = 1, Int = 2, Str = 3 };
+enum class FlowVarType : uint8_t {
+    Float     = 0,
+    Bool      = 1,
+    Int       = 2,
+    Str       = 3,
+    Vec3      = 4,       // P16: 3-component float vector (12 bytes)
+    EntityRef = 5,       // P16: entity ID (uint32_t)
+};
 
 struct FlowVar {
     uint32_t    key;      // FNV-1a hash of variable name
     FlowVarType type;
     uint8_t     _pad[3];
     union {
-        float   f;
-        bool    b;
-        int32_t i;
-        char    s[16];    // inline string (max 15 chars + NUL)
+        float    f;
+        bool     b;
+        int32_t  i;
+        char     s[16];       // inline string (max 15 chars + NUL); largest member
+        float    v3[3];       // Vec3 (12 bytes)
+        uint32_t entity_ref;  // EntityRef
     } val;
 };
-static_assert(sizeof(FlowVar) == 24, "FlowVar must be 24 bytes");;
+static_assert(sizeof(FlowVar) == 24, "FlowVar must be 24 bytes");
 
 // one pending event in the ring buffer.
 // fire_at_s = absolute game time (matches TriggerInfo::duration semantics).
@@ -58,8 +67,18 @@ struct FlowPendingTrigger {
     double   fire_at_s;
 };
 
-static constexpr uint32_t FLOW_INVALID_CONN  = 0xFFFFFFFFu;
+static constexpr uint32_t FLOW_INVALID_CONN    = 0xFFFFFFFFu;
 static constexpr uint8_t  FLOW_INVALID_DURABLE = 0xFFu;
+
+// ── Batch 13 P17: FlowAlias ───────────────────────────────────────────────────
+// Named alias → target node FNV hash mapping.
+// ResolveAlias returns target_node_id if found, else the input hash (identity).
+// Allows JSON templates to reference nodes by short alias names.
+struct FlowAlias {
+    uint32_t name_hash;       // fnv1a of alias name
+    uint32_t target_node_id;  // fnv1a of target node name
+};
+static_assert(sizeof(FlowAlias) == 8, "FlowAlias must be 8 bytes");
 
 // ── C20: FlowDurableTrigger ───────────────────────────────────────────────────
 // One-shot FlowPendingTriggers fire once and are discarded.
@@ -145,6 +164,23 @@ struct FlowGraph {
     // Returns Float for unknown keys.
     FlowVarType GetVarType(uint32_t key) const;
 
+    // P16: Vec3 variable accessors — x/y/z stored in val.v3[0..2].
+    void SetVarVec3(uint32_t key, float x, float y, float z);
+    void GetVarVec3(uint32_t key, float& x, float& y, float& z) const;
+
+    // P16: EntityRef variable accessors — stores a uint32_t entity ID.
+    void     SetVarEntity(uint32_t key, uint32_t entity_id);
+    uint32_t GetVarEntity(uint32_t key, uint32_t def = 0u) const;
+
+    // P17: FlowAlias — register name_hash → target_node_id mapping.
+    // Re-registering the same name_hash updates the target.
+    void     RegisterAlias(uint32_t name_hash, uint32_t target_node_id);
+    void     RegisterAlias(const char* name, const char* target_node) {
+        RegisterAlias(md::fnv1a(name), md::fnv1a(target_node));
+    }
+    // Returns target_node_id if alias registered, else name_hash (identity passthrough).
+    uint32_t ResolveAlias(uint32_t name_hash) const;
+
 private:
     bool  ring_push(const FlowPendingTrigger& t);
     bool  ring_pop (FlowPendingTrigger& t);
@@ -154,4 +190,9 @@ private:
     FlowActionFunc find_action(uint32_t node_id) const;
     void propagate(uint32_t from_node_id, uint8_t from_port, double now_s,
                    entt::entity ctx, entt::registry& reg);
+
+    // P17: alias table (zeroed by Init())
+    static constexpr int MAX_ALIASES = 8;
+    FlowAlias aliases_    [MAX_ALIASES];
+    int       alias_count_ = 0;
 };

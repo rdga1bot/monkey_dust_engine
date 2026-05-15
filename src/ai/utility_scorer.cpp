@@ -44,8 +44,9 @@ void UtilityScorer::FillCandidates(const AgentState& as, uint32_t /*now_ms*/,
         out.Add(MotivationType::ThreatAware, kThreatBonus);
     }
 
-    // Preserve current motivation with a small inertia bonus to avoid thrashing
-    out.Bias(as.motivation, 10);
+    // P13: Dynamic inertia — longer on current motivation → stronger preference, capped at 20
+    uint8_t inertia = (as.motivation_ticks > 20u) ? 20u : as.motivation_ticks;
+    out.Bias(as.motivation, inertia);
 }
 
 MotivationType UtilityScorer::BestFrom(const UtilityCandidateList& list) noexcept {

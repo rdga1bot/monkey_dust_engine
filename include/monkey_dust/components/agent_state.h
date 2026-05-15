@@ -352,6 +352,12 @@ namespace ff {
     static constexpr uint8_t SHOULD_MOVE_TO_TARGET                  = 10; // Batch 21: nav moves toward target entity
     static constexpr uint8_t SHOULD_PLAY_DEATH                      = 11; // Batch 21: trigger death animation
     static constexpr uint8_t SHOULD_MELEE_ATTACK                    = 12; // Batch 21: trigger melee attack
+    static constexpr uint8_t SHOULD_FACE_TARGET                      = 13; // Batch 23: rotate toward target while idling
+    static constexpr uint8_t SHOULD_FACE_LAST_KNOWN_POS             = 14; // Batch 23: face last sensed position
+    static constexpr uint8_t SHOULD_FACE_SI_POS                     = 15; // Batch 23: face suspicious item position
+    static constexpr uint8_t SHOULD_RANGED_AIM                      = 16; // Batch 23: keep weapon raised and aimed
+    static constexpr uint8_t SI_REACTION_SET                        = 17; // Batch 23: si_reaction was updated this frame
+    static constexpr uint8_t SHOULD_DO_SUSPECT_TARGET_RESPONSE      = 18; // Batch 23: initiate suspect target response
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────

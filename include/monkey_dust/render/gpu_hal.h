@@ -84,6 +84,20 @@ struct GpuRasterState {
 #endif
 };
 
+// ── ShaderFeature — SPIR-V variant selection ──────────────────────────────────
+// Set shader_features in GpuPipeline::Desc to select the pre-compiled .spv variant.
+// Naming convention: basename + suffix per active flag, e.g.:
+//   SF_None                  → "mesh.spv"
+//   SF_Skinned               → "mesh_skinned.spv"
+//   SF_Skinned | SF_Shadows  → "mesh_skinned_shadow.spv"
+// Variants must be pre-compiled by scripts/compile_shaders.sh.
+enum ShaderFeature : uint32_t {
+    SF_None      = 0,
+    SF_Skinned   = 1u << 0,  // GPU skeletal animation via SSBO bones (binding 4)
+    SF_Shadows   = 1u << 1,  // CSM shadow sampling (3 cascades)
+    SF_AlphaTest = 1u << 2,  // frag discard for alpha-tested geometry
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuPipeline — immutable graphics pipeline.
 // Create once at init; bind per draw call.
@@ -94,6 +108,7 @@ public:
     struct Desc {
         const char*     vert_path = nullptr;  // GLSL (OpenGL) or SPIR-V basename (SDL_GPU)
         const char*     frag_path = nullptr;
+        uint32_t        shader_features = SF_None; // bitmask of ShaderFeature — selects .spv variant
         GpuVertexLayout layout;
         GpuRasterState  raster;
 #ifdef MD_SDL_GPU

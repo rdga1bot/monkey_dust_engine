@@ -303,3 +303,48 @@
         float angle = read_float_r(obj, obj_end, "\"angle\"", 45.f);
         if (angle < 0.f) angle = 0.f;
         idx = bt.addConditionAngleToTarget(angle);
+
+    // ── Batch 23 — new types ──────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ActionIdleTimeFacingTarget") == 0) {
+        int dur = read_int_r(obj, obj_end, "\"duration_ms\"", 2000);
+        idx = bt.addActionIdleTimeFacingTarget(static_cast<uint32_t>(dur < 0 ? 0 : dur));
+    } else if (strcmp(type_str, "ActionIdleTimeFacingTargetMostRecentSensedPosition") == 0) {
+        int dur = read_int_r(obj, obj_end, "\"duration_ms\"", 2000);
+        idx = bt.addActionIdleTimeFacingTargetMostRecentSensedPosition(static_cast<uint32_t>(dur < 0 ? 0 : dur));
+    } else if (strcmp(type_str, "ActionIdleTimeFacingSuspiciousItem") == 0) {
+        int dur = read_int_r(obj, obj_end, "\"duration_ms\"", 2000);
+        idx = bt.addActionIdleTimeFacingSuspiciousItem(static_cast<uint32_t>(dur < 0 ? 0 : dur));
+    } else if (strcmp(type_str, "ActionRangedAim") == 0) {
+        idx = bt.addActionRangedAim();
+    } else if (strcmp(type_str, "ActionSuspiciousItemReaction") == 0) {
+        char s[24] = "Investigate";
+        read_str_r(obj, obj_end, "\"reaction\"", s, sizeof(s));
+        idx = bt.addActionSuspiciousItemReaction(parse_si_reaction(s));
+    } else if (strcmp(type_str, "ActionSuspectTargetResponse") == 0) {
+        idx = bt.addActionSuspectTargetResponse();
+    // ── Batch 23 — alias ─────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ActionSuspiciousItemMoveTo") == 0) {
+        idx = bt.addActionForceMoveToSI();
+    // ── Batch 23 — 20 STUB nodes (return Success/Failure, no-op) ─────────────
+    } else if (strcmp(type_str, "ActionAssert") == 0
+            || strcmp(type_str, "ActionBackstageAreaSweep") == 0
+            || strcmp(type_str, "ActionSuspend") == 0
+            || strcmp(type_str, "ActionStartConversation") == 0
+            || strcmp(type_str, "ActionStopConversation") == 0
+            || strcmp(type_str, "ActionGamepadRumble") == 0
+            || strcmp(type_str, "ActionGamepadRumbleStop") == 0
+            || strcmp(type_str, "ActionFlameThrowerOn") == 0
+            || strcmp(type_str, "ActionKilltrap") == 0
+            || strcmp(type_str, "ActionCorpseTrap") == 0
+            || strcmp(type_str, "ActionScriptedWithdrawal") == 0
+            || strcmp(type_str, "ActionPrimaryDamageControl") == 0
+            || strcmp(type_str, "ActionDebugPrint") == 0) {
+        idx = bt.addActionSuccess();  // STUB: action no-op returns Success
+    } else if (strcmp(type_str, "ConditionAlienIsDead") == 0
+            || strcmp(type_str, "ConditionHasConversation") == 0
+            || strcmp(type_str, "ConditionIsInConversation") == 0
+            || strcmp(type_str, "ConditionGamepad") == 0
+            || strcmp(type_str, "ConditionFlameThrowerOn") == 0
+            || strcmp(type_str, "ConditionIsScriptedWithdrawal") == 0
+            || strcmp(type_str, "ConditionIsPrimaryDamageControl") == 0) {
+        idx = bt.addActionFail();  // STUB: condition with no backend returns Failure

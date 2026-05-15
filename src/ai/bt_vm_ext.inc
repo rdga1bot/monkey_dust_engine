@@ -593,3 +593,65 @@
             result = as->lcflags.test(lcf::HAS_SEARCHED_RECENT_SENSED_POS) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
+
+        // ── Batch 23 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ActionIdleTimeFacingTarget: {
+            if (st.timer == 0u) st.timer = nowMs + nd.data;
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (static_cast<int32_t>(nowMs - st.timer) >= 0) {
+                st.timer = 0u;
+                result = BTStatus::Success;
+            } else {
+                if (as) as->frame_flags |= (1ull << ff::SHOULD_FACE_TARGET);
+                result = BTStatus::Running;
+            }
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionIdleTimeFacingTargetMostRecentSensedPosition: {
+            if (st.timer == 0u) st.timer = nowMs + nd.data;
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (static_cast<int32_t>(nowMs - st.timer) >= 0) {
+                st.timer = 0u;
+                result = BTStatus::Success;
+            } else {
+                if (as) as->frame_flags |= (1ull << ff::SHOULD_FACE_LAST_KNOWN_POS);
+                result = BTStatus::Running;
+            }
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionIdleTimeFacingSuspiciousItem: {
+            if (st.timer == 0u) st.timer = nowMs + nd.data;
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (static_cast<int32_t>(nowMs - st.timer) >= 0) {
+                st.timer = 0u;
+                result = BTStatus::Success;
+            } else {
+                if (as) as->frame_flags |= (1ull << ff::SHOULD_FACE_SI_POS);
+                result = BTStatus::Running;
+            }
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionRangedAim: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_RANGED_AIM);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionSuspiciousItemReaction: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->si_reaction = static_cast<SuspiciousItemReaction>(static_cast<uint8_t>(nd.data));
+                as->frame_flags |= (1ull << ff::SI_REACTION_SET);
+            }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionSuspectTargetResponse: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_DO_SUSPECT_TARGET_RESPONSE);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }

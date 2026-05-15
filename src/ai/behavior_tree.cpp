@@ -886,6 +886,38 @@ uint16_t BehaviorTree::addConditionHasSearchedMostRecentSensedPosition() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasSearchedMostRecentSensedPosition); return i;
 }
 
+// ── Batch 23 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addActionIdleTimeFacingTarget(uint32_t duration_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionIdleTimeFacingTarget);
+    m_nodes[i].data = duration_ms;
+    return i;
+}
+uint16_t BehaviorTree::addActionIdleTimeFacingTargetMostRecentSensedPosition(uint32_t duration_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionIdleTimeFacingTargetMostRecentSensedPosition);
+    m_nodes[i].data = duration_ms;
+    return i;
+}
+uint16_t BehaviorTree::addActionIdleTimeFacingSuspiciousItem(uint32_t duration_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionIdleTimeFacingSuspiciousItem);
+    m_nodes[i].data = duration_ms;
+    return i;
+}
+uint16_t BehaviorTree::addActionRangedAim() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionRangedAim); return i;
+}
+uint16_t BehaviorTree::addActionSuspiciousItemReaction(SuspiciousItemReaction reaction) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionSuspiciousItemReaction);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(reaction));
+    return i;
+}
+uint16_t BehaviorTree::addActionSuspectTargetResponse() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionSuspectTargetResponse); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

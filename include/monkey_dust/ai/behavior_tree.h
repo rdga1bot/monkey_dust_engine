@@ -441,6 +441,26 @@ enum class BTNodeType : uint8_t {
     //   ConditionHasSearchedMostRecentSensedPosition:
     //     Success if lcf::HAS_SEARCHED_RECENT_SENSED_POS set; data=0
     ConditionHasSearchedMostRecentSensedPosition,
+
+    // ── Batch 23 ──────────────────────────────────────────────────────────────
+    //   ActionIdleTimeFacingTarget: wait duration_ms facing target; sets ff::SHOULD_FACE_TARGET while Running
+    //     data = duration_ms (same layout as ActionIdleTime/Wait)
+    ActionIdleTimeFacingTarget,
+    //   ActionIdleTimeFacingTargetMostRecentSensedPosition: same timer + ff::SHOULD_FACE_LAST_KNOWN_POS
+    //     data = duration_ms
+    ActionIdleTimeFacingTargetMostRecentSensedPosition,
+    //   ActionIdleTimeFacingSuspiciousItem: same timer + ff::SHOULD_FACE_SI_POS
+    //     data = duration_ms
+    ActionIdleTimeFacingSuspiciousItem,
+    //   ActionRangedAim: sets ff::SHOULD_RANGED_AIM; always Running (goto exit_loop)
+    //     data = 0 (unused)
+    ActionRangedAim,
+    //   ActionSuspiciousItemReaction: sets as->si_reaction + ff::SI_REACTION_SET; always Success
+    //     data = SuspiciousItemReaction value (uint8_t)
+    ActionSuspiciousItemReaction,
+    //   ActionSuspectTargetResponse: sets ff::SHOULD_DO_SUSPECT_TARGET_RESPONSE; always Success
+    //     data = 0 (unused)
+    ActionSuspectTargetResponse,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -562,6 +582,12 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionTargetsWeaponHasAmmo: 0 (checks target WeaponComponent::needs_reload==false)
 //   ConditionTargetsWeaponHasProperty: weapon_type (uint8_t)
 //   ConditionHasSearchedMostRecentSensedPosition: 0 (lcf::HAS_SEARCHED_RECENT_SENSED_POS)
+//   ActionIdleTimeFacingTarget:   duration_ms (same as ActionIdleTime)
+//   ActionIdleTimeFacingTargetMostRecentSensedPosition: duration_ms
+//   ActionIdleTimeFacingSuspiciousItem: duration_ms
+//   ActionRangedAim:              0 (unused; always Running)
+//   ActionSuspiciousItemReaction: SuspiciousItemReaction value (uint8_t)
+//   ActionSuspectTargetResponse:  0 (unused)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -871,6 +897,14 @@ public:
     uint16_t addConditionTargetsWeaponHasAmmo();
     uint16_t addConditionTargetsWeaponHasProperty(uint8_t weapon_type);
     uint16_t addConditionHasSearchedMostRecentSensedPosition();
+
+    // ── Batch 23 ──────────────────────────────────────────────────────────────
+    uint16_t addActionIdleTimeFacingTarget(uint32_t duration_ms);
+    uint16_t addActionIdleTimeFacingTargetMostRecentSensedPosition(uint32_t duration_ms);
+    uint16_t addActionIdleTimeFacingSuspiciousItem(uint32_t duration_ms);
+    uint16_t addActionRangedAim();
+    uint16_t addActionSuspiciousItemReaction(SuspiciousItemReaction reaction);
+    uint16_t addActionSuspectTargetResponse();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

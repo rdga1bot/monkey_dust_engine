@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <monkey_dust/ai/alien_config.h>
 
 // ── DirectorStage ─────────────────────────────────────────────────────────────
 // Stages are driven by menace_ [0..1]; thresholds: 0.25 / 0.50 / 0.75.
@@ -48,6 +49,10 @@ public:
 
     const DirectorProfile* GetCurrentProfile() const;
 
+    // Batch 12 P6: active AlienConfigPreset tracking for ConditionAlienIsAllowed.
+    AlienConfigurationType GetActiveConfig() const { return active_config_; }
+    void SetActiveConfig(AlienConfigurationType c) { active_config_ = c; }
+
 private:
     DirectorSystem() = default;
 
@@ -55,6 +60,7 @@ private:
 
     float         menace_       = 0.f;
     DirectorStage stage_        = DirectorStage::Unaware;
+    AlienConfigurationType active_config_ = AlienConfigurationType::Default;
     int           profile_idx_  = 0;
     int           profile_count_= 0;
     DirectorProfile profiles_[MAX_PROFILES] = {};

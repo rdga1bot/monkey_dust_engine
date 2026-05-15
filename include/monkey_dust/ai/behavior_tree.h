@@ -8,6 +8,8 @@
 #include <monkey_dust/components/npc_memory.h>
 #include <monkey_dust/components/npc_relationship.h>
 #include <monkey_dust/ai/suspicious_item_group.h>
+#include <monkey_dust/ai/alien_config.h>
+#include <monkey_dust/ai/vent_lock.h>
 #include <entt/entt.hpp>
 #include <cstdint>
 
@@ -304,6 +306,19 @@ enum class BTNodeType : uint8_t {
     //   ConditionTargetDistLOS: Success if dist(self,last_known)<=threshold AND activation[VISUAL]>=lo
     //     data = max_dist_m * 10 (uint32); uses WorldTransform pos + SenseComponent
     ConditionTargetDistLOS,
+
+    // ── Batch 12 ──────────────────────────────────────────────────────────────
+    //   ConditionTargetRoutingDistance: nav distance to target <= threshold.
+    //     Sums cached path segment lengths; falls back to Euclidean when no path cached.
+    //     data = max_dist_m * 10 (uint32, 1 decimal); uses WorldTransform + SenseComponent
+    ConditionTargetRoutingDistance,
+    //   ConditionAlienIsAllowed: checks AlienConfigPreset::allowed_actions for the active config.
+    //     Success if bit (1 << uint8(action)) is set in DirectorSystem::GetActiveConfig() preset.
+    //     data = AlienActionType value (uint8)
+    ConditionAlienIsAllowed,
+    //   DecoratorLockVent: acquires exclusive vent slot on entry; releases on child return.
+    //     data = vent_id & 0x7 (0-7); Failure immediately if another entity holds the slot.
+    DecoratorLockVent,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -382,6 +397,9 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionShouldSuspend: 0 (unused)
 //   ActionSuspendSelf:      0 (unused)
 //   ConditionTargetDistLOS: max_dist_m * 10 (uint32, 1 decimal place)
+//   ConditionTargetRoutingDistance: max_dist_m * 10 (uint32, 1 decimal place)
+//   ConditionAlienIsAllowed: AlienActionType value (uint8)
+//   DecoratorLockVent: vent_id (0-7, 3 bits)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -605,6 +623,14 @@ public:
     uint16_t addActionSuspendSelf();
     // ConditionTargetDistLOS: Euclidean dist ≤ max_dist_m AND sc->activation[VISUAL] ≥ threshold_lo
     uint16_t addConditionTargetDistLOS(float max_dist_m);
+
+    // ── Batch 12 factories ────────────────────────────────────────────────────
+    // ConditionTargetRoutingDistance: path-cache nav distance ≤ max_dist_m (Euclidean fallback).
+    uint16_t addConditionTargetRoutingDistance(float max_dist_m);
+    // ConditionAlienIsAllowed: Success if DirectorSystem active preset permits this AlienActionType.
+    uint16_t addConditionAlienIsAllowed(AlienActionType action);
+    // DecoratorLockVent: acquire exclusive vent slot on entry; release on child return.
+    uint16_t addDecoratorLockVent(uint8_t vent_id);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

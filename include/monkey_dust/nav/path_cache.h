@@ -36,6 +36,8 @@ class PathCache {
 public:
     PathCache() { Clear(); }
 
+    static PathCache& Get() { static PathCache instance; return instance; }
+
     void Clear() {
         AcquireLock();
         for (auto& e : entries_) e.valid = false;

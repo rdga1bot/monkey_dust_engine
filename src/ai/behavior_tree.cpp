@@ -675,6 +675,29 @@ uint16_t BehaviorTree::addConditionTargetDistLOS(float max_dist_m) {
     return i;
 }
 
+// ── Batch 12 factories ────────────────────────────────────────────────────────
+
+uint16_t BehaviorTree::addConditionTargetRoutingDistance(float max_dist_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionTargetRoutingDistance);
+    m_nodes[i].data = static_cast<uint32_t>(max_dist_m * 10.f + 0.5f);
+    return i;
+}
+
+uint16_t BehaviorTree::addConditionAlienIsAllowed(AlienActionType action) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionAlienIsAllowed);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(action));
+    return i;
+}
+
+uint16_t BehaviorTree::addDecoratorLockVent(uint8_t vent_id) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorLockVent);
+    m_nodes[i].data = static_cast<uint32_t>(vent_id & 0x7u);
+    return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

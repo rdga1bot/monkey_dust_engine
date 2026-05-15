@@ -7,6 +7,9 @@
 #include <monkey_dust/ai/squad_signal.h>
 #include <monkey_dust/ai/suspicious_item_group.h>
 #include <monkey_dust/ai/director_system.h>
+#include <monkey_dust/ai/alien_config.h>
+#include <monkey_dust/ai/vent_lock.h>
+#include <monkey_dust/nav/path_cache.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ai/fnv.h>
 #include <cstring>
@@ -1204,6 +1207,67 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             bool dist_ok = dist_sq <= max_dist * max_dist;
             bool los_ok  = sc->activation[static_cast<int>(SenseType::Visual)] >= sc->threshold_lo;
             result = (dist_ok && los_ok) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // ── Batch 12 VM cases ─────────────────────────────────────────────────
+
+        // P3: ConditionTargetRoutingDistance — nav distance via PathCache, Euclidean fallback
+        case BTNodeType::ConditionTargetRoutingDistance: {
+            const WorldTransform* wt = Registry::Get().try_get<WorldTransform>(e);
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!wt || !sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float max_dist = static_cast<float>(nd.data) / 10.f;
+            uint32_t ks = PathCache::PosKey(wt->x, wt->z);
+            uint32_t ke = PathCache::PosKey(sc->last_known_x, sc->last_known_z);
+            float    now_s = static_cast<float>(nowMs) / 1000.f;
+            float    nav_dist;
+            {
+                float tmp_verts[MAX_PATH_LEN * 3];
+                int   path_len = 0;
+                if (PathCache::Get().Get(ks, ke, now_s, tmp_verts, path_len) && path_len > 1) {
+                    nav_dist = 0.f;
+                    for (int pi = 0; pi + 1 < path_len; ++pi) {
+                        float pdx = tmp_verts[(pi + 1) * 3 + 0] - tmp_verts[pi * 3 + 0];
+                        float pdz = tmp_verts[(pi + 1) * 3 + 2] - tmp_verts[pi * 3 + 2];
+                        nav_dist += sqrtf(pdx * pdx + pdz * pdz);
+                    }
+                } else {
+                    float dx = sc->last_known_x - wt->x;
+                    float dz = sc->last_known_z - wt->z;
+                    nav_dist = sqrtf(dx * dx + dz * dz);
+                }
+            }
+            result = (nav_dist <= max_dist) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // P6: ConditionAlienIsAllowed — check AlienConfigPreset::allowed_actions bitmask
+        case BTNodeType::ConditionAlienIsAllowed: {
+            auto action = static_cast<AlienActionType>(nd.data & 0xFFu);
+            const AlienConfigPreset& preset = AlienConfigPreset::Get(
+                DirectorSystem::Get().GetActiveConfig());
+            uint8_t bit = static_cast<uint8_t>(action);
+            bool allowed = (preset.allowed_actions & (uint16_t(1u) << bit)) != 0u;
+            result = allowed ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // P7: DecoratorLockVent — exclusive vent access gate
+        case BTNodeType::DecoratorLockVent: {
+            if (result == BTStatus::Running) {
+                uint8_t vent_id = static_cast<uint8_t>(nd.data & 0x7u);
+                if (!VentLockTable::Get().TryLock(vent_id, e)) {
+                    result = BTStatus::Failure; pc = nd.parent; continue;
+                }
+                if (nd.childCount > 0) {
+                    pc = m_children[nd.childStart]; continue;
+                }
+                VentLockTable::Get().Release(e);
+                result = BTStatus::Success; pc = nd.parent; continue;
+            }
+            // returning from child — release lock and propagate result
+            VentLockTable::Get().Release(e);
             pc = nd.parent; continue;
         }
 

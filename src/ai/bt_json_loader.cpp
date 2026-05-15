@@ -4,6 +4,8 @@
 #include <monkey_dust/ai/squad_signal.h>
 #include <monkey_dust/ai/named_branch.h>
 #include <monkey_dust/ai/npc_sound.h>
+#include <monkey_dust/ai/alien_config.h>
+#include <monkey_dust/ai/vent_lock.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/npc_memory.h>
 #include <monkey_dust/components/sense_component.h>
@@ -486,6 +488,18 @@ static NoiseType parse_noise_type(const char* s) {
         if (v >= 0 && v < 6) return static_cast<NoiseType>(v);
     }
     return NoiseType::Unknown;
+}
+
+// ── Batch 12 parse helpers ───────────────────────────────────────────────────
+static AlienActionType parse_alien_action(const char* s) {
+    if (!s || !s[0]) return AlienActionType::ThreatAware;
+    if (strcmp(s, "ThreatAware")              == 0) return AlienActionType::ThreatAware;
+    if (strcmp(s, "WillKilltrap")             == 0) return AlienActionType::WillKilltrap;
+    if (strcmp(s, "WillFlankFromThreatAware") == 0) return AlienActionType::WillFlankFromThreatAware;
+    if (strcmp(s, "WillAmbush")               == 0) return AlienActionType::WillAmbush;
+    int v = atoi(s);
+    if (v > 0) return static_cast<AlienActionType>(static_cast<uint8_t>(v));
+    return AlienActionType::ThreatAware;
 }
 
 // ── MD XML alias helpers ─────────────────────────────────────────────────
@@ -1159,6 +1173,29 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         float dist = read_float_r(obj, obj_end, "\"distance\"", 10.f);
         if (dist < 0.f) dist = 0.f;
         idx = bt.addConditionTargetDistLOS(dist);
+
+    // ── Batch 12: P3 / P6 / P7 ───────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionTargetRoutingDistance") == 0) {
+        float dist = read_float_r(obj, obj_end, "\"distance\"", 10.f);
+        if (dist < 0.f) dist = 0.f;
+        idx = bt.addConditionTargetRoutingDistance(dist);
+
+    } else if (strcmp(type_str, "ConditionAlienIsAllowed") == 0) {
+        char action_s[40] = "ThreatAware";
+        read_str_r(obj, obj_end, "\"action\"", action_s, sizeof(action_s));
+        // Integer fallback when field is a number
+        if (action_s[0] >= '0' && action_s[0] <= '9') {
+            int v = atoi(action_s);
+            idx = bt.addConditionAlienIsAllowed(static_cast<AlienActionType>(v));
+        } else {
+            idx = bt.addConditionAlienIsAllowed(parse_alien_action(action_s));
+        }
+
+    } else if (strcmp(type_str, "DecoratorLockVent") == 0) {
+        int vid = read_int_r(obj, obj_end, "\"vent_id\"", 0);
+        if (vid < 0) vid = 0;
+        if (vid >= VentLockTable::MAX_VENTS) vid = VentLockTable::MAX_VENTS - 1;
+        idx = bt.addDecoratorLockVent(static_cast<uint8_t>(vid));
 
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);

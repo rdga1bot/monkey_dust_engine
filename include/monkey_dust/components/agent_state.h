@@ -342,6 +342,7 @@ namespace ff {
     static constexpr uint8_t COULD_RESPOND_TO_HIDING_PLAYER        = 4;
     static constexpr uint8_t COULD_DO_SUSPICIOUS_ITEM_HIGH         = 5;
     static constexpr uint8_t COULD_DO_SUSPECT_TARGET_RESPONSE_MOVETO = 6;
+    static constexpr uint8_t SHOULD_MOVE_THROUGH_TARGET              = 7;  // Batch 10 P5
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────

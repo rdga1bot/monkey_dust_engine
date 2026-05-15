@@ -1015,7 +1015,8 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
     } else if (strcmp(type_str, "ConditionIsDead") == 0) {
         idx = bt.addConditionIsDead();
     } else if (strcmp(type_str, "ConditionIsInVent") == 0) {
-        idx = bt.addConditionIsInVent();
+        int ct = read_int_r(obj, obj_end, "\"char_type\"", 0);
+        idx = bt.addConditionIsInVent(static_cast<uint8_t>(ct & 0x3));
     } else if (strcmp(type_str, "ConditionCanBreakout") == 0) {
         idx = bt.addConditionCanBreakout();
     } else if (strcmp(type_str, "ConditionIsBackstage") == 0) {
@@ -1123,6 +1124,24 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         int mode = read_int_r(obj, obj_end, "\"mode\"", 0);
         if (thr < 0) thr = 0; if (thr > 255) thr = 255;
         idx = bt.addRelationshipFearCheck(static_cast<uint8_t>(thr), static_cast<uint8_t>(mode & 1));
+
+    // ── Batch 10: MD_z.md BEHAVIOR XML patterns ───────────────────────────────
+    } else if (strcmp(type_str, "ConditionIsAnySenseActivationAbove") == 0) {
+        char qual_s[32] = "Lower";
+        read_str_r(obj, obj_end, "\"threshold\"", qual_s, sizeof(qual_s));
+        idx = bt.addConditionIsAnySenseActivationAbove(parse_sense_qualifier(qual_s));
+
+    } else if (strcmp(type_str, "ActionMoveThroughTarget") == 0) {
+        int speed = read_int_r(obj, obj_end, "\"speed\"", 2);  // default Fast=2
+        if (speed < 0 || speed > 3) speed = 2;
+        idx = bt.addActionMoveThroughTarget(static_cast<LocomotionTargetSpeed>(speed));
+
+    } else if (strcmp(type_str, "ActionAdjustMenace") == 0) {
+        float delta = read_float_r(obj, obj_end, "\"delta\"", 0.f);
+        int   mode  = read_int_r  (obj, obj_end, "\"mode\"",  0);
+        if (mode < 0 || mode > 2) mode = 0;
+        if (delta < 0.f) delta = 0.f;
+        idx = bt.addActionAdjustMenace(delta, static_cast<uint8_t>(mode));
 
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);

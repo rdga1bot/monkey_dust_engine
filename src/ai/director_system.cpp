@@ -147,6 +147,13 @@ void DirectorSystem::SetProfile(const char* name) {
 static constexpr uint32_t K_MENACE = md::fnv1a("menace");
 static constexpr uint32_t K_STAGE  = md::fnv1a("director_stage");
 
+void DirectorSystem::AdjustMenace(float delta, uint8_t mode) {
+    if      (mode == 1) menace_  = delta;
+    else if (mode == 2) menace_ -= delta;
+    else                menace_ += delta;
+    menace_ = menace_ < 0.f ? 0.f : menace_ > 1.f ? 1.f : menace_;
+}
+
 void DirectorSystem::Tick(float dt) {
     if (profile_count_ == 0) return;
     const DirectorProfile& pr = profiles_[profile_idx_];

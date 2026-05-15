@@ -43,6 +43,9 @@ public:
     float         GetMenace() const { return menace_; }
     DirectorStage GetStage()  const { return stage_;  }
 
+    // Batch 10 P9: BT-driven menace override. mode: 0=add, 1=set, 2=subtract. Clamps [0..1].
+    void AdjustMenace(float delta, uint8_t mode = 0);
+
     const DirectorProfile* GetCurrentProfile() const;
 
 private:

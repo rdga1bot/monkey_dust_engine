@@ -6,6 +6,7 @@
 #include <monkey_dust/components/npc_memory.h>
 #include <monkey_dust/ai/squad_signal.h>
 #include <monkey_dust/ai/suspicious_item_group.h>
+#include <monkey_dust/ai/director_system.h>
 #include <monkey_dust/ai/fnv.h>
 #include <cstring>
 
@@ -835,9 +836,21 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         }
 
         case BTNodeType::ConditionIsInVent: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
-            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            result = as->lcflags.test(lcf::IS_IN_VENT) ? BTStatus::Success : BTStatus::Failure;
+            uint8_t char_type = static_cast<uint8_t>(nd.data & 0x3u);
+            bool owner_ok = true, target_ok = true;
+            if (char_type == 0 || char_type == 2) {
+                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                owner_ok = as && as->lcflags.test(lcf::IS_IN_VENT);
+            }
+            if (char_type == 1 || char_type == 2) {
+                AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+                const BlackboardEntry* ben = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
+                entt::entity tgt = ben ? static_cast<entt::entity>(ben->val.e) : entt::null;
+                if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+                AgentState* tas = Registry::Get().try_get<AgentState>(tgt);
+                target_ok = tas && tas->lcflags.test(lcf::IS_IN_VENT);
+            }
+            result = (owner_ok && target_ok) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
 
@@ -1108,6 +1121,41 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             bool ok = (mode == 0) ? (val >= threshold) : (val < threshold);
             result = ok ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
+        }
+
+        // ── Batch 10: MD_z.md BEHAVIOR XML patterns ──────────────────────────────
+        case BTNodeType::ConditionIsAnySenseActivationAbove: {
+            SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            auto q = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
+            bool found = false;
+            for (uint8_t si = 0; si < MAX_SENSES && !found; ++si) {
+                float act = sc->activation[si];
+                switch (q) {
+                case SenseThresholdQualifier::Trace:     found = act > 0.f;               break;
+                case SenseThresholdQualifier::Lower:     found = act >= sc->threshold_lo;  break;
+                case SenseThresholdQualifier::Activated: found = act >= sc->threshold_hi;  break;
+                case SenseThresholdQualifier::Upper:     found = act >= 1.0f;              break;
+                }
+            }
+            result = found ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionMoveThroughTarget: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->frame_flags  |= (1ull << ff::SHOULD_MOVE_THROUGH_TARGET);
+                as->target_speed  = static_cast<LocomotionTargetSpeed>(nd.data & 0x3u);
+            }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionAdjustMenace: {
+            uint8_t mode        = static_cast<uint8_t>(nd.data & 0x3u);
+            float   delta_fixed = static_cast<float>((nd.data >> 2) & 0xFFu);
+            DirectorSystem::Get().AdjustMenace(delta_fixed / 10.f, mode);
+            result = BTStatus::Success; pc = nd.parent; continue;
         }
 
         default:

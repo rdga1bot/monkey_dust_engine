@@ -280,6 +280,17 @@ enum class BTNodeType : uint8_t {
     //   RelationshipFearCheck: same as TrustCheck but reads fear field
     //     data=(threshold<<8)|mode; mode=0→fear>=threshold, mode=1→fear<threshold
     RelationshipFearCheck,
+
+    // ── Batch 10: MD_z.md BEHAVIOR XML patterns ───────────────────────────────
+    //   ConditionIsAnySenseActivationAbove: Success if any sc->activation[i] >= qualifier
+    //     data = SenseThresholdQualifier (Trace=0, Lower=1, Activated=2, Upper=3)
+    ConditionIsAnySenseActivationAbove,
+    //   ActionMoveThroughTarget: nav hint — sets ff::SHOULD_MOVE_THROUGH_TARGET in frame_flags
+    //     also writes as->target_speed; data = LocomotionTargetSpeed (0-3); always Success
+    ActionMoveThroughTarget,
+    //   ActionAdjustMenace: calls DirectorSystem::AdjustMenace(delta, mode); always Success
+    //     data = (delta_fixed << 2) | mode; delta_fixed = uint8(delta * 10); mode: 0=add,1=set,2=sub
+    ActionAdjustMenace,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -350,6 +361,10 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionForceMoveToSI:          0 (unused; game reads nm->events[0].x/z via ff flag)
 //   RelationshipTrustCheck: (threshold<<8)|mode; mode=0→trust>=thr, 1→trust<thr
 //   RelationshipFearCheck:  (threshold<<8)|mode; mode=0→fear>=thr,  1→fear<thr
+//   ConditionIsInVent:      data=char_type; 0=Owner, 1=Target(bb), 2=Both
+//   ConditionIsAnySenseActivationAbove: SenseThresholdQualifier (uint8)
+//   ActionMoveThroughTarget: LocomotionTargetSpeed (bits 0-1)
+//   ActionAdjustMenace:      (delta_fixed<<2)|mode; delta_fixed=uint8(delta*10); mode:0=add,1=set,2=sub
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -507,7 +522,8 @@ public:
 
     // ── Batch 2 factories ─────────────────────────────────────────────────────
     uint16_t addConditionIsDead();
-    uint16_t addConditionIsInVent();
+    // char_type: 0=Owner, 1=Target(from bb), 2=Both must be in vent
+    uint16_t addConditionIsInVent(uint8_t char_type = 0);
     uint16_t addConditionCanBreakout();
     uint16_t addConditionIsBackstage();
     uint16_t addConditionIsPartOfNPCGroup();
@@ -553,6 +569,14 @@ public:
     // Target entity read from AgentBlackboard key fnv1a("target_entity").
     uint16_t addRelationshipTrustCheck(uint8_t threshold, uint8_t mode = 0);
     uint16_t addRelationshipFearCheck (uint8_t threshold, uint8_t mode = 0);
+
+    // ── Batch 10: MD_z.md BEHAVIOR XML patterns ───────────────────────────────
+    // ConditionIsAnySenseActivationAbove: Success if any sc->activation[i] >= qualifier
+    uint16_t addConditionIsAnySenseActivationAbove(SenseThresholdQualifier q);
+    // ActionMoveThroughTarget: sets ff::SHOULD_MOVE_THROUGH_TARGET + writes target_speed
+    uint16_t addActionMoveThroughTarget(LocomotionTargetSpeed speed = LocomotionTargetSpeed::Fast);
+    // ActionAdjustMenace: calls DirectorSystem::AdjustMenace(delta, mode); mode: 0=add,1=set,2=sub
+    uint16_t addActionAdjustMenace(float delta, uint8_t mode = 0);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

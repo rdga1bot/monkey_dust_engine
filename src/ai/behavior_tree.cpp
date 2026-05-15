@@ -497,8 +497,11 @@ void BehaviorTree::setRoot(uint16_t node) { m_root = node; }
 uint16_t BehaviorTree::addConditionIsDead() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsDead); return i;
 }
-uint16_t BehaviorTree::addConditionIsInVent() {
-    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsInVent); return i;
+uint16_t BehaviorTree::addConditionIsInVent(uint8_t char_type) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionIsInVent);
+    m_nodes[i].data = char_type & 0x3u;
+    return i;
 }
 uint16_t BehaviorTree::addConditionCanBreakout() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionCanBreakout); return i;
@@ -618,6 +621,30 @@ uint16_t BehaviorTree::addRelationshipTrustCheck(uint8_t threshold, uint8_t mode
 uint16_t BehaviorTree::addRelationshipFearCheck(uint8_t threshold, uint8_t mode) {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::RelationshipFearCheck);
     m_nodes[i].data = (static_cast<uint32_t>(threshold) << 8) | (mode & 0x1u); return i;
+}
+
+// ── Batch 10: MD_z.md BEHAVIOR XML patterns ──────────────────────────────────
+
+uint16_t BehaviorTree::addConditionIsAnySenseActivationAbove(SenseThresholdQualifier q) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionIsAnySenseActivationAbove);
+    m_nodes[i].data = static_cast<uint32_t>(q);
+    return i;
+}
+
+uint16_t BehaviorTree::addActionMoveThroughTarget(LocomotionTargetSpeed speed) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionMoveThroughTarget);
+    m_nodes[i].data = static_cast<uint32_t>(speed) & 0x3u;
+    return i;
+}
+
+uint16_t BehaviorTree::addActionAdjustMenace(float delta, uint8_t mode) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionAdjustMenace);
+    uint32_t delta_fixed = static_cast<uint32_t>(delta * 10.f + 0.5f) & 0xFFu;
+    m_nodes[i].data = (delta_fixed << 2) | (mode & 0x3u);
+    return i;
 }
 
 void BehaviorTree::reset() {

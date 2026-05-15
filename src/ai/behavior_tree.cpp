@@ -599,6 +599,17 @@ uint16_t BehaviorTree::addSetNoiseType(NoiseType type) {
     m_nodes[i].data = static_cast<uint32_t>(type); return i;
 }
 
+// ── Batch 8: SI lifecycle ─────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionSuspiciousItemValid() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionSuspiciousItemValid); return i;
+}
+uint16_t BehaviorTree::addActionConsumeSuspiciousItem() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionConsumeSuspiciousItem); return i;
+}
+uint16_t BehaviorTree::addActionForceMoveToSI() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionForceMoveToSI); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

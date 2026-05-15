@@ -1065,6 +1065,31 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             result = BTStatus::Success; pc = nd.parent; continue;
         }
 
+        // ── Batch 8: SI lifecycle ─────────────────────────────────────────────
+        case BTNodeType::ConditionSuspiciousItemValid: {
+            NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (!nm || nm->event_count == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (nm->events[0].investigation_stage != SuspiciousItemStage::SearchArea)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ActionConsumeSuspiciousItem: {
+            NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (nm && nm->event_count > 0) {
+                for (uint8_t i = 0; i < nm->event_count - 1u; ++i)
+                    nm->events[i] = nm->events[i + 1];
+                nm->event_count--;
+            }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        case BTNodeType::ActionForceMoveToSI: {
+            NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (!nm || nm->event_count == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) { as->frame_flags |= (1ull << ff::COULD_DO_SUSPECT_TARGET_RESPONSE_MOVETO); }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
         default:
             goto exit_loop;
         }

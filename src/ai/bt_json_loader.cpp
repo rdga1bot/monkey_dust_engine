@@ -1101,6 +1101,16 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         read_str_r(obj, obj_end, "\"noise_type\"", s, sizeof(s));
         idx = bt.addSetNoiseType(parse_noise_type(s));
 
+    // ── Batch 8: SI lifecycle ─────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionSuspiciousItemValid") == 0) {
+        idx = bt.addConditionSuspiciousItemValid();
+
+    } else if (strcmp(type_str, "ActionConsumeSuspiciousItem") == 0) {
+        idx = bt.addActionConsumeSuspiciousItem();
+
+    } else if (strcmp(type_str, "ActionForceMoveToSI") == 0) {
+        idx = bt.addActionForceMoveToSI();
+
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);
         return BehaviorTree::INVALID;

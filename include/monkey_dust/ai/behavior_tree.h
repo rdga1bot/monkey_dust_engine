@@ -258,6 +258,18 @@ enum class BTNodeType : uint8_t {
     //   SetNoiseType:     as->last_noise_type = (NoiseType)data → Success
     NoiseTypeCheck,
     SetNoiseType,
+
+    // ── Batch 8: SI lifecycle nodes ───────────────────────────────────────────
+    //   ConditionSuspiciousItemValid:   Success if nm->event_count>0 AND
+    //                                   events[0].stage != SearchArea (still active)
+    ConditionSuspiciousItemValid,
+    //   ActionConsumeSuspiciousItem:    Remove events[0], shift remainder down;
+    //                                   always Success (no-op when empty)
+    ActionConsumeSuspiciousItem,
+    //   ActionForceMoveToSI:            Set ff::COULD_DO_SUSPECT_TARGET_RESPONSE_MOVETO
+    //                                   in as->frame_flags; game-side nav reads events[0].x/z
+    //                                   Failure if no NpcMemoryComponent or event_count==0
+    ActionForceMoveToSI,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -323,6 +335,9 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   SetAmbushType:    AmbushType value (uint8_t)
 //   NoiseTypeCheck:   NoiseType value (uint8_t)
 //   SetNoiseType:     NoiseType value (uint8_t)
+//   ConditionSuspiciousItemValid: 0 (unused)
+//   ActionConsumeSuspiciousItem:  0 (unused)
+//   ActionForceMoveToSI:          0 (unused; game reads nm->events[0].x/z via ff flag)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -513,6 +528,13 @@ public:
     uint16_t addSetAmbushType   (AmbushType type);
     uint16_t addNoiseTypeCheck  (NoiseType type);
     uint16_t addSetNoiseType    (NoiseType type);
+
+    // ── Batch 8: SI lifecycle ─────────────────────────────────────────────────
+    uint16_t addConditionSuspiciousItemValid();
+    uint16_t addActionConsumeSuspiciousItem();
+    // ActionForceMoveToSI: sets ff::COULD_DO_SUSPECT_TARGET_RESPONSE_MOVETO so
+    // game-side nav reads nm->events[0].x/z and repaths to that position.
+    uint16_t addActionForceMoveToSI();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

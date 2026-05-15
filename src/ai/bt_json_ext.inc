@@ -1,0 +1,208 @@
+
+    // ── Batch 8: SI lifecycle ─────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionSuspiciousItemValid") == 0) {
+        idx = bt.addConditionSuspiciousItemValid();
+
+    } else if (strcmp(type_str, "ActionConsumeSuspiciousItem") == 0) {
+        idx = bt.addActionConsumeSuspiciousItem();
+
+    } else if (strcmp(type_str, "ActionForceMoveToSI") == 0) {
+        idx = bt.addActionForceMoveToSI();
+
+    // ── Batch 9 (Step 5): Inter-NPC relationship nodes ─────────────────────
+    } else if (strcmp(type_str, "RelationshipTrustCheck") == 0) {
+        int thr  = read_int_r(obj, obj_end, "\"threshold\"", 128);
+        int mode = read_int_r(obj, obj_end, "\"mode\"", 0);
+        if (thr < 0) thr = 0; if (thr > 255) thr = 255;
+        idx = bt.addRelationshipTrustCheck(static_cast<uint8_t>(thr), static_cast<uint8_t>(mode & 1));
+
+    } else if (strcmp(type_str, "RelationshipFearCheck") == 0) {
+        int thr  = read_int_r(obj, obj_end, "\"threshold\"", 64);
+        int mode = read_int_r(obj, obj_end, "\"mode\"", 0);
+        if (thr < 0) thr = 0; if (thr > 255) thr = 255;
+        idx = bt.addRelationshipFearCheck(static_cast<uint8_t>(thr), static_cast<uint8_t>(mode & 1));
+
+    // ── Batch 10: MD_z.md BEHAVIOR XML patterns ───────────────────────────────
+    } else if (strcmp(type_str, "ConditionIsAnySenseActivationAbove") == 0) {
+        char qual_s[32] = "Lower";
+        read_str_r(obj, obj_end, "\"threshold\"", qual_s, sizeof(qual_s));
+        idx = bt.addConditionIsAnySenseActivationAbove(parse_sense_qualifier(qual_s));
+
+    } else if (strcmp(type_str, "ActionMoveThroughTarget") == 0) {
+        int speed = read_int_r(obj, obj_end, "\"speed\"", 2);  // default Fast=2
+        if (speed < 0 || speed > 3) speed = 2;
+        idx = bt.addActionMoveThroughTarget(static_cast<LocomotionTargetSpeed>(speed));
+
+    } else if (strcmp(type_str, "ActionAdjustMenace") == 0) {
+        float delta = read_float_r(obj, obj_end, "\"delta\"", 0.f);
+        int   mode  = read_int_r  (obj, obj_end, "\"mode\"",  0);
+        if (mode < 0 || mode > 2) mode = 0;
+        if (delta < 0.f) delta = 0.f;
+        idx = bt.addActionAdjustMenace(delta, static_cast<uint8_t>(mode));
+
+    // ── Batch 11: BEHAVIOR XML patterns (P2+P8+P10) ──────────────────────────
+    } else if (strcmp(type_str, "ConditionAngleToTarget") == 0) {
+        float angle = read_float_r(obj, obj_end, "\"angle\"", 45.f);
+        if (angle < 0.f) angle = 0.f;
+        idx = bt.addConditionAngleToTarget(angle);
+
+    } else if (strcmp(type_str, "ConditionShouldSuspend") == 0) {
+        idx = bt.addConditionShouldSuspend();
+
+    } else if (strcmp(type_str, "ActionSuspendSelf") == 0) {
+        idx = bt.addActionSuspendSelf();
+
+    } else if (strcmp(type_str, "ConditionTargetDistLOS") == 0) {
+        float dist = read_float_r(obj, obj_end, "\"distance\"", 10.f);
+        if (dist < 0.f) dist = 0.f;
+        idx = bt.addConditionTargetDistLOS(dist);
+
+    // ── Batch 12: P3 / P6 / P7 ───────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionTargetRoutingDistance") == 0) {
+        float dist = read_float_r(obj, obj_end, "\"distance\"", 10.f);
+        if (dist < 0.f) dist = 0.f;
+        idx = bt.addConditionTargetRoutingDistance(dist);
+
+    } else if (strcmp(type_str, "ConditionAlienIsAllowed") == 0) {
+        char action_s[40] = "ThreatAware";
+        read_str_r(obj, obj_end, "\"action\"", action_s, sizeof(action_s));
+        // Integer fallback when field is a number
+        if (action_s[0] >= '0' && action_s[0] <= '9') {
+            int v = atoi(action_s);
+            idx = bt.addConditionAlienIsAllowed(static_cast<AlienActionType>(v));
+        } else {
+            idx = bt.addConditionAlienIsAllowed(parse_alien_action(action_s));
+        }
+
+    } else if (strcmp(type_str, "DecoratorLockVent") == 0) {
+        int vid = read_int_r(obj, obj_end, "\"vent_id\"", 0);
+        if (vid < 0) vid = 0;
+        if (vid >= VentLockTable::MAX_VENTS) vid = VentLockTable::MAX_VENTS - 1;
+        idx = bt.addDecoratorLockVent(static_cast<uint8_t>(vid));
+
+    // ── Batch 15 ──────────────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionIsEnemyOfTarget") == 0) {
+        idx = bt.addConditionIsEnemyOfTarget();
+
+    } else if (strcmp(type_str, "ActionForceIdle") == 0) {
+        idx = bt.addActionForceIdle();
+
+    } else if (strcmp(type_str, "ConditionHasValidRouteToTarget") == 0) {
+        idx = bt.addConditionHasValidRouteToTarget();
+
+    // ── Batch 17 ─────────────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionIsCharacterClass") == 0) {
+        // JSON: "character_class": "Alien" | "Player" | "Android" | int
+        char cls_s[32] = "Unknown";
+        read_str_r(obj, obj_end, "\"character_class\"", cls_s, sizeof(cls_s));
+        CharacterClass cls = CharacterClass::Unknown;
+        if      (strcmp(cls_s, "Player")       == 0) cls = CharacterClass::Player;
+        else if (strcmp(cls_s, "Alien")        == 0) cls = CharacterClass::Alien;
+        else if (strcmp(cls_s, "Android")      == 0) cls = CharacterClass::Android;
+        else if (strcmp(cls_s, "Civilian")     == 0) cls = CharacterClass::Civilian;
+        else if (strcmp(cls_s, "Security")     == 0) cls = CharacterClass::Security;
+        else if (strcmp(cls_s, "Innocent")     == 0) cls = CharacterClass::Innocent;
+        else if (strcmp(cls_s, "AndroidHeavy") == 0) cls = CharacterClass::AndroidHeavy;
+        else if (cls_s[0] >= '0' && cls_s[0] <= '9')
+            cls = static_cast<CharacterClass>(static_cast<uint8_t>(atoi(cls_s)));
+        idx = bt.addConditionIsCharacterClass(cls);
+
+    } else if (strcmp(type_str, "ConditionIsInCover") == 0) {
+        idx = bt.addConditionIsInCover();
+
+    } else if (strcmp(type_str, "ConditionShouldUseCover") == 0) {
+        idx = bt.addConditionShouldUseCover();
+
+    } else if (strcmp(type_str, "ActionMoveToCover") == 0) {
+        idx = bt.addActionMoveToCover();
+
+    } else if (strcmp(type_str, "ActionIdleInCover") == 0) {
+        idx = bt.addActionIdleInCover();
+
+    // ── Batch 18 ─────────────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "BehaviourMoodSetCheck") == 0) {
+        char s[40] = "Neutral";
+        read_str_r(obj, obj_end, "\"mood_set\"", s, sizeof(s));
+        BehaviourMoodSet v = BehaviourMoodSet::Neutral;
+        if      (strcmp(s, "Neutral")                    == 0) v = BehaviourMoodSet::Neutral;
+        else if (strcmp(s, "ThreatEscalationAggressive") == 0) v = BehaviourMoodSet::ThreatEscalationAggressive;
+        else if (strcmp(s, "ThreatEscalationPanicked")   == 0) v = BehaviourMoodSet::ThreatEscalationPanicked;
+        else if (strcmp(s, "Aggressive")                 == 0) v = BehaviourMoodSet::Aggressive;
+        else if (strcmp(s, "Panicked")                   == 0) v = BehaviourMoodSet::Panicked;
+        else if (strcmp(s, "ThreatEscalationEscalated")  == 0) v = BehaviourMoodSet::ThreatEscalationEscalated;
+        else if (strcmp(s, "Escalated")                  == 0) v = BehaviourMoodSet::Escalated;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<BehaviourMoodSet>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addBehaviourMoodSetCheck(v);
+
+    } else if (strcmp(type_str, "SetBehaviourMoodSet") == 0) {
+        char s[40] = "Neutral";
+        read_str_r(obj, obj_end, "\"mood_set\"", s, sizeof(s));
+        BehaviourMoodSet v = BehaviourMoodSet::Neutral;
+        if      (strcmp(s, "ThreatEscalationAggressive") == 0) v = BehaviourMoodSet::ThreatEscalationAggressive;
+        else if (strcmp(s, "ThreatEscalationPanicked")   == 0) v = BehaviourMoodSet::ThreatEscalationPanicked;
+        else if (strcmp(s, "Aggressive")                 == 0) v = BehaviourMoodSet::Aggressive;
+        else if (strcmp(s, "Panicked")                   == 0) v = BehaviourMoodSet::Panicked;
+        else if (strcmp(s, "ThreatEscalationEscalated")  == 0) v = BehaviourMoodSet::ThreatEscalationEscalated;
+        else if (strcmp(s, "Escalated")                  == 0) v = BehaviourMoodSet::Escalated;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<BehaviourMoodSet>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addSetBehaviourMoodSet(v);
+
+    } else if (strcmp(type_str, "ViewconeTypeCheck") == 0) {
+        char s[32] = "Rectangle";
+        read_str_r(obj, obj_end, "\"viewcone_type\"", s, sizeof(s));
+        ViewconeType v = ViewconeType::Rectangle;
+        if      (strcmp(s, "Ellipse")   == 0) v = ViewconeType::Ellipse;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<ViewconeType>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addViewconeTypeCheck(v);
+
+    } else if (strcmp(type_str, "SetViewconeType") == 0) {
+        char s[32] = "Rectangle";
+        read_str_r(obj, obj_end, "\"viewcone_type\"", s, sizeof(s));
+        ViewconeType v = ViewconeType::Rectangle;
+        if      (strcmp(s, "Ellipse")   == 0) v = ViewconeType::Ellipse;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<ViewconeType>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addSetViewconeType(v);
+
+    } else if (strcmp(type_str, "SensoryTypeCheck") == 0) {
+        char s[32] = "Visual";
+        read_str_r(obj, obj_end, "\"sensory_type\"", s, sizeof(s));
+        SensoryType v = SensoryType::Visual;
+        if      (strcmp(s, "WeaponSound")   == 0) v = SensoryType::WeaponSound;
+        else if (strcmp(s, "MovementSound") == 0) v = SensoryType::MovementSound;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<SensoryType>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addSensoryTypeCheck(v);
+
+    } else if (strcmp(type_str, "SetSensoryType") == 0) {
+        char s[32] = "Visual";
+        read_str_r(obj, obj_end, "\"sensory_type\"", s, sizeof(s));
+        SensoryType v = SensoryType::Visual;
+        if      (strcmp(s, "WeaponSound")   == 0) v = SensoryType::WeaponSound;
+        else if (strcmp(s, "MovementSound") == 0) v = SensoryType::MovementSound;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<SensoryType>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addSetSensoryType(v);
+
+    // ── Batch 19: Weapon System ───────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionCurrentWeaponIsEquipped") == 0) {
+        idx = bt.addConditionCurrentWeaponIsEquipped();
+    } else if (strcmp(type_str, "ConditionCurrentWeaponNeedsReloading") == 0) {
+        idx = bt.addConditionCurrentWeaponNeedsReloading();
+    } else if (strcmp(type_str, "ConditionHasMeleeAttackAvailable") == 0) {
+        idx = bt.addConditionHasMeleeAttackAvailable();
+    } else if (strcmp(type_str, "ActionWeaponEquip") == 0) {
+        idx = bt.addActionWeaponEquip();
+    } else if (strcmp(type_str, "ActionRangedShoot") == 0) {
+        idx = bt.addActionRangedShoot();
+    } else if (strcmp(type_str, "ConditionHasObjective") == 0) {
+        idx = bt.addConditionHasObjective();
+    } else if (strcmp(type_str, "ConditionBehaviourMoodSetAbove") == 0) {
+        char s[40] = "Neutral";
+        read_str_r(obj, obj_end, "\"mood_set\"", s, sizeof(s));
+        BehaviourMoodSet v = BehaviourMoodSet::Neutral;
+        if      (strcmp(s, "ThreatEscalationAggressive") == 0) v = BehaviourMoodSet::ThreatEscalationAggressive;
+        else if (strcmp(s, "ThreatEscalationPanicked")   == 0) v = BehaviourMoodSet::ThreatEscalationPanicked;
+        else if (strcmp(s, "Aggressive")                 == 0) v = BehaviourMoodSet::Aggressive;
+        else if (strcmp(s, "Panicked")                   == 0) v = BehaviourMoodSet::Panicked;
+        else if (strcmp(s, "ThreatEscalationEscalated")  == 0) v = BehaviourMoodSet::ThreatEscalationEscalated;
+        else if (strcmp(s, "Escalated")                  == 0) v = BehaviourMoodSet::Escalated;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<BehaviourMoodSet>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addConditionBehaviourMoodSetAbove(v);

@@ -408,26 +408,50 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
     glBindVertexArray(vao_);
     glBindBuffer(GL_ARRAY_BUFFER, inst_vbo_);
 
+    // P14: compute camera-space culling bounds for this frame.
+    // half_ext = ortho half-height when ortho; FOV-based estimate for perspective.
+    float half_ext;
+    if (ortho_size > 0.f) {
+        half_ext = ortho_size;
+    } else {
+        // Perspective: approximate visible ground radius as camera height × fov factor.
+        float ground_h = (cam.pos.y > 0.f) ? cam.pos.y : 20.f;
+        half_ext = ground_h * 1.5f;  // conservative for typical isometric FOV
+    }
+    const TileCullBounds cull = ComputeTileCullBounds(
+        cam.pos.x, cam.pos.z, half_ext, tile_world_size, map.width, map.height);
+
     // PASS 4: draw contiguous atlas runs in painter's depth order.
-    // Tiles are sorted by depth (col+row); we emit one draw call per run of
-    // same atlas_idx, switching the bound texture between runs.
+    // Tiles outside the camera's tile-space culling bounds are skipped.
+    // Visible tiles are compacted into cull_ibuf before upload.
     {
+        static uint8_t cull_ibuf[MAX_VISIBLE_TILES * TINST_STRIDE];
         int i = 0;
         while (i < n) {
-            uint8_t aidx       = vbuf[i].atlas_idx;
+            uint8_t aidx        = vbuf[i].atlas_idx;
             int     batch_start = i;
             while (i < n && vbuf[i].atlas_idx == aidx) ++i;
-            int count = i - batch_start;
 
-            // Upload only the relevant batch slice to the VBO start.
+            // Compact: only copy tiles inside cull bounds into cull_ibuf.
+            int vis = 0;
+            for (int j = batch_start; j < i; ++j) {
+                int vc = (int)vbuf[j].col, vr = (int)vbuf[j].row;
+                if (vc >= cull.col_min && vc <= cull.col_max &&
+                    vr >= cull.row_min && vr <= cull.row_max) {
+                    memcpy(cull_ibuf + vis * TINST_STRIDE,
+                           ibuf + j * TINST_STRIDE, TINST_STRIDE);
+                    ++vis;
+                }
+            }
+            if (vis == 0) continue;
+
             glBufferSubData(GL_ARRAY_BUFFER, 0,
-                            (GLsizeiptr)(count * TINST_STRIDE),
-                            ibuf + batch_start * TINST_STRIDE);
+                            (GLsizeiptr)(vis * TINST_STRIDE), cull_ibuf);
 
             if (aidx < (uint8_t)atlas_count_ && atlases_[aidx].id)
                 MdBindTexture(atlases_[aidx], 0);
 
-            glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, count);
+            glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, vis);
         }
     }
 

@@ -9,6 +9,43 @@ namespace md::flare {
 // 128×128 map ≈ 16 384 tiles; capped so instance VBO stays fixed-size.
 constexpr int MAX_VISIBLE_TILES = 16384;
 
+// ── P14: Tile viewport culling ────────────────────────────────────────────────
+// Conservative axis-aligned bounds in tile space.
+// col/row ranges are inclusive and pre-clamped to [0, map_w/h−1].
+// "Conservative" means: may include a few invisible tiles at isometric edges,
+// but guaranteed NEVER to cull tiles that are actually on screen.
+struct TileCullBounds {
+    int col_min, col_max;   // inclusive column range
+    int row_min, row_max;   // inclusive row range
+};
+
+// Compute culling bounds given the camera world-position (cam_x, cam_z),
+// visible half-extent in world units (ortho_size or FOV-derived estimate),
+// tile world size, and map dimensions.
+// Returns bounds clamped to [0, map_w-1] × [0, map_h-1].
+inline TileCullBounds ComputeTileCullBounds(float cam_x, float cam_z,
+                                             float half_ext,
+                                             float tile_world_size,
+                                             int   map_w, int map_h) noexcept {
+    float tsz = (tile_world_size > 0.f) ? tile_world_size : 1.f;
+    // Convert half-extent to tile units; add 2-tile isometric skew margin.
+    float ext = half_ext / tsz + 2.f;
+    float cc = cam_x / tsz;
+    float cr = cam_z / tsz;
+    TileCullBounds b;
+    b.col_min = (int)(cc - ext);
+    b.col_max = (int)(cc + ext) + 1;
+    b.row_min = (int)(cr - ext);
+    b.row_max = (int)(cr + ext) + 1;
+    if (b.col_min < 0)       b.col_min = 0;
+    if (b.col_max < 0)       b.col_max = 0;
+    if (b.col_max >= map_w)  b.col_max = map_w - 1;
+    if (b.row_min < 0)       b.row_min = 0;
+    if (b.row_max < 0)       b.row_max = 0;
+    if (b.row_max >= map_h)  b.row_max = map_h - 1;
+    return b;
+}
+
 // Renders one FlareMap background + object layers as instanced geometry.
 // Supports multiple atlas textures (M7.23): tiles from different [tileset]
 // sections in the tilesetdef are batched by atlas and drawn with texture switches

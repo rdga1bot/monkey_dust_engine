@@ -123,6 +123,11 @@ uint16_t BehaviorTree::addSequenceStateless() {
     initNode(m_nodes[i], BTNodeType::SequenceStateless);
     return i;
 }
+uint16_t BehaviorTree::addSequenceIgnoreChildFail() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SequenceIgnoreChildFail);
+    return i;
+}
 
 // C12: same as addTimerStart but sets flag bit 0 (only_increase)
 uint16_t BehaviorTree::addTimerStartOnlyIncrease(uint8_t timer_id, uint32_t duration_ms) {
@@ -695,6 +700,101 @@ uint16_t BehaviorTree::addDecoratorLockVent(uint8_t vent_id) {
     uint16_t i = m_nodeCount++;
     initNode(m_nodes[i], BTNodeType::DecoratorLockVent);
     m_nodes[i].data = static_cast<uint32_t>(vent_id & 0x7u);
+    return i;
+}
+
+// ── Batch 15 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionIsEnemyOfTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsEnemyOfTarget); return i;
+}
+uint16_t BehaviorTree::addActionForceIdle() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionForceIdle); return i;
+}
+uint16_t BehaviorTree::addConditionHasValidRouteToTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasValidRouteToTarget); return i;
+}
+
+// ── Batch 17 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionIsCharacterClass(CharacterClass cls) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionIsCharacterClass);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(cls));
+    return i;
+}
+uint16_t BehaviorTree::addConditionIsInCover() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsInCover); return i;
+}
+uint16_t BehaviorTree::addConditionShouldUseCover() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionShouldUseCover); return i;
+}
+uint16_t BehaviorTree::addActionMoveToCover() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionMoveToCover); return i;
+}
+uint16_t BehaviorTree::addActionIdleInCover() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionIdleInCover); return i;
+}
+
+// ── Batch 18 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addBehaviourMoodSetCheck(BehaviourMoodSet mood_set) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::BehaviourMoodSetCheck);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(mood_set));
+    return i;
+}
+uint16_t BehaviorTree::addSetBehaviourMoodSet(BehaviourMoodSet mood_set) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SetBehaviourMoodSet);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(mood_set));
+    return i;
+}
+uint16_t BehaviorTree::addViewconeTypeCheck(ViewconeType vtype) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ViewconeTypeCheck);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(vtype));
+    return i;
+}
+uint16_t BehaviorTree::addSetViewconeType(ViewconeType vtype) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SetViewconeType);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(vtype));
+    return i;
+}
+uint16_t BehaviorTree::addSensoryTypeCheck(SensoryType stype) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SensoryTypeCheck);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(stype));
+    return i;
+}
+uint16_t BehaviorTree::addSetSensoryType(SensoryType stype) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::SetSensoryType);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(stype));
+    return i;
+}
+
+// ── Batch 19 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionCurrentWeaponIsEquipped() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionCurrentWeaponIsEquipped); return i;
+}
+uint16_t BehaviorTree::addConditionCurrentWeaponNeedsReloading() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionCurrentWeaponNeedsReloading); return i;
+}
+uint16_t BehaviorTree::addConditionHasMeleeAttackAvailable() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasMeleeAttackAvailable); return i;
+}
+uint16_t BehaviorTree::addActionWeaponEquip() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionWeaponEquip); return i;
+}
+uint16_t BehaviorTree::addActionRangedShoot() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionRangedShoot); return i;
+}
+uint16_t BehaviorTree::addConditionHasObjective() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasObjective); return i;
+}
+uint16_t BehaviorTree::addConditionBehaviourMoodSetAbove(BehaviourMoodSet threshold) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionBehaviourMoodSetAbove);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(threshold));
     return i;
 }
 

@@ -319,6 +319,72 @@ enum class BTNodeType : uint8_t {
     //   DecoratorLockVent: acquires exclusive vent slot on entry; releases on child return.
     //     data = vent_id & 0x7 (0-7); Failure immediately if another entity holds the slot.
     DecoratorLockVent,
+
+    // ── Batch 16 ──────────────────────────────────────────────────────────────
+    //   SequenceIgnoreChildFail: like Sequence but skips Failure children instead
+    //     of propagating Failure upward. Returns Success when all children visited.
+    //     data=0; found in MD ALIEN_BEHAVE.XML ChildStateType="IGNORE_CHILD_FAIL:1"
+    SequenceIgnoreChildFail,
+
+    // ── Batch 15: HIGH-priority patterns from MD engine analysis ──────────────
+    //   ConditionIsEnemyOfTarget: reads target from bb["target_entity"], compares
+    //     self.alliance_group vs target.alliance_group via AllianceMatrix::IsEnemy.
+    //     Failure if no bb/target/AgentState on either entity. data=0
+    ConditionIsEnemyOfTarget,
+    //   ActionForceIdle: always returns Running — forces entity to skip this tick.
+    //     Equivalent to MD ActionForceIdle/ActionIdle. data=0
+    ActionForceIdle,
+    //   ConditionHasValidRouteToTarget: Success if PathCache has a cached path from
+    //     self WorldTransform pos to target WorldTransform pos (PosKey round-trip).
+    //     Failure if no bb/target/WorldTransform or cache miss. data=0
+    ConditionHasValidRouteToTarget,
+
+    // ── Batch 17 ──────────────────────────────────────────────────────────────
+    //   ConditionIsCharacterClass: Success if as->character_class == (CharacterClass)data
+    ConditionIsCharacterClass,
+    //   ConditionIsInCover: Success if lcf::IS_IN_COVER is set; data=0
+    ConditionIsInCover,
+    //   ConditionShouldUseCover: Success if aggro_level >= Warning (3); data=0
+    ConditionShouldUseCover,
+    //   ActionMoveToCover: sets ff::SHOULD_MOVE_TO_COVER in frame_flags; always Success
+    ActionMoveToCover,
+    //   ActionIdleInCover: sets lcf::IS_IN_COVER + combat_state=EnteredCover; always Running
+    ActionIdleInCover,
+
+    // ── Batch 18 ──────────────────────────────────────────────────────────────
+    //   BehaviourMoodSetCheck: Success if as->behaviour_mood_set == (BehaviourMoodSet)data
+    //     data = BehaviourMoodSet value (uint8_t)
+    BehaviourMoodSetCheck,
+    //   SetBehaviourMoodSet: as->behaviour_mood_set = (BehaviourMoodSet)data; always Success
+    SetBehaviourMoodSet,
+    //   ViewconeTypeCheck: Success if as->viewcone_type == (ViewconeType)data
+    //     data = ViewconeType value (uint8_t)
+    ViewconeTypeCheck,
+    //   SetViewconeType: as->viewcone_type = (ViewconeType)data; always Success
+    SetViewconeType,
+    //   SensoryTypeCheck: Success if as->last_sensory_type == (SensoryType)data
+    //     data = SensoryType value (uint8_t)
+    SensoryTypeCheck,
+    //   SetSensoryType: as->last_sensory_type = (SensoryType)data; always Success
+    SetSensoryType,
+
+    // ── Batch 19 ──────────────────────────────────────────────────────────────
+    // Weapon system — requires WeaponComponent on entity.
+    //   ConditionCurrentWeaponIsEquipped: Success if wc->is_equipped; data=0
+    ConditionCurrentWeaponIsEquipped,
+    //   ConditionCurrentWeaponNeedsReloading: Success if wc->needs_reload; data=0
+    ConditionCurrentWeaponNeedsReloading,
+    //   ConditionHasMeleeAttackAvailable: Success if wc->melee_available; data=0
+    ConditionHasMeleeAttackAvailable,
+    //   ActionWeaponEquip: sets wc->is_equipped = true; always Success; no-op if no WeaponComponent
+    ActionWeaponEquip,
+    //   ActionRangedShoot: sets ff::SHOULD_RANGED_SHOOT in frame_flags; always Success
+    ActionRangedShoot,
+    //   ConditionHasObjective: Success if bb["has_objective"] == true; data=0
+    ConditionHasObjective,
+    //   ConditionBehaviourMoodSetAbove: Success if as->behaviour_mood_set > (BehaviourMoodSet)data
+    //     data = BehaviourMoodSet threshold (uint8_t)
+    ConditionBehaviourMoodSetAbove,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -400,6 +466,27 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionTargetRoutingDistance: max_dist_m * 10 (uint32, 1 decimal place)
 //   ConditionAlienIsAllowed: AlienActionType value (uint8)
 //   DecoratorLockVent: vent_id (0-7, 3 bits)
+//   ConditionIsEnemyOfTarget:     0 (no param; reads alliance_group from AgentState)
+//   ActionForceIdle:              0 (no param; always Running)
+//   ConditionHasValidRouteToTarget: 0 (no param; PathCache::Get check)
+//   ConditionIsCharacterClass: CharacterClass value (uint8_t)
+//   ConditionIsInCover:        0 (checks lcf::IS_IN_COVER)
+//   ConditionShouldUseCover:   0 (checks aggro_level >= Warning)
+//   ActionMoveToCover:         0 (sets ff::SHOULD_MOVE_TO_COVER)
+//   ActionIdleInCover:         0 (sets lcf::IS_IN_COVER + combat_state=EnteredCover)
+//   BehaviourMoodSetCheck:    BehaviourMoodSet value (uint8_t)
+//   SetBehaviourMoodSet:      BehaviourMoodSet value (uint8_t)
+//   ViewconeTypeCheck:        ViewconeType value (uint8_t)
+//   SetViewconeType:          ViewconeType value (uint8_t)
+//   SensoryTypeCheck:         SensoryType value (uint8_t)
+//   SetSensoryType:           SensoryType value (uint8_t)
+//   ConditionCurrentWeaponIsEquipped:     0 (WeaponComponent::is_equipped)
+//   ConditionCurrentWeaponNeedsReloading: 0 (WeaponComponent::needs_reload)
+//   ConditionHasMeleeAttackAvailable:     0 (WeaponComponent::melee_available)
+//   ActionWeaponEquip:                    0 (sets wc->is_equipped=true)
+//   ActionRangedShoot:                    0 (sets ff::SHOULD_RANGED_SHOOT in frame_flags)
+//   ConditionHasObjective:                0 (bb["has_objective"] bool)
+//   ConditionBehaviourMoodSetAbove:       BehaviourMoodSet threshold (uint8_t; strict >)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -631,6 +718,58 @@ public:
     uint16_t addConditionAlienIsAllowed(AlienActionType action);
     // DecoratorLockVent: acquire exclusive vent slot on entry; release on child return.
     uint16_t addDecoratorLockVent(uint8_t vent_id);
+
+    // ── Batch 16 ──────────────────────────────────────────────────────────────
+    // SequenceIgnoreChildFail: Sequence that skips Failure children, returns Success.
+    uint16_t addSequenceIgnoreChildFail();
+
+    // ── Batch 15 ──────────────────────────────────────────────────────────────
+    // ConditionIsEnemyOfTarget: AllianceMatrix::IsEnemy(self.alliance_group, target.alliance_group)
+    uint16_t addConditionIsEnemyOfTarget();
+    // ActionForceIdle: always returns Running (skip this tick).
+    uint16_t addActionForceIdle();
+    // ConditionHasValidRouteToTarget: PathCache::Get from self to target position.
+    uint16_t addConditionHasValidRouteToTarget();
+
+    // ── Batch 17 ──────────────────────────────────────────────────────────────
+    // ConditionIsCharacterClass: Success if as->character_class == cls
+    uint16_t addConditionIsCharacterClass(CharacterClass cls);
+    // ConditionIsInCover: Success if lcf::IS_IN_COVER set
+    uint16_t addConditionIsInCover();
+    // ConditionShouldUseCover: Success if as->aggro_level >= NpcAggroLevel::Warning
+    uint16_t addConditionShouldUseCover();
+    // ActionMoveToCover: sets ff::SHOULD_MOVE_TO_COVER; always Success
+    uint16_t addActionMoveToCover();
+    // ActionIdleInCover: sets lcf::IS_IN_COVER + combat_state=EnteredCover; always Running
+    uint16_t addActionIdleInCover();
+
+    // ── Batch 18 ──────────────────────────────────────────────────────────────
+    // BehaviourMoodSetCheck: Success if as->behaviour_mood_set == mood_set
+    uint16_t addBehaviourMoodSetCheck(BehaviourMoodSet mood_set);
+    // SetBehaviourMoodSet: writes as->behaviour_mood_set; always Success
+    uint16_t addSetBehaviourMoodSet(BehaviourMoodSet mood_set);
+    // ViewconeTypeCheck: Success if as->viewcone_type == vtype
+    uint16_t addViewconeTypeCheck(ViewconeType vtype);
+    // SetViewconeType: writes as->viewcone_type; always Success
+    uint16_t addSetViewconeType(ViewconeType vtype);
+    // SensoryTypeCheck: Success if as->last_sensory_type == stype
+    uint16_t addSensoryTypeCheck(SensoryType stype);
+    // SetSensoryType: writes as->last_sensory_type; always Success
+    uint16_t addSetSensoryType(SensoryType stype);
+
+    // ── Batch 19 ──────────────────────────────────────────────────────────────
+    // Weapon system — reads WeaponComponent on entity.
+    uint16_t addConditionCurrentWeaponIsEquipped();
+    uint16_t addConditionCurrentWeaponNeedsReloading();
+    uint16_t addConditionHasMeleeAttackAvailable();
+    // ActionWeaponEquip: sets WeaponComponent::is_equipped = true; always Success
+    uint16_t addActionWeaponEquip();
+    // ActionRangedShoot: sets ff::SHOULD_RANGED_SHOOT in frame_flags; always Success
+    uint16_t addActionRangedShoot();
+    // ConditionHasObjective: Success if bb["has_objective"] == true
+    uint16_t addConditionHasObjective();
+    // ConditionBehaviourMoodSetAbove: Success if as->behaviour_mood_set > threshold
+    uint16_t addConditionBehaviourMoodSetAbove(BehaviourMoodSet threshold);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

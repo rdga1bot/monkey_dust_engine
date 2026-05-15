@@ -104,6 +104,8 @@ namespace lcf {
     static constexpr uint8_t HAS_PATH_FAIL          = 39;
     static constexpr uint8_t IS_DEAD                = 40;
     static constexpr uint8_t IS_SUSPENDED           = 41;  // Batch 11 P8: BT tick skipped when set
+    static constexpr uint8_t IS_PLAYER              = 42;  // Batch 15: marks the player-controlled entity
+    static constexpr uint8_t IS_IN_COVER            = 43;  // Batch 17: entity is currently in cover
 }
 
 struct LogicCharacterFlags {
@@ -344,6 +346,8 @@ namespace ff {
     static constexpr uint8_t COULD_DO_SUSPICIOUS_ITEM_HIGH         = 5;
     static constexpr uint8_t COULD_DO_SUSPECT_TARGET_RESPONSE_MOVETO = 6;
     static constexpr uint8_t SHOULD_MOVE_THROUGH_TARGET              = 7;  // Batch 10 P5
+    static constexpr uint8_t SHOULD_MOVE_TO_COVER                   = 8;  // Batch 17: nav moves to cover point
+    static constexpr uint8_t SHOULD_RANGED_SHOOT                    = 9;  // Batch 19: trigger ranged attack
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────
@@ -373,6 +377,57 @@ static constexpr int MAX_BB_ENTRIES = 24;
 struct AgentBlackboard {
     int             bb_count = 0;
     BlackboardEntry bb[MAX_BB_ENTRIES];
+};
+
+// ── Batch 18: BehaviourMoodSet ───────────────────────────────────────────────
+// MD BEHAVIOUR_MOOD_SET — threat-escalation composite state; orthogonal to NpcMood.
+// Captures the escalation *trajectory* (neutral → escalating → escalated/aggressive/panicked).
+// DirectorSystem writes; BehaviourMoodSetCheck BT node reads.
+enum class BehaviourMoodSet : uint8_t {
+    Neutral                      = 0,  // NEUTRAL
+    ThreatEscalationAggressive   = 1,  // THREAT_ESCALATION_AGGRESSIVE — ramping toward aggression
+    ThreatEscalationPanicked     = 2,  // THREAT_ESCALATION_PANICKED — ramping toward panic
+    Aggressive                   = 3,  // AGGRESSIVE — sustained combat
+    Panicked                     = 4,  // PANICKED — sustained flee
+    ThreatEscalationEscalated    = 5,  // THREAT_ESCALATION_ESCALATED — ramping toward escalation
+    Escalated                    = 6,  // ESCALATED — maximum threat state
+    Unknown                      = 0xFF,
+};
+
+// ── Batch 18: ViewconeType ────────────────────────────────────────────────────
+// MD VIEWCONE_TYPE — shape of the NPC's visual detection frustum.
+// NavSystem / SenseSystem reads to compute activation overlap.
+// BT reads via ViewconeTypeCheck; SenseSystem writes (or game config sets at spawn).
+enum class ViewconeType : uint8_t {
+    Rectangle = 0,  // RECTANGLE — wide flat rectangle (androids / security)
+    Ellipse   = 1,  // ELLIPSE   — oval cone (alien / humans)
+    Unknown   = 0xFF,
+};
+
+// ── Batch 18: SensoryType ─────────────────────────────────────────────────────
+// MD SENSORY_TYPE — high-level channel that last triggered sense activation.
+// Orthogonal to SenseType (which enumerates all sense slots): SensoryType
+// classifies the *stimulus* (sight vs weapon-sound vs movement-sound).
+// Written by SenseSystem when a channel fires above threshold; BT reads.
+enum class SensoryType : uint8_t {
+    Visual        = 0,  // VISUAL — line-of-sight detection
+    WeaponSound   = 1,  // WEAPON_SOUND — gunshot, explosion
+    MovementSound = 2,  // MOVEMENT_SOUND — footsteps, vent crawling
+    Unknown       = 0xFF,
+};
+
+// ── Batch 17: CharacterClass ──────────────────────────────────────────────────
+// MD CHARACTER_CLASS — high-level entity archetype for ConditionIsCharacterClass BT node.
+// Orthogonal to AllianceGroup: class determines *what* the entity is; group determines *who* it fights.
+enum class CharacterClass : uint8_t {
+    Player       = 0,
+    Alien        = 1,
+    Android      = 2,
+    Civilian     = 3,
+    Security     = 4,
+    Innocent     = 6,
+    AndroidHeavy = 7,
+    Unknown      = 0xFF,
 };
 
 // ── AgentState ────────────────────────────────────────────────────────────────
@@ -415,7 +470,11 @@ struct AgentState {
     SuspiciousItemReaction si_reaction;               // Batch 7: NPC reaction decision for SI
     AmbushType             ambush_type;               // Batch 7: subtype of ambush approach
     NoiseType              last_noise_type;           // Batch 7: most recent noise sub-type
-    uint8_t                _pad_b7[1];
+    uint8_t                alliance_group;            // Batch 15: AllianceGroup cast to uint8 (0=Player)
+    CharacterClass         character_class;           // Batch 17: entity archetype for ConditionIsCharacterClass
+    BehaviourMoodSet       behaviour_mood_set;        // Batch 18: MD threat-escalation composite state
+    ViewconeType           viewcone_type;             // Batch 18: shape of visual detection frustum
+    SensoryType            last_sensory_type;         // Batch 18: channel that last triggered sense activation
 };
 
 // ── AgentStateSnapshot ────────────────────────────────────────────────────────

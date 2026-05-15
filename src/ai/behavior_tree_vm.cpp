@@ -10,7 +10,9 @@
 #include <monkey_dust/ai/alien_config.h>
 #include <monkey_dust/ai/vent_lock.h>
 #include <monkey_dust/nav/path_cache.h>
+#include <monkey_dust/components/weapon_component.h>
 #include <monkey_dust/world/world_transform.h>
+#include <monkey_dust/world/alliance.h>
 #include <monkey_dust/ai/fnv.h>
 #include <cstring>
 #include <cmath>
@@ -20,6 +22,7 @@ static constexpr uint32_t NEXT_TARGET_ENTITY_BB_KEY       = md::fnv1a("next_targ
 static constexpr uint32_t HAS_SEARCHED_POS_BB_KEY         = md::fnv1a("has_searched_pos");
 static constexpr uint32_t DONE_SUSPECT_MOVETO_BB_KEY      = md::fnv1a("done_suspect_moveto");
 static constexpr uint32_t DONE_SYSTEMATIC_SEARCH_BB_KEY   = md::fnv1a("done_systematic_search");
+static constexpr uint32_t HAS_OBJECTIVE_BB_KEY            = md::fnv1a("has_objective");
 
 // ── Stackless VM tick ─────────────────────────────────────────────────────────
 BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t nowMs) {
@@ -260,6 +263,18 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
         // ── AI-11–20 ─────────────────────────────────────────────────────
 
         // C11: SequenceStateless — always restarts from child 0 on re-entry
+        // Batch 16: SequenceIgnoreChildFail — advances on both Success and Failure
+        case BTNodeType::SequenceIgnoreChildFail:
+            if (result == BTStatus::Success || result == BTStatus::Failure) {
+                st.currentChild++;
+            }
+            if (st.currentChild >= nd.childCount) {
+                st.currentChild = 0;
+                pc = nd.parent; result = BTStatus::Success; continue;
+            }
+            pc = m_children[nd.childStart + st.currentChild];
+            result = BTStatus::Running; continue;
+
         case BTNodeType::SequenceStateless:
             if (result == BTStatus::Failure) {
                 st.currentChild = 0;
@@ -1268,6 +1283,181 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             }
             // returning from child — release lock and propagate result
             VentLockTable::Get().Release(e);
+            pc = nd.parent; continue;
+        }
+
+        // ── Batch 15: HIGH-priority patterns from MD engine analysis ─────────
+        // ConditionIsEnemyOfTarget — AllianceMatrix::IsEnemy(self.alliance_group, target.alliance_group)
+        case BTNodeType::ConditionIsEnemyOfTarget: {
+            AgentBlackboard*   ab = Registry::Get().try_get<AgentBlackboard>(e);
+            const AgentState*  as = Registry::Get().try_get<AgentState>(e);
+            if (!ab || !as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity target    = static_cast<entt::entity>(en->val.e);
+            const AgentState* tas  = Registry::Get().try_get<AgentState>(target);
+            if (!tas) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            bool enemy = AllianceMatrix::Get().IsEnemy(
+                static_cast<AllianceGroup>(as->alliance_group),
+                static_cast<AllianceGroup>(tas->alliance_group));
+            result = enemy ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // ActionForceIdle — always Running (skip this BT tick, re-enter next tick)
+        case BTNodeType::ActionForceIdle: {
+            result = BTStatus::Running; pc = nd.parent; continue;
+        }
+
+        // ── Batch 17 ─────────────────────────────────────────────────────────
+        // ConditionIsCharacterClass — Success if as->character_class == (CharacterClass)data
+        case BTNodeType::ConditionIsCharacterClass: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->character_class == static_cast<CharacterClass>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        // ConditionIsInCover — Success if lcf::IS_IN_COVER set
+        case BTNodeType::ConditionIsInCover: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = as->lcflags.test(lcf::IS_IN_COVER)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        // ConditionShouldUseCover — Success if aggro_level >= Warning (3)
+        case BTNodeType::ConditionShouldUseCover: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (static_cast<uint8_t>(as->aggro_level) >=
+                      static_cast<uint8_t>(NpcAggroLevel::Warning))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        // ActionMoveToCover — set ff::SHOULD_MOVE_TO_COVER; always Success
+        case BTNodeType::ActionMoveToCover: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_MOVE_TO_COVER);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        // ActionIdleInCover — mark as in cover + set combat state; always Running
+        case BTNodeType::ActionIdleInCover: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->lcflags.set(lcf::IS_IN_COVER);
+                as->combat_state = NpcCombatState::EnteredCover;
+            }
+            result = BTStatus::Running; pc = nd.parent; continue;
+        }
+
+        // ── Batch 18 ─────────────────────────────────────────────────────────
+        // BehaviourMoodSetCheck — Success if as->behaviour_mood_set == (BehaviourMoodSet)data
+        case BTNodeType::BehaviourMoodSetCheck: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->behaviour_mood_set == static_cast<BehaviourMoodSet>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        // SetBehaviourMoodSet — write as->behaviour_mood_set; always Success
+        case BTNodeType::SetBehaviourMoodSet: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->behaviour_mood_set = static_cast<BehaviourMoodSet>(nd.data);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        // ViewconeTypeCheck — Success if as->viewcone_type == (ViewconeType)data
+        case BTNodeType::ViewconeTypeCheck: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->viewcone_type == static_cast<ViewconeType>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        // SetViewconeType — write as->viewcone_type; always Success
+        case BTNodeType::SetViewconeType: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->viewcone_type = static_cast<ViewconeType>(nd.data);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        // SensoryTypeCheck — Success if as->last_sensory_type == (SensoryType)data
+        case BTNodeType::SensoryTypeCheck: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->last_sensory_type == static_cast<SensoryType>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        // SetSensoryType — write as->last_sensory_type; always Success
+        case BTNodeType::SetSensoryType: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->last_sensory_type = static_cast<SensoryType>(nd.data);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        // ConditionHasValidRouteToTarget — PathCache::Get from self to target position
+        case BTNodeType::ConditionHasValidRouteToTarget: {
+            AgentBlackboard*      ab = Registry::Get().try_get<AgentBlackboard>(e);
+            const WorldTransform* wt = Registry::Get().try_get<WorldTransform>(e);
+            if (!ab || !wt) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity          target = static_cast<entt::entity>(en->val.e);
+            const WorldTransform* twt   = Registry::Get().try_get<WorldTransform>(target);
+            if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint32_t ks = PathCache::PosKey(wt->x,  wt->z);
+            uint32_t ke = PathCache::PosKey(twt->x, twt->z);
+            float  dummy_pts[3] = {};
+            int    dummy_len    = 0;
+            bool   has_path = PathCache::Get().Get(ks, ke,
+                                  static_cast<float>(nowMs) * 0.001f,
+                                  dummy_pts, dummy_len);
+            result = has_path ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        // ── Batch 19: Weapon System ──────────────────────────────────────────
+        case BTNodeType::ConditionCurrentWeaponIsEquipped: {
+            WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(e);
+            if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = wc->is_equipped ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionCurrentWeaponNeedsReloading: {
+            WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(e);
+            if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = wc->needs_reload ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionHasMeleeAttackAvailable: {
+            WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(e);
+            if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = wc->melee_available ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ActionWeaponEquip: {
+            WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(e);
+            if (wc) wc->is_equipped = true;
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        case BTNodeType::ActionRangedShoot: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_RANGED_SHOOT);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionHasObjective: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = bb_get_bool(*ab, HAS_OBJECTIVE_BB_KEY)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionBehaviourMoodSetAbove: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (static_cast<uint8_t>(as->behaviour_mood_set) >
+                      static_cast<uint8_t>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
 

@@ -583,6 +583,8 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         idx = bt.addSequence();
     } else if (strcmp(type_str, "SequenceStateless") == 0) {  // C11
         idx = bt.addSequenceStateless();
+    } else if (strcmp(type_str, "SequenceIgnoreChildFail") == 0) {  // Batch 16
+        idx = bt.addSequenceIgnoreChildFail();
     } else if (strcmp(type_str, "WeightedSelector") == 0) {   // C14
         uint8_t w[4];
         read_weights_r(obj, obj_end, w);
@@ -1196,6 +1198,133 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         if (vid < 0) vid = 0;
         if (vid >= VentLockTable::MAX_VENTS) vid = VentLockTable::MAX_VENTS - 1;
         idx = bt.addDecoratorLockVent(static_cast<uint8_t>(vid));
+
+    // ── Batch 15 ──────────────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionIsEnemyOfTarget") == 0) {
+        idx = bt.addConditionIsEnemyOfTarget();
+
+    } else if (strcmp(type_str, "ActionForceIdle") == 0) {
+        idx = bt.addActionForceIdle();
+
+    } else if (strcmp(type_str, "ConditionHasValidRouteToTarget") == 0) {
+        idx = bt.addConditionHasValidRouteToTarget();
+
+    // ── Batch 17 ─────────────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionIsCharacterClass") == 0) {
+        // JSON: "character_class": "Alien" | "Player" | "Android" | int
+        char cls_s[32] = "Unknown";
+        read_str_r(obj, obj_end, "\"character_class\"", cls_s, sizeof(cls_s));
+        CharacterClass cls = CharacterClass::Unknown;
+        if      (strcmp(cls_s, "Player")       == 0) cls = CharacterClass::Player;
+        else if (strcmp(cls_s, "Alien")        == 0) cls = CharacterClass::Alien;
+        else if (strcmp(cls_s, "Android")      == 0) cls = CharacterClass::Android;
+        else if (strcmp(cls_s, "Civilian")     == 0) cls = CharacterClass::Civilian;
+        else if (strcmp(cls_s, "Security")     == 0) cls = CharacterClass::Security;
+        else if (strcmp(cls_s, "Innocent")     == 0) cls = CharacterClass::Innocent;
+        else if (strcmp(cls_s, "AndroidHeavy") == 0) cls = CharacterClass::AndroidHeavy;
+        else if (cls_s[0] >= '0' && cls_s[0] <= '9')
+            cls = static_cast<CharacterClass>(static_cast<uint8_t>(atoi(cls_s)));
+        idx = bt.addConditionIsCharacterClass(cls);
+
+    } else if (strcmp(type_str, "ConditionIsInCover") == 0) {
+        idx = bt.addConditionIsInCover();
+
+    } else if (strcmp(type_str, "ConditionShouldUseCover") == 0) {
+        idx = bt.addConditionShouldUseCover();
+
+    } else if (strcmp(type_str, "ActionMoveToCover") == 0) {
+        idx = bt.addActionMoveToCover();
+
+    } else if (strcmp(type_str, "ActionIdleInCover") == 0) {
+        idx = bt.addActionIdleInCover();
+
+    // ── Batch 18 ─────────────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "BehaviourMoodSetCheck") == 0) {
+        char s[40] = "Neutral";
+        read_str_r(obj, obj_end, "\"mood_set\"", s, sizeof(s));
+        BehaviourMoodSet v = BehaviourMoodSet::Neutral;
+        if      (strcmp(s, "Neutral")                    == 0) v = BehaviourMoodSet::Neutral;
+        else if (strcmp(s, "ThreatEscalationAggressive") == 0) v = BehaviourMoodSet::ThreatEscalationAggressive;
+        else if (strcmp(s, "ThreatEscalationPanicked")   == 0) v = BehaviourMoodSet::ThreatEscalationPanicked;
+        else if (strcmp(s, "Aggressive")                 == 0) v = BehaviourMoodSet::Aggressive;
+        else if (strcmp(s, "Panicked")                   == 0) v = BehaviourMoodSet::Panicked;
+        else if (strcmp(s, "ThreatEscalationEscalated")  == 0) v = BehaviourMoodSet::ThreatEscalationEscalated;
+        else if (strcmp(s, "Escalated")                  == 0) v = BehaviourMoodSet::Escalated;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<BehaviourMoodSet>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addBehaviourMoodSetCheck(v);
+
+    } else if (strcmp(type_str, "SetBehaviourMoodSet") == 0) {
+        char s[40] = "Neutral";
+        read_str_r(obj, obj_end, "\"mood_set\"", s, sizeof(s));
+        BehaviourMoodSet v = BehaviourMoodSet::Neutral;
+        if      (strcmp(s, "ThreatEscalationAggressive") == 0) v = BehaviourMoodSet::ThreatEscalationAggressive;
+        else if (strcmp(s, "ThreatEscalationPanicked")   == 0) v = BehaviourMoodSet::ThreatEscalationPanicked;
+        else if (strcmp(s, "Aggressive")                 == 0) v = BehaviourMoodSet::Aggressive;
+        else if (strcmp(s, "Panicked")                   == 0) v = BehaviourMoodSet::Panicked;
+        else if (strcmp(s, "ThreatEscalationEscalated")  == 0) v = BehaviourMoodSet::ThreatEscalationEscalated;
+        else if (strcmp(s, "Escalated")                  == 0) v = BehaviourMoodSet::Escalated;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<BehaviourMoodSet>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addSetBehaviourMoodSet(v);
+
+    } else if (strcmp(type_str, "ViewconeTypeCheck") == 0) {
+        char s[32] = "Rectangle";
+        read_str_r(obj, obj_end, "\"viewcone_type\"", s, sizeof(s));
+        ViewconeType v = ViewconeType::Rectangle;
+        if      (strcmp(s, "Ellipse")   == 0) v = ViewconeType::Ellipse;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<ViewconeType>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addViewconeTypeCheck(v);
+
+    } else if (strcmp(type_str, "SetViewconeType") == 0) {
+        char s[32] = "Rectangle";
+        read_str_r(obj, obj_end, "\"viewcone_type\"", s, sizeof(s));
+        ViewconeType v = ViewconeType::Rectangle;
+        if      (strcmp(s, "Ellipse")   == 0) v = ViewconeType::Ellipse;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<ViewconeType>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addSetViewconeType(v);
+
+    } else if (strcmp(type_str, "SensoryTypeCheck") == 0) {
+        char s[32] = "Visual";
+        read_str_r(obj, obj_end, "\"sensory_type\"", s, sizeof(s));
+        SensoryType v = SensoryType::Visual;
+        if      (strcmp(s, "WeaponSound")   == 0) v = SensoryType::WeaponSound;
+        else if (strcmp(s, "MovementSound") == 0) v = SensoryType::MovementSound;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<SensoryType>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addSensoryTypeCheck(v);
+
+    } else if (strcmp(type_str, "SetSensoryType") == 0) {
+        char s[32] = "Visual";
+        read_str_r(obj, obj_end, "\"sensory_type\"", s, sizeof(s));
+        SensoryType v = SensoryType::Visual;
+        if      (strcmp(s, "WeaponSound")   == 0) v = SensoryType::WeaponSound;
+        else if (strcmp(s, "MovementSound") == 0) v = SensoryType::MovementSound;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<SensoryType>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addSetSensoryType(v);
+
+    // ── Batch 19: Weapon System ───────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionCurrentWeaponIsEquipped") == 0) {
+        idx = bt.addConditionCurrentWeaponIsEquipped();
+    } else if (strcmp(type_str, "ConditionCurrentWeaponNeedsReloading") == 0) {
+        idx = bt.addConditionCurrentWeaponNeedsReloading();
+    } else if (strcmp(type_str, "ConditionHasMeleeAttackAvailable") == 0) {
+        idx = bt.addConditionHasMeleeAttackAvailable();
+    } else if (strcmp(type_str, "ActionWeaponEquip") == 0) {
+        idx = bt.addActionWeaponEquip();
+    } else if (strcmp(type_str, "ActionRangedShoot") == 0) {
+        idx = bt.addActionRangedShoot();
+    } else if (strcmp(type_str, "ConditionHasObjective") == 0) {
+        idx = bt.addConditionHasObjective();
+    } else if (strcmp(type_str, "ConditionBehaviourMoodSetAbove") == 0) {
+        char s[40] = "Neutral";
+        read_str_r(obj, obj_end, "\"mood_set\"", s, sizeof(s));
+        BehaviourMoodSet v = BehaviourMoodSet::Neutral;
+        if      (strcmp(s, "ThreatEscalationAggressive") == 0) v = BehaviourMoodSet::ThreatEscalationAggressive;
+        else if (strcmp(s, "ThreatEscalationPanicked")   == 0) v = BehaviourMoodSet::ThreatEscalationPanicked;
+        else if (strcmp(s, "Aggressive")                 == 0) v = BehaviourMoodSet::Aggressive;
+        else if (strcmp(s, "Panicked")                   == 0) v = BehaviourMoodSet::Panicked;
+        else if (strcmp(s, "ThreatEscalationEscalated")  == 0) v = BehaviourMoodSet::ThreatEscalationEscalated;
+        else if (strcmp(s, "Escalated")                  == 0) v = BehaviourMoodSet::Escalated;
+        else if (s[0] >= '0' && s[0] <= '9') v = static_cast<BehaviourMoodSet>(static_cast<uint8_t>(atoi(s)));
+        idx = bt.addConditionBehaviourMoodSetAbove(v);
 
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);

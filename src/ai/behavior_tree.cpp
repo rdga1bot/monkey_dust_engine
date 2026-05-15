@@ -573,6 +573,32 @@ uint16_t BehaviorTree::addConditionSuspiciousItemWaitForGroupRouting() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionSuspiciousItemWaitForGroupRouting); return i;
 }
 
+// ── Batch 7: SuspiciousItemReaction / AmbushType / NoiseType ─────────────────
+uint16_t BehaviorTree::addSIReactionCheck(SuspiciousItemReaction reaction) {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::SIReactionCheck);
+    m_nodes[i].data = static_cast<uint32_t>(reaction); return i;
+}
+uint16_t BehaviorTree::addSetSIReaction(SuspiciousItemReaction reaction) {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::SetSIReaction);
+    m_nodes[i].data = static_cast<uint32_t>(reaction); return i;
+}
+uint16_t BehaviorTree::addAmbushTypeCheck(AmbushType type) {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::AmbushTypeCheck);
+    m_nodes[i].data = static_cast<uint32_t>(type); return i;
+}
+uint16_t BehaviorTree::addSetAmbushType(AmbushType type) {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::SetAmbushType);
+    m_nodes[i].data = static_cast<uint32_t>(type); return i;
+}
+uint16_t BehaviorTree::addNoiseTypeCheck(NoiseType type) {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::NoiseTypeCheck);
+    m_nodes[i].data = static_cast<uint32_t>(type); return i;
+}
+uint16_t BehaviorTree::addSetNoiseType(NoiseType type) {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::SetNoiseType);
+    m_nodes[i].data = static_cast<uint32_t>(type); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

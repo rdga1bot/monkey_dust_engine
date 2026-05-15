@@ -280,6 +280,44 @@ enum class MoodIntensity : uint8_t { Low = 0, Medium = 1, High = 2, Unknown = 0x
 // Rate of NpcAggroLevel escalation on player detection events.
 enum class AggressionGain : uint8_t { Low = 0, Med = 1, High = 2 };
 
+// ── Batch 7: SuspiciousItemReaction ──────────────────────────────────────────
+// MD SUSPICIOUS_ITEM_REACTION — NPC decision on how to react to a suspicious item.
+// Orthogonal to SuspiciousItemStage (which tracks progress of investigation).
+// Written by game/director logic; BT reads via SIReactionCheck.
+enum class SuspiciousItemReaction : uint8_t {
+    Investigate = 0,   // SUSPICIOUS_ITEM_REACTION_INVESTIGATE
+    Alarm       = 1,   // SUSPICIOUS_ITEM_REACTION_ALARM — call for backup
+    Ignore      = 2,   // SUSPICIOUS_ITEM_REACTION_IGNORE — not worth acting on
+    Flee        = 3,   // SUSPICIOUS_ITEM_REACTION_FLEE — threat too high
+    Unknown     = 0xFF,
+};
+
+// ── Batch 7: AmbushType ───────────────────────────────────────────────────────
+// MD AMBUSH_TYPE — subtype of ambush approach when motivation==Ambush.
+// Allows the BT to select different action sequences per ambush variant.
+enum class AmbushType : uint8_t {
+    None      = 0,
+    Vent      = 1,   // drop from vent above target
+    Ceiling   = 2,   // ceiling traverse to drop point
+    Direct    = 3,   // direct approach from hiding
+    Backstage = 4,   // wall-breach backstage ambush
+    Unknown   = 0xFF,
+};
+
+// ── Batch 7: NoiseType ────────────────────────────────────────────────────────
+// MD NOISE_TYPE — sub-classification of Audio-sense stimuli.
+// SenseType::Audio covers all noise; NoiseType gives finer reaction detail.
+// Written when an audio event fires; BT reads via NoiseTypeCheck.
+enum class NoiseType : uint8_t {
+    None      = 0,
+    Footstep  = 1,   // NOISE_TYPE_FOOTSTEP
+    Weapon    = 2,   // NOISE_TYPE_WEAPON — gunshot / melee
+    Vent      = 3,   // NOISE_TYPE_VENT — vent panel, crawling
+    Explosion = 4,   // NOISE_TYPE_EXPLOSION
+    Voice     = 5,   // NOISE_TYPE_VOICE — NPC speech / radio
+    Unknown   = 0xFF,
+};
+
 // ── Batch 4: EventType ────────────────────────────────────────────────────────
 // Timestamped NPC event categories used by ConditionEventAOccuredAfterB.
 // AgentState::event_ts[i] is set to nowMs when event i fires; 0 = never occurred.
@@ -371,7 +409,11 @@ struct AgentState {
     NpcCombatState      combat_state;               // deepseek: combat phase sub-state
     MoodIntensity       mood_intensity;             // deepseek: intensity of current mood
     uint8_t             _pad_as[1];
-    uint32_t            event_ts[MAX_EVENT_TYPES];  // Batch 4: ms when EventType[i] last fired; 0=never
+    uint32_t            event_ts[MAX_EVENT_TYPES];   // Batch 4: ms when EventType[i] last fired; 0=never
+    SuspiciousItemReaction si_reaction;               // Batch 7: NPC reaction decision for SI
+    AmbushType             ambush_type;               // Batch 7: subtype of ambush approach
+    NoiseType              last_noise_type;           // Batch 7: most recent noise sub-type
+    uint8_t                _pad_b7[1];
 };
 
 // ── AgentStateSnapshot ────────────────────────────────────────────────────────

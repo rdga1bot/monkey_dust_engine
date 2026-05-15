@@ -1024,6 +1024,47 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             pc = nd.parent; continue;
         }
 
+        // ── Batch 7: SuspiciousItemReaction / AmbushType / NoiseType ─────────
+        case BTNodeType::SIReactionCheck: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->si_reaction == static_cast<SuspiciousItemReaction>(nd.data & 0xFFu))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::SetSIReaction: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            as->si_reaction = static_cast<SuspiciousItemReaction>(nd.data & 0xFFu);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        case BTNodeType::AmbushTypeCheck: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->ambush_type == static_cast<AmbushType>(nd.data & 0xFFu))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::SetAmbushType: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            as->ambush_type = static_cast<AmbushType>(nd.data & 0xFFu);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        case BTNodeType::NoiseTypeCheck: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->last_noise_type == static_cast<NoiseType>(nd.data & 0xFFu))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::SetNoiseType: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            as->last_noise_type = static_cast<NoiseType>(nd.data & 0xFFu);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
         default:
             goto exit_loop;
         }

@@ -244,6 +244,20 @@ enum class BTNodeType : uint8_t {
     ConditionSuspiciousItemGroupAllowedToProgress,
     ConditionSuspiciousItemGroupMembersRoutingTo,
     ConditionSuspiciousItemWaitForGroupRouting,
+
+    // ── Batch 7: SuspiciousItemReaction / AmbushType / NoiseType ─────────────
+    //   SIReactionCheck:  Success if as->si_reaction == (SuspiciousItemReaction)data
+    //   SetSIReaction:    as->si_reaction = (SuspiciousItemReaction)data → Success
+    SIReactionCheck,
+    SetSIReaction,
+    //   AmbushTypeCheck:  Success if as->ambush_type == (AmbushType)data
+    //   SetAmbushType:    as->ambush_type = (AmbushType)data → Success
+    AmbushTypeCheck,
+    SetAmbushType,
+    //   NoiseTypeCheck:   Success if as->last_noise_type == (NoiseType)data
+    //   SetNoiseType:     as->last_noise_type = (NoiseType)data → Success
+    NoiseTypeCheck,
+    SetNoiseType,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -303,6 +317,12 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionEventAOccuredAfterB: (EventType_A<<8)|EventType_B (4-value enum each)
 //   ConditionSuspiciousItemShouldDoStage: SuspiciousItemStage value (uint8_t)
 //   ConditionSuspiciousItemIsWithinDistance: max_dist_cm (uint32, metres*100)
+//   SIReactionCheck:  SuspiciousItemReaction value (uint8_t)
+//   SetSIReaction:    SuspiciousItemReaction value (uint8_t)
+//   AmbushTypeCheck:  AmbushType value (uint8_t)
+//   SetAmbushType:    AmbushType value (uint8_t)
+//   NoiseTypeCheck:   NoiseType value (uint8_t)
+//   SetNoiseType:     NoiseType value (uint8_t)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -485,6 +505,14 @@ public:
     uint16_t addConditionSuspiciousItemGroupAllowedToProgress();
     uint16_t addConditionSuspiciousItemGroupMembersRoutingTo();
     uint16_t addConditionSuspiciousItemWaitForGroupRouting();
+
+    // ── Batch 7: SuspiciousItemReaction / AmbushType / NoiseType ─────────────
+    uint16_t addSIReactionCheck (SuspiciousItemReaction reaction);
+    uint16_t addSetSIReaction   (SuspiciousItemReaction reaction);
+    uint16_t addAmbushTypeCheck (AmbushType type);
+    uint16_t addSetAmbushType   (AmbushType type);
+    uint16_t addNoiseTypeCheck  (NoiseType type);
+    uint16_t addSetNoiseType    (NoiseType type);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

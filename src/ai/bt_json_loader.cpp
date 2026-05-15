@@ -450,6 +450,44 @@ static EventType parse_event_type(const char* s) {
     return EventType::SensedTarget;
 }
 
+// ── Batch 7 parse helpers ────────────────────────────────────────────────────
+static SuspiciousItemReaction parse_si_reaction(const char* s) {
+    if (strcmp(s, "Investigate") == 0) return SuspiciousItemReaction::Investigate;
+    if (strcmp(s, "Alarm")       == 0) return SuspiciousItemReaction::Alarm;
+    if (strcmp(s, "Ignore")      == 0) return SuspiciousItemReaction::Ignore;
+    if (strcmp(s, "Flee")        == 0) return SuspiciousItemReaction::Flee;
+    if (s[0] >= '0' && s[0] <= '9') {
+        int v = atoi(s);
+        if (v >= 0 && v < 4) return static_cast<SuspiciousItemReaction>(v);
+    }
+    return SuspiciousItemReaction::Unknown;
+}
+static AmbushType parse_ambush_type(const char* s) {
+    if (strcmp(s, "None")      == 0) return AmbushType::None;
+    if (strcmp(s, "Vent")      == 0) return AmbushType::Vent;
+    if (strcmp(s, "Ceiling")   == 0) return AmbushType::Ceiling;
+    if (strcmp(s, "Direct")    == 0) return AmbushType::Direct;
+    if (strcmp(s, "Backstage") == 0) return AmbushType::Backstage;
+    if (s[0] >= '0' && s[0] <= '9') {
+        int v = atoi(s);
+        if (v >= 0 && v < 5) return static_cast<AmbushType>(v);
+    }
+    return AmbushType::Unknown;
+}
+static NoiseType parse_noise_type(const char* s) {
+    if (strcmp(s, "None")      == 0) return NoiseType::None;
+    if (strcmp(s, "Footstep")  == 0) return NoiseType::Footstep;
+    if (strcmp(s, "Weapon")    == 0) return NoiseType::Weapon;
+    if (strcmp(s, "Vent")      == 0) return NoiseType::Vent;
+    if (strcmp(s, "Explosion") == 0) return NoiseType::Explosion;
+    if (strcmp(s, "Voice")     == 0) return NoiseType::Voice;
+    if (s[0] >= '0' && s[0] <= '9') {
+        int v = atoi(s);
+        if (v >= 0 && v < 6) return static_cast<NoiseType>(v);
+    }
+    return NoiseType::Unknown;
+}
+
 // ── MD XML alias helpers ─────────────────────────────────────────────────
 
 // Extracts the integer after the last ':' in "NAME:N" format (MD enum serialization).
@@ -1031,6 +1069,37 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         idx = bt.addConditionSuspiciousItemGroupMembersRoutingTo();
     } else if (strcmp(type_str, "ConditionSuspiciousItemWaitForGroupRouting") == 0) {
         idx = bt.addConditionSuspiciousItemWaitForGroupRouting();
+
+    // ── Batch 7: SuspiciousItemReaction / AmbushType / NoiseType ─────────────
+    } else if (strcmp(type_str, "SIReactionCheck") == 0) {
+        char s[32] = "Investigate";
+        read_str_r(obj, obj_end, "\"reaction\"", s, sizeof(s));
+        idx = bt.addSIReactionCheck(parse_si_reaction(s));
+
+    } else if (strcmp(type_str, "SetSIReaction") == 0) {
+        char s[32] = "Investigate";
+        read_str_r(obj, obj_end, "\"reaction\"", s, sizeof(s));
+        idx = bt.addSetSIReaction(parse_si_reaction(s));
+
+    } else if (strcmp(type_str, "AmbushTypeCheck") == 0) {
+        char s[32] = "None";
+        read_str_r(obj, obj_end, "\"ambush_type\"", s, sizeof(s));
+        idx = bt.addAmbushTypeCheck(parse_ambush_type(s));
+
+    } else if (strcmp(type_str, "SetAmbushType") == 0) {
+        char s[32] = "None";
+        read_str_r(obj, obj_end, "\"ambush_type\"", s, sizeof(s));
+        idx = bt.addSetAmbushType(parse_ambush_type(s));
+
+    } else if (strcmp(type_str, "NoiseTypeCheck") == 0) {
+        char s[32] = "None";
+        read_str_r(obj, obj_end, "\"noise_type\"", s, sizeof(s));
+        idx = bt.addNoiseTypeCheck(parse_noise_type(s));
+
+    } else if (strcmp(type_str, "SetNoiseType") == 0) {
+        char s[32] = "None";
+        read_str_r(obj, obj_end, "\"noise_type\"", s, sizeof(s));
+        idx = bt.addSetNoiseType(parse_noise_type(s));
 
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);

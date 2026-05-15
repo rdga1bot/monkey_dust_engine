@@ -385,6 +385,24 @@ enum class BTNodeType : uint8_t {
     //   ConditionBehaviourMoodSetAbove: Success if as->behaviour_mood_set > (BehaviourMoodSet)data
     //     data = BehaviourMoodSet threshold (uint8_t)
     ConditionBehaviourMoodSetAbove,
+
+    // ── Batch 20 ──────────────────────────────────────────────────────────────
+    //   ActionSuccess: always returns BTStatus::Success; data=0
+    ActionSuccess,
+    //   ActionFail: always returns BTStatus::Failure; data=0
+    ActionFail,
+    //   DecoratorTimer: run child for AT MOST duration_ms; timer expires → Success
+    //     data=(timer_id<<24)|duration_ms; starts timer once on first entry; clear on exit
+    DecoratorTimer,
+    //   ActionIdle: always returns BTStatus::Running (blocks forever); data=0
+    ActionIdle,
+    //   ConditionTargetIsWithinDistance: Euclidean dist(self,last_known_x/z) <= max_dist
+    //     data = max_dist_m * 10 (uint32, 1 decimal); uses WorldTransform + SenseComponent
+    ConditionTargetIsWithinDistance,
+    //   ConditionHasAWeapon: Success if wc->is_equipped OR wc->weapon_type != 0; data=0
+    ConditionHasAWeapon,
+    //   ConditionShouldProcessSuspiciousItem: Success if nm->event_count > 0; data=0
+    ConditionShouldProcessSuspiciousItem,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -487,6 +505,13 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionRangedShoot:                    0 (sets ff::SHOULD_RANGED_SHOOT in frame_flags)
 //   ConditionHasObjective:                0 (bb["has_objective"] bool)
 //   ConditionBehaviourMoodSetAbove:       BehaviourMoodSet threshold (uint8_t; strict >)
+//   ActionSuccess:                        0 (unused)
+//   ActionFail:                           0 (unused)
+//   DecoratorTimer:                       (timer_id<<24)|duration_ms (24-bit ms)
+//   ActionIdle:                           0 (unused; always Running)
+//   ConditionTargetIsWithinDistance:      max_dist_m * 10 (uint32, 1 decimal)
+//   ConditionHasAWeapon:                  0 (is_equipped || weapon_type!=0)
+//   ConditionShouldProcessSuspiciousItem: 0 (nm->event_count > 0)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -770,6 +795,15 @@ public:
     uint16_t addConditionHasObjective();
     // ConditionBehaviourMoodSetAbove: Success if as->behaviour_mood_set > threshold
     uint16_t addConditionBehaviourMoodSetAbove(BehaviourMoodSet threshold);
+
+    // ── Batch 20 ──────────────────────────────────────────────────────────────
+    uint16_t addActionSuccess();
+    uint16_t addActionFail();
+    uint16_t addDecoratorTimer(uint8_t timer_id, uint32_t duration_ms);
+    uint16_t addActionIdle();
+    uint16_t addConditionTargetIsWithinDistance(float max_dist_m);
+    uint16_t addConditionHasAWeapon();
+    uint16_t addConditionShouldProcessSuspiciousItem();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

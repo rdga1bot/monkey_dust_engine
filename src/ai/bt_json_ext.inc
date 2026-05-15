@@ -206,3 +206,26 @@
         else if (strcmp(s, "Escalated")                  == 0) v = BehaviourMoodSet::Escalated;
         else if (s[0] >= '0' && s[0] <= '9') v = static_cast<BehaviourMoodSet>(static_cast<uint8_t>(atoi(s)));
         idx = bt.addConditionBehaviourMoodSetAbove(v);
+
+    // ── Batch 20 ─────────────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ActionSuccess") == 0) {
+        idx = bt.addActionSuccess();
+    } else if (strcmp(type_str, "ActionFail") == 0) {
+        idx = bt.addActionFail();
+    } else if (strcmp(type_str, "DecoratorTimer") == 0) {
+        char slot[32] = "0";
+        read_str_r(obj, obj_end, "\"timer_slot\"", slot, sizeof(slot));
+        int dur = read_int_r(obj, obj_end, "\"duration_ms\"", 3000);
+        idx = bt.addDecoratorTimer(parse_timer_slot(slot), static_cast<uint32_t>(dur < 0 ? 0 : dur));
+    } else if (strcmp(type_str, "ActionIdle") == 0) {
+        idx = bt.addActionIdle();
+    } else if (strcmp(type_str, "ConditionTargetIsPlayer") == 0) {
+        idx = bt.addTargetFlagCheck(lcf::IS_PLAYER, true);
+    } else if (strcmp(type_str, "ConditionTargetIsWithinDistance") == 0) {
+        float dist = read_float_r(obj, obj_end, "\"distance\"", 5.f);
+        if (dist < 0.f) dist = 0.f;
+        idx = bt.addConditionTargetIsWithinDistance(dist);
+    } else if (strcmp(type_str, "ConditionHasAWeapon") == 0) {
+        idx = bt.addConditionHasAWeapon();
+    } else if (strcmp(type_str, "ConditionShouldProcessSuspiciousItem") == 0) {
+        idx = bt.addConditionShouldProcessSuspiciousItem();

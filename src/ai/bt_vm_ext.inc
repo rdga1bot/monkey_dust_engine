@@ -401,3 +401,61 @@
                      ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
+
+        // ── Batch 20 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ActionSuccess:
+            result = BTStatus::Success; pc = nd.parent; continue;
+
+        case BTNodeType::ActionFail:
+            result = BTStatus::Failure; pc = nd.parent; continue;
+
+        case BTNodeType::DecoratorTimer: {
+            AgentState* as  = Registry::Get().try_get<AgentState>(e);
+            uint8_t  tid    = static_cast<uint8_t>(nd.data >> 24);
+            uint32_t dur_ms = nd.data & 0x00FFFFFFu;
+            if (result == BTStatus::Running) {
+                if (as && tid < MAX_AGENT_TIMERS) {
+                    if (as->timers[tid] == 0u)
+                        as->timers[tid] = static_cast<uint64_t>(nowMs) + dur_ms;
+                    if (static_cast<uint64_t>(nowMs) >= as->timers[tid]) {
+                        as->timers[tid] = 0u;
+                        result = BTStatus::Success; pc = nd.parent; continue;
+                    }
+                }
+                if (nd.childCount > 0) {
+                    pc = m_children[nd.childStart]; result = BTStatus::Running; continue;
+                }
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            if (as && tid < MAX_AGENT_TIMERS) as->timers[tid] = 0u;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionIdle:
+            result = BTStatus::Running; goto exit_loop;
+
+        case BTNodeType::ConditionTargetIsWithinDistance: {
+            const WorldTransform* wt = Registry::Get().try_get<WorldTransform>(e);
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!wt || !sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float dx    = sc->last_known_x - wt->x;
+            float dz    = sc->last_known_z - wt->z;
+            float max_d = static_cast<float>(nd.data) / 10.f;
+            result = (dx * dx + dz * dz <= max_d * max_d) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasAWeapon: {
+            const WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(e);
+            if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (wc->is_equipped || wc->weapon_type != 0) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionShouldProcessSuspiciousItem: {
+            const NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (!nm) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (nm->event_count > 0) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }

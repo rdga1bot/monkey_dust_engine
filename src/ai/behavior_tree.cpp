@@ -798,6 +798,35 @@ uint16_t BehaviorTree::addConditionBehaviourMoodSetAbove(BehaviourMoodSet thresh
     return i;
 }
 
+// ── Batch 20 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addActionSuccess() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionSuccess); return i;
+}
+uint16_t BehaviorTree::addActionFail() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionFail); return i;
+}
+uint16_t BehaviorTree::addDecoratorTimer(uint8_t timer_id, uint32_t duration_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorTimer);
+    m_nodes[i].data = (static_cast<uint32_t>(timer_id) << 24) | (duration_ms & 0x00FFFFFFu);
+    return i;
+}
+uint16_t BehaviorTree::addActionIdle() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionIdle); return i;
+}
+uint16_t BehaviorTree::addConditionTargetIsWithinDistance(float max_dist_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionTargetIsWithinDistance);
+    m_nodes[i].data = static_cast<uint32_t>(max_dist_m * 10.0f + 0.5f);
+    return i;
+}
+uint16_t BehaviorTree::addConditionHasAWeapon() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasAWeapon); return i;
+}
+uint16_t BehaviorTree::addConditionShouldProcessSuspiciousItem() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionShouldProcessSuspiciousItem); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

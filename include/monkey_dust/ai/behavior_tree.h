@@ -403,6 +403,23 @@ enum class BTNodeType : uint8_t {
     ConditionHasAWeapon,
     //   ConditionShouldProcessSuspiciousItem: Success if nm->event_count > 0; data=0
     ConditionShouldProcessSuspiciousItem,
+
+    // ── Batch 21 ──────────────────────────────────────────────────────────────
+    //   ActionMoveToTarget: sets ff::SHOULD_MOVE_TO_TARGET + writes target_speed; always Success
+    //     data = LocomotionTargetSpeed (0=Slowest,1=Slow,2=Fast,3=Fastest)
+    ActionMoveToTarget,
+    //   ActionMakeAggressive: aggro_level=NoLimit + sets ff::SHOULD_MOVE_TO_TARGET; always Success
+    //     data = 0 (unused)
+    ActionMakeAggressive,
+    //   ConditionAllowedToAttackTarget: aggro_level>=Warning AND IsEnemy(self,target); data=0
+    ConditionAllowedToAttackTarget,
+    //   ActionDead: sets lcf::IS_DEAD + ff::SHOULD_PLAY_DEATH; always Success; data=0
+    ActionDead,
+    //   ActionMeleeAttack: sets ff::SHOULD_MELEE_ATTACK; always Success
+    //     data = attack_type (0=Any,1=Light,2=Heavy,3=Special)
+    ActionMeleeAttack,
+    //   ConditionIsCurrentCoverValid: Success if lcf::IS_IN_COVER is set; data=0
+    ConditionIsCurrentCoverValid,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -512,6 +529,12 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionTargetIsWithinDistance:      max_dist_m * 10 (uint32, 1 decimal)
 //   ConditionHasAWeapon:                  0 (is_equipped || weapon_type!=0)
 //   ConditionShouldProcessSuspiciousItem: 0 (nm->event_count > 0)
+//   ActionMoveToTarget:            LocomotionTargetSpeed (0-3)
+//   ActionMakeAggressive:          0 (unused)
+//   ConditionAllowedToAttackTarget:0 (unused; aggro+alliance check)
+//   ActionDead:                    0 (unused)
+//   ActionMeleeAttack:             attack_type uint8 (0=Any,1=Light,2=Heavy,3=Special)
+//   ConditionIsCurrentCoverValid:  0 (checks lcf::IS_IN_COVER)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -804,6 +827,14 @@ public:
     uint16_t addConditionTargetIsWithinDistance(float max_dist_m);
     uint16_t addConditionHasAWeapon();
     uint16_t addConditionShouldProcessSuspiciousItem();
+
+    // ── Batch 21 ──────────────────────────────────────────────────────────────
+    uint16_t addActionMoveToTarget(LocomotionTargetSpeed speed = LocomotionTargetSpeed::Fast);
+    uint16_t addActionMakeAggressive();
+    uint16_t addConditionAllowedToAttackTarget();
+    uint16_t addActionDead();
+    uint16_t addActionMeleeAttack(uint8_t attack_type = 0);
+    uint16_t addConditionIsCurrentCoverValid();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

@@ -348,6 +348,9 @@ namespace ff {
     static constexpr uint8_t SHOULD_MOVE_THROUGH_TARGET              = 7;  // Batch 10 P5
     static constexpr uint8_t SHOULD_MOVE_TO_COVER                   = 8;  // Batch 17: nav moves to cover point
     static constexpr uint8_t SHOULD_RANGED_SHOOT                    = 9;  // Batch 19: trigger ranged attack
+    static constexpr uint8_t SHOULD_MOVE_TO_TARGET                  = 10; // Batch 21: nav moves toward target entity
+    static constexpr uint8_t SHOULD_PLAY_DEATH                      = 11; // Batch 21: trigger death animation
+    static constexpr uint8_t SHOULD_MELEE_ATTACK                    = 12; // Batch 21: trigger melee attack
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────

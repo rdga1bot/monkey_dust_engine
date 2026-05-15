@@ -229,3 +229,21 @@
         idx = bt.addConditionHasAWeapon();
     } else if (strcmp(type_str, "ConditionShouldProcessSuspiciousItem") == 0) {
         idx = bt.addConditionShouldProcessSuspiciousItem();
+
+    // ── Batch 21 ─────────────────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ActionMoveToTarget") == 0) {
+        int speed = read_int_r(obj, obj_end, "\"speed\"", 2);  // default Fast=2
+        if (speed < 0 || speed > 3) speed = 2;
+        idx = bt.addActionMoveToTarget(static_cast<LocomotionTargetSpeed>(speed));
+    } else if (strcmp(type_str, "ActionMakeAggressive") == 0) {
+        idx = bt.addActionMakeAggressive();
+    } else if (strcmp(type_str, "ConditionAllowedToAttackTarget") == 0) {
+        idx = bt.addConditionAllowedToAttackTarget();
+    } else if (strcmp(type_str, "ActionDead") == 0) {
+        idx = bt.addActionDead();
+    } else if (strcmp(type_str, "ActionMeleeAttack") == 0) {
+        int attack_type = read_int_r(obj, obj_end, "\"attack_type\"", 0);
+        if (attack_type < 0 || attack_type > 3) attack_type = 0;
+        idx = bt.addActionMeleeAttack(static_cast<uint8_t>(attack_type));
+    } else if (strcmp(type_str, "ConditionIsCurrentCoverValid") == 0) {
+        idx = bt.addConditionIsCurrentCoverValid();

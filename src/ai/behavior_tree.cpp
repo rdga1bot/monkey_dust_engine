@@ -827,6 +827,32 @@ uint16_t BehaviorTree::addConditionShouldProcessSuspiciousItem() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionShouldProcessSuspiciousItem); return i;
 }
 
+// ── Batch 21 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addActionMoveToTarget(LocomotionTargetSpeed speed) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionMoveToTarget);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(speed));
+    return i;
+}
+uint16_t BehaviorTree::addActionMakeAggressive() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionMakeAggressive); return i;
+}
+uint16_t BehaviorTree::addConditionAllowedToAttackTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionAllowedToAttackTarget); return i;
+}
+uint16_t BehaviorTree::addActionDead() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionDead); return i;
+}
+uint16_t BehaviorTree::addActionMeleeAttack(uint8_t attack_type) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionMeleeAttack);
+    m_nodes[i].data = static_cast<uint32_t>(attack_type & 0x03u);
+    return i;
+}
+uint16_t BehaviorTree::addConditionIsCurrentCoverValid() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsCurrentCoverValid); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

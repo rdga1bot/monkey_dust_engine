@@ -459,3 +459,68 @@
             result = (nm->event_count > 0) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
+
+        // ── Batch 21 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ActionMoveToTarget: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->frame_flags |= (1ull << ff::SHOULD_MOVE_TO_TARGET);
+                as->target_speed = static_cast<LocomotionTargetSpeed>(nd.data & 0x03u);
+            }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionMakeAggressive: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->aggro_level = NpcAggroLevel::NoLimit;
+                as->frame_flags |= (1ull << ff::SHOULD_MOVE_TO_TARGET);
+            }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionAllowedToAttackTarget: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            bool aggro_ok = (static_cast<uint8_t>(as->aggro_level) >=
+                             static_cast<uint8_t>(NpcAggroLevel::Warning));
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            bool enemy = false;
+            if (ab) {
+                const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+                if (en) {
+                    entt::entity target     = static_cast<entt::entity>(en->val.e);
+                    const AgentState* tas   = Registry::Get().try_get<AgentState>(target);
+                    if (tas) {
+                        enemy = AllianceMatrix::Get().IsEnemy(
+                            static_cast<AllianceGroup>(as->alliance_group),
+                            static_cast<AllianceGroup>(tas->alliance_group));
+                    }
+                }
+            }
+            result = (aggro_ok && enemy) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionDead: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->lcflags.set(lcf::IS_DEAD);
+                as->frame_flags |= (1ull << ff::SHOULD_PLAY_DEATH);
+            }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionMeleeAttack: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_MELEE_ATTACK);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionIsCurrentCoverValid: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = as->lcflags.test(lcf::IS_IN_COVER) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }

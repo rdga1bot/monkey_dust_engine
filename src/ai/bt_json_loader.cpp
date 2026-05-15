@@ -1111,6 +1111,19 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
     } else if (strcmp(type_str, "ActionForceMoveToSI") == 0) {
         idx = bt.addActionForceMoveToSI();
 
+    // ── Batch 9 (Step 5): Inter-NPC relationship nodes ─────────────────────
+    } else if (strcmp(type_str, "RelationshipTrustCheck") == 0) {
+        int thr  = read_int_r(obj, obj_end, "\"threshold\"", 128);
+        int mode = read_int_r(obj, obj_end, "\"mode\"", 0);
+        if (thr < 0) thr = 0; if (thr > 255) thr = 255;
+        idx = bt.addRelationshipTrustCheck(static_cast<uint8_t>(thr), static_cast<uint8_t>(mode & 1));
+
+    } else if (strcmp(type_str, "RelationshipFearCheck") == 0) {
+        int thr  = read_int_r(obj, obj_end, "\"threshold\"", 64);
+        int mode = read_int_r(obj, obj_end, "\"mode\"", 0);
+        if (thr < 0) thr = 0; if (thr > 255) thr = 255;
+        idx = bt.addRelationshipFearCheck(static_cast<uint8_t>(thr), static_cast<uint8_t>(mode & 1));
+
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);
         return BehaviorTree::INVALID;

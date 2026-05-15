@@ -6,6 +6,7 @@
 #include <monkey_dust/ai/named_branch.h>
 #include <monkey_dust/ai/npc_sound.h>
 #include <monkey_dust/components/npc_memory.h>
+#include <monkey_dust/components/npc_relationship.h>
 #include <monkey_dust/ai/suspicious_item_group.h>
 #include <entt/entt.hpp>
 #include <cstdint>
@@ -270,6 +271,15 @@ enum class BTNodeType : uint8_t {
     //                                   in as->frame_flags; game-side nav reads events[0].x/z
     //                                   Failure if no NpcMemoryComponent or event_count==0
     ActionForceMoveToSI,
+
+    // ── Batch 9 (Step 5): Inter-NPC relationship nodes ────────────────────────
+    //   RelationshipTrustCheck: read NpcRelationshipComponent of self, check trust to target
+    //     target = bb["target_entity"]; Failure if no bb/key/NpcRelationshipComponent
+    //     data=(threshold<<8)|mode; mode=0→trust>=threshold, mode=1→trust<threshold
+    RelationshipTrustCheck,
+    //   RelationshipFearCheck: same as TrustCheck but reads fear field
+    //     data=(threshold<<8)|mode; mode=0→fear>=threshold, mode=1→fear<threshold
+    RelationshipFearCheck,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -338,6 +348,8 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionSuspiciousItemValid: 0 (unused)
 //   ActionConsumeSuspiciousItem:  0 (unused)
 //   ActionForceMoveToSI:          0 (unused; game reads nm->events[0].x/z via ff flag)
+//   RelationshipTrustCheck: (threshold<<8)|mode; mode=0→trust>=thr, 1→trust<thr
+//   RelationshipFearCheck:  (threshold<<8)|mode; mode=0→fear>=thr,  1→fear<thr
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -535,6 +547,12 @@ public:
     // ActionForceMoveToSI: sets ff::COULD_DO_SUSPECT_TARGET_RESPONSE_MOVETO so
     // game-side nav reads nm->events[0].x/z and repaths to that position.
     uint16_t addActionForceMoveToSI();
+
+    // ── Batch 9 (Step 5): Inter-NPC relationship nodes ────────────────────────
+    // threshold: 0-255; mode: 0=>=threshold (friendly check), 1=<threshold (hostile check)
+    // Target entity read from AgentBlackboard key fnv1a("target_entity").
+    uint16_t addRelationshipTrustCheck(uint8_t threshold, uint8_t mode = 0);
+    uint16_t addRelationshipFearCheck (uint8_t threshold, uint8_t mode = 0);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

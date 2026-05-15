@@ -1090,6 +1090,26 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             result = BTStatus::Success; pc = nd.parent; continue;
         }
 
+        // ── Batch 9 (Step 5): Inter-NPC relationship nodes ────────────────────
+        case BTNodeType::RelationshipTrustCheck:
+        case BTNodeType::RelationshipFearCheck: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* ben = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!ben) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(ben->val.e);
+            if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            NpcRelationshipComponent* rel = Registry::Get().try_get<NpcRelationshipComponent>(e);
+            if (!rel) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint8_t threshold = static_cast<uint8_t>((nd.data >> 8) & 0xFFu);
+            uint8_t mode      = static_cast<uint8_t>(nd.data & 0x1u);
+            uint8_t val = (nd.type == BTNodeType::RelationshipTrustCheck)
+                          ? rel->GetTrust(tgt) : rel->GetFear(tgt);
+            bool ok = (mode == 0) ? (val >= threshold) : (val < threshold);
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
         default:
             goto exit_loop;
         }

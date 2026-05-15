@@ -610,6 +610,16 @@ uint16_t BehaviorTree::addActionForceMoveToSI() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionForceMoveToSI); return i;
 }
 
+// ── Batch 9 (Step 5): Inter-NPC relationship nodes ────────────────────────────
+uint16_t BehaviorTree::addRelationshipTrustCheck(uint8_t threshold, uint8_t mode) {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::RelationshipTrustCheck);
+    m_nodes[i].data = (static_cast<uint32_t>(threshold) << 8) | (mode & 0x1u); return i;
+}
+uint16_t BehaviorTree::addRelationshipFearCheck(uint8_t threshold, uint8_t mode) {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::RelationshipFearCheck);
+    m_nodes[i].data = (static_cast<uint32_t>(threshold) << 8) | (mode & 0x1u); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

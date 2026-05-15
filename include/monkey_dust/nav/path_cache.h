@@ -17,19 +17,37 @@
 // TTL:    5 секунд (шлях не вічний — NPC блокують).
 //
 // Зберігає до MAX_PATH_LEN вершин шляху (Vector3-like: x,y,z).
+//
+// M47: NavLodTier — Close NPCs use full pathfinding (TTL applies);
+// Frozen NPCs freeze their cached path (TTL bypassed until Unfreeze).
 // ─────────────────────────────────────────────────────────
 
-static constexpr int   MAX_CACHED_PATHS = 64;
-static constexpr int   MAX_PATH_LEN     = 64;
-static constexpr float PATH_TTL_S       = 5.0f;
+static constexpr int   MAX_CACHED_PATHS         = 64;
+static constexpr int   MAX_PATH_LEN              = 64;
+static constexpr float PATH_TTL_S               = 5.0f;
+static constexpr float NAV_LOD_FROZEN_RADIUS_M  = 30.0f;
+
+// M47: Navigation LOD tier. Classify NPCs by distance to player.
+enum class NavLodTier : uint8_t {
+    Close  = 0,  // full pathfinding + normal TTL expiry
+    Frozen = 1,  // freeze cached path, skip recompute while frozen
+};
+
+// Classify an NPC by squared distance to player. Frozen when dist >= radius.
+inline NavLodTier ClassifyLod(float dist_to_player_sq,
+                               float frozen_radius_m = NAV_LOD_FROZEN_RADIUS_M) noexcept {
+    return dist_to_player_sq >= (frozen_radius_m * frozen_radius_m)
+         ? NavLodTier::Frozen : NavLodTier::Close;
+}
 
 struct CachedPath {
-    uint32_t key_start;          // хеш стартової позиції (по сітці)
-    uint32_t key_end;            // хеш цільової позиції
+    uint32_t key_start;               // хеш стартової позиції (по сітці)
+    uint32_t key_end;                 // хеш цільової позиції
     float    verts[MAX_PATH_LEN * 3]; // x,y,z вершини шляху
-    int      len;                // кількість вершин
-    float    timestamp_s;        // час запису
+    int      len;                     // кількість вершин
+    float    timestamp_s;             // час запису
     bool     valid;
+    bool     frozen;                  // M47: true → TTL bypassed; reset on Put
 };
 
 class PathCache {
@@ -40,12 +58,13 @@ public:
 
     void Clear() {
         AcquireLock();
-        for (auto& e : entries_) e.valid = false;
+        for (auto& e : entries_) { e.valid = false; e.frozen = false; }
         lru_clock_ = 0;
         ReleaseLock();
     }
 
     // Пошук шляху в кеші. Повертає true якщо знайдено і не протухло.
+    // M47: frozen paths bypass TTL — always returned regardless of age.
     bool Get(uint32_t key_start, uint32_t key_end, float now_s,
              float* out_verts, int& out_len) const
     {
@@ -53,7 +72,7 @@ public:
         for (const auto& e : entries_) {
             if (!e.valid) continue;
             if (e.key_start != key_start || e.key_end != key_end) continue;
-            if ((now_s - e.timestamp_s) > PATH_TTL_S) continue;
+            if (!e.frozen && (now_s - e.timestamp_s) > PATH_TTL_S) continue;
             memcpy(out_verts, e.verts, e.len * 3 * sizeof(float));
             out_len = e.len;
             ReleaseLock();
@@ -64,6 +83,7 @@ public:
     }
 
     // Записати шлях у кеш (витісняє найстаріший запис).
+    // M47: clears frozen flag — recomputed path reverts to normal TTL.
     void Put(uint32_t key_start, uint32_t key_end, float now_s,
              const float* verts, int len)
     {
@@ -76,7 +96,38 @@ public:
         e.timestamp_s = now_s;
         e.len         = len;
         e.valid       = true;
+        e.frozen      = false;
         memcpy(e.verts, verts, len * 3 * sizeof(float));
+        ReleaseLock();
+    }
+
+    // M47: freeze a cached path so TTL is bypassed until Unfreeze or re-Put.
+    void Freeze(uint32_t key_start, uint32_t key_end) noexcept {
+        AcquireLock();
+        for (auto& e : entries_) {
+            if (e.valid && e.key_start == key_start && e.key_end == key_end) {
+                e.frozen = true;
+                break;
+            }
+        }
+        ReleaseLock();
+    }
+
+    // M47: unfreeze — normal TTL applies again.
+    void Unfreeze(uint32_t key_start, uint32_t key_end) noexcept {
+        AcquireLock();
+        for (auto& e : entries_) {
+            if (e.valid && e.key_start == key_start && e.key_end == key_end) {
+                e.frozen = false;
+                break;
+            }
+        }
+        ReleaseLock();
+    }
+
+    void UnfreezeAll() noexcept {
+        AcquireLock();
+        for (auto& e : entries_) e.frozen = false;
         ReleaseLock();
     }
 

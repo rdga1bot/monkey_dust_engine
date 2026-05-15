@@ -53,6 +53,39 @@ int NavSystem::QueryPath(float sx, float sz,
     return pts;
 }
 
+int NavSystem::QueryPathLod(float sx, float sz,
+                             float ex, float ez,
+                             float now_s,
+                             NavLodTier tier,
+                             float* out_pts3, int max_pts)
+{
+    if (max_pts <= 0) return 0;
+
+    if (tier == NavLodTier::Frozen) {
+        // Frozen NPCs: use cached path ignoring TTL; skip full recompute.
+        uint32_t ks = PathCache::PosKey(sx, sz);
+        uint32_t ke = PathCache::PosKey(ex, ez);
+        int len = 0;
+        if (pathcache_.Get(ks, ke, now_s, out_pts3, len) && len > 0)
+            return len;
+        // No cache: direct waypoint toward destination.
+        out_pts3[0] = ex;
+        out_pts3[1] = 0.0f;
+        out_pts3[2] = ez;
+        return 1;
+    }
+
+    return QueryPath(sx, sz, ex, ez, now_s, out_pts3, max_pts);
+}
+
+void NavSystem::FreezePath(float sx, float sz, float ex, float ez) noexcept {
+    pathcache_.Freeze(PathCache::PosKey(sx, sz), PathCache::PosKey(ex, ez));
+}
+
+void NavSystem::UnfreezePath(float sx, float sz, float ex, float ez) noexcept {
+    pathcache_.Unfreeze(PathCache::PosKey(sx, sz), PathCache::PosKey(ex, ez));
+}
+
 bool NavSystem::BuildForTileMap(const float* verts, int nverts,
                                  const int*   tris,  int ntris,
                                  float cs, float ch)

@@ -31,6 +31,19 @@ public:
                   float ex, float ez,
                   float now_s,
                   float* out_pts3, int max_pts);
+
+    // M47: LOD-aware query. Frozen tier: return cached path ignoring TTL,
+    // or a single direct waypoint when no cache entry exists.
+    // Close tier: identical to QueryPath.
+    int QueryPathLod(float sx, float sz,
+                     float ex, float ez,
+                     float now_s,
+                     NavLodTier tier,
+                     float* out_pts3, int max_pts);
+
+    // M47: freeze / unfreeze path in cache (bypasses TTL for Frozen NPCs).
+    void FreezePath(float sx, float sz, float ex, float ez) noexcept;
+    void UnfreezePath(float sx, float sz, float ex, float ez) noexcept;
     bool IsReady() const { return navmesh_.IsValid(); }
     const dtNavMesh* GetRawMesh() const {
         return const_cast<NavMesh&>(navmesh_).Raw();

@@ -647,6 +647,34 @@ uint16_t BehaviorTree::addActionAdjustMenace(float delta, uint8_t mode) {
     return i;
 }
 
+// ── Batch 11: BEHAVIOR XML patterns (P2+P8+P10) ──────────────────────────────
+
+uint16_t BehaviorTree::addConditionAngleToTarget(float angle_degrees) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionAngleToTarget);
+    m_nodes[i].data = static_cast<uint32_t>(angle_degrees + 0.5f);
+    return i;
+}
+
+uint16_t BehaviorTree::addConditionShouldSuspend() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionShouldSuspend);
+    return i;
+}
+
+uint16_t BehaviorTree::addActionSuspendSelf() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionSuspendSelf);
+    return i;
+}
+
+uint16_t BehaviorTree::addConditionTargetDistLOS(float max_dist_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionTargetDistLOS);
+    m_nodes[i].data = static_cast<uint32_t>(max_dist_m * 10.f + 0.5f);
+    return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

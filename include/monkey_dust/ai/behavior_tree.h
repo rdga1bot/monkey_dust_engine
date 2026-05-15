@@ -291,6 +291,19 @@ enum class BTNodeType : uint8_t {
     //   ActionAdjustMenace: calls DirectorSystem::AdjustMenace(delta, mode); always Success
     //     data = (delta_fixed << 2) | mode; delta_fixed = uint8(delta * 10); mode: 0=add,1=set,2=sub
     ActionAdjustMenace,
+
+    // ── Batch 11: BEHAVIOR XML patterns (P2+P8+P10) ──────────────────────────
+    //   ConditionAngleToTarget: Success if angle(NPC_forward, dir_to_target) <= data degrees
+    //     Uses WorldTransform::rot_y for forward; SenseComponent::last_known_x/z for target pos.
+    //     data = angle threshold in degrees (uint32, rounded)
+    ConditionAngleToTarget,
+    //   ConditionShouldSuspend: Success if lcf::IS_SUSPENDED set; data=0
+    ConditionShouldSuspend,
+    //   ActionSuspendSelf: sets lcf::IS_SUSPENDED → BTSystem skips this entity; Success
+    ActionSuspendSelf,
+    //   ConditionTargetDistLOS: Success if dist(self,last_known)<=threshold AND activation[VISUAL]>=lo
+    //     data = max_dist_m * 10 (uint32); uses WorldTransform pos + SenseComponent
+    ConditionTargetDistLOS,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -365,6 +378,10 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionIsAnySenseActivationAbove: SenseThresholdQualifier (uint8)
 //   ActionMoveThroughTarget: LocomotionTargetSpeed (bits 0-1)
 //   ActionAdjustMenace:      (delta_fixed<<2)|mode; delta_fixed=uint8(delta*10); mode:0=add,1=set,2=sub
+//   ConditionAngleToTarget: angle threshold in degrees (uint32, rounded)
+//   ConditionShouldSuspend: 0 (unused)
+//   ActionSuspendSelf:      0 (unused)
+//   ConditionTargetDistLOS: max_dist_m * 10 (uint32, 1 decimal place)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -577,6 +594,17 @@ public:
     uint16_t addActionMoveThroughTarget(LocomotionTargetSpeed speed = LocomotionTargetSpeed::Fast);
     // ActionAdjustMenace: calls DirectorSystem::AdjustMenace(delta, mode); mode: 0=add,1=set,2=sub
     uint16_t addActionAdjustMenace(float delta, uint8_t mode = 0);
+
+    // ── Batch 11: BEHAVIOR XML patterns (P2+P8+P10) ───────────────────────────
+    // ConditionAngleToTarget: dot(NPC_forward, dir_to_target) within angle_degrees
+    //   Uses WorldTransform::rot_y (sin/cos) + SenseComponent::last_known_x/z
+    uint16_t addConditionAngleToTarget(float angle_degrees);
+    // ConditionShouldSuspend: Success if lcf::IS_SUSPENDED is set on self
+    uint16_t addConditionShouldSuspend();
+    // ActionSuspendSelf: sets lcf::IS_SUSPENDED; BTSystem will skip this entity next tick
+    uint16_t addActionSuspendSelf();
+    // ConditionTargetDistLOS: Euclidean dist ≤ max_dist_m AND sc->activation[VISUAL] ≥ threshold_lo
+    uint16_t addConditionTargetDistLOS(float max_dist_m);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

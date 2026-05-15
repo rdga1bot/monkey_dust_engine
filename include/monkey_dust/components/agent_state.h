@@ -103,6 +103,7 @@ namespace lcf {
     static constexpr uint8_t IS_ON_LADDER           = 38;
     static constexpr uint8_t HAS_PATH_FAIL          = 39;
     static constexpr uint8_t IS_DEAD                = 40;
+    static constexpr uint8_t IS_SUSPENDED           = 41;  // Batch 11 P8: BT tick skipped when set
 }
 
 struct LogicCharacterFlags {

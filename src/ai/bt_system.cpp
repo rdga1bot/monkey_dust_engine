@@ -35,8 +35,9 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
     const auto& tsoa  = TransformSoA::Get();
     const uint32_t fi = ctx.frame_index;
     auto bt_view = reg.view<AgentState, BehaviorTreeComponent>();
-    bt_view.each([&](entt::entity e, AgentState&, BehaviorTreeComponent& btc) {
+    bt_view.each([&](entt::entity e, AgentState& as, BehaviorTreeComponent& btc) {
         if (!btc.enabled || !btc.tree || !btc.tree->isValid()) return;
+        if (as.lcflags.test(lcf::IS_SUSPENDED)) return;  // Batch 11 P8: suspension gate
 
         // LOD: read dist_sq from TransformSoA if entity has a valid slot.
         const auto* wt = reg.try_get<WorldTransform>(e);

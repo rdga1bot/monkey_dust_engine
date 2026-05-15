@@ -7,8 +7,10 @@
 #include <monkey_dust/ai/squad_signal.h>
 #include <monkey_dust/ai/suspicious_item_group.h>
 #include <monkey_dust/ai/director_system.h>
+#include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ai/fnv.h>
 #include <cstring>
+#include <cmath>
 
 static constexpr uint32_t TARGET_ENTITY_BB_KEY            = md::fnv1a("target_entity");
 static constexpr uint32_t NEXT_TARGET_ENTITY_BB_KEY       = md::fnv1a("next_target_entity");
@@ -1156,6 +1158,53 @@ BTStatus BehaviorTree::tick(md::EngineContext& ctx, entt::entity e, uint32_t now
             float   delta_fixed = static_cast<float>((nd.data >> 2) & 0xFFu);
             DirectorSystem::Get().AdjustMenace(delta_fixed / 10.f, mode);
             result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        // ── Batch 11: BEHAVIOR XML patterns (P2+P8+P10) ──────────────────────
+        case BTNodeType::ConditionAngleToTarget: {
+            const WorldTransform* wt = Registry::Get().try_get<WorldTransform>(e);
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            const AgentState*     as = Registry::Get().try_get<AgentState>(e);
+            if (!wt || !sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            // NPC forward from rot_y (right-hand Y-up: fwd = (sin, 0, cos))
+            float fwd_x = sinf(wt->rot_y);
+            float fwd_z = cosf(wt->rot_y);
+            float dx = sc->last_known_x - wt->x;
+            float dz = sc->last_known_z - wt->z;
+            float len_sq = dx * dx + dz * dz;
+            if (len_sq < 1e-6f) { result = BTStatus::Success; pc = nd.parent; continue; }
+            float inv_len = 1.f / sqrtf(len_sq);
+            float dot = (fwd_x * dx + fwd_z * dz) * inv_len;
+            float angle_deg = acosf(dot < -1.f ? -1.f : dot > 1.f ? 1.f : dot) * (180.f / 3.14159265f);
+            result = (angle_deg <= static_cast<float>(nd.data)) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionShouldSuspend: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = as->lcflags.test(lcf::IS_SUSPENDED) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionSuspendSelf: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->lcflags.set(lcf::IS_SUSPENDED);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionTargetDistLOS: {
+            const WorldTransform* wt = Registry::Get().try_get<WorldTransform>(e);
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!wt || !sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float dx = sc->last_known_x - wt->x;
+            float dz = sc->last_known_z - wt->z;
+            float dist_sq = dx * dx + dz * dz;
+            float max_dist = static_cast<float>(nd.data) / 10.f;
+            bool dist_ok = dist_sq <= max_dist * max_dist;
+            bool los_ok  = sc->activation[static_cast<int>(SenseType::Visual)] >= sc->threshold_lo;
+            result = (dist_ok && los_ok) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
         }
 
         default:

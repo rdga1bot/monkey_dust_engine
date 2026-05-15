@@ -1143,6 +1143,23 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         if (delta < 0.f) delta = 0.f;
         idx = bt.addActionAdjustMenace(delta, static_cast<uint8_t>(mode));
 
+    // ── Batch 11: BEHAVIOR XML patterns (P2+P8+P10) ──────────────────────────
+    } else if (strcmp(type_str, "ConditionAngleToTarget") == 0) {
+        float angle = read_float_r(obj, obj_end, "\"angle\"", 45.f);
+        if (angle < 0.f) angle = 0.f;
+        idx = bt.addConditionAngleToTarget(angle);
+
+    } else if (strcmp(type_str, "ConditionShouldSuspend") == 0) {
+        idx = bt.addConditionShouldSuspend();
+
+    } else if (strcmp(type_str, "ActionSuspendSelf") == 0) {
+        idx = bt.addActionSuspendSelf();
+
+    } else if (strcmp(type_str, "ConditionTargetDistLOS") == 0) {
+        float dist = read_float_r(obj, obj_end, "\"distance\"", 10.f);
+        if (dist < 0.f) dist = 0.f;
+        idx = bt.addConditionTargetDistLOS(dist);
+
     } else {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);
         return BehaviorTree::INVALID;

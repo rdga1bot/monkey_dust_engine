@@ -77,7 +77,8 @@ void TileMap2DRenderer::Init() {
 
         sdl_vbuf_.Init((uint32_t)MAX_TILES * 6u, (uint32_t)STRIDE_SDL);
 
-        // 1×1 transparent dummy for unused atlas binding slots.
+        // 1×1 opaque white dummy: transparent would be discarded (c.a<0.1) by the
+        // tile shader, and NPC dots (atlas_idx=atlas_count_) rely on this slot.
         GpuSamplerDesc ds;
         ds.min_filter = GpuSamplerDesc::Filter::NEAREST;
         ds.mag_filter = GpuSamplerDesc::Filter::NEAREST;
@@ -85,7 +86,7 @@ void TileMap2DRenderer::Init() {
         ds.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
         ds.gen_mipmap = false;
         ds.flip_v     = false;
-        uint8_t pix[4] = {0, 0, 0, 0};
+        uint8_t pix[4] = {255, 255, 255, 255};
         GpuTexture dgt;
         if (dgt.InitFromMemory(pix, 1, 1, ds)) {
             sdl_dummy_tex_     = dgt.TakeSDLTexture();

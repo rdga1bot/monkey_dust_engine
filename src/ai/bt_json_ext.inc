@@ -371,3 +371,30 @@
         read_str_r(obj, obj_end, "\"script\"", script, sizeof(script));
         uint32_t hash = BTLuaScriptRegistry::Get().Register(script);
         idx = bt.addActionScript(hash);
+
+    // ── Batch 26 — P2 simple nodes ────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionLastTimeSearchedWithinTime") == 0) {
+        int ms = read_int_r(obj, obj_end, "\"time_ms\"", 3000);
+        idx = bt.addConditionLastTimeSearchedWithinTime(static_cast<uint32_t>(ms < 0 ? 0 : ms));
+    } else if (strcmp(type_str, "ConditionAllowedToSearch") == 0) {
+        idx = bt.addConditionAllowedToSearch();
+    } else if (strcmp(type_str, "ConditionHasDoneSuspectResponseMoveTo") == 0) {
+        idx = bt.addConditionHasDoneSuspectResponseMoveTo();
+    } else if (strcmp(type_str, "ConditionHasDoneSuspectResponseWithinTime") == 0) {
+        int ms = read_int_r(obj, obj_end, "\"time_ms\"", 3000);
+        idx = bt.addConditionHasDoneSuspectResponseWithinTime(static_cast<uint32_t>(ms < 0 ? 0 : ms));
+    } else if (strcmp(type_str, "ConditionHasKilltrap") == 0) {
+        idx = bt.addConditionHasKilltrap();
+    } else if (strcmp(type_str, "ConditionHasMeleeAttackAvailableOrIsAttacking") == 0) {
+        idx = bt.addConditionHasMeleeAttackAvailableOrIsAttacking();
+    } else if (strcmp(type_str, "ConditionIsBranchActive") == 0) {
+        char branch[64] = "";
+        read_str_r(obj, obj_end, "\"branch\"", branch, sizeof(branch));
+        idx = bt.addConditionIsBranchActive(md::fnv1a(branch));
+    } else if (strcmp(type_str, "ConditionIsRequestingCover") == 0) {
+        idx = bt.addConditionIsRequestingCover();
+    } else if (strcmp(type_str, "ConditionAllowedToPursueTarget") == 0) {
+        idx = bt.addConditionAllowedToPursueTarget();
+    // ── Batch 26 — JSON-only alias ────────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionAnotherAlienIsAttackingThisTarget") == 0) {
+        idx = bt.addConditionAnotherAlienIsAttacking();  // alias: no per-target tracking

@@ -106,7 +106,9 @@ namespace lcf {
     static constexpr uint8_t IS_SUSPENDED           = 41;  // Batch 11 P8: BT tick skipped when set
     static constexpr uint8_t IS_PLAYER              = 42;  // Batch 15: marks the player-controlled entity
     static constexpr uint8_t IS_IN_COVER            = 43;  // Batch 17: entity is currently in cover
-    static constexpr uint8_t HAS_SEARCHED_RECENT_SENSED_POS = 44;  // Batch 22: searched most recent sensed position
+    static constexpr uint8_t HAS_SEARCHED_RECENT_SENSED_POS     = 44;  // Batch 22
+    static constexpr uint8_t IS_DONE_SUSPECT_RESPONSE_MOVETO    = 45;  // Batch 26
+    static constexpr uint8_t HAS_KILLTRAP                        = 46;  // Batch 26: searched most recent sensed position
 }
 
 struct LogicCharacterFlags {
@@ -486,6 +488,7 @@ struct AgentState {
     BehaviourMoodSet       behaviour_mood_set;        // Batch 18: MD threat-escalation composite state
     ViewconeType           viewcone_type;             // Batch 18: shape of visual detection frustum
     SensoryType            last_sensory_type;         // Batch 18: channel that last triggered sense activation
+    uint32_t               last_searched_ms;          // Batch 26: ms when entity last searched a position; 0=never
 };
 
 // ── AgentStateSnapshot ────────────────────────────────────────────────────────

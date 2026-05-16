@@ -685,3 +685,72 @@
             result = LuaSystem::Get().CallAction(name, e);
             pc = nd.parent; continue;
         }
+
+        // ── Batch 26 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ConditionLastTimeSearchedWithinTime: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as || as->last_searched_ms == 0u) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (nowMs - as->last_searched_ms <= nd.data) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionAllowedToSearch: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->awareness >= AwarenessState::Suspicious &&
+                      !as->lcflags.test(lcf::IS_DEAD)) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasDoneSuspectResponseMoveTo: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = as->lcflags.test(lcf::IS_DONE_SUSPECT_RESPONSE_MOVETO)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasDoneSuspectResponseWithinTime: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as || as->event_ts[3] == 0u) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (nowMs - as->event_ts[3] <= nd.data) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasKilltrap: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = as->lcflags.test(lcf::HAS_KILLTRAP) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasMeleeAttackAvailableOrIsAttacking: {
+            const AgentState* as   = Registry::Get().try_get<AgentState>(e);
+            const WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(e);
+            bool melee_ready   = (wc && wc->melee_available);
+            bool is_attacking  = (as && (as->frame_flags & (1ull << ff::SHOULD_MELEE_ATTACK)));
+            result = (melee_ready || is_attacking) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionIsBranchActive: {
+            result = NamedBranchRegistry::Get().IsActive(nd.data) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionIsRequestingCover: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->frame_flags & (1ull << ff::REQUESTING_COVER)) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionAllowedToPursueTarget: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (static_cast<uint8_t>(as->aggro_level) >=
+                      static_cast<uint8_t>(NpcAggroLevel::Warning))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }

@@ -475,6 +475,34 @@ enum class BTNodeType : uint8_t {
     //   ActionScript: calls LuaSystem::CallAction(name, e) via BTLuaScriptRegistry
     //     data = fnv1a(script_name)
     ActionScript,
+    // ── Batch 26 ──────────────────────────────────────────────────────────────
+    //   ConditionLastTimeSearchedWithinTime: Success if last_searched_ms set within data ms
+    //     data = max_elapsed_ms (uint32)
+    ConditionLastTimeSearchedWithinTime,
+    //   ConditionAllowedToSearch: Success if awareness >= Suspicious && !IS_DEAD
+    //     data = 0 (unused)
+    ConditionAllowedToSearch,
+    //   ConditionHasDoneSuspectResponseMoveTo: Success if lcf::IS_DONE_SUSPECT_RESPONSE_MOVETO set
+    //     data = 0 (unused)
+    ConditionHasDoneSuspectResponseMoveTo,
+    //   ConditionHasDoneSuspectResponseWithinTime: Success if event_ts[SuspectTargetResponse] within data ms
+    //     data = max_elapsed_ms (uint32)
+    ConditionHasDoneSuspectResponseWithinTime,
+    //   ConditionHasKilltrap: Success if lcf::HAS_KILLTRAP set
+    //     data = 0 (unused)
+    ConditionHasKilltrap,
+    //   ConditionHasMeleeAttackAvailableOrIsAttacking: Success if wc.melee_available OR ff::SHOULD_MELEE_ATTACK
+    //     data = 0 (unused)
+    ConditionHasMeleeAttackAvailableOrIsAttacking,
+    //   ConditionIsBranchActive: Success if NamedBranchRegistry::IsActive(data)
+    //     data = fnv1a(branch_name)
+    ConditionIsBranchActive,
+    //   ConditionIsRequestingCover: Success if ff::REQUESTING_COVER set this frame
+    //     data = 0 (unused)
+    ConditionIsRequestingCover,
+    //   ConditionAllowedToPursueTarget: Success if aggro_level >= NpcAggroLevel::Warning
+    //     data = 0 (unused)
+    ConditionAllowedToPursueTarget,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -606,6 +634,15 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionHasValidCoverToChangeTo: 0 (!lcf::IS_IN_COVER → Success)
 //   ConditionHasScript:           0 (LuaScriptComponent::script_id != 0 → Success)
 //   ActionScript:                 fnv1a(script_name) → BTLuaScriptRegistry lookup → CallAction
+//   ConditionLastTimeSearchedWithinTime: max_elapsed_ms (uint32)
+//   ConditionAllowedToSearch:     0 (awareness>=Suspicious && !IS_DEAD)
+//   ConditionHasDoneSuspectResponseMoveTo: 0 (lcf::IS_DONE_SUSPECT_RESPONSE_MOVETO)
+//   ConditionHasDoneSuspectResponseWithinTime: max_elapsed_ms (uint32)
+//   ConditionHasKilltrap:         0 (lcf::HAS_KILLTRAP)
+//   ConditionHasMeleeAttackAvailableOrIsAttacking: 0
+//   ConditionIsBranchActive:      fnv1a(branch_name)
+//   ConditionIsRequestingCover:   0 (ff::REQUESTING_COVER)
+//   ConditionAllowedToPursueTarget: 0 (aggro_level >= Warning)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -932,6 +969,17 @@ public:
     // ── Batch 25 ──────────────────────────────────────────────────────────────
     uint16_t addConditionHasScript();
     uint16_t addActionScript(uint32_t script_name_hash);
+
+    // ── Batch 26 ──────────────────────────────────────────────────────────────
+    uint16_t addConditionLastTimeSearchedWithinTime(uint32_t max_elapsed_ms);
+    uint16_t addConditionAllowedToSearch();
+    uint16_t addConditionHasDoneSuspectResponseMoveTo();
+    uint16_t addConditionHasDoneSuspectResponseWithinTime(uint32_t max_elapsed_ms);
+    uint16_t addConditionHasKilltrap();
+    uint16_t addConditionHasMeleeAttackAvailableOrIsAttacking();
+    uint16_t addConditionIsBranchActive(uint32_t branch_name_hash);
+    uint16_t addConditionIsRequestingCover();
+    uint16_t addConditionAllowedToPursueTarget();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

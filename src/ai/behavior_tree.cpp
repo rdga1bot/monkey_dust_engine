@@ -937,6 +937,44 @@ uint16_t BehaviorTree::addActionScript(uint32_t script_name_hash) {
     return i;
 }
 
+// ── Batch 26 ─────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionLastTimeSearchedWithinTime(uint32_t max_elapsed_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionLastTimeSearchedWithinTime);
+    m_nodes[i].data = max_elapsed_ms;
+    return i;
+}
+uint16_t BehaviorTree::addConditionAllowedToSearch() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionAllowedToSearch); return i;
+}
+uint16_t BehaviorTree::addConditionHasDoneSuspectResponseMoveTo() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasDoneSuspectResponseMoveTo); return i;
+}
+uint16_t BehaviorTree::addConditionHasDoneSuspectResponseWithinTime(uint32_t max_elapsed_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHasDoneSuspectResponseWithinTime);
+    m_nodes[i].data = max_elapsed_ms;
+    return i;
+}
+uint16_t BehaviorTree::addConditionHasKilltrap() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasKilltrap); return i;
+}
+uint16_t BehaviorTree::addConditionHasMeleeAttackAvailableOrIsAttacking() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasMeleeAttackAvailableOrIsAttacking); return i;
+}
+uint16_t BehaviorTree::addConditionIsBranchActive(uint32_t branch_name_hash) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionIsBranchActive);
+    m_nodes[i].data = branch_name_hash;
+    return i;
+}
+uint16_t BehaviorTree::addConditionIsRequestingCover() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsRequestingCover); return i;
+}
+uint16_t BehaviorTree::addConditionAllowedToPursueTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionAllowedToPursueTarget); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

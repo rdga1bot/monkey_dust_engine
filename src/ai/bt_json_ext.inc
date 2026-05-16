@@ -443,4 +443,36 @@
         idx = bt.addActionForceRetreat();
     } else if (strcmp(type_str, "ActionHoldPosition") == 0) {
         idx = bt.addActionHoldPosition();
+
+    // ── Batch 29 — NPC development + alliance conditions ──────────────────────
+    } else if (strcmp(type_str, "ConditionNpcDevelopmentStageAbove") == 0) {
+        NpcDevelopmentStage stage = NpcDevelopmentStage::Naive;
+        const char* sv = strstr(obj, "\"stage\"");
+        if (sv) {
+            sv += 7; while (*sv == ' ' || *sv == ':' || *sv == '"') ++sv;
+            if (strncmp(sv, "ReallySneaky", 12) == 0)    stage = NpcDevelopmentStage::ReallySneaky;
+            else if (strncmp(sv, "GettingSneaky", 13) == 0) stage = NpcDevelopmentStage::GettingSneaky;
+            else if (strncmp(sv, "ThreatAware", 11) == 0)   stage = NpcDevelopmentStage::ThreatAware;
+            else if (strncmp(sv, "Naive", 5) == 0)          stage = NpcDevelopmentStage::Naive;
+            else stage = static_cast<NpcDevelopmentStage>((uint16_t)atoi(sv));
+        }
+        idx = bt.addConditionNpcDevelopmentStageAbove(stage);
+    } else if (strcmp(type_str, "ConditionNpcHasAbility") == 0) {
+        uint16_t mask = 0;
+        const char* av = strstr(obj, "\"ability\"");
+        if (av) { av += 9; while (*av == ' ' || *av == ':') ++av; mask = (uint16_t)atoi(av); }
+        idx = bt.addConditionNpcHasAbility(mask);
+    } else if (strcmp(type_str, "ConditionIsHostileToPlayer") == 0) {
+        idx = bt.addConditionIsHostileToPlayer();
+    // ── Batch 29 — new frame-flag actions ────────────────────────────────────
+    } else if (strcmp(type_str, "ActionPerformAmbush") == 0) {
+        idx = bt.addActionPerformAmbush();
+    } else if (strcmp(type_str, "ActionStartSearch") == 0) {
+        idx = bt.addActionStartSearch();
+    } else if (strcmp(type_str, "ActionCallForHelp") == 0) {
+        idx = bt.addActionCallForHelp();
+    } else if (strcmp(type_str, "ActionTauntTarget") == 0) {
+        idx = bt.addActionTauntTarget();
+    } else if (strcmp(type_str, "ActionSurrenderSelf") == 0) {
+        idx = bt.addActionSurrenderSelf();
     }

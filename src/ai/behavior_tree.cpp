@@ -1024,6 +1024,38 @@ uint16_t BehaviorTree::addActionHoldPosition() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionHoldPosition); return i;
 }
 
+// ── Batch 29 ─────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionNpcDevelopmentStageAbove(NpcDevelopmentStage stage) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionNpcDevelopmentStageAbove);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint16_t>(stage));
+    return i;
+}
+uint16_t BehaviorTree::addConditionNpcHasAbility(uint16_t ability_mask) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionNpcHasAbility);
+    m_nodes[i].data = static_cast<uint32_t>(ability_mask);
+    return i;
+}
+uint16_t BehaviorTree::addConditionIsHostileToPlayer() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsHostileToPlayer); return i;
+}
+uint16_t BehaviorTree::addActionPerformAmbush() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionPerformAmbush); return i;
+}
+uint16_t BehaviorTree::addActionStartSearch() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionStartSearch); return i;
+}
+uint16_t BehaviorTree::addActionCallForHelp() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionCallForHelp); return i;
+}
+uint16_t BehaviorTree::addActionTauntTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionTauntTarget); return i;
+}
+uint16_t BehaviorTree::addActionSurrenderSelf() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionSurrenderSelf); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

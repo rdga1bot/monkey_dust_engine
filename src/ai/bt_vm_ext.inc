@@ -849,3 +849,60 @@
             if (as) as->frame_flags |= (1ull << ff::SHOULD_HOLD_POSITION);
             result = BTStatus::Running; goto exit_loop;
         }
+
+        // ── Batch 29 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ConditionNpcDevelopmentStageAbove: {
+            const NpcDevelopmentComponent* nc = Registry::Get().try_get<NpcDevelopmentComponent>(e);
+            if (!nc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            auto threshold = static_cast<NpcDevelopmentStage>(static_cast<uint16_t>(nd.data));
+            result = (nc->stage > threshold) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionNpcHasAbility: {
+            const NpcDevelopmentComponent* nc = Registry::Get().try_get<NpcDevelopmentComponent>(e);
+            if (!nc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = nc->HasAbility(static_cast<uint16_t>(nd.data)) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionIsHostileToPlayer: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            bool enemy = AllianceMatrix::Get().IsEnemy(
+                static_cast<AllianceGroup>(as->alliance_group),
+                AllianceGroup::Player);
+            result = enemy ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionPerformAmbush: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_PERFORM_AMBUSH);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionStartSearch: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_START_SEARCH);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionCallForHelp: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_CALL_FOR_HELP);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionTauntTarget: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_TAUNT_TARGET);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionSurrenderSelf: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_SURRENDER);
+            result = BTStatus::Running; goto exit_loop;
+        }

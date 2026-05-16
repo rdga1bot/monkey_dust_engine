@@ -10,6 +10,7 @@
 #include <monkey_dust/ai/suspicious_item_group.h>
 #include <monkey_dust/ai/alien_config.h>
 #include <monkey_dust/ai/vent_lock.h>
+#include <monkey_dust/ai/npc_development.h>
 #include <entt/entt.hpp>
 #include <cstdint>
 
@@ -544,6 +545,31 @@ enum class BTNodeType : uint8_t {
     //   ActionHoldPosition: sets ff::SHOULD_HOLD_POSITION; always Running
     //     data = 0 (unused)
     ActionHoldPosition,
+    // ── Batch 29 ──────────────────────────────────────────────────────────────
+    //   ConditionNpcDevelopmentStageAbove: nc->stage > NpcDevelopmentStage(data)
+    //     data = uint32_t(NpcDevelopmentStage value) e.g. 0=Naive, 2=ThreatAware
+    ConditionNpcDevelopmentStageAbove,
+    //   ConditionNpcHasAbility: nc->HasAbility(uint16_t(data))
+    //     data = npc_ability::* bitmask value (uint16_t)
+    ConditionNpcHasAbility,
+    //   ConditionIsHostileToPlayer: AllianceMatrix::IsEnemy(self.alliance_group, AllianceGroup::Player)
+    //     data = 0 (unused); Failure if no AgentState
+    ConditionIsHostileToPlayer,
+    //   ActionPerformAmbush: sets ff::SHOULD_PERFORM_AMBUSH; always Running
+    //     data = 0 (unused)
+    ActionPerformAmbush,
+    //   ActionStartSearch: sets ff::SHOULD_START_SEARCH; always Running
+    //     data = 0 (unused)
+    ActionStartSearch,
+    //   ActionCallForHelp: sets ff::SHOULD_CALL_FOR_HELP; always Running
+    //     data = 0 (unused)
+    ActionCallForHelp,
+    //   ActionTauntTarget: sets ff::SHOULD_TAUNT_TARGET; always Running
+    //     data = 0 (unused)
+    ActionTauntTarget,
+    //   ActionSurrenderSelf: sets ff::SHOULD_SURRENDER; always Running
+    //     data = 0 (unused)
+    ActionSurrenderSelf,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -697,6 +723,14 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionMarkTargetLost:         0 (sets ff::SHOULD_MARK_TARGET_LOST; Running)
 //   ActionForceRetreat:           0 (sets ff::SHOULD_FORCE_RETREAT; Running)
 //   ActionHoldPosition:           0 (sets ff::SHOULD_HOLD_POSITION; Running)
+//   ConditionNpcDevelopmentStageAbove: uint32_t(NpcDevelopmentStage); nc->stage > NpcDevelopmentStage(data)
+//   ConditionNpcHasAbility:       npc_ability::* bitmask (uint16_t); nc->HasAbility(data)
+//   ConditionIsHostileToPlayer:   0 (AllianceMatrix::IsEnemy(self.alliance_group, Player))
+//   ActionPerformAmbush:          0 (sets ff::SHOULD_PERFORM_AMBUSH; Running)
+//   ActionStartSearch:            0 (sets ff::SHOULD_START_SEARCH; Running)
+//   ActionCallForHelp:            0 (sets ff::SHOULD_CALL_FOR_HELP; Running)
+//   ActionTauntTarget:            0 (sets ff::SHOULD_TAUNT_TARGET; Running)
+//   ActionSurrenderSelf:          0 (sets ff::SHOULD_SURRENDER; Running)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -1052,6 +1086,16 @@ public:
     uint16_t addActionMarkTargetLost();
     uint16_t addActionForceRetreat();
     uint16_t addActionHoldPosition();
+
+    // ── Batch 29 ──────────────────────────────────────────────────────────────
+    uint16_t addConditionNpcDevelopmentStageAbove(NpcDevelopmentStage stage);
+    uint16_t addConditionNpcHasAbility(uint16_t ability_mask);
+    uint16_t addConditionIsHostileToPlayer();
+    uint16_t addActionPerformAmbush();
+    uint16_t addActionStartSearch();
+    uint16_t addActionCallForHelp();
+    uint16_t addActionTauntTarget();
+    uint16_t addActionSurrenderSelf();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

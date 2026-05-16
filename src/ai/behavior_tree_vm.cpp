@@ -13,6 +13,7 @@
 #include <monkey_dust/components/weapon_component.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/world/alliance.h>
+#include <monkey_dust/ai/npc_development.h>
 #include <monkey_dust/ai/fnv.h>
 #include <monkey_dust/ai/bt_lua_script_registry.h>
 #include <monkey_dust/components/lua_script_component.h>

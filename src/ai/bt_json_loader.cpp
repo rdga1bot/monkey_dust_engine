@@ -11,6 +11,7 @@
 #include <monkey_dust/components/npc_memory.h>
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/ai/suspicious_item_group.h>
+#include <monkey_dust/ai/npc_development.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/md_fs.h>
 #include <cstring>

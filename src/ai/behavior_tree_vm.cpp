@@ -9,6 +9,7 @@
 #include <monkey_dust/ai/director_system.h>
 #include <monkey_dust/ai/alien_config.h>
 #include <monkey_dust/ai/vent_lock.h>
+#include <monkey_dust/ai/vent_registry.h>
 #include <monkey_dust/nav/path_cache.h>
 #include <monkey_dust/components/weapon_component.h>
 #include <monkey_dust/world/world_transform.h>

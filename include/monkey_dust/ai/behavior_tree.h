@@ -598,6 +598,21 @@ enum class BTNodeType : uint8_t {
     //   ActionVault: sets ff::SHOULD_VAULT; always Running
     //     data = 0 (unused)
     ActionVault,
+
+    // ── Batch 31: VentRegistry conditions ────────────────────────────────────
+    //   ConditionHasVentCloseToAlien: data = radius_m*10 (default 60=6m)
+    //     VentRegistry::Get().AnyWithinRadius(self.x, self.z, radius_m)
+    ConditionHasVentCloseToAlien,
+    //   ConditionHasFlankedVentCloseToPlayer: data = radius_m*10 (default 60=6m)
+    //     uses sc->last_known_x/z (player last seen pos); Failure if never seen
+    ConditionHasFlankedVentCloseToPlayer,
+    //   ConditionTargetIsOnlyAccessibleCrouching: data = 0
+    //     reads target from bb["target_entity"]; Success if target has lcf::IS_IN_VENT
+    ConditionTargetIsOnlyAccessibleCrouching,
+    //   ConditionAngleNPCToTargetsAimLessThan: data = angle_deg (uint8)
+    //     reads target from bb["target_entity"]; checks if target's forward (rot_y)
+    //     is within angle_deg of direction (target→self); Success when target faces NPC
+    ConditionAngleNPCToTargetsAimLessThan,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -768,6 +783,10 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionBackOff:                0 (sets ff::SHOULD_BACK_OFF; Running)
 //   ActionCrouchMove:             0 (sets ff::SHOULD_CROUCH_MOVE; Running)
 //   ActionVault:                  0 (sets ff::SHOULD_VAULT; Running)
+//   ConditionHasVentCloseToAlien:              data = radius_m*10; uses VentRegistry + WorldTransform
+//   ConditionHasFlankedVentCloseToPlayer:      data = radius_m*10; uses VentRegistry + SenseComponent last_known
+//   ConditionTargetIsOnlyAccessibleCrouching:  data = 0; reads target bb; checks lcf::IS_IN_VENT
+//   ConditionAngleNPCToTargetsAimLessThan:     data = angle_deg(uint8); reads target bb; target's rot_y vs (target→self)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -1144,6 +1163,12 @@ public:
     uint16_t addActionBackOff();
     uint16_t addActionCrouchMove();
     uint16_t addActionVault();
+
+    // ── Batch 31 ──────────────────────────────────────────────────────────────
+    uint16_t addConditionHasVentCloseToAlien(float radius_m);
+    uint16_t addConditionHasFlankedVentCloseToPlayer(float radius_m);
+    uint16_t addConditionTargetIsOnlyAccessibleCrouching();
+    uint16_t addConditionAngleNPCToTargetsAimLessThan(float angle_deg);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

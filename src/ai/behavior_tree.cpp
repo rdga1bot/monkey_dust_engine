@@ -1094,6 +1094,31 @@ uint16_t BehaviorTree::addActionVault() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionVault); return i;
 }
 
+// ── Batch 31 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionHasVentCloseToAlien(float radius_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHasVentCloseToAlien);
+    m_nodes[i].data = static_cast<uint32_t>(radius_m * 10.f + 0.5f);
+    return i;
+}
+uint16_t BehaviorTree::addConditionHasFlankedVentCloseToPlayer(float radius_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHasFlankedVentCloseToPlayer);
+    m_nodes[i].data = static_cast<uint32_t>(radius_m * 10.f + 0.5f);
+    return i;
+}
+uint16_t BehaviorTree::addConditionTargetIsOnlyAccessibleCrouching() {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionTargetIsOnlyAccessibleCrouching);
+    return i;
+}
+uint16_t BehaviorTree::addConditionAngleNPCToTargetsAimLessThan(float angle_deg) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionAngleNPCToTargetsAimLessThan);
+    m_nodes[i].data = static_cast<uint32_t>(static_cast<uint8_t>(angle_deg + 0.5f));
+    return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

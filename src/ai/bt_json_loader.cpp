@@ -6,6 +6,7 @@
 #include <monkey_dust/ai/npc_sound.h>
 #include <monkey_dust/ai/alien_config.h>
 #include <monkey_dust/ai/vent_lock.h>
+#include <monkey_dust/ai/vent_registry.h>
 #include <monkey_dust/ai/bt_lua_script_registry.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/npc_memory.h>

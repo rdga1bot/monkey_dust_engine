@@ -969,3 +969,62 @@
             if (as) as->frame_flags |= (1ull << ff::SHOULD_VAULT);
             result = BTStatus::Running; goto exit_loop;
         }
+
+        // ── Batch 31: VentRegistry conditions ────────────────────────────────
+        case BTNodeType::ConditionHasVentCloseToAlien: {
+            const WorldTransform* wt = Registry::Get().try_get<WorldTransform>(e);
+            if (!wt) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float radius_m = static_cast<float>(nd.data) / 10.f;
+            result = VentRegistry::Get().AnyWithinRadius(wt->x, wt->z, radius_m)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasFlankedVentCloseToPlayer: {
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc || sc->last_activated_ms[0] == 0u) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float radius_m = static_cast<float>(nd.data) / 10.f;
+            result = VentRegistry::Get().AnyWithinRadius(sc->last_known_x, sc->last_known_z, radius_m)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionTargetIsOnlyAccessibleCrouching: {
+            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity target = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(target)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const AgentState* tas = Registry::Get().try_get<AgentState>(target);
+            if (!tas) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = tas->lcflags.test(lcf::IS_IN_VENT) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionAngleNPCToTargetsAimLessThan: {
+            const WorldTransform* self_wt = Registry::Get().try_get<WorldTransform>(e);
+            AgentBlackboard*      ab      = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity target = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(target)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const WorldTransform* twt = Registry::Get().try_get<WorldTransform>(target);
+            if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            // target's forward direction from rot_y
+            float tf_x = sinf(twt->rot_y);
+            float tf_z = cosf(twt->rot_y);
+            // direction from target to self (NPC)
+            float dx = self_wt->x - twt->x;
+            float dz = self_wt->z - twt->z;
+            float len_sq = dx * dx + dz * dz;
+            if (len_sq < 1e-6f) { result = BTStatus::Success; pc = nd.parent; continue; }
+            float inv_len = 1.f / sqrtf(len_sq);
+            float dot = (tf_x * dx + tf_z * dz) * inv_len;
+            float angle_deg = acosf(dot < -1.f ? -1.f : dot > 1.f ? 1.f : dot)
+                              * (180.f / 3.14159265f);
+            result = (angle_deg <= static_cast<float>(static_cast<uint8_t>(nd.data)))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }

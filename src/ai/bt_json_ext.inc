@@ -413,11 +413,24 @@
     // ── Batch 27 — aliases / P3 STUBs ────────────────────────────────────────
     } else if (strcmp(type_str, "ConditionHasValidRouteToNearTarget") == 0) {
         idx = bt.addConditionHasValidRouteToTarget();  // alias: near-target = same path check
-    } else if (strcmp(type_str, "ConditionAngleNPCToTargetsAimLessThan") == 0
-            || strcmp(type_str, "ConditionTargetIsOnlyAccessibleCrouching") == 0
-            || strcmp(type_str, "ConditionHasFlankedVentCloseToPlayer") == 0
-            || strcmp(type_str, "ConditionHasVentCloseToAlien") == 0) {
-        idx = bt.addActionFail();  // STUB: no AimComponent/VentRegistry
+    // ── Batch 31 — VentRegistry conditions (P3 stubs promoted) ──────────────
+    } else if (strcmp(type_str, "ConditionHasVentCloseToAlien") == 0) {
+        float radius_m = VentRegistry::DEFAULT_RADIUS_M;
+        const char* rv = strstr(obj, "\"radius_m\"");
+        if (rv) { rv += 10; while (*rv == ' ' || *rv == ':') ++rv; radius_m = (float)atof(rv); }
+        idx = bt.addConditionHasVentCloseToAlien(radius_m);
+    } else if (strcmp(type_str, "ConditionHasFlankedVentCloseToPlayer") == 0) {
+        float radius_m = VentRegistry::DEFAULT_RADIUS_M;
+        const char* rv = strstr(obj, "\"radius_m\"");
+        if (rv) { rv += 10; while (*rv == ' ' || *rv == ':') ++rv; radius_m = (float)atof(rv); }
+        idx = bt.addConditionHasFlankedVentCloseToPlayer(radius_m);
+    } else if (strcmp(type_str, "ConditionTargetIsOnlyAccessibleCrouching") == 0) {
+        idx = bt.addConditionTargetIsOnlyAccessibleCrouching();
+    } else if (strcmp(type_str, "ConditionAngleNPCToTargetsAimLessThan") == 0) {
+        float angle_deg = 45.f;
+        const char* av = strstr(obj, "\"angle\"");
+        if (av) { av += 7; while (*av == ' ' || *av == ':') ++av; angle_deg = (float)atof(av); }
+        idx = bt.addConditionAngleNPCToTargetsAimLessThan(angle_deg);
 
     // ── Batch 28 — promoted conditions ───────────────────────────────────────
     } else if (strcmp(type_str, "ConditionIsInTargetsWeaponRange") == 0) {

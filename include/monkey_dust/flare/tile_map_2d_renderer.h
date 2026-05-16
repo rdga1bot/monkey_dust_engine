@@ -51,12 +51,16 @@ public:
     // (first unused slot). Call once after map load.
     void SetNpcSpriteSheet(const char* path);
 
-    // Set NPC positions (tile coords) for overlay rendering on next Render().
-    // If SetNpcSpriteSheet() was called, renders the sprite; otherwise white dots.
-    // count is clamped to MAX_NPC_DOTS.
+    // Set NPC sprites for overlay rendering on next Render().
+    //   tile_x/z  — tile-space positions
+    //   rot_y     — facing angle (atan2(dx,dz) from movement direction)
+    //   is_moving — non-zero → run animation; 0 → stance
+    //   count     — clamped to MAX_NPC_DOTS
+    //   now_s     — current time for animation cycling
     static constexpr int MAX_NPC_DOTS = 64;
-    void SetNpcDots(const float* tile_x, const float* tile_z,
-                    int count, float dot_px = 10.f);
+    void SetNpcSprites(const float* tile_x, const float* tile_z,
+                       const float* rot_y,  const uint8_t* is_moving,
+                       int count, float now_s);
 
 private:
     bool init_ = false;
@@ -98,16 +102,15 @@ private:
     // NPC sprite sheet (atlas slot = npc_atlas_slot_; -1 = none loaded).
     MdTexture npc_sprite_tex_;
     int       npc_atlas_slot_       = -1;
-    // Hardcoded frame: goblin stance dir=5 frame=0 from fantasycore animations.
-    // (x,y,w,h,ox,oy) in pixels; sheet size 1316×3185.
-    static constexpr int NPC_F_X=326, NPC_F_Y=604, NPC_F_W=99, NPC_F_H=93;
-    static constexpr int NPC_F_OX=46, NPC_F_OY=77;
+    // goblin.png sheet dimensions (fantasycore).
     static constexpr int NPC_SHEET_W=1316, NPC_SHEET_H=3185;
 
-    float npc_dot_x_[MAX_NPC_DOTS]  = {};
-    float npc_dot_z_[MAX_NPC_DOTS]  = {};
-    int   npc_dot_count_            = 0;
-    float npc_dot_px_               = 10.f;
+    float   npc_dot_x_[MAX_NPC_DOTS]  = {};
+    float   npc_dot_z_[MAX_NPC_DOTS]  = {};
+    float   npc_rot_y_[MAX_NPC_DOTS]  = {};
+    uint8_t npc_moving_[MAX_NPC_DOTS] = {};
+    int     npc_dot_count_            = 0;
+    float   npc_now_s_                = 0.f;
 
     // OpenGL instance buffer layout (stride=36, 1 entry/tile):
     static constexpr int STRIDE     = 36;

@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 
-static constexpr int MAX_BONES        = 6;   // root+body+L-arm+R-arm+L-leg+R-leg (saves 500×122×64B = ~3.8 MB/frame)
+static constexpr int MAX_BONES        = 64;  // full humanoid rig: spine+head+2×arm(3)+2×leg(3)+hands+feet+fingers; SSBO 500×64×64B = 2 MB
 static constexpr int MAX_ANIMATED_NPC = 500;
 static constexpr int MAX_ANIM_CLIPS   = 8;
 

@@ -46,6 +46,13 @@ public:
                 float origin_x, float origin_y, float scale,
                 int vp_w, int vp_h, uint8_t layer_mask = 0xFF);
 
+    // Set NPC dot positions (tile coords) to overlay on next Render() call.
+    // Dots are rendered as dot_px × dot_px white quads using the dummy atlas slot.
+    // Call each frame before Render(). count is clamped to MAX_NPC_DOTS.
+    static constexpr int MAX_NPC_DOTS = 64;
+    void SetNpcDots(const float* tile_x, const float* tile_z,
+                    int count, float dot_px = 10.f);
+
 private:
     bool init_ = false;
 
@@ -82,6 +89,11 @@ private:
     static constexpr int MAX_ATLAS  = 4;
     MdTexture atlases_[MAX_ATLAS]   = {};
     int       atlas_count_          = 0;
+
+    float npc_dot_x_[MAX_NPC_DOTS]  = {};
+    float npc_dot_z_[MAX_NPC_DOTS]  = {};
+    int   npc_dot_count_            = 0;
+    float npc_dot_px_               = 10.f;
 
     // OpenGL instance buffer layout (stride=36, 1 entry/tile):
     static constexpr int STRIDE     = 36;

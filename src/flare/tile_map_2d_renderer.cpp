@@ -194,6 +194,17 @@ void TileMap2DRenderer::SetAtlases(const FlareMap& map) {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
+void TileMap2DRenderer::SetNpcDots(const float* tile_x, const float* tile_z,
+                                    int count, float dot_px)
+{
+    npc_dot_count_ = count < MAX_NPC_DOTS ? count : MAX_NPC_DOTS;
+    for (int i = 0; i < npc_dot_count_; ++i) {
+        npc_dot_x_[i] = tile_x[i];
+        npc_dot_z_[i] = tile_z[i];
+    }
+    npc_dot_px_ = dot_px;
+}
+
 void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
                                 float origin_x, float origin_y, float scale,
                                 int vp_w, int vp_h, uint8_t layer_mask)
@@ -418,6 +429,36 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
             v[10] = ai;             // a_atlas_idx
         }
         ++ni;
+    }
+
+    // ── NPC dots: white quads using dummy atlas slot (atlas_count_ index) ─────
+    // atlas_idx = atlas_count_ → bound to sdl_dummy_tex_ (1×1 white, alpha=1).
+    if (npc_dot_count_ > 0 && ni < MAX_TILES) {
+        float ai  = (float)atlas_count_;  // dummy slot — always white
+        float dpx = npc_dot_px_ > 1.f ? npc_dot_px_ : 1.f;
+        for (int di = 0; di < npc_dot_count_ && ni < MAX_TILES; ++di) {
+            float col = npc_dot_x_[di], row = npc_dot_z_[di];
+            float ax  = (float)((col - row) * (float)TILE_W_HALF) * scale + origin_x;
+            float ay  = (float)((col + row) * (float)TILE_H_HALF) * scale + origin_y;
+            // center the dot on the tile diamond
+            float x_tl = ax + (float)TILE_W_HALF * scale * 0.5f - dpx * 0.5f;
+            float y_tl = ay + (float)TILE_H_HALF * scale * 0.5f - dpx * 0.5f;
+            for (int vi = 0; vi < 6; ++vi) {
+                float* v = (float*)(scratch + ((size_t)ni * 6 + (size_t)vi) * (size_t)STRIDE_SDL);
+                v[0]  = CORNERS[vi][0];
+                v[1]  = CORNERS[vi][1];
+                v[2]  = x_tl;
+                v[3]  = y_tl;
+                v[4]  = dpx;
+                v[5]  = dpx;
+                v[6]  = 0.f;   // uv min
+                v[7]  = 0.f;
+                v[8]  = 1.f;   // uv max
+                v[9]  = 1.f;
+                v[10] = ai;
+            }
+            ++ni;
+        }
     }
 
     // ── Correct order: copy pass first, then render pass ─────────────────────

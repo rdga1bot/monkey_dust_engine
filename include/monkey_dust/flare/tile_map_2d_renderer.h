@@ -46,6 +46,11 @@ public:
                 float origin_x, float origin_y, float scale,
                 int vp_w, int vp_h, uint8_t layer_mask = 0xFF);
 
+    // Screen-space overlay: blit an SDL_GPU texture (void* cast) at pixel rect.
+    // slot 0..MAX_OVERLAY_BLITS-1.  sdl_tex lifetime managed by caller.
+    void SetOverlayBlit(int slot, void* sdl_tex, int x, int y, int w, int h);
+    void ClearOverlayBlit(int slot);
+
     // Load a sprite sheet for NPC overlay rendering.
     // Must be called after SetAtlases(). Uses atlas binding slot atlas_count_
     // (first unused slot). Call once after map load.
@@ -115,6 +120,11 @@ private:
     // OpenGL instance buffer layout (stride=36, 1 entry/tile):
     static constexpr int STRIDE     = 36;
     static constexpr int MAX_TILES  = 16384;
+
+    // UI overlay: SDL_GPU texture blitted at a screen-space rect after the scene.
+    struct OverlayBlit { void* sdl_tex = nullptr; int x=0,y=0,w=0,h=0; };
+    static constexpr int MAX_OVERLAY_BLITS = 4;
+    OverlayBlit overlay_blits_[MAX_OVERLAY_BLITS] = {};
 };
 
 } // namespace md::flare

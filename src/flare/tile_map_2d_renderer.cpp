@@ -271,6 +271,23 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
         SDL_GPUTexture* swap = md::GpuDevice::Get().AcquireSwapchainTexture(cmd, &sw, &sh);
         if (!swap) { md::GpuDevice::Get().Submit(cmd); return; }
         RenderSDLGPU(map, now_s, origin_x, origin_y, scale, vp_w, vp_h, layer_mask, cmd, swap);
+#ifdef MD_SDL_GPU
+        for (int oi = 0; oi < MAX_OVERLAY_BLITS; ++oi) {
+            if (!overlay_blits_[oi].sdl_tex) continue;
+            SDL_GPUBlitInfo bi {};
+            bi.source.texture  = (SDL_GPUTexture*)overlay_blits_[oi].sdl_tex;
+            bi.source.w        = (uint32_t)overlay_blits_[oi].w;
+            bi.source.h        = (uint32_t)overlay_blits_[oi].h;
+            bi.destination.texture = swap;
+            bi.destination.x   = (uint32_t)overlay_blits_[oi].x;
+            bi.destination.y   = (uint32_t)overlay_blits_[oi].y;
+            bi.destination.w   = (uint32_t)overlay_blits_[oi].w;
+            bi.destination.h   = (uint32_t)overlay_blits_[oi].h;
+            bi.load_op         = SDL_GPU_LOADOP_LOAD;
+            bi.filter          = SDL_GPU_FILTER_NEAREST;
+            SDL_BlitGPUTexture(cmd, &bi);
+        }
+#endif
         md::GpuDevice::Get().Submit(cmd);
         return;
     }
@@ -588,6 +605,19 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
     cb.EndPass();
 }
 #endif // MD_SDL_GPU
+
+// ── Overlay blits ─────────────────────────────────────────────────────────────
+
+void TileMap2DRenderer::SetOverlayBlit(int slot, void* sdl_tex,
+                                        int x, int y, int w, int h) {
+    if (slot < 0 || slot >= MAX_OVERLAY_BLITS) return;
+    overlay_blits_[slot] = { sdl_tex, x, y, w, h };
+}
+
+void TileMap2DRenderer::ClearOverlayBlit(int slot) {
+    if (slot < 0 || slot >= MAX_OVERLAY_BLITS) return;
+    overlay_blits_[slot] = {};
+}
 
 } // namespace md::flare
 

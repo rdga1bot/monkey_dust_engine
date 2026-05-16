@@ -906,3 +906,66 @@
             if (as) as->frame_flags |= (1ull << ff::SHOULD_SURRENDER);
             result = BTStatus::Running; goto exit_loop;
         }
+
+        // ── Batch 30 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ConditionEventCountAbove: {
+            const NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (!nm) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (nm->event_count > static_cast<uint8_t>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionSpatialMemoryCountAbove: {
+            const NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+            if (!nm) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (nm->spatial_count > static_cast<uint8_t>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionMotivationTicksAbove: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->motivation_ticks > static_cast<uint8_t>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasVisualHistory: {
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (sc->last_activated_ms[0] > 0u) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionPursueTarget: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_PURSUE_TARGET);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionCircleTarget: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_CIRCLE_TARGET);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionBackOff: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_BACK_OFF);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionCrouchMove: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_CROUCH_MOVE);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionVault: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_VAULT);
+            result = BTStatus::Running; goto exit_loop;
+        }

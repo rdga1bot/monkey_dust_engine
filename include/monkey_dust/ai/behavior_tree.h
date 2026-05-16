@@ -570,6 +570,34 @@ enum class BTNodeType : uint8_t {
     //   ActionSurrenderSelf: sets ff::SHOULD_SURRENDER; always Running
     //     data = 0 (unused)
     ActionSurrenderSelf,
+    // ── Batch 30 ──────────────────────────────────────────────────────────────
+    //   ConditionEventCountAbove: nm->event_count > data
+    //     data = min_count (uint8_t); Failure if no NpcMemoryComponent
+    ConditionEventCountAbove,
+    //   ConditionSpatialMemoryCountAbove: nm->spatial_count > data
+    //     data = min_count (uint8_t); Failure if no NpcMemoryComponent
+    ConditionSpatialMemoryCountAbove,
+    //   ConditionMotivationTicksAbove: as->motivation_ticks > data
+    //     data = min_ticks (uint8_t); Failure if no AgentState
+    ConditionMotivationTicksAbove,
+    //   ConditionHasVisualHistory: sc->last_activated_ms[0] > 0 (ever spotted)
+    //     data = 0 (unused); Failure if no SenseComponent
+    ConditionHasVisualHistory,
+    //   ActionPursueTarget: sets ff::SHOULD_PURSUE_TARGET; always Running
+    //     data = 0 (unused)
+    ActionPursueTarget,
+    //   ActionCircleTarget: sets ff::SHOULD_CIRCLE_TARGET; always Running
+    //     data = 0 (unused)
+    ActionCircleTarget,
+    //   ActionBackOff: sets ff::SHOULD_BACK_OFF; always Running
+    //     data = 0 (unused)
+    ActionBackOff,
+    //   ActionCrouchMove: sets ff::SHOULD_CROUCH_MOVE; always Running
+    //     data = 0 (unused)
+    ActionCrouchMove,
+    //   ActionVault: sets ff::SHOULD_VAULT; always Running
+    //     data = 0 (unused)
+    ActionVault,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -731,6 +759,15 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionCallForHelp:            0 (sets ff::SHOULD_CALL_FOR_HELP; Running)
 //   ActionTauntTarget:            0 (sets ff::SHOULD_TAUNT_TARGET; Running)
 //   ActionSurrenderSelf:          0 (sets ff::SHOULD_SURRENDER; Running)
+//   ConditionEventCountAbove:     min_count uint8 (nm->event_count > data)
+//   ConditionSpatialMemoryCountAbove: min_count uint8 (nm->spatial_count > data)
+//   ConditionMotivationTicksAbove: min_ticks uint8 (as->motivation_ticks > data)
+//   ConditionHasVisualHistory:    0 (sc->last_activated_ms[0] > 0)
+//   ActionPursueTarget:           0 (sets ff::SHOULD_PURSUE_TARGET; Running)
+//   ActionCircleTarget:           0 (sets ff::SHOULD_CIRCLE_TARGET; Running)
+//   ActionBackOff:                0 (sets ff::SHOULD_BACK_OFF; Running)
+//   ActionCrouchMove:             0 (sets ff::SHOULD_CROUCH_MOVE; Running)
+//   ActionVault:                  0 (sets ff::SHOULD_VAULT; Running)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -1096,6 +1133,17 @@ public:
     uint16_t addActionCallForHelp();
     uint16_t addActionTauntTarget();
     uint16_t addActionSurrenderSelf();
+
+    // ── Batch 30 ──────────────────────────────────────────────────────────────
+    uint16_t addConditionEventCountAbove(uint8_t min_count);
+    uint16_t addConditionSpatialMemoryCountAbove(uint8_t min_count);
+    uint16_t addConditionMotivationTicksAbove(uint8_t min_ticks);
+    uint16_t addConditionHasVisualHistory();
+    uint16_t addActionPursueTarget();
+    uint16_t addActionCircleTarget();
+    uint16_t addActionBackOff();
+    uint16_t addActionCrouchMove();
+    uint16_t addActionVault();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

@@ -475,4 +475,33 @@
         idx = bt.addActionTauntTarget();
     } else if (strcmp(type_str, "ActionSurrenderSelf") == 0) {
         idx = bt.addActionSurrenderSelf();
+
+    // ── Batch 30 — memory/motivation conditions + pursuit actions ─────────────
+    } else if (strcmp(type_str, "ConditionEventCountAbove") == 0) {
+        uint8_t min_c = 0;
+        const char* cv = strstr(obj, "\"min_count\"");
+        if (cv) { cv += 11; while (*cv == ' ' || *cv == ':') ++cv; min_c = (uint8_t)atoi(cv); }
+        idx = bt.addConditionEventCountAbove(min_c);
+    } else if (strcmp(type_str, "ConditionSpatialMemoryCountAbove") == 0) {
+        uint8_t min_c = 0;
+        const char* cv = strstr(obj, "\"min_count\"");
+        if (cv) { cv += 11; while (*cv == ' ' || *cv == ':') ++cv; min_c = (uint8_t)atoi(cv); }
+        idx = bt.addConditionSpatialMemoryCountAbove(min_c);
+    } else if (strcmp(type_str, "ConditionMotivationTicksAbove") == 0) {
+        uint8_t min_t = 0;
+        const char* tv = strstr(obj, "\"min_ticks\"");
+        if (tv) { tv += 11; while (*tv == ' ' || *tv == ':') ++tv; min_t = (uint8_t)atoi(tv); }
+        idx = bt.addConditionMotivationTicksAbove(min_t);
+    } else if (strcmp(type_str, "ConditionHasVisualHistory") == 0) {
+        idx = bt.addConditionHasVisualHistory();
+    } else if (strcmp(type_str, "ActionPursueTarget") == 0) {
+        idx = bt.addActionPursueTarget();
+    } else if (strcmp(type_str, "ActionCircleTarget") == 0) {
+        idx = bt.addActionCircleTarget();
+    } else if (strcmp(type_str, "ActionBackOff") == 0) {
+        idx = bt.addActionBackOff();
+    } else if (strcmp(type_str, "ActionCrouchMove") == 0) {
+        idx = bt.addActionCrouchMove();
+    } else if (strcmp(type_str, "ActionVault") == 0) {
+        idx = bt.addActionVault();
     }

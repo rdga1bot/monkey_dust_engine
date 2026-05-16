@@ -376,6 +376,11 @@ namespace ff {
     static constexpr uint8_t SHOULD_CALL_FOR_HELP                  = 32; // Batch 29: broadcast distress to allies
     static constexpr uint8_t SHOULD_TAUNT_TARGET                   = 33; // Batch 29: play taunt animation/audio
     static constexpr uint8_t SHOULD_SURRENDER                      = 34; // Batch 29: initiate surrender sequence
+    static constexpr uint8_t SHOULD_PURSUE_TARGET                  = 35; // Batch 30: aggressive pursuit of target
+    static constexpr uint8_t SHOULD_CIRCLE_TARGET                  = 36; // Batch 30: circle/strafe around target
+    static constexpr uint8_t SHOULD_BACK_OFF                       = 37; // Batch 30: retreat to safe distance
+    static constexpr uint8_t SHOULD_CROUCH_MOVE                    = 38; // Batch 30: move while crouching
+    static constexpr uint8_t SHOULD_VAULT                          = 39; // Batch 30: vault over obstacle
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────

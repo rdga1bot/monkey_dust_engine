@@ -1056,6 +1056,44 @@ uint16_t BehaviorTree::addActionSurrenderSelf() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionSurrenderSelf); return i;
 }
 
+// ── Batch 30 ─────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionEventCountAbove(uint8_t min_count) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionEventCountAbove);
+    m_nodes[i].data = static_cast<uint32_t>(min_count);
+    return i;
+}
+uint16_t BehaviorTree::addConditionSpatialMemoryCountAbove(uint8_t min_count) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionSpatialMemoryCountAbove);
+    m_nodes[i].data = static_cast<uint32_t>(min_count);
+    return i;
+}
+uint16_t BehaviorTree::addConditionMotivationTicksAbove(uint8_t min_ticks) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionMotivationTicksAbove);
+    m_nodes[i].data = static_cast<uint32_t>(min_ticks);
+    return i;
+}
+uint16_t BehaviorTree::addConditionHasVisualHistory() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasVisualHistory); return i;
+}
+uint16_t BehaviorTree::addActionPursueTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionPursueTarget); return i;
+}
+uint16_t BehaviorTree::addActionCircleTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionCircleTarget); return i;
+}
+uint16_t BehaviorTree::addActionBackOff() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionBackOff); return i;
+}
+uint16_t BehaviorTree::addActionCrouchMove() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionCrouchMove); return i;
+}
+uint16_t BehaviorTree::addActionVault() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionVault); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

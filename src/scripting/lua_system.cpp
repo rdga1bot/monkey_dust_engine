@@ -44,7 +44,13 @@ bool LuaSystem::LoadFile(const char* path) {
 
 bool LuaSystem::Init(const char* scripts_dir) {
     lua_mem_used_ = 0;
+#if LUA_VERSION_NUM >= 505
+    // Lua 5.5+: lua_newstate() takes no args; set custom allocator separately
+    L_ = lua_newstate();
+    if (L_) lua_setallocf(L_, lua_alloc, &lua_mem_used_);
+#else
     L_ = lua_newstate(lua_alloc, &lua_mem_used_);
+#endif
     if (!L_) return false;
 
     luaL_openlibs(L_);

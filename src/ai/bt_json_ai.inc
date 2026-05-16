@@ -2,7 +2,7 @@
     // ── MD_z nodes ───────────────────────────────────────────────────────
 
     // Z1: DecoratorMood — decorator: run child only when mood matches
-    } else if (strcmp(type_str, "DecoratorMood") == 0) {
+    if (strcmp(type_str, "DecoratorMood") == 0) {
         char m[24] = "Neutral";
         read_str_r(obj, obj_end, "\"mood\"", m, sizeof(m));
         idx = bt.addDecoratorMood(parse_mood(m));
@@ -305,3 +305,4 @@
         char s[32] = "None";
         read_str_r(obj, obj_end, "\"noise_type\"", s, sizeof(s));
         idx = bt.addSetNoiseType(parse_noise_type(s));
+    }

@@ -1,4 +1,4 @@
-    } else if (strcmp(type_str, "SequenceStateless") == 0) {  // C11
+    if (strcmp(type_str, "SequenceStateless") == 0) {  // C11
         idx = bt.addSequenceStateless();
     } else if (strcmp(type_str, "SequenceIgnoreChildFail") == 0) {  // Batch 16
         idx = bt.addSequenceIgnoreChildFail();
@@ -227,3 +227,4 @@
         char s[32] = "None";
         read_str_r(obj, obj_end, "\"state\"", s, sizeof(s));
         idx = bt.addSetNpcCombatState(parse_npc_combat_state(s));
+    }

@@ -558,6 +558,30 @@ static float parse_gauge_amount(const char* s) {
 static bool         s_cond_false  (md::EngineContext&, entt::entity) { return false; }
 static BTStatus     s_act_failure (md::EngineContext&, entt::entity) { return BTStatus::Failure; }
 
+// ── Split helper functions to avoid MSVC C1061 block-nesting limit (128) ─────
+// Each file is a standalone if-else-if chain returning INVALID when unmatched.
+static uint16_t parse_node_core(BehaviorTree& bt, const char* type_str,
+                                 const char* obj, const char* obj_end,
+                                 md::BTActionRegistry& reg) {
+    uint16_t idx = BehaviorTree::INVALID;
+#include "bt_json_core.inc"
+    return idx;
+}
+static uint16_t parse_node_ai(BehaviorTree& bt, const char* type_str,
+                               const char* obj, const char* obj_end,
+                               md::BTActionRegistry& reg) {
+    uint16_t idx = BehaviorTree::INVALID;
+#include "bt_json_ai.inc"
+    return idx;
+}
+static uint16_t parse_node_ext(BehaviorTree& bt, const char* type_str,
+                                const char* obj, const char* obj_end,
+                                md::BTActionRegistry& reg) {
+    uint16_t idx = BehaviorTree::INVALID;
+#include "bt_json_ext.inc"
+    return idx;
+}
+
 // ── Recursive node parser ─────────────────────────────────────────────────────
 // obj:     points AFTER '{' of the node object
 // obj_end: points TO   '}' of the node object
@@ -582,10 +606,11 @@ static uint16_t parse_node(BehaviorTree& bt, const char* obj, const char* obj_en
         idx = bt.addSelector();
     } else if (strcmp(type_str, "SequenceLinear") == 0) {
         idx = bt.addSequence();
-#include "bt_json_core.inc"
-#include "bt_json_ai.inc"
-#include "bt_json_ext.inc"
-    } else {
+    }
+    if (idx == BehaviorTree::INVALID) idx = parse_node_core(bt, type_str, obj, obj_end, reg);
+    if (idx == BehaviorTree::INVALID) idx = parse_node_ai (bt, type_str, obj, obj_end, reg);
+    if (idx == BehaviorTree::INVALID) idx = parse_node_ext(bt, type_str, obj, obj_end, reg);
+    if (idx == BehaviorTree::INVALID) {
         MD_LOG(MD_LOG_WARNING, "[BTJsonLoader] unknown node type: '%s' — skipped", type_str);
         return BehaviorTree::INVALID;
     }

@@ -1,6 +1,6 @@
 
     // ── Batch 8: SI lifecycle ─────────────────────────────────────────────────
-    } else if (strcmp(type_str, "ConditionSuspiciousItemValid") == 0) {
+    if (strcmp(type_str, "ConditionSuspiciousItemValid") == 0) {
         idx = bt.addConditionSuspiciousItemValid();
 
     } else if (strcmp(type_str, "ActionConsumeSuspiciousItem") == 0) {
@@ -420,3 +420,4 @@
             || strcmp(type_str, "ConditionIsCoverExposed") == 0
             || strcmp(type_str, "ConditionIsInTargetsWeaponRange") == 0) {
         idx = bt.addActionFail();  // STUB: no AimComponent/VentRegistry/weapon_range
+    }

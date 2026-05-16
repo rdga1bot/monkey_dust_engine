@@ -213,7 +213,7 @@
       <div class="hero-meta-item"><span class="dot">●</span> Linux · Intel HD 520 (AVX2)</div>
       <div class="hero-meta-item"><span class="dot">●</span> 1280×720 · 60 FPS</div>
       <div class="hero-meta-item"><span class="dot">●</span> SDL3 + SDL_GPU (Vulkan)</div>
-      <div class="hero-meta-item"><span class="dot">●</span> 131 GTests · Proprietary</div>
+      <div class="hero-meta-item"><span class="dot">●</span> 1252 GTests · Proprietary</div>
     </div>
   </div>
 
@@ -234,7 +234,7 @@
   <h2>🏆 SDL_GPU Exclusive — стан після FIX-8</h2>
 
   <div class="callout ok">
-    <div class="callout-title">Поточний стан: SDL_GPU виключний (2026-05-13)</div>
+    <div class="callout-title">Поточний стан: SDL_GPU виключний (2026-05-16)</div>
     Raylib повністю відв'язаний. <code>MD_OPENGL43_ENABLED</code> видалено з усіх 32 файлів (FIX-8: −1449 рядків мертвого коду). Єдиний активний бекенд — SDL_GPU (Vulkan). SPIR-V шейдери <code>#version 460</code>. Standalone editor компілюється з <code>-UMD_SDL_GPU</code> і використовує GL fallback через <code>if(dev==null)</code>.
   </div>
 
@@ -384,7 +384,7 @@ bash scripts/compile_shaders.sh</code></pre>
 │   └── <span class="note">remove_gl43_guards.py</span>      <span class="note">one-time migration tool (FIX-8, збережено для довідки)</span>
 │
 ├── <span class="dir">data/bt/</span>                       <span class="hl">systematic_search.bt.json — SystematicSearch BT (branches/motiv/role/timer)</span>
-├── <span class="dir">tests/</span>                         <span class="note">Google Test suites (131 тестів, 13 suites)</span>
+├── <span class="dir">tests/</span>                         <span class="note">Google Test suites (1252 тестів, 180 suites)</span>
 └── <span class="hl">CLAUDE.md</span>                  <span class="note">← Конституція v12.0 (читати першою)</span>
   </div>
 
@@ -824,7 +824,7 @@ struct NpcConfig {
 
   <div class="callout ok">
     <div class="callout-title">Extended AI Patterns — розширена система AI поведінки</div>
-    20 архітектурних паттернів AI, реалізованих у monkey_dust незалежно. Підтверджено 131 GTests.
+    20 архітектурних паттернів AI, реалізованих у monkey_dust незалежно. Підтверджено 1252 GTests.
   </div>
 
   <h3>C1–C10 (базові структури)</h3>
@@ -1347,10 +1347,10 @@ Panel: ViewCone Inspector      Panel: FlowGraph      ...</code></pre>
 
 <!-- ═══ TESTS ═══ -->
 <section class="doc-section" id="tests">
-  <h2>🧪 Test Suite (M43–M45 + AI-Ext-11–20 + BT VM)</h2>
+  <h2>🧪 Test Suite (M43–M58 + AI-Ext-1–20 + BT VM + Batch 3–27)</h2>
 
   <pre><code>ninja -C build md_tests && build/tests/md_tests
-# [==========] 131 tests from 13 test suites ran. (all PASSED)</code></pre>
+# [==========] 1252 tests from 180 test suites ran. (all PASSED)</code></pre>
 
   <table>
     <tr><th>Suite</th><th>Тестів</th><th>Що тестує</th></tr>
@@ -1722,7 +1722,7 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
     <tr><td>Registry мутація</td><td>Segfault під час view.each</td><td>Collect → apply</td></tr>
     <tr><td>MD_OPENGL43_ENABLED</td><td>Компілятор видасть undef macro</td><td>Не визначати, видалено FIX-8</td></tr>
     <tr><td>БОРГ-1</td><td>Будівлі після Load "floating"</td><td>BuildSystem::OccupyGrid() у Deserialize</td></tr>
-    <tr><td>БОРГ-6</td><td>TransformSoA slot drift після Load</td><td>Не серіалізується — TODO M48</td></tr>
+    <tr><td>БОРГ-6</td><td>TransformSoA slot drift після Load</td><td><span class="badge done">✅ Виправлено</span> — AssignSlot() при десеріалізації (БОРГ-6 / Save v5+)</td></tr>
     <tr><td>БОРГ-9</td><td>ChunkLoad тиха втрата при radius≥5</td><td>MAX_STAGING=8 (знати обмеження)</td></tr>
     <tr><td>FlagCheck bitmask vs bit-index</td><td>FlagCheck завжди Failure</td><td>addFlagCheck(lcf::SHOULD_ATTACK) — передавай bit-index uint8, НЕ bitmask (C4)</td></tr>
     <tr><td>MotivationType не споживається</td><td>Attack branch спрацьовує кожен тік</td><td>Після MotivationCheck → SetMotivation(Idle), щоб "спожити" (C1)</td></tr>
@@ -1739,9 +1739,9 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
 
 <!-- ═══ ROADMAP ═══ -->
 <section class="doc-section" id="roadmap">
-  <h2>🗓️ Roadmap — стан на 2026-05-13</h2>
+  <h2>🗓️ Roadmap — стан на 2026-05-16</h2>
 
-  <h3>Завершено (M0–M46 + FIX-1–10 + AI-Ext-1–20 + BT VM + IMP-1–9)</h3>
+  <h3>Завершено (M0–M58 + FIX-1–10 + AI-Ext-1–20 + BT VM + IMP-1–9 + Batch 3–27)</h3>
   <table>
     <tr><th>Milestone</th><th>Зміст</th><th>Статус</th></tr>
     <tr><td>M0–M34</td><td>Core gameplay: ECS, AI, Nav, Combat, Build, Save, Dialog, Quest, Editor, Chunk, GPU</td><td><span class="badge done">✅</span></td></tr>
@@ -1770,17 +1770,19 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
     <tr><td><strong>AI-Ext-11–20</strong></td><td>C11 SequenceStateless; C12 TimerOnlyIncrease; C13 FrameFlag (per-tick, BTSystem reset); C14 WeightedSelector (LCG rng); C15 AwarenessState×7; C16 AlertnessState×4; C17 NpcMood×6; C18 RoleRegistry+RoleCheck/Claim/Release; C19 WithdrawState×3; C20 FlowDurableTrigger (MAX=16, refcount)</td><td><span class="badge done">✅ 2026-05-13 · 105/105 tests</span></td></tr>
     <tr><td><strong>BT VM повний</strong></td><td>BTNodePool (flat 32KB arena, sizeof(BT)=4616); BTSystem (phase1 frame_flags+hints, phase2 bare, phase3 tick); BTJsonLoader (strstr recursive, 30+ node types, 11 enum tables); role_registry.h (8 NpcRoles, singleton); bt_components.h (BehaviorTreeComponent+DirectorHintComponent); data/bt/systematic_search.bt.json</td><td><span class="badge done">✅ 2026-05-13 · 131/131 tests</span></td></tr>
     <tr><td><strong>IMP-1–9</strong></td><td><strong>IMP-1</strong> ACES tonemapping (pbr.frag+npc_instanced.frag) · <strong>IMP-2</strong> Live BT reload (WatchFile+PollReload) · <strong>IMP-3</strong> NpcMemoryComponent POD (SpatialMemory[8]+events[8], MemoryCheck/Forget BT) · <strong>IMP-4</strong> Dirty TINST tile cache (skip PASS1–3) · <strong>IMP-5</strong> Dirty faction SSBO partial upload · <strong>IMP-6</strong> WorldSimulation 1Hz economy · <strong>IMP-7</strong> MaterialDesc OGRE-style JSON→GpuPipeline::Desc · <strong>IMP-8</strong> UtilityScorer Echo-style goal scoring · <strong>IMP-9</strong> md::fs thin FS abstraction</td><td><span class="badge done">✅ 2026-05-13</span></td></tr>
-  </table>
-
-  <h3>Потенційні наступні фази (M47+)</h3>
-  <table>
-    <tr><th>Фаза</th><th>Ідея</th></tr>
-    <tr><td>M47</td><td>Navmesh multi-tile з LOD FROZEN — rpath freeze до waypoint</td></tr>
-    <tr><td>M48</td><td>Save v9: chunk-level AgentState (NPC пам'ять між сесіями)</td></tr>
-    <tr><td>M49</td><td>RenderTier-based adaptive quality (SSAO/SMAA вмикаються по tier)</td></tr>
-    <tr><td>M50</td><td>Network-ready: deterministic snapshot serializer для replay</td></tr>
-    <tr><td>M51</td><td>NpcMemory persistence: serialize NpcMemoryComponent у SaveSystem v9 chunk</td></tr>
-    <tr><td>M52</td><td>MaterialDesc cache: кешувати GpuPipeline::Desc по fnv1a(mat name); lazy build</td></tr>
+    <tr><td><strong>M47</strong></td><td>NavLodTier (Close/Frozen); PathCache::Freeze/Unfreeze/UnfreezeAll; QueryPathLod(tier) bypasses PATH_TTL_S для frozen paths</td><td><span class="badge done">✅ 2026-05-16</span></td></tr>
+    <tr><td><strong>M48</strong></td><td>Save v9: NpcMemoryComponent (260 B) inline per NpcRecord; is_v9=(_pad[1]==1); backward compat v7/v8</td><td><span class="badge done">✅ 2026-05-16</span></td></tr>
+    <tr><td><strong>M49</strong></td><td>ReplaySnapshot: ReplayNpcState(16B)+ReplayFrame(1048B, 64 NPCs+CRC32)+ReplayBuffer(300 frames ring, ~307KB BSS); RPLY file format; CaptureFrame/WriteToFile/ReadFromFile</td><td><span class="badge done">✅ 2026-05-16</span></td></tr>
+    <tr><td><strong>M50</strong></td><td>FlowVar::Vec3=4 (val.v3[3]) + EntityRef=5 (val.entity_ref uint32); SetVarVec3/GetVarVec3/SetVarEntity/GetVarEntity; coerce_to_float</td><td><span class="badge done">✅ 2026-05-16</span></td></tr>
+    <tr><td><strong>M51</strong></td><td>Save v10: SaveHeaderV10Extra (+ws_faction_count+ws_route_count, 108B); FactionState[]+TradeRoute[] tail; WorldSimulation::Reset()+direct array restore</td><td><span class="badge done">✅ 2026-05-16</span></td></tr>
+    <tr><td><strong>M52</strong></td><td>AllianceMatrix singleton (9×9 stance table); AllianceGroup enum; IsEnemy/GetStance/SetStance (symmetric); defaults: Player↔Alien/Android/WeylandYutani hostile</td><td><span class="badge done">✅ 2026-05-16</span></td></tr>
+    <tr><td><strong>M53</strong></td><td>FrameFlagDispatcher: reads frame_flags after BT tick → NavAgent movement, WorldTransform rot_y, Combat::is_dead, lcf::SHOULD_DESPAWN entity destroy; 20 engine tests</td><td><span class="badge done">✅ 2026-05-16</span></td></tr>
+    <tr><td><strong>M54</strong></td><td>NPC archetype BT templates: BuildGuardBT/BuildAlienBT/BuildVendorBT; bt_templates.json 7 entries; BT breadth-first child-ordering invariant fixed; 23 tests</td><td><span class="badge done">✅ 2026-05-16 · 1134 tests</span></td></tr>
+    <tr><td><strong>M55</strong></td><td>SenseSystemUpdate(now_ms): Visual = max cone activation (dist+half-angle vs ViewConeSet); Audio = linear falloff 15m; rising-edge → last_activated_ms; Visual → last_known_x/z; 31 tests</td><td><span class="badge done">✅ 2026-05-16 · 1165 tests</span></td></tr>
+    <tr><td><strong>M56</strong></td><td>CombatDispatch(now_ms): ff::SHOULD_MELEE_ATTACK(12)+SHOULD_RANGED_SHOOT(9); target from bb["target_entity"]; range+cooldown gate; CalcDamage+RollHitZone; kill → Combat::is_dead+lcf::IS_DEAD; collect→apply 64-cap; 38 tests</td><td><span class="badge done">✅ 2026-05-16 · 1203 tests</span></td></tr>
+    <tr><td><strong>M57</strong></td><td>DeferredLightingSystem: fullscreen triangle (no VBO); GBuffer RT0+RT1 → RGBA16F hdr_color; DeferredAmbientUBO std140 64B (sun_dir/sun_color/ambient_color/emissive_scale=1.4875); deferred_lighting.vert/frag SPIR-V; gate IsDeferred(); 17 tests</td><td><span class="badge done">✅ 2026-05-16 · 1220 tests</span></td></tr>
+    <tr><td><strong>M58</strong></td><td>DialogCondType::QuestActive=4+QuestComplete=5; "quest_active:N"/"quest_complete:N" JSON; NpcInteractionComponent(20B, range 2.5m, cooldown 5s); dialogs.json expanded (nodes 4+5 quest-gated); 32 tests</td><td><span class="badge done">✅ 2026-05-16 · 1252 tests</span></td></tr>
+    <tr><td><strong>Batch 3–27</strong></td><td>77 BT node types, SenseType×9, SquadSignalBus, NpcDevelopment, AlienConfig, VentLock, NpcRelationship, ActionAdjustMenace, lcf::IS_SUSPENDED/IS_PLAYER, ConditionTargetDist/RoutingDist, ShaderFeature, TileCullBounds, NamedBranchRegistry, NpcSoundBus</td><td><span class="badge done">✅ 2026-05-16</span></td></tr>
   </table>
 </section>
 

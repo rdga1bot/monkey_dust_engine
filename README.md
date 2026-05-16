@@ -13,7 +13,7 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, and a custom stackless 
 | System | Details |
 |--------|---------|
 | Tile map renderer | FLARE-inspired isometric tiles; TINST instancing (stride=36); billboard + flat-XZ geometry; fringe depth sorting |
-| Deferred lighting | PBR IBL + GBuffer (albedo/roughness/normal/metallic); ACES tonemapping |
+| Deferred lighting | GBuffer 2-RT (RT0=albedo+rough, RT1=oct-normal+metallic+flags); ambient pass `DeferredLightingSystem` → RGBA16F hdr_color; point volumes; strip lights; ACES tonemapping |
 | Cascaded Shadow Maps | 3-cascade PCF 3×3; GPU compute culling |
 | SSAO | Half-res R8 compute pass; 16-tap hemisphere kernel |
 | SMAA | 3-pass fullscreen triangle (edge → blend → final) |
@@ -28,13 +28,17 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, and a custom stackless 
 - BTNodePool — flat 32 KB arena bump-allocator
 - BTSystem — 3-phase tick (frame\_flags reset → hint expiry → tree tick)
 - BTJsonLoader — recursive strstr parser; 11 enum tables; no external JSON library
+- NPC Archetypes (M54) — Guard/Alien/Vendor `BuildXxxBT()` helpers; breadth-first child ordering
+- SenseSystem (M55) — `SenseSystemUpdate`; visual cone (dist+half-angle); audio linear 15 m falloff; rising-edge → `last_activated_ms` / `last_known_x/z`
+- CombatDispatch (M56) — `ff::SHOULD_MELEE_ATTACK`/`SHOULD_RANGED_SHOOT`; target from AgentBlackboard; CalcDamage+RollHitZone; IS_DEAD on kill
 - DirectorSystem — menace gauge `[0..1]`; 4 DirectorStages; `NpcConfig::bt_stage[4][32]` per-stage BT overrides
 - UtilityScorer — Echo-inspired goal utility; motivation inertia bonus
 - NpcMemoryComponent — `SpatialMemory[8]` + `events[8]` POD; no heap
+- NpcInteractionComponent (M58) — `dialog_faction_id` + `interaction_range` (2.5 m) + `cooldown_ms`; 20 bytes
 - FlowDurableTrigger — ref-counted durable triggers with duration decay
 
 ### ECS — EnTT
-14 engine-side components: `WorldTransform` · `AIAgent` · `Health` · `Combat` · `Renderable` · `Building` · `Inventory` · `ProjectileComponent` · `SenseComponent` · `AgentState` · `NpcMemoryComponent` · `BehaviorTreeComponent` · `DirectorHintComponent` · `FlareSpriteAnim`
+15 engine-side components: `WorldTransform` · `AIAgent` · `Health` · `Combat` · `Renderable` · `Building` · `Inventory` · `ProjectileComponent` · `SenseComponent` · `AgentState` · `NpcMemoryComponent` · `BehaviorTreeComponent` · `DirectorHintComponent` · `FlareSpriteAnim` · `NpcInteractionComponent`
 
 ### Navigation
 - Recast/Detour integration; async SPSC pathfinding worker
@@ -91,11 +95,11 @@ bash scripts/compile_shaders.sh
 ## Tests
 
 ```bash
-ninja -C build monkey_dust_tests
-./build/tests/monkey_dust_tests          # 131 tests, 6 suites
+ninja -C build md_tests
+./build/tests/md_tests          # 1252 tests, 180 suites
 ```
 
-Suites: FNV, AgentBlackboard, FlowGraph, DirectorSystem, PowerSlotManager, NpcConfig, HotReload, FlowVar, AIPatterns-1–20, BT VM
+Suites: FNV, AgentBlackboard, FlowGraph, DirectorSystem, PowerSlotManager, NpcConfig, HotReload, FlowVar, AI Patterns C1–C20, BT VM, Batch 3–27, M47–M58 (NavLod, ReplaySnapshot, AllianceMatrix, SenseSystem, BT Archetypes, CombatDispatch, DeferredLighting, DialogQuest)
 
 ---
 

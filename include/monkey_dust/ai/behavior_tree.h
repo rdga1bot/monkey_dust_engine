@@ -503,6 +503,22 @@ enum class BTNodeType : uint8_t {
     //   ConditionAllowedToPursueTarget: Success if aggro_level >= NpcAggroLevel::Warning
     //     data = 0 (unused)
     ConditionAllowedToPursueTarget,
+    // ── Batch 27 ──────────────────────────────────────────────────────────────
+    //   ActionBreakout: sets ff::SHOULD_BREAKOUT; always Running
+    //     data = 0 (unused)
+    ActionBreakout,
+    //   ActionMoveToMostRecentSensedPosition: sets ff::SHOULD_MOVE_TO_LAST_KNOWN; always Running
+    //     data = 0 (unused)
+    ActionMoveToMostRecentSensedPosition,
+    //   ActionMoveToNearestStandingPointToTarget: sets ff::SHOULD_MOVE_NEAR_TARGET; always Running
+    //     data = 0 (unused)
+    ActionMoveToNearestStandingPointToTarget,
+    //   ActionMoveToAttackTarget: sets ff::SHOULD_ATTACK_MOVE; always Running
+    //     data = 0 (unused)
+    ActionMoveToAttackTarget,
+    //   ActionChangeCover: sets ff::SHOULD_CHANGE_COVER; always Running
+    //     data = 0 (unused)
+    ActionChangeCover,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -643,6 +659,11 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionIsBranchActive:      fnv1a(branch_name)
 //   ConditionIsRequestingCover:   0 (ff::REQUESTING_COVER)
 //   ConditionAllowedToPursueTarget: 0 (aggro_level >= Warning)
+//   ActionBreakout:               0 (sets ff::SHOULD_BREAKOUT; Running)
+//   ActionMoveToMostRecentSensedPosition: 0 (sets ff::SHOULD_MOVE_TO_LAST_KNOWN; Running)
+//   ActionMoveToNearestStandingPointToTarget: 0 (sets ff::SHOULD_MOVE_NEAR_TARGET; Running)
+//   ActionMoveToAttackTarget:     0 (sets ff::SHOULD_ATTACK_MOVE; Running)
+//   ActionChangeCover:            0 (sets ff::SHOULD_CHANGE_COVER; Running)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -972,6 +993,7 @@ public:
 
     // ── Batch 26 ──────────────────────────────────────────────────────────────
     uint16_t addConditionLastTimeSearchedWithinTime(uint32_t max_elapsed_ms);
+
     uint16_t addConditionAllowedToSearch();
     uint16_t addConditionHasDoneSuspectResponseMoveTo();
     uint16_t addConditionHasDoneSuspectResponseWithinTime(uint32_t max_elapsed_ms);
@@ -980,6 +1002,13 @@ public:
     uint16_t addConditionIsBranchActive(uint32_t branch_name_hash);
     uint16_t addConditionIsRequestingCover();
     uint16_t addConditionAllowedToPursueTarget();
+
+    // ── Batch 27 ──────────────────────────────────────────────────────────────
+    uint16_t addActionBreakout();
+    uint16_t addActionMoveToMostRecentSensedPosition();
+    uint16_t addActionMoveToNearestStandingPointToTarget();
+    uint16_t addActionMoveToAttackTarget();
+    uint16_t addActionChangeCover();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

@@ -754,3 +754,35 @@
                      ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
+
+        // ── Batch 27 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ActionBreakout: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_BREAKOUT);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionMoveToMostRecentSensedPosition: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_MOVE_TO_LAST_KNOWN);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionMoveToNearestStandingPointToTarget: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_MOVE_NEAR_TARGET);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionMoveToAttackTarget: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_ATTACK_MOVE);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionChangeCover: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_CHANGE_COVER);
+            result = BTStatus::Running; goto exit_loop;
+        }

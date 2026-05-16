@@ -361,6 +361,11 @@ namespace ff {
     static constexpr uint8_t SI_REACTION_SET                        = 17; // Batch 23: si_reaction was updated this frame
     static constexpr uint8_t SHOULD_DO_SUSPECT_TARGET_RESPONSE      = 18; // Batch 23: initiate suspect target response
     static constexpr uint8_t REQUESTING_COVER                       = 19; // Batch 24: request a cover position
+    static constexpr uint8_t SHOULD_BREAKOUT                        = 20; // Batch 27: escape from threat
+    static constexpr uint8_t SHOULD_MOVE_TO_LAST_KNOWN             = 21; // Batch 27: move to last sensed position
+    static constexpr uint8_t SHOULD_MOVE_NEAR_TARGET               = 22; // Batch 27: move to nearest standing point to target
+    static constexpr uint8_t SHOULD_ATTACK_MOVE                    = 23; // Batch 27: move while attacking
+    static constexpr uint8_t SHOULD_CHANGE_COVER                   = 24; // Batch 27: move to a different cover position
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────

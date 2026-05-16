@@ -975,6 +975,23 @@ uint16_t BehaviorTree::addConditionAllowedToPursueTarget() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionAllowedToPursueTarget); return i;
 }
 
+// ── Batch 27 ─────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addActionBreakout() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionBreakout); return i;
+}
+uint16_t BehaviorTree::addActionMoveToMostRecentSensedPosition() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionMoveToMostRecentSensedPosition); return i;
+}
+uint16_t BehaviorTree::addActionMoveToNearestStandingPointToTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionMoveToNearestStandingPointToTarget); return i;
+}
+uint16_t BehaviorTree::addActionMoveToAttackTarget() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionMoveToAttackTarget); return i;
+}
+uint16_t BehaviorTree::addActionChangeCover() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionChangeCover); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

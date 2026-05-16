@@ -398,3 +398,25 @@
     // ── Batch 26 — JSON-only alias ────────────────────────────────────────────
     } else if (strcmp(type_str, "ConditionAnotherAlienIsAttackingThisTarget") == 0) {
         idx = bt.addConditionAnotherAlienIsAttacking();  // alias: no per-target tracking
+
+    // ── Batch 27 — P2 medium action nodes ─────────────────────────────────────
+    } else if (strcmp(type_str, "ActionBreakout") == 0) {
+        idx = bt.addActionBreakout();
+    } else if (strcmp(type_str, "ActionMoveToMostRecentSensedPosition") == 0) {
+        idx = bt.addActionMoveToMostRecentSensedPosition();
+    } else if (strcmp(type_str, "ActionMoveToNearestStandingPointToTarget") == 0) {
+        idx = bt.addActionMoveToNearestStandingPointToTarget();
+    } else if (strcmp(type_str, "ActionMoveToAttackTarget") == 0) {
+        idx = bt.addActionMoveToAttackTarget();
+    } else if (strcmp(type_str, "ActionChangeCover") == 0) {
+        idx = bt.addActionChangeCover();
+    // ── Batch 27 — aliases / P3 STUBs ────────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionHasValidRouteToNearTarget") == 0) {
+        idx = bt.addConditionHasValidRouteToTarget();  // alias: near-target = same path check
+    } else if (strcmp(type_str, "ConditionAngleNPCToTargetsAimLessThan") == 0
+            || strcmp(type_str, "ConditionTargetIsOnlyAccessibleCrouching") == 0
+            || strcmp(type_str, "ConditionHasFlankedVentCloseToPlayer") == 0
+            || strcmp(type_str, "ConditionHasVentCloseToAlien") == 0
+            || strcmp(type_str, "ConditionIsCoverExposed") == 0
+            || strcmp(type_str, "ConditionIsInTargetsWeaponRange") == 0) {
+        idx = bt.addActionFail();  // STUB: no AimComponent/VentRegistry/weapon_range

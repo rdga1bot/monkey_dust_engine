@@ -358,6 +358,7 @@ namespace ff {
     static constexpr uint8_t SHOULD_RANGED_AIM                      = 16; // Batch 23: keep weapon raised and aimed
     static constexpr uint8_t SI_REACTION_SET                        = 17; // Batch 23: si_reaction was updated this frame
     static constexpr uint8_t SHOULD_DO_SUSPECT_TARGET_RESPONSE      = 18; // Batch 23: initiate suspect target response
+    static constexpr uint8_t REQUESTING_COVER                       = 19; // Batch 24: request a cover position
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────

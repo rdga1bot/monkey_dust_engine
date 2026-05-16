@@ -655,3 +655,18 @@
             if (as) as->frame_flags |= (1ull << ff::SHOULD_DO_SUSPECT_TARGET_RESPONSE);
             result = BTStatus::Success; pc = nd.parent; continue;
         }
+
+        // ── Batch 24 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ActionRequestCover: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::REQUESTING_COVER);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ConditionHasValidCoverToChangeTo: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (!as->lcflags.test(lcf::IS_IN_COVER)) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }

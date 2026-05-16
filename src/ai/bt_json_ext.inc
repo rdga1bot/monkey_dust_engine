@@ -348,3 +348,17 @@
             || strcmp(type_str, "ConditionIsScriptedWithdrawal") == 0
             || strcmp(type_str, "ConditionIsPrimaryDamageControl") == 0) {
         idx = bt.addActionFail();  // STUB: condition with no backend returns Failure
+
+    // ── Batch 24 — new types ──────────────────────────────────────────────────
+    } else if (strcmp(type_str, "ActionRequestCover") == 0) {
+        idx = bt.addActionRequestCover();
+    } else if (strcmp(type_str, "ConditionHasValidCoverToChangeTo") == 0) {
+        idx = bt.addConditionHasValidCoverToChangeTo();
+    // ── Batch 24 — JSON-only STUBs (no ObjectiveComponent / CombatArea system) ─
+    } else if (strcmp(type_str, "ActionMoveToObjective") == 0
+            || strcmp(type_str, "ActionMoveToCurrentObjective") == 0) {
+        idx = bt.addActionFail();  // STUB: no ObjectiveComponent
+    } else if (strcmp(type_str, "ConditionObjectiveIsWithinDistance") == 0
+            || strcmp(type_str, "ConditionTargetIsInCombatArea") == 0
+            || strcmp(type_str, "ConditionIsInCombatArea") == 0) {
+        idx = bt.addActionFail();  // STUB: no CombatArea system

@@ -918,6 +918,14 @@ uint16_t BehaviorTree::addActionSuspectTargetResponse() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionSuspectTargetResponse); return i;
 }
 
+// ── Batch 24 ─────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addActionRequestCover() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionRequestCover); return i;
+}
+uint16_t BehaviorTree::addConditionHasValidCoverToChangeTo() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasValidCoverToChangeTo); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

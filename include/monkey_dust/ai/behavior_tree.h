@@ -461,6 +461,13 @@ enum class BTNodeType : uint8_t {
     //   ActionSuspectTargetResponse: sets ff::SHOULD_DO_SUSPECT_TARGET_RESPONSE; always Success
     //     data = 0 (unused)
     ActionSuspectTargetResponse,
+    // ── Batch 24 ──────────────────────────────────────────────────────────────
+    //   ActionRequestCover: sets ff::REQUESTING_COVER; always Running (wait for cover)
+    //     data = 0 (unused)
+    ActionRequestCover,
+    //   ConditionHasValidCoverToChangeTo: Success if !lcf::IS_IN_COVER (can seek new cover)
+    //     data = 0 (unused)
+    ConditionHasValidCoverToChangeTo,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -588,6 +595,8 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionRangedAim:              0 (unused; always Running)
 //   ActionSuspiciousItemReaction: SuspiciousItemReaction value (uint8_t)
 //   ActionSuspectTargetResponse:  0 (unused)
+//   ActionRequestCover:           0 (sets ff::REQUESTING_COVER; always Running)
+//   ConditionHasValidCoverToChangeTo: 0 (!lcf::IS_IN_COVER → Success)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -900,11 +909,16 @@ public:
 
     // ── Batch 23 ──────────────────────────────────────────────────────────────
     uint16_t addActionIdleTimeFacingTarget(uint32_t duration_ms);
+
     uint16_t addActionIdleTimeFacingTargetMostRecentSensedPosition(uint32_t duration_ms);
     uint16_t addActionIdleTimeFacingSuspiciousItem(uint32_t duration_ms);
     uint16_t addActionRangedAim();
     uint16_t addActionSuspiciousItemReaction(SuspiciousItemReaction reaction);
     uint16_t addActionSuspectTargetResponse();
+
+    // ── Batch 24 ──────────────────────────────────────────────────────────────
+    uint16_t addActionRequestCover();
+    uint16_t addConditionHasValidCoverToChangeTo();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

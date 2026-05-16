@@ -127,6 +127,8 @@ struct NpcMemoryComponent {
         return false;
     }
 
+    // Remove spatial memories AND events older than max_age_ms.
+    // Entries where (now_ms - timestamp_ms) > max_age_ms are discarded.
     void ExpireOlderThan(uint32_t now_ms, uint32_t max_age_ms) noexcept {
         uint8_t w = 0;
         for (uint8_t r = 0; r < spatial_count; ++r) {
@@ -134,6 +136,13 @@ struct NpcMemoryComponent {
                 spatial[w++] = spatial[r];
         }
         spatial_count = w;
+
+        w = 0;
+        for (uint8_t r = 0; r < event_count; ++r) {
+            if (now_ms - events[r].timestamp_ms <= max_age_ms)
+                events[w++] = events[r];
+        }
+        event_count = w;
     }
 
     void ClearAll() noexcept {

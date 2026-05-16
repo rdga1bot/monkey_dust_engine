@@ -1,4 +1,5 @@
 #include <monkey_dust/save/save_system.h>
+#include <monkey_dust/platform/md_log.h>
 #include <cstdio>
 #include <cstring>
 #include <chrono>
@@ -9,7 +10,12 @@ bool SaveSystem::SaveSync(const char* path) {
 }
 
 void SaveSystem::SaveAsync(const char* path) {
-    if (async_pending_) return;
+    if (async_pending_) {
+        MD_LOG(MD_LOG_WARNING,
+               "[SaveSystem] SaveAsync('%s') ignored — previous save still pending. "
+               "Call CheckAsyncDone() each frame to poll completion.", path);
+        return;
+    }
 
     strncpy(async_path_, path, sizeof(async_path_) - 1);
     async_path_[sizeof(async_path_) - 1] = '\0';

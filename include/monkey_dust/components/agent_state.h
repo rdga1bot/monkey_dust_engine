@@ -366,6 +366,11 @@ namespace ff {
     static constexpr uint8_t SHOULD_MOVE_NEAR_TARGET               = 22; // Batch 27: move to nearest standing point to target
     static constexpr uint8_t SHOULD_ATTACK_MOVE                    = 23; // Batch 27: move while attacking
     static constexpr uint8_t SHOULD_CHANGE_COVER                   = 24; // Batch 27: move to a different cover position
+    static constexpr uint8_t SHOULD_UPDATE_LAST_KNOWN              = 25; // Batch 28: refresh last known position from current sense
+    static constexpr uint8_t SHOULD_INVESTIGATE                    = 26; // Batch 28: request investigation of last known position
+    static constexpr uint8_t SHOULD_MARK_TARGET_LOST               = 27; // Batch 28: mark target as lost/gone
+    static constexpr uint8_t SHOULD_FORCE_RETREAT                  = 28; // Batch 28: force retreat from current threat
+    static constexpr uint8_t SHOULD_HOLD_POSITION                  = 29; // Batch 28: stop and hold current position
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────

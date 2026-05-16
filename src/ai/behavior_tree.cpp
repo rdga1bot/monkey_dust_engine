@@ -992,6 +992,38 @@ uint16_t BehaviorTree::addActionChangeCover() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionChangeCover); return i;
 }
 
+// ── Batch 28 ─────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionIsInTargetsWeaponRange(float max_dist_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionIsInTargetsWeaponRange);
+    m_nodes[i].data = static_cast<uint32_t>(max_dist_m * 10.f + 0.5f);
+    return i;
+}
+uint16_t BehaviorTree::addConditionIsCoverExposed() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsCoverExposed); return i;
+}
+uint16_t BehaviorTree::addConditionHasLostTarget(uint32_t max_elapsed_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHasLostTarget);
+    m_nodes[i].data = max_elapsed_ms;
+    return i;
+}
+uint16_t BehaviorTree::addActionUpdateLastKnownPosition() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionUpdateLastKnownPosition); return i;
+}
+uint16_t BehaviorTree::addActionRequestInvestigate() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionRequestInvestigate); return i;
+}
+uint16_t BehaviorTree::addActionMarkTargetLost() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionMarkTargetLost); return i;
+}
+uint16_t BehaviorTree::addActionForceRetreat() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionForceRetreat); return i;
+}
+uint16_t BehaviorTree::addActionHoldPosition() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionHoldPosition); return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

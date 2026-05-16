@@ -786,3 +786,66 @@
             if (as) as->frame_flags |= (1ull << ff::SHOULD_CHANGE_COVER);
             result = BTStatus::Running; goto exit_loop;
         }
+
+        // ── Batch 28 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ConditionIsInTargetsWeaponRange: {
+            const WorldTransform* wt = Registry::Get().try_get<WorldTransform>(e);
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!wt || !sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float dx    = sc->last_known_x - wt->x;
+            float dz    = sc->last_known_z - wt->z;
+            float max_d = static_cast<float>(nd.data) / 10.f;
+            result = (dx * dx + dz * dz <= max_d * max_d) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionIsCoverExposed: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!as || !sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            bool in_cover = as->lcflags.test(lcf::IS_IN_COVER);
+            bool visible  = sc->activation[0] >= sc->threshold_hi;
+            result = (in_cover && visible) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasLostTarget: {
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint32_t last_ms = sc->last_activated_ms[0];
+            if (last_ms == 0u) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint32_t elapsed = nowMs - last_ms;
+            result = (elapsed > nd.data) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionUpdateLastKnownPosition: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_UPDATE_LAST_KNOWN);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionRequestInvestigate: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_INVESTIGATE);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionMarkTargetLost: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_MARK_TARGET_LOST);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionForceRetreat: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_FORCE_RETREAT);
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ActionHoldPosition: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_HOLD_POSITION);
+            result = BTStatus::Running; goto exit_loop;
+        }

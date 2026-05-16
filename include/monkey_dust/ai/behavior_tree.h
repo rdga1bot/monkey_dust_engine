@@ -519,6 +519,31 @@ enum class BTNodeType : uint8_t {
     //   ActionChangeCover: sets ff::SHOULD_CHANGE_COVER; always Running
     //     data = 0 (unused)
     ActionChangeCover,
+    // ── Batch 28 ──────────────────────────────────────────────────────────────
+    //   ConditionIsInTargetsWeaponRange: dist(self→last_known) <= data*0.1m
+    //     data = max_dist_m * 10 (uint32, 1 decimal place)
+    ConditionIsInTargetsWeaponRange,
+    //   ConditionIsCoverExposed: IS_IN_COVER && activation[VISUAL] >= threshold_hi
+    //     data = 0 (unused)
+    ConditionIsCoverExposed,
+    //   ConditionHasLostTarget: now_ms - last_activated_ms[VISUAL] > data; never-seen → Failure
+    //     data = max_elapsed_ms (uint32)
+    ConditionHasLostTarget,
+    //   ActionUpdateLastKnownPosition: sets ff::SHOULD_UPDATE_LAST_KNOWN; always Running
+    //     data = 0 (unused)
+    ActionUpdateLastKnownPosition,
+    //   ActionRequestInvestigate: sets ff::SHOULD_INVESTIGATE; always Running
+    //     data = 0 (unused)
+    ActionRequestInvestigate,
+    //   ActionMarkTargetLost: sets ff::SHOULD_MARK_TARGET_LOST; always Running
+    //     data = 0 (unused)
+    ActionMarkTargetLost,
+    //   ActionForceRetreat: sets ff::SHOULD_FORCE_RETREAT; always Running
+    //     data = 0 (unused)
+    ActionForceRetreat,
+    //   ActionHoldPosition: sets ff::SHOULD_HOLD_POSITION; always Running
+    //     data = 0 (unused)
+    ActionHoldPosition,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -664,6 +689,14 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionMoveToNearestStandingPointToTarget: 0 (sets ff::SHOULD_MOVE_NEAR_TARGET; Running)
 //   ActionMoveToAttackTarget:     0 (sets ff::SHOULD_ATTACK_MOVE; Running)
 //   ActionChangeCover:            0 (sets ff::SHOULD_CHANGE_COVER; Running)
+//   ConditionIsInTargetsWeaponRange: max_dist_m * 10 (dist ≤ threshold → Success)
+//   ConditionIsCoverExposed:      0 (IS_IN_COVER && activation[0] >= threshold_hi)
+//   ConditionHasLostTarget:       max_elapsed_ms (now - last_activated[0] > ms; 0-ts → Failure)
+//   ActionUpdateLastKnownPosition: 0 (sets ff::SHOULD_UPDATE_LAST_KNOWN; Running)
+//   ActionRequestInvestigate:     0 (sets ff::SHOULD_INVESTIGATE; Running)
+//   ActionMarkTargetLost:         0 (sets ff::SHOULD_MARK_TARGET_LOST; Running)
+//   ActionForceRetreat:           0 (sets ff::SHOULD_FORCE_RETREAT; Running)
+//   ActionHoldPosition:           0 (sets ff::SHOULD_HOLD_POSITION; Running)
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -1009,6 +1042,16 @@ public:
     uint16_t addActionMoveToNearestStandingPointToTarget();
     uint16_t addActionMoveToAttackTarget();
     uint16_t addActionChangeCover();
+
+    // ── Batch 28 ──────────────────────────────────────────────────────────────
+    uint16_t addConditionIsInTargetsWeaponRange(float max_dist_m);
+    uint16_t addConditionIsCoverExposed();
+    uint16_t addConditionHasLostTarget(uint32_t max_elapsed_ms);
+    uint16_t addActionUpdateLastKnownPosition();
+    uint16_t addActionRequestInvestigate();
+    uint16_t addActionMarkTargetLost();
+    uint16_t addActionForceRetreat();
+    uint16_t addActionHoldPosition();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

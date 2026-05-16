@@ -416,8 +416,31 @@
     } else if (strcmp(type_str, "ConditionAngleNPCToTargetsAimLessThan") == 0
             || strcmp(type_str, "ConditionTargetIsOnlyAccessibleCrouching") == 0
             || strcmp(type_str, "ConditionHasFlankedVentCloseToPlayer") == 0
-            || strcmp(type_str, "ConditionHasVentCloseToAlien") == 0
-            || strcmp(type_str, "ConditionIsCoverExposed") == 0
-            || strcmp(type_str, "ConditionIsInTargetsWeaponRange") == 0) {
-        idx = bt.addActionFail();  // STUB: no AimComponent/VentRegistry/weapon_range
+            || strcmp(type_str, "ConditionHasVentCloseToAlien") == 0) {
+        idx = bt.addActionFail();  // STUB: no AimComponent/VentRegistry
+
+    // ── Batch 28 — promoted conditions ───────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionIsInTargetsWeaponRange") == 0) {
+        float dist_m = 5.f;
+        const char* dv = strstr(obj, "\"dist_m\"");
+        if (dv) { dv += 8; while (*dv == ' ' || *dv == ':') ++dv; dist_m = (float)atof(dv); }
+        idx = bt.addConditionIsInTargetsWeaponRange(dist_m);
+    } else if (strcmp(type_str, "ConditionIsCoverExposed") == 0) {
+        idx = bt.addConditionIsCoverExposed();
+    } else if (strcmp(type_str, "ConditionHasLostTarget") == 0) {
+        uint32_t max_ms = 3000u;
+        const char* mv = strstr(obj, "\"max_elapsed_ms\"");
+        if (mv) { mv += 16; while (*mv == ' ' || *mv == ':') ++mv; max_ms = (uint32_t)atoi(mv); }
+        idx = bt.addConditionHasLostTarget(max_ms);
+    // ── Batch 28 — new frame-flag actions ────────────────────────────────────
+    } else if (strcmp(type_str, "ActionUpdateLastKnownPosition") == 0) {
+        idx = bt.addActionUpdateLastKnownPosition();
+    } else if (strcmp(type_str, "ActionRequestInvestigate") == 0) {
+        idx = bt.addActionRequestInvestigate();
+    } else if (strcmp(type_str, "ActionMarkTargetLost") == 0) {
+        idx = bt.addActionMarkTargetLost();
+    } else if (strcmp(type_str, "ActionForceRetreat") == 0) {
+        idx = bt.addActionForceRetreat();
+    } else if (strcmp(type_str, "ActionHoldPosition") == 0) {
+        idx = bt.addActionHoldPosition();
     }

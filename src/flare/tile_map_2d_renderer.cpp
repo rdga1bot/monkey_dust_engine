@@ -195,6 +195,17 @@ void TileMap2DRenderer::SetAtlases(const FlareMap& map) {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 
+void TileMap2DRenderer::SetNpcSpriteSheet(const char* path) {
+    if (!path || !init_) return;
+    npc_atlas_slot_ = atlas_count_;  // first free binding slot
+    if (npc_atlas_slot_ >= MAX_ATLAS) { npc_atlas_slot_ = -1; return; }
+    npc_sprite_tex_ = MdLoadTexturePixelArt(path);  // uses stbi flip=1
+    bool ok = (npc_sprite_tex_.sdl_tex != nullptr) || (npc_sprite_tex_.id != 0);
+    if (!ok) { npc_atlas_slot_ = -1; return; }
+    fprintf(stderr, "[TileMap2DRenderer] NPC sprite sheet: %s (slot %d)\n",
+            path, npc_atlas_slot_);
+}
+
 void TileMap2DRenderer::SetNpcDots(const float* tile_x, const float* tile_z,
                                     int count, float dot_px)
 {
@@ -432,30 +443,56 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
         ++ni;
     }
 
-    // ── NPC dots: white quads using dummy atlas slot (atlas_count_ index) ─────
-    // atlas_idx = atlas_count_ → bound to sdl_dummy_tex_ (1×1 white, alpha=1).
+    // ── NPC overlay: sprite sheet or fallback white dot ───────────────────────
     if (npc_dot_count_ > 0 && ni < MAX_TILES) {
-        float ai  = (float)atlas_count_;  // dummy slot — always white
+        bool use_sprite = (npc_atlas_slot_ >= 0) && npc_sprite_tex_.sdl_tex;
+        float ai;
+        float u0, v0, u1, v1;
         float dpx = npc_dot_px_ > 1.f ? npc_dot_px_ : 1.f;
+
+        if (use_sprite) {
+            // Goblin stance frame: packed sprite coords + stbi flip correction.
+            ai  = (float)npc_atlas_slot_;
+            u0  = (float)NPC_F_X / (float)NPC_SHEET_W;
+            u1  = (float)(NPC_F_X + NPC_F_W) / (float)NPC_SHEET_W;
+            // stbi flip_v=true: v_gl = 1 - y_file / H
+            v0  = 1.f - (float)NPC_F_Y / (float)NPC_SHEET_H;
+            v1  = 1.f - (float)(NPC_F_Y + NPC_F_H) / (float)NPC_SHEET_H;
+        } else {
+            ai  = (float)atlas_count_;  // dummy slot — opaque white
+            u0 = 0.f; v0 = 0.f; u1 = 1.f; v1 = 1.f;
+        }
+
         for (int di = 0; di < npc_dot_count_ && ni < MAX_TILES; ++di) {
             float col = npc_dot_x_[di], row = npc_dot_z_[di];
             float ax  = (float)((col - row) * (float)TILE_W_HALF) * scale + origin_x;
             float ay  = (float)((col + row) * (float)TILE_H_HALF) * scale + origin_y;
-            // center the dot on the tile diamond
-            float x_tl = ax + (float)TILE_W_HALF * scale * 0.5f - dpx * 0.5f;
-            float y_tl = ay + (float)TILE_H_HALF * scale * 0.5f - dpx * 0.5f;
+
+            float x_tl, y_tl, sw, sh;
+            if (use_sprite) {
+                // Anchor at tile center; subtract sprite offset (like tile offset_x/y).
+                sw    = (float)NPC_F_W * scale;
+                sh    = (float)NPC_F_H * scale;
+                x_tl  = ax - (float)NPC_F_OX * scale;
+                y_tl  = ay - (float)NPC_F_OY * scale;
+            } else {
+                sw = sh = dpx;
+                x_tl = ax + (float)TILE_W_HALF * scale * 0.5f - dpx * 0.5f;
+                y_tl = ay + (float)TILE_H_HALF * scale * 0.5f - dpx * 0.5f;
+            }
+
             for (int vi = 0; vi < 6; ++vi) {
                 float* v = (float*)(scratch + ((size_t)ni * 6 + (size_t)vi) * (size_t)STRIDE_SDL);
                 v[0]  = CORNERS[vi][0];
                 v[1]  = CORNERS[vi][1];
                 v[2]  = x_tl;
                 v[3]  = y_tl;
-                v[4]  = dpx;
-                v[5]  = dpx;
-                v[6]  = 0.f;   // uv min
-                v[7]  = 0.f;
-                v[8]  = 1.f;   // uv max
-                v[9]  = 1.f;
+                v[4]  = sw;
+                v[5]  = sh;
+                v[6]  = u0;
+                v[7]  = v0;
+                v[8]  = u1;
+                v[9]  = v1;
                 v[10] = ai;
             }
             ++ni;
@@ -490,13 +527,19 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
         cb.BindVertexBuffer(&sdl_vbuf_);
 
         // Bind 4 atlas samplers; pad unused slots with the 1×1 dummy texture.
+        // If NPC sprite sheet is loaded, override its slot with the sprite texture.
         SDL_GPUTextureSamplerBinding bindings[4];
         for (int i = 0; i < 4; ++i) {
-            bool has = (i < atlas_count_) && atlases_[i].sdl_tex;
-            bindings[i].texture = has ? (SDL_GPUTexture*)atlases_[i].sdl_tex
-                                      : (SDL_GPUTexture*)sdl_dummy_tex_;
-            bindings[i].sampler = has ? (SDL_GPUSampler*)atlases_[i].sdl_sampler
-                                      : (SDL_GPUSampler*)sdl_dummy_sampler_;
+            if (i == npc_atlas_slot_ && npc_sprite_tex_.sdl_tex) {
+                bindings[i].texture = (SDL_GPUTexture*)npc_sprite_tex_.sdl_tex;
+                bindings[i].sampler = (SDL_GPUSampler*)npc_sprite_tex_.sdl_sampler;
+            } else {
+                bool has = (i < atlas_count_) && atlases_[i].sdl_tex;
+                bindings[i].texture = has ? (SDL_GPUTexture*)atlases_[i].sdl_tex
+                                          : (SDL_GPUTexture*)sdl_dummy_tex_;
+                bindings[i].sampler = has ? (SDL_GPUSampler*)atlases_[i].sdl_sampler
+                                          : (SDL_GPUSampler*)sdl_dummy_sampler_;
+            }
         }
         cb.BindFragmentSamplers(0, bindings, 4);
 

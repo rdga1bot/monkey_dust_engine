@@ -46,9 +46,14 @@ public:
                 float origin_x, float origin_y, float scale,
                 int vp_w, int vp_h, uint8_t layer_mask = 0xFF);
 
-    // Set NPC dot positions (tile coords) to overlay on next Render() call.
-    // Dots are rendered as dot_px × dot_px white quads using the dummy atlas slot.
-    // Call each frame before Render(). count is clamped to MAX_NPC_DOTS.
+    // Load a sprite sheet for NPC overlay rendering.
+    // Must be called after SetAtlases(). Uses atlas binding slot atlas_count_
+    // (first unused slot). Call once after map load.
+    void SetNpcSpriteSheet(const char* path);
+
+    // Set NPC positions (tile coords) for overlay rendering on next Render().
+    // If SetNpcSpriteSheet() was called, renders the sprite; otherwise white dots.
+    // count is clamped to MAX_NPC_DOTS.
     static constexpr int MAX_NPC_DOTS = 64;
     void SetNpcDots(const float* tile_x, const float* tile_z,
                     int count, float dot_px = 10.f);
@@ -89,6 +94,15 @@ private:
     static constexpr int MAX_ATLAS  = 4;
     MdTexture atlases_[MAX_ATLAS]   = {};
     int       atlas_count_          = 0;
+
+    // NPC sprite sheet (atlas slot = npc_atlas_slot_; -1 = none loaded).
+    MdTexture npc_sprite_tex_;
+    int       npc_atlas_slot_       = -1;
+    // Hardcoded frame: goblin stance dir=5 frame=0 from fantasycore animations.
+    // (x,y,w,h,ox,oy) in pixels; sheet size 1316×3185.
+    static constexpr int NPC_F_X=326, NPC_F_Y=604, NPC_F_W=99, NPC_F_H=93;
+    static constexpr int NPC_F_OX=46, NPC_F_OY=77;
+    static constexpr int NPC_SHEET_W=1316, NPC_SHEET_H=3185;
 
     float npc_dot_x_[MAX_NPC_DOTS]  = {};
     float npc_dot_z_[MAX_NPC_DOTS]  = {};

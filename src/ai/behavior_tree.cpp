@@ -926,6 +926,17 @@ uint16_t BehaviorTree::addConditionHasValidCoverToChangeTo() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasValidCoverToChangeTo); return i;
 }
 
+// ── Batch 25 ─────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionHasScript() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasScript); return i;
+}
+uint16_t BehaviorTree::addActionScript(uint32_t script_name_hash) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionScript);
+    m_nodes[i].data = script_name_hash;
+    return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

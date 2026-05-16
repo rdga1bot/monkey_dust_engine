@@ -670,3 +670,18 @@
             result = (!as->lcflags.test(lcf::IS_IN_COVER)) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
+
+        // ── Batch 25 ─────────────────────────────────────────────────────────
+
+        case BTNodeType::ConditionHasScript: {
+            const LuaScriptComponent* lsc = Registry::Get().try_get<LuaScriptComponent>(e);
+            result = (lsc && lsc->script_id != 0u) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionScript: {
+            const char* name = BTLuaScriptRegistry::Get().Lookup(nd.data);
+            if (!name) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = LuaSystem::Get().CallAction(name, e);
+            pc = nd.parent; continue;
+        }

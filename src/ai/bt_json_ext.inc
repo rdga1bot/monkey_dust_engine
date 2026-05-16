@@ -362,3 +362,12 @@
             || strcmp(type_str, "ConditionTargetIsInCombatArea") == 0
             || strcmp(type_str, "ConditionIsInCombatArea") == 0) {
         idx = bt.addActionFail();  // STUB: no CombatArea system
+
+    // ── Batch 25 — Lua script integration ────────────────────────────────────
+    } else if (strcmp(type_str, "ConditionHasScript") == 0) {
+        idx = bt.addConditionHasScript();
+    } else if (strcmp(type_str, "ActionScript") == 0) {
+        char script[48] = "";
+        read_str_r(obj, obj_end, "\"script\"", script, sizeof(script));
+        uint32_t hash = BTLuaScriptRegistry::Get().Register(script);
+        idx = bt.addActionScript(hash);

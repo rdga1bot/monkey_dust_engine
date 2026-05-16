@@ -468,6 +468,13 @@ enum class BTNodeType : uint8_t {
     //   ConditionHasValidCoverToChangeTo: Success if !lcf::IS_IN_COVER (can seek new cover)
     //     data = 0 (unused)
     ConditionHasValidCoverToChangeTo,
+    // ── Batch 25 ──────────────────────────────────────────────────────────────
+    //   ConditionHasScript: Success if entity has LuaScriptComponent with script_id != 0
+    //     data = 0 (unused)
+    ConditionHasScript,
+    //   ActionScript: calls LuaSystem::CallAction(name, e) via BTLuaScriptRegistry
+    //     data = fnv1a(script_name)
+    ActionScript,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -597,6 +604,8 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ActionSuspectTargetResponse:  0 (unused)
 //   ActionRequestCover:           0 (sets ff::REQUESTING_COVER; always Running)
 //   ConditionHasValidCoverToChangeTo: 0 (!lcf::IS_IN_COVER → Success)
+//   ConditionHasScript:           0 (LuaScriptComponent::script_id != 0 → Success)
+//   ActionScript:                 fnv1a(script_name) → BTLuaScriptRegistry lookup → CallAction
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -919,6 +928,10 @@ public:
     // ── Batch 24 ──────────────────────────────────────────────────────────────
     uint16_t addActionRequestCover();
     uint16_t addConditionHasValidCoverToChangeTo();
+
+    // ── Batch 25 ──────────────────────────────────────────────────────────────
+    uint16_t addConditionHasScript();
+    uint16_t addActionScript(uint32_t script_name_hash);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

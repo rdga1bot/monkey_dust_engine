@@ -51,4 +51,7 @@ struct TerrainGenParams {
     float lacunarity    = 2.00f;
     float sea_level     = 0.0f;    // heights below this → flatten to 0
     int   seed          = 42;
+    // NavMesh Recast parameters — larger cs = faster but lower quality
+    float nav_cs        = 0.5f;    // cell size (m); 0.3=precise, 1.0=fast/test
+    float nav_ch        = 0.2f;    // cell height (m)
 };

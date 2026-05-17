@@ -39,7 +39,7 @@ static inline float s_grad2(int hash, float x, float y) {
     int h = hash & 7;
     float u = h < 4 ? x : y;
     float v = h < 4 ? y : x;
-    return ((h & 1) ? -u : u) + ((h & 2) ? -2.0f * v : 2.0f * v);
+    return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
 }
 
 float SimplexNoise2(float x, float y) {
@@ -209,10 +209,11 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     out.loaded = false;  // Upload() sets this
 
     // ── 4. NavMesh ────────────────────────────────────────────────────────────
-    bool nav_ok = out.navmesh.Build(
+    // Use BuildTileMap: no geometry storage limit; terrain is static (no RebuildTile).
+    bool nav_ok = out.navmesh.BuildTileMap(
         s_nav_pos, TERRAIN_VERTS,
         s_nav_tri, TERRAIN_TRIS,
-        0.3f, 0.2f
+        p.nav_cs, p.nav_ch
     );
 
     // Store vertex/index data for TerrainGen_Upload (static buffers remain valid
@@ -221,17 +222,11 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     return nav_ok;
 }
 
-// CONSTRAINT: TerrainGen_Upload must be called from the render thread before
-// the next TerrainGen_Build (static staging buffers are single-use).
-void TerrainGen_Upload(TerrainChunk& chunk) {
-    chunk.vbo.Init(0x8892u /*GL_ARRAY_BUFFER*/,
-                   s_verts_buf,
-                   sizeof(TerrainVertex) * TERRAIN_VERTS);
-    chunk.ibo.Init(0x8893u /*GL_ELEMENT_ARRAY_BUFFER*/,
-                   s_idx_buf,
-                   sizeof(uint16_t) * TERRAIN_IDX);
-    chunk.loaded = true;
-}
+// Accessors for the staging buffers — used by terrain_upload.cpp (GPU side).
+// Kept here so GPU code does not share this translation unit (avoids pulling
+// glad symbols into test binaries that only call TerrainGen_Build).
+const TerrainVertex* TerrainGen_StagedVerts()   { return s_verts_buf; }
+const uint16_t*      TerrainGen_StagedIndices() { return s_idx_buf;   }
 
 // ── TerrainChunk::SampleHeight ────────────────────────────────────────────────
 

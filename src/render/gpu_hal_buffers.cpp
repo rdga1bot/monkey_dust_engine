@@ -241,6 +241,7 @@ void GpuStaticBuffer::BindVertex(uint32_t slot, uint32_t stride, uint64_t offset
 
 // ── GpuTexture ────────────────────────────────────────────────────────────────
 
+#ifndef MD_SDL_GPU
 static GLenum ToGLFilter(GpuSamplerDesc::Filter f, bool is_min) {
     switch (f) {
     case GpuSamplerDesc::Filter::NEAREST:       return GL_NEAREST;
@@ -253,13 +254,18 @@ static GLenum ToGLFilter(GpuSamplerDesc::Filter f, bool is_min) {
 static GLenum ToGLWrap(GpuSamplerDesc::Wrap w) {
     return (w == GpuSamplerDesc::Wrap::CLAMP_TO_EDGE) ? GL_CLAMP_TO_EDGE : GL_REPEAT;
 }
+#endif // !MD_SDL_GPU
 
 void GpuTexture::ApplySampler(const GpuSamplerDesc& s) const {
+#ifndef MD_SDL_GPU
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, (GLint)ToGLFilter(s.min_filter, true));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, (GLint)ToGLFilter(s.mag_filter, false));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,     (GLint)ToGLWrap(s.wrap_s));
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,     (GLint)ToGLWrap(s.wrap_t));
     if (s.gen_mipmap) glGenerateMipmap(GL_TEXTURE_2D);
+#else
+    (void)s;  // sampler state baked into SDL_GPUSampler at creation
+#endif
 }
 
 bool GpuTexture::InitFromFile(const char* path, const GpuSamplerDesc& s) {
@@ -340,13 +346,19 @@ void GpuTexture::Shutdown() {
     if (sdl_sampler_) { SDL_ReleaseGPUSampler(dev, sdl_sampler_); sdl_sampler_ = nullptr; }
     if (sdl_tex_)     { SDL_ReleaseGPUTexture(dev, sdl_tex_);     sdl_tex_     = nullptr; }
 #endif
+#ifndef MD_SDL_GPU
     if (id_) { glDeleteTextures(1, &id_); id_ = 0; }
+#endif
     w_ = h_ = 0;
 }
 
 void GpuTexture::Bind(uint32_t unit) const {
+#ifndef MD_SDL_GPU
     if (id_) {
         glActiveTexture(GL_TEXTURE0 + unit);
         glBindTexture(GL_TEXTURE_2D, id_);
     }
+#else
+    (void)unit;
+#endif
 }

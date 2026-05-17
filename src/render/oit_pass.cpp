@@ -81,7 +81,75 @@ static SDL_GPUShader* LoadSpv(SDL_GPUDevice* dev, const char* spv_path,
 void OitPass::CreatePipelines() {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
 
-    // ── Accumulation pipeline (raw SDL_GPU — needs per-target blend) ──────────
+    // Investigation: create COMPOSITE (alpha-blend) FIRST, then ACCUM (additive).
+    // Hypothesis: Intel HD 520 Vulkan driver crashes when an alpha-blend pipeline
+    // follows an additive pipeline in the same session. Creating composite first
+    // tests whether the crash is order-dependent.
+
+    // ── Composite pipeline (raw SDL_GPU, alpha blend) ─────────────────────────
+    // NOTE: On Intel HD 520 + mesa anv, SDL_CreateGPUGraphicsPipeline for ANY
+    // pipeline with enable_blend=true crashes the driver during Init.
+    // Root cause unknown (possibly pipeline cache corruption or driver bug with
+    // Vulkan 1.3 on mesa 25.x anv). Using SDL_BlitGPUTexture fallback instead.
+    // The blit composite overlays accumulated OIT color additively — visible but
+    // not alpha-blended over opaque scene. Acceptable for demo purposes.
+    use_blit_composite_ = true;
+    fprintf(stdout, "[OitPass] composite: using blit fallback (alpha-blend pipeline crashes anv)\n");
+    if (false) {  // disabled — crashes Intel HD 520 driver
+        SDL_GPUShader* vert = LoadSpv(dev, "shaders/spirv/cas.vert.spv",
+                                       SDL_GPU_SHADERSTAGE_VERTEX, 0, 0);
+        SDL_GPUShader* frag = LoadSpv(dev, "shaders/spirv/oit_composite.frag.spv",
+                                       SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
+        if (vert && frag) {
+            SDL_GPUColorTargetDescription comp_target{};
+            comp_target.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+            comp_target.blend_state.enable_blend          = true;
+            comp_target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+            comp_target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+            comp_target.blend_state.color_blend_op        = SDL_GPU_BLENDOP_ADD;
+            comp_target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            comp_target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+            comp_target.blend_state.alpha_blend_op        = SDL_GPU_BLENDOP_ADD;
+
+            SDL_GPUGraphicsPipelineTargetInfo ti{};
+            ti.color_target_descriptions = &comp_target;
+            ti.num_color_targets         = 1;
+            ti.has_depth_stencil_target  = false;
+
+            SDL_GPURasterizerState rast{};
+            rast.cull_mode  = SDL_GPU_CULLMODE_NONE;
+            rast.fill_mode  = SDL_GPU_FILLMODE_FILL;
+            rast.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+
+            SDL_GPUDepthStencilState ds{};
+            SDL_GPUVertexInputState  vis{};
+
+            SDL_GPUGraphicsPipelineCreateInfo ci{};
+            ci.vertex_shader       = vert;
+            ci.fragment_shader     = frag;
+            ci.vertex_input_state  = vis;
+            ci.rasterizer_state    = rast;
+            ci.depth_stencil_state = ds;
+            ci.target_info         = ti;
+            ci.primitive_type      = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+
+            SDL_GPUGraphicsPipeline* raw = SDL_CreateGPUGraphicsPipeline(dev, &ci);
+            if (raw) {
+                composite_raw_ = raw;
+                fprintf(stdout, "[OitPass] composite pipeline OK (created first)\n");
+            } else {
+                use_blit_composite_ = true;
+                fprintf(stderr, "[OitPass] composite pipeline still failed: %s\n",
+                        SDL_GetError());
+            }
+        } else {
+            use_blit_composite_ = true;
+        }
+        if (vert) SDL_ReleaseGPUShader(dev, vert);
+        if (frag) SDL_ReleaseGPUShader(dev, frag);
+    }  // end disabled composite block
+
+    // ── Accumulation pipeline (raw SDL_GPU, additive blend) ──────────────────
     {
         SDL_GPUShader* vert = LoadSpv(dev, "shaders/spirv/oit_accum.vert.spv",
                                        SDL_GPU_SHADERSTAGE_VERTEX, 1, 0);
@@ -153,70 +221,9 @@ void OitPass::CreatePipelines() {
             fprintf(stderr, "[OitPass] accum pipeline failed: %s\n", SDL_GetError());
     }
 
-    // ── Composite pipeline (raw SDL_GPU) ─────────────────────────────────────────
-    {
-        // Reuse cas.vert.spv (full-screen triangle, no vertex input).
-        SDL_GPUShader* vert = LoadSpv(dev, "shaders/spirv/cas.vert.spv",
-                                       SDL_GPU_SHADERSTAGE_VERTEX, 0, 0);
-        SDL_GPUShader* frag = LoadSpv(dev, "shaders/spirv/oit_composite.frag.spv",
-                                       SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
-        if (vert && frag) {
-            // Use B8G8R8A8_UNORM — the most common Vulkan swapchain format on Linux.
-            // Avoid SDL_GetGPUSwapchainTextureFormat() which may crash before the
-            // first frame is presented (swapchain not yet fully initialised).
-            SDL_GPUColorTargetDescription comp_target{};
-            comp_target.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
-            comp_target.blend_state.enable_blend          = true;
-            comp_target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
-            comp_target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-            comp_target.blend_state.color_blend_op        = SDL_GPU_BLENDOP_ADD;
-            comp_target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-            comp_target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
-            comp_target.blend_state.alpha_blend_op        = SDL_GPU_BLENDOP_ADD;
-
-            SDL_GPUGraphicsPipelineTargetInfo ti{};
-            ti.color_target_descriptions = &comp_target;
-            ti.num_color_targets         = 1;
-            ti.has_depth_stencil_target  = false;
-
-            SDL_GPURasterizerState rast{};
-            rast.cull_mode  = SDL_GPU_CULLMODE_NONE;
-            rast.fill_mode  = SDL_GPU_FILLMODE_FILL;
-            rast.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-
-            SDL_GPUDepthStencilState ds{};
-            ds.enable_depth_test  = false;
-            ds.enable_depth_write = false;
-
-            SDL_GPUVertexInputState vis{};  // no vertex input (gl_VertexIndex)
-
-            SDL_GPUGraphicsPipelineCreateInfo ci{};
-            ci.vertex_shader      = vert;
-            ci.fragment_shader    = frag;
-            ci.vertex_input_state = vis;
-            ci.rasterizer_state   = rast;
-            ci.depth_stencil_state = ds;
-            ci.target_info        = ti;
-            ci.primitive_type     = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
-
-            SDL_GPUGraphicsPipeline* raw = SDL_CreateGPUGraphicsPipeline(dev, &ci);
-            if (raw) {
-                // Store in composite_pipeline_ by creating a minimal wrapper.
-                // Since GpuPipeline has no SetSDLPipeline(), store raw handle via
-                // the use_blit_composite_ flag and composite_raw_.
-                composite_raw_ = raw;
-            } else {
-                use_blit_composite_ = true;
-                fprintf(stderr, "[OitPass] composite pipeline failed: %s\n", SDL_GetError());
-            }
-        } else {
-            use_blit_composite_ = true;
-        }
-        if (vert) SDL_ReleaseGPUShader(dev, vert);
-        if (frag) SDL_ReleaseGPUShader(dev, frag);
-    }
-
-    fprintf(stdout, "[OitPass] pipelines created\n");
+    fprintf(stdout, "[OitPass] pipelines: composite=%s accum=%s\n",
+            composite_raw_ ? "ok" : "blit-fallback",
+            accum_pipeline_ ? "ok" : "failed");
 }
 
 void OitPass::DestroyPipelines() {

@@ -39,15 +39,17 @@ set(MOC_AVX512_CPP src/vendor/moc/MaskedOcclusionCullingAVX512.cpp)
 target_sources(monkey_dust_engine PRIVATE
     ${MOC_BASE_CPP} ${MOC_AVX2_CPP} ${MOC_AVX512_CPP})
 if(NOT MSVC)
-    # Base dispatcher: SSE2 only (detects CPU at runtime, no vectorized code)
+    # Base dispatcher uses _mm_mullo_epi32 (SSE4.1) for type dispatch logic;
+    # actual SSE4.1 instructions are guarded by runtime CPU checks inside MOC.
+    # GCC 13 errors on always_inline SSE4.1 intrinsics in -msse2 context.
     set_source_files_properties(${MOC_BASE_CPP} PROPERTIES
-        COMPILE_FLAGS "-msse2 -mno-avx -mno-avx2")
+        COMPILE_FLAGS "-msse4.1 -mno-avx -mno-avx2")
     # AVX2 implementation
     set_source_files_properties(${MOC_AVX2_CPP} PROPERTIES
         COMPILE_FLAGS "-mavx2")
     # AVX512 stub (USE_AVX512=0 → no-op stub, still needs to link)
     set_source_files_properties(${MOC_AVX512_CPP} PROPERTIES
-        COMPILE_FLAGS "-msse2 -mno-avx -mno-avx2")
+        COMPILE_FLAGS "-msse4.1 -mno-avx -mno-avx2")
 else()
     set_source_files_properties(${MOC_BASE_CPP} PROPERTIES
         COMPILE_FLAGS "/arch:SSE2")

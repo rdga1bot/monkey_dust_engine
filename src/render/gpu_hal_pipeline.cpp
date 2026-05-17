@@ -358,7 +358,8 @@ bool GpuComputePipeline::Create(const Desc& desc) {
             ci.threadcount_y                  = desc.threadcount_y;
             ci.threadcount_z                  = desc.threadcount_z;
             sdl_pipeline_ = SDL_CreateGPUComputePipeline(dev, &ci);
-            free(code);
+            // Respect SPIR-V cache: only free if not cache-owned.
+            if (!SpvIsCached(code)) free(code);
             if (!sdl_pipeline_)
                 MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] SDL_CreateGPUComputePipeline %s: %s",
                        desc.glsl_path, SDL_GetError());

@@ -54,4 +54,8 @@ struct TerrainGenParams {
     // NavMesh Recast parameters — larger cs = faster but lower quality
     float nav_cs        = 0.5f;    // cell size (m); 0.3=precise, 1.0=fast/test
     float nav_ch        = 0.2f;    // cell height (m)
+    // World-space origin offset — shifts all vertex positions without moving noise.
+    // Use to centre the chunk on a specific world location (e.g. Flare map centre).
+    float world_offset_x = 0.f;
+    float world_offset_z = 0.f;
 };

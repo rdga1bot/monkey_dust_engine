@@ -129,8 +129,8 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
         for (int col = 0; col <= TERRAIN_GRID; ++col) {
             int vi = s_idx(col, row);
             float h = out.heightmap.h[vi];
-            float wx = world_origin_x + col * TERRAIN_STEP;
-            float wz = world_origin_z + row * TERRAIN_STEP;
+            float wx = world_origin_x + col * TERRAIN_STEP + p.world_offset_x;
+            float wz = world_origin_z + row * TERRAIN_STEP + p.world_offset_z;
 
             s_verts_buf[vi].x = wx;
             s_verts_buf[vi].y = h;
@@ -188,8 +188,11 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
                     s_verts_buf[idx].nz += nz;
                 }
             };
-            accum_normal(bl, br, tl);
-            accum_normal(br, tr, tl);
+            // Reversed winding for normal accumulation so normals point +Y (upward).
+            // Vertex winding in world space (XZ plane, Y up) is CW for the render
+            // pipeline (SDL_GPU Vulkan uses Y-down NDC after viewport flip → no cull).
+            accum_normal(bl, tl, br);
+            accum_normal(tl, tr, br);
 
             ii += 6;
         }
@@ -209,17 +212,11 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     out.loaded = false;  // Upload() sets this
 
     // ── 4. NavMesh ────────────────────────────────────────────────────────────
-    // Use BuildTileMap: no geometry storage limit; terrain is static (no RebuildTile).
-    bool nav_ok = out.navmesh.BuildTileMap(
-        s_nav_pos, TERRAIN_VERTS,
-        s_nav_tri, TERRAIN_TRIS,
-        p.nav_cs, p.nav_ch
-    );
-
-    // Store vertex/index data for TerrainGen_Upload (static buffers remain valid
-    // since Upload must be called synchronously before the next Build call).
-    out.loaded = false;  // Upload sets true
-    return nav_ok;
+    // Non-fatal: dtCreateNavMeshData returns false when zero walkable polys
+    // (steep or varied terrain). Geometry + heightmap are always valid.
+    out.navmesh.BuildTileMap(s_nav_pos, TERRAIN_VERTS, s_nav_tri, TERRAIN_TRIS,
+                             p.nav_cs, p.nav_ch);
+    return true;
 }
 
 // Accessors for the staging buffers — used by terrain_upload.cpp (GPU side).

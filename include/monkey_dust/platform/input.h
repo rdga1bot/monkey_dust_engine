@@ -62,6 +62,10 @@
 #  define KEY_RIGHT_CONTROL SDL_SCANCODE_RCTRL
 #  define KEY_LEFT_SHIFT    SDL_SCANCODE_LSHIFT
 #  define KEY_RIGHT_SHIFT   SDL_SCANCODE_RSHIFT
+#  define KEY_LEFT          SDL_SCANCODE_LEFT
+#  define KEY_RIGHT         SDL_SCANCODE_RIGHT
+#  define KEY_UP            SDL_SCANCODE_UP
+#  define KEY_DOWN          SDL_SCANCODE_DOWN
    // Mouse buttons: Raylib 0-based → SDL3 1-based macros
 #  define MOUSE_BUTTON_LEFT   SDL_BUTTON_LEFT
 #  define MOUSE_BUTTON_RIGHT  SDL_BUTTON_RIGHT
@@ -71,11 +75,13 @@
    // _next[] is filled by EventWatcher during Raylib's SDL_PollEvent pump.
    // input_begin_frame() swaps _next → s_keys, then clears _next.
    namespace _sdl3_input {
-       inline bool s_keys [SDL_SCANCODE_COUNT] = {};  // current frame (game reads)
-       inline bool s_next [SDL_SCANCODE_COUNT] = {};  // filled by EventWatcher
-       inline bool s_mouse[6]                  = {};
-       inline bool s_mnext[6]                  = {};
-       inline bool s_quit                      = false;
+       inline bool  s_keys [SDL_SCANCODE_COUNT] = {};  // current frame (game reads)
+       inline bool  s_next [SDL_SCANCODE_COUNT] = {};  // filled by EventWatcher
+       inline bool  s_mouse[6]                  = {};
+       inline bool  s_mnext[6]                  = {};
+       inline bool  s_quit                      = false;
+       inline float s_scroll_y                  = 0.f;  // accumulated per frame
+       inline float s_scroll_accum              = 0.f;  // written by watcher
    }
 
    // SDL event watcher — registered once at input_init().
@@ -93,6 +99,8 @@
            int b = (int)ev->button.button;
            if (b > 0 && b < 6) _sdl3_input::s_mnext[b] = true;
        }
+       if (ev->type == SDL_EVENT_MOUSE_WHEEL)
+           _sdl3_input::s_scroll_accum += ev->wheel.y;
        return true;  // non-consuming: Raylib also gets the event
    }
 
@@ -108,6 +116,8 @@
        memcpy(_sdl3_input::s_mouse, _sdl3_input::s_mnext, sizeof(_sdl3_input::s_mouse));
        memset(_sdl3_input::s_next,  0, sizeof(_sdl3_input::s_next));
        memset(_sdl3_input::s_mnext, 0, sizeof(_sdl3_input::s_mnext));
+       _sdl3_input::s_scroll_y     = _sdl3_input::s_scroll_accum;
+       _sdl3_input::s_scroll_accum = 0.f;
    }
 
    inline bool input_key_down(int key) {
@@ -118,11 +128,12 @@
        return (key >= 0 && key < SDL_SCANCODE_COUNT)
               ? _sdl3_input::s_keys[key] : false;
    }
-   inline bool input_mouse_pressed(int btn) {
+   inline bool  input_mouse_pressed(int btn) {
        return (btn > 0 && btn < 6) ? _sdl3_input::s_mouse[btn] : false;
    }
-   inline float input_mouse_x() { float x=0; SDL_GetMouseState(&x, nullptr); return x; }
-   inline float input_mouse_y() { float y=0; SDL_GetMouseState(nullptr, &y); return y; }
-   inline bool  input_should_quit() { return _sdl3_input::s_quit; }
+   inline float input_mouse_x()       { float x=0; SDL_GetMouseState(&x, nullptr); return x; }
+   inline float input_mouse_y()       { float y=0; SDL_GetMouseState(nullptr, &y); return y; }
+   inline float input_get_scroll_y()  { return _sdl3_input::s_scroll_y; }
+   inline bool  input_should_quit()   { return _sdl3_input::s_quit; }
 
 #endif // USE_SDL3

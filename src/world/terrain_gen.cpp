@@ -95,11 +95,11 @@ static inline int s_idx(int col, int row) { return row * (TERRAIN_GRID + 1) + co
 
 static void s_splat(float h, float amp, float* splat) {
     float t = (amp > 0.0f) ? (h / amp) : 0.0f;  // [0,1]
-    // grass dominant at low elevation, rock mid, snow at top
-    float grass = 1.0f - t * 2.0f;  if (grass < 0.0f) grass = 0.0f;
-    float snow  = (t - 0.65f) * 3.0f; if (snow < 0.0f) snow = 0.0f; if (snow > 1.0f) snow = 1.0f;
-    float rock  = 1.0f - grass - snow; if (rock < 0.0f) rock = 0.0f;
-    float dirt  = 0.0f;
+    // Low → grass+dirt, mid → grass+rock, high → rock only (no snow unless amp very high)
+    float grass = 1.0f - t * 1.6f;  if (grass < 0.0f) grass = 0.0f;
+    float dirt  = (1.0f - t) * 0.3f;
+    float rock  = t * 0.9f;         if (rock  > 1.0f) rock  = 1.0f;
+    float snow  = 0.0f;  // removed — appears only when amp > ~12m
     float sum   = grass + rock + dirt + snow;
     if (sum > 0.0f) { grass /= sum; rock /= sum; dirt /= sum; snow /= sum; }
     splat[0] = grass; splat[1] = rock; splat[2] = dirt; splat[3] = snow;

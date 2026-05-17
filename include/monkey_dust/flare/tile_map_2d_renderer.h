@@ -67,6 +67,18 @@ public:
                        const float* rot_y,  const uint8_t* is_moving,
                        int count, float now_s);
 
+    // FL-2: fadeOverlapTile — fade OBJECT-layer tiles when the player is under them.
+    // Pass the player's tile-grid col and row (integer).  Call before Render().
+    // fade_alpha: transparency of overlapping tiles (0.0=invisible, 1.0=opaque).
+    // Pass col=-1 to disable fading.
+    static constexpr float FADE_ALPHA_DEFAULT = 0.35f;
+    void SetPlayerTilePos(int col, int row,
+                          float fade_alpha = FADE_ALPHA_DEFAULT) noexcept {
+        player_tile_col_ = col;
+        player_tile_row_ = row;
+        fade_alpha_      = fade_alpha;
+    }
+
 private:
     bool init_ = false;
 
@@ -116,6 +128,11 @@ private:
     uint8_t npc_moving_[MAX_NPC_DOTS] = {};
     int     npc_dot_count_            = 0;
     float   npc_now_s_                = 0.f;
+
+    // FL-2: fadeOverlapTile state
+    int   player_tile_col_ = -1;   // -1 = fading disabled
+    int   player_tile_row_ = -1;
+    float fade_alpha_      = FADE_ALPHA_DEFAULT;
 
     // OpenGL instance buffer layout (stride=36, 1 entry/tile):
     static constexpr int STRIDE     = 36;

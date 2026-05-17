@@ -18,14 +18,22 @@ static constexpr int TILE_W_HALF = 96;
 static constexpr int TILE_H_HALF = 48;
 
 struct Tile2D {
-    int   col, row, tid, layer_prio;
-    float depth;
+    int      col, row, tid, layer_prio;
+    uint64_t prio;  // FL-1: Flare-inspired 64-bit key; eliminates Z-fight at tile edges
 };
 
+// prio = (col+row)<<37 | col<<20 | layer_prio<<8
+// Bits 63-37: diagonal depth (primary), 36-20: col tiebreak, 19-8: layer, 7-0: reserved
 static int Tile2DCmp(const void* a, const void* b) {
-    float da = ((const Tile2D*)a)->depth;
-    float db = ((const Tile2D*)b)->depth;
-    return (da > db) - (da < db);
+    uint64_t pa = ((const Tile2D*)a)->prio;
+    uint64_t pb = ((const Tile2D*)b)->prio;
+    return (pa > pb) - (pa < pb);
+}
+
+static uint64_t Tile2DPrio(int col, int row, int layer_prio) {
+    return ((uint64_t)(col + row) << 37) |
+           ((uint64_t)col         << 20) |
+           ((uint64_t)layer_prio  <<  8);
 }
 
 static int LayerPrio2D(md::flare::LayerType t) {
@@ -63,6 +71,7 @@ void TileMap2DRenderer::Init() {
         pd.raster.depth_write  = false;
         pd.raster.cull_back    = false;
         pd.vert_uniform_bufs   = 1;  // set=1,binding=0: {vec2 viewport, vec2 pad}
+        pd.frag_uniform_bufs   = 1;  // set=0,binding=0: {float alpha_mod, vec3 _pad} (FL-2)
         pd.frag_samplers       = 4;  // set=2,binding=0..3: atlases
         pd.has_depth_target    = false;
         pd.layout.stride       = (uint32_t)STRIDE_SDL;
@@ -309,7 +318,7 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
             for (int col = 0; col < map.width && n < MAX_TILES; ++col) {
                 int tid = layer.tiles[row * MAX_MAP_WIDTH + col];
                 if (tid == 0 || !map.meta.Find(tid)) continue;
-                tiles[n++] = { col, row, tid, prio, (float)((col + row) * 3 + prio) };
+                tiles[n++] = { col, row, tid, prio, Tile2DPrio(col, row, prio) };
             }
         }
     }
@@ -416,8 +425,10 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
 {
     // Collect + sort tiles (SDL_GPU path owns its own scratch to avoid aliasing
     // with the static tiles[] in the GL path when both are compiled).
-    static Tile2D tiles[MAX_TILES];
-    int n = 0;
+    // FL-2: OBJECT tiles at player_tile_col_/row_ go to fade_tiles[] (appended last).
+    static Tile2D tiles     [MAX_TILES];
+    static Tile2D fade_tiles[8];
+    int n = 0, n_fade = 0;
     for (int li = 0; li < map.layer_count && n < MAX_TILES; ++li) {
         if (!(layer_mask & (1u << li))) continue;
         const TileMapLayer& layer = map.layers[li];
@@ -429,11 +440,19 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
             for (int col = 0; col < map.width && n < MAX_TILES; ++col) {
                 int tid = layer.tiles[row * MAX_MAP_WIDTH + col];
                 if (tid == 0 || !map.meta.Find(tid)) continue;
-                tiles[n++] = { col, row, tid, prio, (float)((col + row) * 3 + prio) };
+                // FL-2: OBJECT tiles at player position → separate fade batch
+                if (layer.type == LT::OBJECT &&
+                    col == player_tile_col_ && row == player_tile_row_ &&
+                    n_fade < 8) {
+                    fade_tiles[n_fade++] = { col, row, tid, prio, Tile2DPrio(col, row, prio) };
+                } else {
+                    tiles[n++] = { col, row, tid, prio, Tile2DPrio(col, row, prio) };
+                }
             }
         }
     }
-    qsort(tiles, (size_t)n, sizeof(Tile2D), Tile2DCmp);
+    qsort(tiles,      (size_t)n,      sizeof(Tile2D), Tile2DCmp);
+    qsort(fade_tiles, (size_t)n_fade, sizeof(Tile2D), Tile2DCmp);
 
     // Corners for 2 CCW triangles (TRIANGLE_LIST).
     static const float CORNERS[6][2] = {
@@ -552,6 +571,35 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
         }
     }
 
+    // FL-2: append fade tiles to scratch AFTER main tiles + NPC dots.
+    // ni_main_end = vertex count before fade tiles (used for two-pass draw split).
+    const int ni_main_end = ni;
+    for (int fi = 0; fi < n_fade && ni < MAX_TILES; ++fi) {
+        const Tile2D& t    = fade_tiles[fi];
+        const TileMeta* tm = map.meta.Find(t.tid);
+        if (!tm) continue;
+        const MdTexture& atl = atlases_[tm->atlas_idx < (uint8_t)atlas_count_ ? tm->atlas_idx : 0];
+        if (!atl.sdl_tex || atl.w <= 0 || atl.h <= 0) continue;
+        float ax  = (float)((t.col - t.row) * TILE_W_HALF) * scale + origin_x;
+        float ay  = (float)((t.col + t.row) * TILE_H_HALF) * scale + origin_y;
+        float x_tl = roundf(ax - (float)tm->offset_x * scale);
+        float y_tl = roundf(ay - (float)tm->offset_y * scale);
+        float sw   = (float)tm->w * scale;
+        float sh   = (float)tm->h * scale;
+        float u0 = (float)tm->src_x / (float)atl.w;
+        float u1 = (float)(tm->src_x + tm->w) / (float)atl.w;
+        float v0 = 1.f - (float)tm->src_y / (float)atl.h;
+        float v1 = 1.f - (float)(tm->src_y + tm->h) / (float)atl.h;
+        float ai = (float)(tm->atlas_idx < (uint8_t)atlas_count_ ? tm->atlas_idx : 0);
+        for (int vi = 0; vi < 6; ++vi) {
+            float* v = (float*)(scratch + ((size_t)ni * 6 + (size_t)vi) * (size_t)STRIDE_SDL);
+            v[0]=CORNERS[vi][0]; v[1]=CORNERS[vi][1];
+            v[2]=x_tl; v[3]=y_tl; v[4]=sw; v[5]=sh;
+            v[6]=u0; v[7]=v0; v[8]=u1; v[9]=v1; v[10]=ai;
+        }
+        ++ni;
+    }
+
     // ── Correct order: copy pass first, then render pass ─────────────────────
     // SDL_GPU requires the copy pass to precede the render pass on the same cmd.
     if (ni > 0) {
@@ -600,7 +648,19 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
         float vp_ubo[4] = { (float)vp_w, (float)vp_h, 0.f, 0.f };
         cb.PushVertexUniforms(0, vp_ubo, 16);
 
-        cb.Draw((uint32_t)ni * 6u);
+        // FL-2: two-pass draw — main tiles (alpha=1.0) then fade tiles (alpha=fade_alpha_).
+        // ni_main_end = vertex count before fade tiles were appended.
+        float alpha_full[4] = { 1.0f, 0.f, 0.f, 0.f };
+        cb.PushFragmentUniforms(0, alpha_full, 16);
+        if (ni_main_end > 0) cb.Draw((uint32_t)(ni_main_end * 6));
+
+        // Second pass: fade tiles at player position — drawn last (on top), semi-transparent.
+        const int ni_fade_count = ni - ni_main_end;
+        if (ni_fade_count > 0) {
+            float alpha_fade[4] = { fade_alpha_, 0.f, 0.f, 0.f };
+            cb.PushFragmentUniforms(0, alpha_fade, 16);
+            cb.Draw((uint32_t)(ni_fade_count * 6), (uint32_t)(ni_main_end * 6));
+        }
     }
     cb.EndPass();
 }

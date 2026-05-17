@@ -131,6 +131,9 @@
    inline bool  input_mouse_pressed(int btn) {
        return (btn > 0 && btn < 6) ? _sdl3_input::s_mouse[btn] : false;
    }
+   inline bool  input_mouse_down(int btn) {
+       return (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_MASK(btn)) != 0;
+   }
    inline float input_mouse_x()       { float x=0; SDL_GetMouseState(&x, nullptr); return x; }
    inline float input_mouse_y()       { float y=0; SDL_GetMouseState(nullptr, &y); return y; }
    inline float input_get_scroll_y()  { return _sdl3_input::s_scroll_y; }

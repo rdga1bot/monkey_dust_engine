@@ -125,15 +125,16 @@
             const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
             const AgentState*     as = Registry::Get().try_get<AgentState>(e);
             if (!wt || !sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            // NPC forward from rot_y (right-hand Y-up: fwd = (sin, 0, cos))
-            float fwd_x = md::fsin_fast(wt->rot_y);
-            float fwd_z = md::fcos_fast(wt->rot_y);
+            // NPC forward from rot_y (right-hand Y-up: fwd = (sin, 0, cos)).
+            // Use exact sinf/cosf + sqrtf: this condition evaluates once per entity
+            // per tick, not per-triangle, so precision > speed here.
+            float fwd_x = sinf(wt->rot_y);
+            float fwd_z = cosf(wt->rot_y);
             float dx = sc->last_known_x - wt->x;
             float dz = sc->last_known_z - wt->z;
             float len_sq = dx * dx + dz * dz;
             if (len_sq < 1e-6f) { result = BTStatus::Success; pc = nd.parent; continue; }
-            float inv_len = md::frsqrt(len_sq);
-            float dot = (fwd_x * dx + fwd_z * dz) * inv_len;
+            float dot = (fwd_x * dx + fwd_z * dz) / sqrtf(len_sq);
             float angle_deg = acosf(dot < -1.f ? -1.f : dot > 1.f ? 1.f : dot) * (180.f / 3.14159265f);
             result = (angle_deg <= static_cast<float>(nd.data)) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;

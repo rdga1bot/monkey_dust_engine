@@ -43,7 +43,7 @@ inline float fsin_fast(float x) { return fastersinfull(x); }
 inline float fcos_fast(float x) { return fastercosfull(x); }
 
 // atan2 — no fast approximation in fastapprox; use std (called infrequently).
-inline float fatan2(float y, float x) { return std::atan2f(y, x); }
+inline float fatan2(float y, float x) { return std::atan2(y, x); }
 
 // ── Square root ───────────────────────────────────────────────────────────────
 

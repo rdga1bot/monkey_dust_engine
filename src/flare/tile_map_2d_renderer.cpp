@@ -70,8 +70,7 @@ void TileMap2DRenderer::Init() {
         pd.raster.depth_test   = false;
         pd.raster.depth_write  = false;
         pd.raster.cull_back    = false;
-        pd.vert_uniform_bufs   = 1;  // set=1,binding=0: {vec2 viewport, vec2 pad}
-        pd.frag_uniform_bufs   = 1;  // set=0,binding=0: {float alpha_mod, vec3 _pad} (FL-2)
+        pd.vert_uniform_bufs   = 1;  // set=1,binding=0: {vec2 viewport, float alpha_mod, float pad}
         pd.frag_samplers       = 4;  // set=2,binding=0..3: atlases
         pd.has_depth_target    = false;
         pd.layout.stride       = (uint32_t)STRIDE_SDL;
@@ -681,22 +680,18 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
         }
         cb.BindFragmentSamplers(0, bindings, 4);
 
-        // Push viewport UBO (set=1, binding=0): {vec2 viewport, vec2 pad} = 16 bytes std140.
-        float vp_ubo[4] = { (float)vp_w, (float)vp_h, 0.f, 0.f };
+        // FL-2: alpha_mod passed via vertex UBO (set=1, binding=0), 3rd float.
+        // UBO: {vec2 viewport, float alpha_mod, float pad} = 16 bytes std140.
+        // Pass 1: main tiles + NPC + overhead — alpha_mod=1.0
+        float vp_ubo[4] = { (float)vp_w, (float)vp_h, 1.0f, 0.f };
         cb.PushVertexUniforms(0, vp_ubo, 16);
-
-        // Three-pass draw:
-        // Pass 1: main tiles + NPC dots + overhead (FL-3) — alpha=1.0
-        // Pass 2: fade tiles (FL-2) — alpha=fade_alpha_, always on top
-        float alpha_full[4] = { 1.0f, 0.f, 0.f, 0.f };
-        cb.PushFragmentUniforms(0, alpha_full, 16);
         if (ni_overhead_end > 0) cb.Draw((uint32_t)(ni_overhead_end * 6));
 
-        // Pass 2: fade tiles at player position — semi-transparent, topmost.
+        // Pass 2: fade tiles at player position — semi-transparent (alpha_mod=fade_alpha_).
         const int ni_fade_count = ni - ni_overhead_end;
         if (ni_fade_count > 0) {
-            float alpha_fade[4] = { fade_alpha_, 0.f, 0.f, 0.f };
-            cb.PushFragmentUniforms(0, alpha_fade, 16);
+            float vp_fade[4] = { (float)vp_w, (float)vp_h, fade_alpha_, 0.f };
+            cb.PushVertexUniforms(0, vp_fade, 16);
             cb.Draw((uint32_t)(ni_fade_count * 6), (uint32_t)(ni_overhead_end * 6));
         }
     }

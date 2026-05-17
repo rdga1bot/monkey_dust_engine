@@ -67,6 +67,13 @@ public:
                        const float* rot_y,  const uint8_t* is_moving,
                        int count, float now_s);
 
+    // FL-3 (Flare index_objectlayer): 4-phase render pipeline.
+    // Tiles on layers BELOW object_layer_idx → phase 1 (under entities).
+    // Tiles on layers ABOVE object_layer_idx → phase 4 (overhead, always on top).
+    // Tiles on layer EQUAL to object_layer_idx → phase 3 (merged with NPC sprites).
+    // Default: object_layer_idx=-1 disables split (all tiles in one batch as before).
+    void SetObjectLayerIdx(int idx) noexcept { object_layer_idx_ = idx; }
+
     // FL-2: fadeOverlapTile — fade OBJECT-layer tiles when the player is under them.
     // Pass the player's tile-grid col and row (integer).  Call before Render().
     // fade_alpha: transparency of overlapping tiles (0.0=invisible, 1.0=opaque).
@@ -133,6 +140,10 @@ private:
     int   player_tile_col_ = -1;   // -1 = fading disabled
     int   player_tile_row_ = -1;
     float fade_alpha_      = FADE_ALPHA_DEFAULT;
+
+    // FL-3: index_objectlayer — layer index separating back/front phases.
+    // -1 = disabled (all tiles in one batch, current behaviour).
+    int   object_layer_idx_ = -1;
 
     // OpenGL instance buffer layout (stride=36, 1 entry/tile):
     static constexpr int STRIDE     = 36;

@@ -41,9 +41,12 @@ public:
     // The accumulation pipeline — bind once per frame before drawing transparents.
     SDL_GPUGraphicsPipeline* AccumPipeline() const { return accum_pipeline_; }
 
-    // Composite the accumulated transparency over the current swapchain texture.
-    // Renders a full-screen triangle with SRC_ALPHA blending.
+    // Composite accumulated transparency over the opaque scene.
+    // scene_tex: read-only opaque scene (e.g. CasPass::SceneTex()).
+    // output_tex: write target — MUST differ from scene_tex (Vulkan disallows same-tex read+write).
+    // Uses manual blend in shader (blend_enable=false) to avoid Intel HD 520 driver crash.
     void Composite(SDL_GPUCommandBuffer* cmd,
+                   SDL_GPUTexture* scene_tex,
                    SDL_GPUTexture* output_tex,
                    int vp_w, int vp_h);
 
@@ -54,17 +57,22 @@ private:
     void DestroyPipelines();
 
     // Accumulation targets.
-    SDL_GPUTexture* accum_tex_  = nullptr;   // RGBA16F, blend ONE/ONE
-    SDL_GPUTexture* reveal_tex_ = nullptr;   // R8,      blend ZERO/ONE_MINUS_SRC_COLOR
-    SDL_GPUSampler* sampler_    = nullptr;   // nearest, for composite read
+    SDL_GPUTexture* accum_tex_   = nullptr;  // RGBA8, additive blend
+    SDL_GPUTexture* merged_tex_  = nullptr;  // RGBA8, manual composite output (R8G8B8A8_UNORM)
+    SDL_GPUTexture* reveal_tex_  = nullptr;  // unused — future 2-MRT upgrade
+    SDL_GPUSampler* sampler_     = nullptr;  // nearest, for composite reads
 
     // Raw SDL_GPU pipeline for accumulation (single target, additive blend).
     SDL_GPUGraphicsPipeline* accum_pipeline_ = nullptr;
 
-    // Composite pipeline (full-screen triangle, alpha blend over opaque scene).
-    // Built as raw SDL_GPU pipeline to avoid GpuPipeline wrapper limitations.
-    SDL_GPUGraphicsPipeline* composite_raw_  = nullptr;
-    GpuPipeline composite_pipeline_;  // unused stub — kept for future use
+    // Manual-blend composite via COMPUTE — avoids all graphics pipeline paths that
+    // crash Intel HD 520 / mesa anv (2-sampler graphics pipeline segfaults driver).
+    // oit_composite_manual.comp: samplers(accum+scene) → imageStore(merged_tex_).
+    GpuComputePipeline composite_compute_;
+
+    // Legacy SDL pipeline fields (disabled — kept for documentation).
+    GpuPipeline composite_pipeline_;            // graphics path — crashes with 2 samplers
+    SDL_GPUGraphicsPipeline* composite_raw_ = nullptr;  // raw alpha-blend — crashes anv
 
     SDL_GPURenderPass* accum_pass_ = nullptr;  // active during BeginAccum..EndAccum
     bool use_blit_composite_ = false;           // fallback if composite pipeline fails

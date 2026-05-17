@@ -27,9 +27,24 @@ void OitPass::CreateTextures(int w, int h) {
         accum_tex_ = SDL_CreateGPUTexture(dev, &ti);
     }
 
-    // Reveal: R8G8B8A8_UNORM — uses only R channel for transmittance product.
-    // Separated from accum for future 2-MRT upgrade; currently single-pass approx.
-    reveal_tex_ = nullptr;  // Not used in simplified single-target OIT.
+    // Merged: R8G8B8A8_UNORM — compute composite output (scene + OIT blended).
+    // Needs COMPUTE_STORAGE_WRITE for imageStore in oit_composite_manual.comp.
+    // Also COLOR_TARGET|SAMPLER to allow later blit to swap.
+    {
+        SDL_GPUTextureCreateInfo ti{};
+        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+        ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        ti.width                = (uint32_t)w;
+        ti.height               = (uint32_t)h;
+        ti.layer_count_or_depth = 1;
+        ti.num_levels           = 1;
+        ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
+                                  SDL_GPU_TEXTUREUSAGE_SAMPLER      |
+                                  SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE;
+        merged_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    }
+
+    reveal_tex_ = nullptr;  // unused — future 2-MRT upgrade
 
     // Nearest sampler for composite read.
     {
@@ -50,6 +65,7 @@ void OitPass::CreateTextures(int w, int h) {
 void OitPass::DestroyTextures() {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
     if (accum_tex_)  { SDL_ReleaseGPUTexture(dev, accum_tex_);  accum_tex_  = nullptr; }
+    if (merged_tex_) { SDL_ReleaseGPUTexture(dev, merged_tex_); merged_tex_ = nullptr; }
     if (reveal_tex_) { SDL_ReleaseGPUTexture(dev, reveal_tex_); reveal_tex_ = nullptr; }
     if (sampler_)    { SDL_ReleaseGPUSampler(dev, sampler_);    sampler_    = nullptr; }
 }
@@ -81,73 +97,25 @@ static SDL_GPUShader* LoadSpv(SDL_GPUDevice* dev, const char* spv_path,
 void OitPass::CreatePipelines() {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
 
-    // Investigation: create COMPOSITE (alpha-blend) FIRST, then ACCUM (additive).
-    // Hypothesis: Intel HD 520 Vulkan driver crashes when an alpha-blend pipeline
-    // follows an additive pipeline in the same session. Creating composite first
-    // tests whether the crash is order-dependent.
-
-    // ── Composite pipeline (raw SDL_GPU, alpha blend) ─────────────────────────
-    // NOTE: On Intel HD 520 + mesa anv, SDL_CreateGPUGraphicsPipeline for ANY
-    // pipeline with enable_blend=true crashes the driver during Init.
-    // Root cause unknown (possibly pipeline cache corruption or driver bug with
-    // Vulkan 1.3 on mesa 25.x anv). Using SDL_BlitGPUTexture fallback instead.
-    // The blit composite overlays accumulated OIT color additively — visible but
-    // not alpha-blended over opaque scene. Acceptable for demo purposes.
-    use_blit_composite_ = true;
-    fprintf(stdout, "[OitPass] composite: using blit fallback (alpha-blend pipeline crashes anv)\n");
-    if (false) {  // disabled — crashes Intel HD 520 driver
-        SDL_GPUShader* vert = LoadSpv(dev, "shaders/spirv/cas.vert.spv",
-                                       SDL_GPU_SHADERSTAGE_VERTEX, 0, 0);
-        SDL_GPUShader* frag = LoadSpv(dev, "shaders/spirv/oit_composite.frag.spv",
-                                       SDL_GPU_SHADERSTAGE_FRAGMENT, 0, 1);
-        if (vert && frag) {
-            SDL_GPUColorTargetDescription comp_target{};
-            comp_target.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
-            comp_target.blend_state.enable_blend          = true;
-            comp_target.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
-            comp_target.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
-            comp_target.blend_state.color_blend_op        = SDL_GPU_BLENDOP_ADD;
-            comp_target.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
-            comp_target.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
-            comp_target.blend_state.alpha_blend_op        = SDL_GPU_BLENDOP_ADD;
-
-            SDL_GPUGraphicsPipelineTargetInfo ti{};
-            ti.color_target_descriptions = &comp_target;
-            ti.num_color_targets         = 1;
-            ti.has_depth_stencil_target  = false;
-
-            SDL_GPURasterizerState rast{};
-            rast.cull_mode  = SDL_GPU_CULLMODE_NONE;
-            rast.fill_mode  = SDL_GPU_FILLMODE_FILL;
-            rast.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-
-            SDL_GPUDepthStencilState ds{};
-            SDL_GPUVertexInputState  vis{};
-
-            SDL_GPUGraphicsPipelineCreateInfo ci{};
-            ci.vertex_shader       = vert;
-            ci.fragment_shader     = frag;
-            ci.vertex_input_state  = vis;
-            ci.rasterizer_state    = rast;
-            ci.depth_stencil_state = ds;
-            ci.target_info         = ti;
-            ci.primitive_type      = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
-
-            SDL_GPUGraphicsPipeline* raw = SDL_CreateGPUGraphicsPipeline(dev, &ci);
-            if (raw) {
-                composite_raw_ = raw;
-                fprintf(stdout, "[OitPass] composite pipeline OK (created first)\n");
-            } else {
-                use_blit_composite_ = true;
-                fprintf(stderr, "[OitPass] composite pipeline still failed: %s\n",
-                        SDL_GetError());
-            }
+    // ── Manual-blend composite via COMPUTE ───────────────────────────────────
+    // Graphics pipeline with 2 fragment samplers crashes Intel HD 520 / mesa anv.
+    // Compute path uses SDL_BindGPUComputeSamplers (same as SSAO, known to work).
+    // oit_composite_manual.comp: set=0 samplers(accum,scene) → set=1 image(merged).
+    {
+        GpuComputePipeline::Desc cd{};
+        cd.glsl_path                   = "shaders/oit_composite_manual.comp";
+        cd.num_samplers                = 2;  // u_accum + u_scene (set=0, binding=0..1)
+        cd.num_readwrite_storage_textures = 1;  // u_output (set=1, binding=0)
+        cd.threadcount_x               = 8;
+        cd.threadcount_y               = 8;
+        cd.threadcount_z               = 1;
+        if (composite_compute_.Create(cd)) {
+            fprintf(stdout, "[OitPass] composite compute pipeline OK\n");
         } else {
+            fprintf(stderr, "[OitPass] composite compute pipeline failed — blit fallback\n");
             use_blit_composite_ = true;
         }
-        if (vert) SDL_ReleaseGPUShader(dev, vert);
-        if (frag) SDL_ReleaseGPUShader(dev, frag);
-    }  // end disabled composite block
+    }
 
     // ── Accumulation pipeline (raw SDL_GPU, additive blend) ──────────────────
     {
@@ -222,18 +190,20 @@ void OitPass::CreatePipelines() {
     }
 
     fprintf(stdout, "[OitPass] pipelines: composite=%s accum=%s\n",
-            composite_raw_ ? "ok" : "blit-fallback",
+            composite_compute_.SDLComputePipeline() ? "compute" : "blit-fallback",
             accum_pipeline_ ? "ok" : "failed");
 }
 
 void OitPass::DestroyPipelines() {
+    SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
     if (accum_pipeline_) {
-        SDL_ReleaseGPUGraphicsPipeline(GpuDevice::Get().SDLDevice(), accum_pipeline_);
+        SDL_ReleaseGPUGraphicsPipeline(dev, accum_pipeline_);
         accum_pipeline_ = nullptr;
     }
+    composite_compute_.Destroy();
     composite_pipeline_.Destroy();
     if (composite_raw_) {
-        SDL_ReleaseGPUGraphicsPipeline(GpuDevice::Get().SDLDevice(), composite_raw_);
+        SDL_ReleaseGPUGraphicsPipeline(dev, composite_raw_);
         composite_raw_ = nullptr;
     }
 }
@@ -243,13 +213,11 @@ void OitPass::DestroyPipelines() {
 bool OitPass::Init(int vp_w, int vp_h) {
     CreateTextures(vp_w, vp_h);
     CreatePipelines();
-    // Composite pipeline failure → fall back to SDL_BlitGPUTexture (no alpha blend).
-    if (!composite_pipeline_.SDLPipeline()) {
-        use_blit_composite_ = true;
-        fprintf(stdout, "[OitPass] composite pipeline failed → using blit fallback\n");
-    }
     ready_ = (accum_tex_ && accum_pipeline_);
-    if (ready_) fprintf(stdout, "[OitPass] init %dx%d\n", vp_w, vp_h);
+    if (ready_) {
+        fprintf(stdout, "[OitPass] init %dx%d  composite=%s\n", vp_w, vp_h,
+                composite_compute_.SDLComputePipeline() ? "compute" : "blit-fallback");
+    }
     return ready_;
 }
 
@@ -294,42 +262,65 @@ void OitPass::EndAccum() {
 // ── Composite ─────────────────────────────────────────────────────────────────
 
 void OitPass::Composite(SDL_GPUCommandBuffer* cmd,
+                         SDL_GPUTexture* scene_tex,
                          SDL_GPUTexture* output_tex,
                          int vp_w, int vp_h) {
     if (!ready_ || !output_tex) return;
 
-    if (use_blit_composite_ || !composite_pipeline_.SDLPipeline()) {
-        // Fallback: blit accumulated transparent geometry over scene (no alpha blend).
-        // The accum texture contains additive-blended transparent colour — shows
-        // as bright tinted areas over the opaque scene geometry.
+    // Compute composite path: dispatch oit_composite_manual.comp to blend
+    // accum + scene → merged_tex_, then blit merged_tex_ → output_tex (swap).
+    // Compute avoids the graphics pipeline path that crashes Intel HD 520 / mesa anv
+    // with 2+ fragment samplers. Same pattern as SSAOSystem.
+    SDL_GPUComputePipeline* comp = composite_compute_.SDLComputePipeline();
+    if (comp && merged_tex_ && scene_tex) {
+        // Open compute pass with merged_tex_ as readwrite storage texture.
+        SDL_GPUStorageTextureReadWriteBinding rw_tex{};
+        rw_tex.texture = merged_tex_;
+        rw_tex.cycle   = false;
+
+        SDL_GPUComputePass* cpass = SDL_BeginGPUComputePass(cmd, &rw_tex, 1, nullptr, 0);
+        if (cpass) {
+            SDL_BindGPUComputePipeline(cpass, comp);
+
+            // Bind accum (set=0, binding=0) and scene (set=0, binding=1) as samplers.
+            SDL_GPUTextureSamplerBinding samplers[2] = {
+                { accum_tex_, sampler_ },
+                { scene_tex,  sampler_ },
+            };
+            SDL_BindGPUComputeSamplers(cpass, 0, samplers, 2);
+
+            // Dispatch one thread per pixel (8×8 tiles).
+            uint32_t gx = ((uint32_t)vp_w  + 7u) / 8u;
+            uint32_t gy = ((uint32_t)vp_h + 7u) / 8u;
+            SDL_DispatchGPUCompute(cpass, gx, gy, 1);
+            SDL_EndGPUComputePass(cpass);
+        }
+
+        // Blit merged_tex_ → output_tex (no pipeline required).
         SDL_GPUBlitInfo blit{};
-        blit.source.texture = accum_tex_;
-        blit.source.w       = (uint32_t)vp_w;
-        blit.source.h       = (uint32_t)vp_h;
+        blit.source.texture      = merged_tex_;
+        blit.source.w            = (uint32_t)vp_w;
+        blit.source.h            = (uint32_t)vp_h;
         blit.destination.texture = output_tex;
-        blit.destination.w  = (uint32_t)vp_w;
-        blit.destination.h  = (uint32_t)vp_h;
-        blit.load_op        = SDL_GPU_LOADOP_LOAD;
-        blit.filter         = SDL_GPU_FILTER_NEAREST;
+        blit.destination.w       = (uint32_t)vp_w;
+        blit.destination.h       = (uint32_t)vp_h;
+        blit.load_op             = SDL_GPU_LOADOP_DONT_CARE;
+        blit.filter              = SDL_GPU_FILTER_NEAREST;
         SDL_BlitGPUTexture(cmd, &blit);
         return;
     }
 
-    // Full composite: render accum over opaque scene with alpha blend.
-    SDL_GPUColorTargetInfo ct{};
-    ct.texture   = output_tex;
-    ct.load_op   = SDL_GPU_LOADOP_LOAD;   // preserve existing opaque scene
-    ct.store_op  = SDL_GPU_STOREOP_STORE;
-
-    SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    if (rp) {
-        SDL_BindGPUGraphicsPipeline(rp, composite_raw_);
-        SDL_GPUTextureSamplerBinding tsb{ accum_tex_, sampler_ };
-        SDL_BindGPUFragmentSamplers(rp, 0, &tsb, 1);
-        SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
-        SDL_EndGPURenderPass(rp);
-    }
-    (void)vp_w; (void)vp_h;
+    // Blit fallback: additive overlay (no correct alpha blend, but no crash).
+    SDL_GPUBlitInfo blit{};
+    blit.source.texture      = accum_tex_;
+    blit.source.w            = (uint32_t)vp_w;
+    blit.source.h            = (uint32_t)vp_h;
+    blit.destination.texture = output_tex;
+    blit.destination.w       = (uint32_t)vp_w;
+    blit.destination.h       = (uint32_t)vp_h;
+    blit.load_op             = SDL_GPU_LOADOP_LOAD;
+    blit.filter              = SDL_GPU_FILTER_NEAREST;
+    SDL_BlitGPUTexture(cmd, &blit);
 }
 
 } // namespace md

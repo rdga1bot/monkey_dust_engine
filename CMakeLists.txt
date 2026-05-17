@@ -25,7 +25,37 @@ file(GLOB_RECURSE ENGINE_SRC src/*.cpp)
 list(FILTER ENGINE_SRC EXCLUDE REGEX "stb_image_impl\\.cpp$")
 list(FILTER ENGINE_SRC EXCLUDE REGEX "glad_impl\\.cpp$")
 list(FILTER ENGINE_SRC EXCLUDE REGEX "cgltf_impl\\.cpp$")
+# MaskedOcclusionCulling files need specific per-file compile flags (see below).
+list(FILTER ENGINE_SRC EXCLUDE REGEX "vendor/moc/.*\\.cpp$")
 add_library(monkey_dust_engine STATIC ${ENGINE_SRC})
+
+# ── MaskedOcclusionCulling (Intel, Apache 2.0) ────────────────────────────────
+# Main .cpp must be compiled WITHOUT AVX2/SSE4 — it's a dispatcher that
+# detects CPU features at runtime and creates the appropriate implementation.
+# AVX2 .cpp must be compiled WITH -mavx2 for the AVX2 implementation.
+set(MOC_BASE_CPP   src/vendor/moc/MaskedOcclusionCulling.cpp)
+set(MOC_AVX2_CPP   src/vendor/moc/MaskedOcclusionCullingAVX2.cpp)
+set(MOC_AVX512_CPP src/vendor/moc/MaskedOcclusionCullingAVX512.cpp)
+target_sources(monkey_dust_engine PRIVATE
+    ${MOC_BASE_CPP} ${MOC_AVX2_CPP} ${MOC_AVX512_CPP})
+if(NOT MSVC)
+    # Base dispatcher: SSE2 only (detects CPU at runtime, no vectorized code)
+    set_source_files_properties(${MOC_BASE_CPP} PROPERTIES
+        COMPILE_FLAGS "-msse2 -mno-avx -mno-avx2")
+    # AVX2 implementation
+    set_source_files_properties(${MOC_AVX2_CPP} PROPERTIES
+        COMPILE_FLAGS "-mavx2")
+    # AVX512 stub (USE_AVX512=0 → no-op stub, still needs to link)
+    set_source_files_properties(${MOC_AVX512_CPP} PROPERTIES
+        COMPILE_FLAGS "-msse2 -mno-avx -mno-avx2")
+else()
+    set_source_files_properties(${MOC_BASE_CPP} PROPERTIES
+        COMPILE_FLAGS "/arch:SSE2")
+    set_source_files_properties(${MOC_AVX2_CPP} PROPERTIES
+        COMPILE_FLAGS "/arch:AVX2")
+    set_source_files_properties(${MOC_AVX512_CPP} PROPERTIES
+        COMPILE_FLAGS "/arch:SSE2")
+endif()
 add_library(monkey_dust::engine ALIAS monkey_dust_engine)
 
 target_include_directories(monkey_dust_engine
@@ -54,7 +84,10 @@ endif()
 target_compile_definitions(monkey_dust_engine PUBLIC USE_SDL3 USE_GLM MD_LOG_NO_RAYLIB MD_SDL_GPU)
 target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3)
 target_include_directories(monkey_dust_engine PRIVATE
-    ${CMAKE_SOURCE_DIR}/third_party/imgui/backends)
+    ${CMAKE_SOURCE_DIR}/third_party/imgui/backends
+    # MOC vendor: .cpp files include "MaskedOcclusionCulling.h" relatively
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/vendor/moc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor/moc)
 target_include_directories(monkey_dust_engine PUBLIC
     # miniaudio.h lives in raylib/src/external/ — header-only; Raylib itself is NOT linked.
     ${CMAKE_SOURCE_DIR}/third_party/raylib/src)

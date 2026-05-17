@@ -126,13 +126,13 @@
             const AgentState*     as = Registry::Get().try_get<AgentState>(e);
             if (!wt || !sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             // NPC forward from rot_y (right-hand Y-up: fwd = (sin, 0, cos))
-            float fwd_x = sinf(wt->rot_y);
-            float fwd_z = cosf(wt->rot_y);
+            float fwd_x = md::fsin_fast(wt->rot_y);
+            float fwd_z = md::fcos_fast(wt->rot_y);
             float dx = sc->last_known_x - wt->x;
             float dz = sc->last_known_z - wt->z;
             float len_sq = dx * dx + dz * dz;
             if (len_sq < 1e-6f) { result = BTStatus::Success; pc = nd.parent; continue; }
-            float inv_len = 1.f / sqrtf(len_sq);
+            float inv_len = md::frsqrt(len_sq);
             float dot = (fwd_x * dx + fwd_z * dz) * inv_len;
             float angle_deg = acosf(dot < -1.f ? -1.f : dot > 1.f ? 1.f : dot) * (180.f / 3.14159265f);
             result = (angle_deg <= static_cast<float>(nd.data)) ? BTStatus::Success : BTStatus::Failure;
@@ -186,12 +186,12 @@
                     for (int pi = 0; pi + 1 < path_len; ++pi) {
                         float pdx = tmp_verts[(pi + 1) * 3 + 0] - tmp_verts[pi * 3 + 0];
                         float pdz = tmp_verts[(pi + 1) * 3 + 2] - tmp_verts[pi * 3 + 2];
-                        nav_dist += sqrtf(pdx * pdx + pdz * pdz);
+                        nav_dist += md::fsqrt(pdx * pdx + pdz * pdz);
                     }
                 } else {
                     float dx = sc->last_known_x - wt->x;
                     float dz = sc->last_known_z - wt->z;
-                    nav_dist = sqrtf(dx * dx + dz * dz);
+                    nav_dist = md::fsqrt(dx * dx + dz * dz);
                 }
             }
             result = (nav_dist <= max_dist) ? BTStatus::Success : BTStatus::Failure;
@@ -1013,14 +1013,14 @@
             const WorldTransform* twt = Registry::Get().try_get<WorldTransform>(target);
             if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
             // target's forward direction from rot_y
-            float tf_x = sinf(twt->rot_y);
-            float tf_z = cosf(twt->rot_y);
+            float tf_x = md::fsin_fast(twt->rot_y);
+            float tf_z = md::fcos_fast(twt->rot_y);
             // direction from target to self (NPC)
             float dx = self_wt->x - twt->x;
             float dz = self_wt->z - twt->z;
             float len_sq = dx * dx + dz * dz;
             if (len_sq < 1e-6f) { result = BTStatus::Success; pc = nd.parent; continue; }
-            float inv_len = 1.f / sqrtf(len_sq);
+            float inv_len = md::frsqrt(len_sq);
             float dot = (tf_x * dx + tf_z * dz) * inv_len;
             float angle_deg = acosf(dot < -1.f ? -1.f : dot > 1.f ? 1.f : dot)
                               * (180.f / 3.14159265f);

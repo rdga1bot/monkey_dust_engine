@@ -21,6 +21,7 @@
 #include <monkey_dust/scripting/lua_system.h>
 #include <cstring>
 #include <cmath>
+#include <monkey_dust/math/md_fast_math.h>
 
 static constexpr uint32_t TARGET_ENTITY_BB_KEY            = md::fnv1a("target_entity");
 static constexpr uint32_t NEXT_TARGET_ENTITY_BB_KEY       = md::fnv1a("next_target_entity");

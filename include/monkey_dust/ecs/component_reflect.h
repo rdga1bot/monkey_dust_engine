@@ -1,0 +1,107 @@
+#pragma once
+// ComponentReflect — lightweight field metadata registry for engine components.
+//
+// Does NOT replace SaveSystem v10: serialization code stays untouched.
+// Adds opt-in reflection for: debug UI, editor property panels, generic diffing.
+//
+// Design:
+//   - Explicit registration (no static initializers — avoids init-order issues)
+//   - Static FieldDesc arrays (caller owns; typically file-scope statics)
+//   - MAX_COMPONENTS = 32, MAX_FIELDS_PER_COMPONENT = 24 (no heap)
+//   - FNV-1a name hash for O(1) lookup
+//
+// Usage:
+//   // At startup (after ECS init):
+//   RegisterCoreComponents();
+//
+//   // Query:
+//   const ComponentDesc* d = ComponentReflect::Get().Find("world_transform");
+//   if (d) ComponentReflect::Dump(ptr, *d);
+//
+// Adding a new component (in any .cpp):
+//   static const FieldDesc wt_fields[] = {
+//       MD_FIELD(WorldTransform, x,     F32),
+//       MD_FIELD(WorldTransform, rot_y, F32),
+//   };
+//   ComponentReflect::Get().Register("world_transform",
+//       wt_fields, 2, sizeof(WorldTransform));
+
+#include <cstdint>
+#include <cstddef>  // offsetof
+
+namespace md {
+
+// ── Field type tag ────────────────────────────────────────────────────────────
+enum class FieldType : uint8_t {
+    F32,  // float
+    F64,  // double
+    I8, I16, I32, I64,
+    U8, U16, U32, U64,
+    Bool,
+    Vec3,  // float[3]
+    Enum8, Enum16, Enum32,  // underlying integer; name printed as decimal
+};
+
+// ── Per-field metadata ────────────────────────────────────────────────────────
+struct FieldDesc {
+    const char* name;       // field name string literal
+    FieldType   type;
+    uint16_t    offset;     // offsetof(ComponentType, field)
+    uint16_t    size;       // sizeof(field)
+};
+
+// ── Per-component metadata ────────────────────────────────────────────────────
+struct ComponentDesc {
+    char             name[32]  = {};
+    uint32_t         name_hash = 0;
+    const FieldDesc* fields    = nullptr;
+    uint8_t          field_count    = 0;
+    uint16_t         component_size = 0;
+};
+
+// ── Singleton registry ────────────────────────────────────────────────────────
+class ComponentReflect {
+public:
+    static ComponentReflect& Get();
+
+    static constexpr int MAX_COMPONENTS = 32;
+
+    // Register a component type by name. Returns false on duplicate or full.
+    // fields must outlive the registry (use file-scope static arrays).
+    bool Register(const char* name,
+                  const FieldDesc* fields, int field_count,
+                  uint16_t component_size);
+
+    // Look up by FNV-1a hash (fast path for hot loops).
+    const ComponentDesc* Find(uint32_t name_hash) const;
+    // Look up by name string.
+    const ComponentDesc* Find(const char* name) const;
+
+    int                  Count()        const { return count_; }
+    const ComponentDesc& GetDesc(int i) const { return descs_[i]; }
+
+    // Debug: print all field values of a component instance to stdout.
+    // comp_ptr: raw pointer to the component struct.
+    static void Dump(const void* comp_ptr, const ComponentDesc& desc);
+
+private:
+    static uint32_t Hash(const char* s);
+
+    ComponentDesc descs_[MAX_COMPONENTS] = {};
+    int           count_ = 0;
+};
+
+// ── Helper macro ─────────────────────────────────────────────────────────────
+// Builds a FieldDesc entry from a struct type and field name.
+// Usage: MD_FIELD(WorldTransform, x, F32)
+#define MD_FIELD(StructType, field_name, ftype) \
+    { #field_name, ::md::FieldType::ftype,       \
+      (uint16_t)offsetof(StructType, field_name), \
+      (uint16_t)sizeof(((StructType*)nullptr)->field_name) }
+
+// ── Built-in registrations ────────────────────────────────────────────────────
+// Registers engine-owned components (WorldTransform, SenseComponent, etc.).
+// Call once at startup after ECS init.
+void RegisterCoreComponents();
+
+} // namespace md

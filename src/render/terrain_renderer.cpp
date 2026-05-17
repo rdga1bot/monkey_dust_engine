@@ -45,6 +45,24 @@ bool TerrainRenderer::IsReady() const {
 #endif
 }
 
+void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                              const TerrainChunk& chunk,
+                              const float* vp16,
+                              const SunParams& sun)
+{
+    if (!IsReady() || !chunk.loaded) return;
+#ifdef MD_SDL_GPU
+    SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
+    SDL_GPUBufferBinding vb { chunk.vbo.SDLBuffer(), 0u };
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_GPUBufferBinding ib { chunk.ibo.SDLBuffer(), 0u };
+    SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+    SDL_PushGPUVertexUniformData(cmd, 0, vp16, 64);
+    SDL_PushGPUFragmentUniformData(cmd, 0, &sun, 32);
+    SDL_DrawGPUIndexedPrimitives(rp, TERRAIN_IDX, 1, 0, 0, 0);
+#endif
+}
+
 void TerrainRenderer::Draw(GpuCommandBuffer& cb,
                            const TerrainChunk& chunk,
                            const float* vp16,

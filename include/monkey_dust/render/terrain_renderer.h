@@ -29,10 +29,17 @@ public:
 
     // Draw chunk inside an already-open GpuCommandBuffer colour pass.
     // vp16: column-major Mat4 (16 floats = 64 bytes).
+    // For code that uses GpuCommandBuffer (demo):
     void Draw(GpuCommandBuffer& cb,
               const TerrainChunk& chunk,
               const float* vp16,
               const SunParams& sun);
+
+    // For code that uses raw SDL pointers (game main loop):
+    void DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                 const TerrainChunk& chunk,
+                 const float* vp16,
+                 const SunParams& sun);
 
     bool IsReady() const;
 

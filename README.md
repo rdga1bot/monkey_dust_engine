@@ -12,15 +12,16 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, and a custom stackless 
 ### Rendering — SDL\_GPU / Vulkan
 | System | Details |
 |--------|---------|
-| Tile map renderer | FLARE-inspired isometric tiles; TINST instancing (stride=36); billboard + flat-XZ geometry; fringe depth sorting |
-| Deferred lighting | GBuffer 2-RT (RT0=albedo+rough, RT1=oct-normal+metallic+flags); ambient pass `DeferredLightingSystem` → RGBA16F hdr_color; point volumes; strip lights; ACES tonemapping |
-| Cascaded Shadow Maps | 3-cascade PCF 3×3; GPU compute culling |
+| Tile map renderer | FLARE-inspired isometric tiles; TINST stride=36; `uint64_t` depth sort (eliminates Z-fight at tile edges); billboard + flat-XZ; fringe layers; `fadeOverlapTile` (player under roof = 35 % alpha); 4-phase pipeline (`SetObjectLayerIdx`) |
+| OIT | 2-MRT weighted blended OIT: RGBA16F accum + R8G8B8A8 revealage; **compute composite** (avoids Intel HD 520 driver crash with 2+ fragment samplers); depth test against opaque scene |
+| Deferred lighting | GBuffer 2-RT (RT0=albedo+rough, RT1=oct-normal+metallic+flags); ambient pass `DeferredLightingSystem` → RGBA16F hdr\_color; point volumes; strip lights; ACES tonemapping |
+| Cascaded Shadow Maps | 3-cascade **EVSM** soft shadows; texel-snap (eliminates shimmer); 10 % cascade blend overlap; GPU compute culling (`shadow_cull.comp`) |
 | SSAO | Half-res R8 compute pass; 16-tap hemisphere kernel |
 | SMAA | 3-pass fullscreen triangle (edge → blend → final) |
 | Point / strip lights | Icosphere additive pass; capsule-SDF strip lights |
 | GPU skinning | AnimationSoA; SSBO skeletal bones (MAX\_BONES=6); compute dispatch |
 | Particles | ParticleSoA CPU-sim; SMOKE/SPARK/BLOOD types |
-| Material system | JSON → `GpuPipeline::Desc` auto-builder (OGRE-inspired) |
+| Material system | O3DE-inspired: JSON → `GpuPipeline::Desc`; **parent inheritance** (`"parent": "base_pbr"`); `shader_features` bitmask; `MaterialTypeRegistry` (MAX=32) |
 
 ### AI — Behavior Tree VM
 - Stackless BT VM (`BehaviorTree.h`) — 30+ node types, zero heap allocations
@@ -54,12 +55,21 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, and a custom stackless 
 - 8 MB custom allocator; io/os/package/debug sandboxed out
 - `LuaEventBus` (MAX\_HANDLERS=64 BSS); `FlowGraph` FNV-1a node IDs; ring buffer
 - `AgentBlackboard` (MAX\_ENTRIES=24; FNV-1a keys)
+- **`MdEventScheduler`** — Flare EventComponent-inspired: OneShot / Cooldown / Delayed / Repeating / FireOnLoad / FireOnClear; `RequestFire()` for manual cooldown trigger
 
 ### World Simulation
 - `WorldSimulation` 1 Hz tick: `FactionState[8]` + `TradeRoute[32]`; gold/prosperity/aggression/population economy
 - `FactionSystem` — relation matrix `[-100..100]`; JSON loader
 - `BuildSystem` — 200×200 grid; `ProductionChain` (inputs → outputs, timed cycles)
-- `SaveSystem` v8 — CRC32 header; async save; `AgentState` inline per NPC record
+- `SaveSystem` v10 — CRC32 header; async save; `AgentState` + `NpcMemoryComponent` inline per NPC record; `WorldSimulation` faction/trade tail
+- **`SaveVersionChain`** — O3DE-inspired post-load version converter chain (`Register(from,to,fn)` + `RunUpgrades`); eliminates growing `is_vN` branches for future versions
+- **`MdStatusRegistry`** — Flare CampaignManager-inspired string-based status flags; `GetAllCSV`/`SetAllCSV` for human-readable saves; FNV-1a hashed IDs; MAX=128
+- **`MdPrefabRegistry`** — data-driven NPC archetypes via `data/prefabs/prefabs.json`; `MdPrefab` {name, bt\_template, hp, wander\_radius, combat\_profile}; MAX=32
+
+### Config & Features
+- **`MdIniReader`** — zelda3-inspired INI parser; sections, `key=value`, ParseBool (0/1/yes/no/true/false/on/off), `!include`, `monkey_dust.user.ini` override fallback
+- **`MdFeature`** uint32 bitmask — 8 accessibility toggles (DisableLowHealthBeep, SkipIntroOnKeypress, ShowFps, etc.); `MdFeaturesLoad(ini)` from `[Features]` INI section
+- **`MdModuleRegistry`** — O3DE Gem-inspired plug-in lifecycle for `tools/` targets; `Register/Load/Unload/UnloadAll` (reverse order); `data/modules/*.module.json` metadata
 
 ### Performance
 - AVX2 `BulkComputeDistSq` / `BulkComputeLOD` (`_mm256_fmadd_ps`, `alignas(64)` SoA)
@@ -96,10 +106,10 @@ bash scripts/compile_shaders.sh
 
 ```bash
 ninja -C build md_tests
-./build/tests/md_tests          # 1252 tests, 180 suites
+./build/tests/md_tests          # 1535 tests across 200+ suites
 ```
 
-Suites: FNV, AgentBlackboard, FlowGraph, DirectorSystem, PowerSlotManager, NpcConfig, HotReload, FlowVar, AI Patterns C1–C20, BT VM, Batch 3–27, M47–M58 (NavLod, ReplaySnapshot, AllianceMatrix, SenseSystem, BT Archetypes, CombatDispatch, DeferredLighting, DialogQuest)
+Suites: FNV · AgentBlackboard · FlowGraph · DirectorSystem · PowerSlotManager · NpcConfig · HotReload · FlowVar · AI Patterns C1–C20 · BT VM · Batch 3–31 · M47–M58 (NavLod, ReplaySnapshot, AllianceMatrix, SenseSystem, BT Archetypes, CombatDispatch, DeferredLighting, DialogQuest) · O3DE-1–4 (MaterialDesc, MdPrefabRegistry, SaveVersionChain, MdModuleRegistry) · ZLD-1–2 (MdIniReader, MdFeature) · FL-3–4 (MdStatusRegistry, MdEventScheduler)
 
 ---
 
@@ -119,9 +129,12 @@ engine/
     nav/                   ← PathCache
     platform/              ← input/audio/window/md_fs/md_log/md_hints
     render/                ← GPU HAL, ring buffer, shadow, SSAO, SMAA …
-    save/                  ← SaveSystem v8
+    save/                  ← SaveSystem v10 · SaveVersionChain
     scripting/             ← LuaSystem, LuaEventBus, FlowGraph
-    world/                 ← FactionSystem, WorldSimulation, TransformSoA …
+    world/                 ← FactionSystem, WorldSimulation, TransformSoA, MdStatusRegistry, MdPrefabRegistry …
+    prefab/                ← MdPrefabRegistry (data-driven NPC archetypes)
+    module/                ← MdModuleRegistry (plug-in lifecycle)
+    asset/                 ← (reserved: MdAssetHandle when asset pipeline scales)
   src/                     ← implementation units
   tests/                   ← Google Test suite
 ```

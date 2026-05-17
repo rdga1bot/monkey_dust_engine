@@ -2,14 +2,17 @@
 // OitPass — Weighted Order Independent Transparency (McGuire & Bavoil 2013).
 //
 // Renders transparent geometry in two sub-passes:
-//   1. Accumulation: opaque depth as read-only, 2 MRT targets (accum + reveal).
-//   2. Composite: full-screen blend of accum/reveal over the opaque scene.
+//   1. Accumulation (2-MRT):
+//        MRT0 RGBA16F — weighted colour sum: rgb=color*α*w, a=α*w (ONE/ONE)
+//        MRT1 RGBA8   — revealage Π(1-αᵢ), cleared to {1,1,1,1} (ZERO/ONE_MINUS_SRC_ALPHA)
+//   2. Composite (compute): avg_color / weight + mix(scene, avg, 1-reveal) → merged_tex_
+//        Compute avoids the 2-sampler graphics pipeline that crashes Intel HD 520 / mesa anv.
 //
 // Usage per frame:
-//   oit.BeginAccum(cmd, opaque_depth_tex);  // open accumulation render pass
-//   // ... draw transparent geometry via SDL_GPURenderPass* oit.AccumPass() ...
+//   oit.BeginAccum(cmd, opaque_depth_tex);  // open accumulation render pass (2-MRT)
+//   // ... draw transparent geometry via oit.AccumPipeline() ...
 //   oit.EndAccum();                          // close accumulation pass
-//   oit.Composite(cmd, swapchain_tex, vp_w, vp_h); // blend over scene
+//   oit.Composite(cmd, scene_tex, output_tex, vp_w, vp_h); // blend over scene
 //
 // Transparent vertex format: float[3] pos + float[4] color = 28 bytes stride.
 // Use oit.AccumPipeline() to bind the accumulation pipeline.
@@ -57,9 +60,9 @@ private:
     void DestroyPipelines();
 
     // Accumulation targets.
-    SDL_GPUTexture* accum_tex_   = nullptr;  // RGBA8, additive blend
-    SDL_GPUTexture* merged_tex_  = nullptr;  // RGBA8, manual composite output (R8G8B8A8_UNORM)
-    SDL_GPUTexture* reveal_tex_  = nullptr;  // unused — future 2-MRT upgrade
+    SDL_GPUTexture* accum_tex_   = nullptr;  // RGBA16F, ONE/ONE additive blend (MRT0)
+    SDL_GPUTexture* merged_tex_  = nullptr;  // RGBA8, compute composite output
+    SDL_GPUTexture* reveal_tex_  = nullptr;  // RGBA8, ZERO/ONE_MINUS_SRC_ALPHA revealage (MRT1)
     SDL_GPUSampler* sampler_     = nullptr;  // nearest, for composite reads
 
     // Raw SDL_GPU pipeline for accumulation (single target, additive blend).

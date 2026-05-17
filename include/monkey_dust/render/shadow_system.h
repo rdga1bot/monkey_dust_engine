@@ -218,6 +218,22 @@ public:
             }
             minZ -= 50.0f; // extend backward to catch casters behind the slice
 
+            // Texel-snap: quantize the light-space frustum center to the nearest
+            // shadow-map texel so the shadow map moves in whole-texel steps.
+            // Eliminates shadow shimmer (sub-texel jitter) during camera movement.
+            {
+                float texelX = (maxX - minX) / MAP_SIZE;
+                float texelY = (maxY - minY) / MAP_SIZE;
+                float cx = (minX + maxX) * 0.5f;
+                float cy = (minY + maxY) * 0.5f;
+                cx = roundf(cx / texelX) * texelX;
+                cy = roundf(cy / texelY) * texelY;
+                float rx = (maxX - minX) * 0.5f;
+                float ry = (maxY - minY) * 0.5f;
+                minX = cx - rx;  maxX = cx + rx;
+                minY = cy - ry;  maxY = cy + ry;
+            }
+
             Mat4 lp = mat4_ortho(minX, maxX, minY, maxY, minZ, maxZ);
 #ifdef MD_SDL_GPU
             lightViewProj[k] = mat4_mul(lp, lv);

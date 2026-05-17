@@ -344,8 +344,8 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
 
         float ax   = (float)((t.col - t.row) * TILE_W_HALF) * scale + origin_x;
         float ay   = (float)((t.col + t.row) * TILE_H_HALF) * scale + origin_y;
-        float x_tl = ax - (float)tm->offset_x * scale;
-        float y_tl = ay - (float)tm->offset_y * scale;
+        float x_tl = roundf(ax - (float)tm->offset_x * scale);
+        float y_tl = roundf(ay - (float)tm->offset_y * scale);
         float sw2  = (float)tm->w * scale;
         float sh2  = (float)tm->h * scale;
         float u0 = (float)sx / (float)atl.w;
@@ -470,8 +470,8 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
 
         float ax   = (float)((t.col - t.row) * TILE_W_HALF) * scale + origin_x;
         float ay   = (float)((t.col + t.row) * TILE_H_HALF) * scale + origin_y;
-        float x_tl = ax - (float)tm->offset_x * scale;
-        float y_tl = ay - (float)tm->offset_y * scale;
+        float x_tl = roundf(ax - (float)tm->offset_x * scale);
+        float y_tl = roundf(ay - (float)tm->offset_y * scale);
         float sw   = (float)tm->w * scale;
         float sh   = (float)tm->h * scale;
 
@@ -526,8 +526,8 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
                                     : STANCE[stance_f][dir];
                 sw   = (float)f.w * scale;
                 sh   = (float)f.h * scale;
-                x_tl = ax - (float)f.ox * scale;
-                y_tl = ay - (float)f.oy * scale;
+                x_tl = roundf(ax - (float)f.ox * scale);
+                y_tl = roundf(ay - (float)f.oy * scale);
                 u0   = (float)f.x / (float)NPC_SHEET_W;
                 u1   = (float)(f.x + f.w) / (float)NPC_SHEET_W;
                 v0   = 1.f - (float)f.y / (float)NPC_SHEET_H;

@@ -13,7 +13,22 @@ namespace md {
 void OitPass::CreateTextures(int w, int h) {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
 
-    // Accum: RGBA8 — weighted colour sum (simplified OIT, single target).
+    // Accum: RGBA16F — weighted colour sum + weight (McGuire & Bavoil 2013, MRT0).
+    {
+        SDL_GPUTextureCreateInfo ti{};
+        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+        ti.format               = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
+        ti.width                = (uint32_t)w;
+        ti.height               = (uint32_t)h;
+        ti.layer_count_or_depth = 1;
+        ti.num_levels           = 1;
+        ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
+                                  SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        accum_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    }
+
+    // Reveal: R8G8B8A8_UNORM — revealage Π(1-αᵢ), cleared to {1,1,1,1} (MRT1).
+    // ZERO/ONE_MINUS_SRC_ALPHA blend on R channel gives the product each draw.
     {
         SDL_GPUTextureCreateInfo ti{};
         ti.type                 = SDL_GPU_TEXTURETYPE_2D;
@@ -24,7 +39,7 @@ void OitPass::CreateTextures(int w, int h) {
         ti.num_levels           = 1;
         ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
                                   SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        accum_tex_ = SDL_CreateGPUTexture(dev, &ti);
+        reveal_tex_ = SDL_CreateGPUTexture(dev, &ti);
     }
 
     // Merged: R8G8B8A8_UNORM — compute composite output (scene + OIT blended).
@@ -44,7 +59,6 @@ void OitPass::CreateTextures(int w, int h) {
         merged_tex_ = SDL_CreateGPUTexture(dev, &ti);
     }
 
-    reveal_tex_ = nullptr;  // unused — future 2-MRT upgrade
 
     // Nearest sampler for composite read.
     {
@@ -98,13 +112,13 @@ void OitPass::CreatePipelines() {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
 
     // ── Manual-blend composite via COMPUTE ───────────────────────────────────
-    // Graphics pipeline with 2 fragment samplers crashes Intel HD 520 / mesa anv.
+    // Graphics pipeline with 2+ fragment samplers crashes Intel HD 520 / mesa anv.
     // Compute path uses SDL_BindGPUComputeSamplers (same as SSAO, known to work).
-    // oit_composite_manual.comp: set=0 samplers(accum,scene) → set=1 image(merged).
+    // oit_composite_manual.comp: set=0 samplers(accum,scene,reveal) → set=1 image(merged).
     {
         GpuComputePipeline::Desc cd{};
         cd.glsl_path                   = "shaders/oit_composite_manual.comp";
-        cd.num_samplers                = 2;  // u_accum + u_scene (set=0, binding=0..1)
+        cd.num_samplers                = 3;  // u_accum + u_scene + u_reveal (set=0, binding=0..2)
         cd.num_readwrite_storage_textures = 1;  // u_output (set=1, binding=0)
         cd.threadcount_x               = 8;
         cd.threadcount_y               = 8;
@@ -145,11 +159,12 @@ void OitPass::CreatePipelines() {
         vis.vertex_attributes          = vattribs;
         vis.num_vertex_attributes      = 2;
 
-        // Single color target: RGBA16F with additive blend (simplified OIT).
-        // RGB = weighted color sum; A = total weight (used for normalization).
-        // Composite shader reads this and divides by weight.
-        SDL_GPUColorTargetDescription targets[1] = {};
-        targets[0].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;  // RGBA8 for compat
+        // 2-MRT: accum (RGBA16F, ONE/ONE additive) + reveal (R8G8B8A8, ZERO/ONE_MINUS_SRC_ALPHA).
+        // MRT0 accumulates weighted colour sum and weight.
+        // MRT1 accumulates revealage product Π(1-αᵢ) via multiplicative blend.
+        SDL_GPUColorTargetDescription targets[2] = {};
+        // MRT0 — accum RGBA16F, additive blend
+        targets[0].format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
         targets[0].blend_state.enable_blend          = true;
         targets[0].blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
         targets[0].blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
@@ -157,20 +172,33 @@ void OitPass::CreatePipelines() {
         targets[0].blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
         targets[0].blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
         targets[0].blend_state.alpha_blend_op        = SDL_GPU_BLENDOP_ADD;
+        // MRT1 — reveal R8G8B8A8, ZERO/ONE_MINUS_SRC_ALPHA → dst *= (1 - src.a) each draw
+        targets[1].format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        targets[1].blend_state.enable_blend          = true;
+        targets[1].blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+        targets[1].blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        targets[1].blend_state.color_blend_op        = SDL_GPU_BLENDOP_ADD;
+        targets[1].blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+        targets[1].blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        targets[1].blend_state.alpha_blend_op        = SDL_GPU_BLENDOP_ADD;
 
         SDL_GPUGraphicsPipelineTargetInfo target_info{};
         target_info.color_target_descriptions = targets;
-        target_info.num_color_targets         = 1;
-        target_info.has_depth_stencil_target  = false;
+        target_info.num_color_targets         = 2;
+        target_info.has_depth_stencil_target  = true;
+        target_info.depth_stencil_format      = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
 
         SDL_GPURasterizerState raster{};
         raster.cull_mode       = SDL_GPU_CULLMODE_NONE;
         raster.fill_mode       = SDL_GPU_FILLMODE_FILL;
         raster.front_face      = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
 
+        // Depth test against opaque scene — transparent quads behind walls are clipped.
+        // No depth write: transparent objects don't modify the depth buffer.
         SDL_GPUDepthStencilState depth{};
-        depth.enable_depth_test  = false;
+        depth.enable_depth_test  = true;
         depth.enable_depth_write = false;
+        depth.compare_op         = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
 
         SDL_GPUGraphicsPipelineCreateInfo ci{};
         ci.vertex_shader   = vert;
@@ -213,7 +241,7 @@ void OitPass::DestroyPipelines() {
 bool OitPass::Init(int vp_w, int vp_h) {
     CreateTextures(vp_w, vp_h);
     CreatePipelines();
-    ready_ = (accum_tex_ && accum_pipeline_);
+    ready_ = (accum_tex_ && reveal_tex_ && accum_pipeline_);
     if (ready_) {
         fprintf(stdout, "[OitPass] init %dx%d  composite=%s\n", vp_w, vp_h,
                 composite_compute_.SDLComputePipeline() ? "compute" : "blit-fallback");
@@ -236,19 +264,31 @@ void OitPass::Resize(int vp_w, int vp_h) {
 // ── BeginAccum / EndAccum ─────────────────────────────────────────────────────
 
 SDL_GPURenderPass* OitPass::BeginAccum(SDL_GPUCommandBuffer* cmd,
-                                        SDL_GPUTexture* /*opaque_depth*/) {
+                                        SDL_GPUTexture* opaque_depth) {
     if (!ready_) return nullptr;
     Resize(tex_w_, tex_h_);  // no-op if same size
 
-    // Single accumulation target cleared to (0,0,0,0).
-    // Simplified single-target OIT: RGB=weighted color, A=weight sum.
-    SDL_GPUColorTargetInfo targets[1] = {};
+    // 2-MRT: accum cleared to (0,0,0,0); reveal cleared to (1,1,1,1).
+    // Reveal starts at 1 so Π(1-αᵢ) product is correct when no fragments drawn.
+    SDL_GPUColorTargetInfo targets[2] = {};
     targets[0].texture     = accum_tex_;
     targets[0].load_op     = SDL_GPU_LOADOP_CLEAR;
     targets[0].store_op    = SDL_GPU_STOREOP_STORE;
     targets[0].clear_color = { 0.f, 0.f, 0.f, 0.f };
+    targets[1].texture     = reveal_tex_;
+    targets[1].load_op     = SDL_GPU_LOADOP_CLEAR;
+    targets[1].store_op    = SDL_GPU_STOREOP_STORE;
+    targets[1].clear_color = { 1.f, 1.f, 1.f, 1.f };
 
-    accum_pass_ = SDL_BeginGPURenderPass(cmd, targets, 1, nullptr);
+    // Depth test against opaque scene so transparent quads are clipped by walls.
+    // load_op=LOAD preserves scene depth; store_op=DONT_CARE since depth_write=false.
+    SDL_GPUDepthStencilTargetInfo depth_info{};
+    depth_info.texture   = opaque_depth;
+    depth_info.load_op   = SDL_GPU_LOADOP_LOAD;
+    depth_info.store_op  = SDL_GPU_STOREOP_DONT_CARE;
+
+    accum_pass_ = SDL_BeginGPURenderPass(cmd, targets, 2,
+                                          opaque_depth ? &depth_info : nullptr);
     return accum_pass_;
 }
 
@@ -282,12 +322,13 @@ void OitPass::Composite(SDL_GPUCommandBuffer* cmd,
         if (cpass) {
             SDL_BindGPUComputePipeline(cpass, comp);
 
-            // Bind accum (set=0, binding=0) and scene (set=0, binding=1) as samplers.
-            SDL_GPUTextureSamplerBinding samplers[2] = {
-                { accum_tex_, sampler_ },
-                { scene_tex,  sampler_ },
+            // Bind accum(0), scene(1), reveal(2) as compute samplers (set=0).
+            SDL_GPUTextureSamplerBinding samplers[3] = {
+                { accum_tex_,  sampler_ },
+                { scene_tex,   sampler_ },
+                { reveal_tex_, sampler_ },
             };
-            SDL_BindGPUComputeSamplers(cpass, 0, samplers, 2);
+            SDL_BindGPUComputeSamplers(cpass, 0, samplers, 3);
 
             // Dispatch one thread per pixel (8×8 tiles).
             uint32_t gx = ((uint32_t)vp_w  + 7u) / 8u;

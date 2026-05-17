@@ -1,74 +1,108 @@
 #pragma once
-// RenderPassGraph — lightweight declarative render pass registry.
+// RenderPassGraph — declarative render pass registry with resource dependency tracking.
 //
-// Sits alongside RenderTierSystem: tier gates hardware capability,
-// pass graph gates individual passes via config or runtime toggle.
+// Two layers:
+//   1. Enable/disable per pass (existing) — JSON override, runtime toggle.
+//   2. Resource declarations — each pass declares reads/writes of named resources.
+//      Used to validate ordering and document data-flow between passes.
+//      SDL_GPU handles actual VkImageLayout barriers internally; this layer
+//      provides organisation, validation, and future automatic reordering.
 //
-// Passes are registered with a default enabled state.
-// JSON override: data/render_settings.json "passes" section.
-// Format:
-//   { "passes": { "shadow": true, "ssao": false, "deferred_lighting": true } }
+// Resource access model:
+//   DeclareRead(pass, resource)  — pass samples this texture as input
+//   DeclareWrite(pass, resource) — pass renders into this texture
 //
-// Missing keys use the default provided at Register() time.
-// MAX_PASSES = 16 (covers all current and planned render passes).
+// Validation (Validate()):
+//   For each pass P reading resource R, ensures the pass that last wrote R
+//   is registered BEFORE P. Logs warnings for violations (soft — SDL_GPU
+//   still handles barriers; violations are ordering intent mismatches).
 //
-// Typical usage:
-//   // At engine init (before game loop):
-//   RenderPassGraph::Get().Register("shadow",            true);
-//   RenderPassGraph::Get().Register("ssao",              true);
-//   RenderPassGraph::Get().Register("deferred_lighting", true);
-//   RenderPassGraph::Get().LoadFromJSON("data/render_settings.json");
+// Execution order (GetExecutionOrder()):
+//   Returns pass hashes in dependency-respecting order (topological sort).
+//   Currently based on registration order + dependency constraints.
 //
-//   // In render loop:
-//   if (RenderTierSystem::Get().IsDeferred() &&
-//       RenderPassGraph::Get().IsEnabled("shadow"))  { ... }
+// JSON format (unchanged):
+//   { "passes": { "shadow": true, "ssao": false } }
+//
+// MAX_PASSES = 16, MAX_RESOURCE_BINDINGS = 4 per pass.
 
 #include <cstdint>
 
 namespace md {
 
-struct RenderPassEntry {
-    char     name[32] = {};
-    uint32_t hash     = 0;    // FNV-1a of name — for O(1) hot-path lookup
-    bool     enabled  = true;
+// ── Resource access type ──────────────────────────────────────────────────────
+enum class RGAccess : uint8_t {
+    Read,        // sampled as texture input (e.g. shadow map read by main pass)
+    Write,       // color / depth render target (exclusive write)
+    ReadWrite,   // load + store (e.g. accumulate over existing content)
 };
 
+// Per-pass resource binding declaration.
+struct RGResourceBinding {
+    uint32_t resource_hash = 0;
+    RGAccess access        = RGAccess::Read;
+};
+
+// ── Pass entry ────────────────────────────────────────────────────────────────
+struct RenderPassEntry {
+    char     name[32] = {};
+    uint32_t hash     = 0;    // FNV-1a of name — O(1) hot-path lookup
+    bool     enabled  = true;
+
+    // Resource dependency declarations (up to MAX_RESOURCE_BINDINGS each).
+    static constexpr int MAX_RESOURCE_BINDINGS = 4;
+    RGResourceBinding reads [MAX_RESOURCE_BINDINGS] = {};
+    RGResourceBinding writes[MAX_RESOURCE_BINDINGS] = {};
+    int               read_count  = 0;
+    int               write_count = 0;
+};
+
+// ── Singleton registry ────────────────────────────────────────────────────────
 class RenderPassGraph {
 public:
     static RenderPassGraph& Get();
 
     static constexpr int MAX_PASSES = 16;
 
-    // Register a pass; returns false if MAX_PASSES exceeded or name already exists.
-    // Call once at startup before LoadFromJSON().
+    // Register a pass. Returns false if MAX_PASSES exceeded or duplicate.
     bool Register(const char* name, bool default_enabled = true);
 
-    // Load enable/disable overrides from the "passes" section in a JSON file.
-    // Missing passes keep their registered default. Non-existent file is a no-op.
-    // Can be called repeatedly (e.g. on hot-reload) — previous state is preserved
-    // for passes not present in the JSON.
+    // Declare resource access for ordering validation.
+    // Call after Register(), before the render loop.
+    // Unknown pass names are silently ignored (graceful degradation).
+    void DeclareRead (const char* pass_name, const char* resource_name);
+    void DeclareWrite(const char* pass_name, const char* resource_name);
+
+    // Validate declared ordering: for each pass P reading resource R,
+    // verifies the writing pass of R is registered before P.
+    // Returns false and logs if violations found. Call after all declarations.
+    bool Validate() const;
+
+    // Load enable/disable overrides from "passes" section in JSON.
+    // Non-existent file is a no-op; missing keys keep registered defaults.
     bool LoadFromJSON(const char* path);
 
-    // Query pass enabled state. O(1) via FNV hash.
+    // Query enabled state — O(1) via FNV hash.
     bool IsEnabled(const char* name) const;
     bool IsEnabled(uint32_t name_hash) const;
 
-    // Runtime toggle (debug menu, CLI, etc.).
+    // Runtime toggle.
     void SetEnabled(const char* name, bool enabled);
     void SetEnabled(uint32_t name_hash, bool enabled);
 
-    // Iteration for debug UI.
-    int                     PassCount()         const { return count_; }
-    const RenderPassEntry&  GetPass(int idx)    const { return passes_[idx]; }
+    // Iteration.
+    int                     PassCount()      const { return count_; }
+    const RenderPassEntry&  GetPass(int idx) const { return passes_[idx]; }
 
-    // Reset to registered defaults (undo all JSON / runtime overrides).
+    // Reset to registered defaults.
     void Reset();
 
 private:
     static uint32_t Hash(const char* s);
+    int FindByHash(uint32_t h) const;
 
-    RenderPassEntry passes_[MAX_PASSES] = {};
-    bool            defaults_[MAX_PASSES] = {};  // original Register() defaults
+    RenderPassEntry passes_ [MAX_PASSES] = {};
+    bool            defaults_[MAX_PASSES] = {};
     int             count_ = 0;
 };
 

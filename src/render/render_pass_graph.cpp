@@ -145,4 +145,71 @@ void RenderPassGraph::Reset() {
         passes_[i].enabled = defaults_[i];
 }
 
+// ── FindByHash ────────────────────────────────────────────────────────────────
+
+int RenderPassGraph::FindByHash(uint32_t h) const {
+    for (int i = 0; i < count_; ++i)
+        if (passes_[i].hash == h) return i;
+    return -1;
+}
+
+// ── DeclareRead / DeclareWrite ────────────────────────────────────────────────
+
+void RenderPassGraph::DeclareRead(const char* pass_name, const char* resource_name) {
+    if (!pass_name || !resource_name) return;
+    int idx = FindByHash(Hash(pass_name));
+    if (idx < 0) return;  // unknown pass — silently ignore
+
+    auto& e = passes_[idx];
+    if (e.read_count >= RenderPassEntry::MAX_RESOURCE_BINDINGS) return;
+    e.reads[e.read_count++] = { Hash(resource_name), RGAccess::Read };
+}
+
+void RenderPassGraph::DeclareWrite(const char* pass_name, const char* resource_name) {
+    if (!pass_name || !resource_name) return;
+    int idx = FindByHash(Hash(pass_name));
+    if (idx < 0) return;
+
+    auto& e = passes_[idx];
+    if (e.write_count >= RenderPassEntry::MAX_RESOURCE_BINDINGS) return;
+    e.writes[e.write_count++] = { Hash(resource_name), RGAccess::Write };
+}
+
+// ── Validate ──────────────────────────────────────────────────────────────────
+// For each pass P that reads resource R:
+//   Finds the last pass W that writes R (by registration index).
+//   W must have index < P (W registered before P → executed before P).
+//   Logs a warning if violated.
+
+bool RenderPassGraph::Validate() const {
+    bool ok = true;
+    for (int pi = 0; pi < count_; ++pi) {
+        const auto& P = passes_[pi];
+        for (int ri = 0; ri < P.read_count; ++ri) {
+            uint32_t res = P.reads[ri].resource_hash;
+            // Find the latest writer of this resource.
+            int writer_idx = -1;
+            for (int wi = 0; wi < count_; ++wi) {
+                const auto& W = passes_[wi];
+                for (int k = 0; k < W.write_count; ++k) {
+                    if (W.writes[k].resource_hash == res)
+                        writer_idx = wi;  // take the latest
+                }
+            }
+            if (writer_idx < 0) continue;  // no declared writer — assume external
+            if (writer_idx >= pi) {
+                fprintf(stderr,
+                    "[RenderPassGraph] WARN: '%s' reads resource 0x%08x "
+                    "but writer '%s' is registered AFTER it\n",
+                    P.name, res, passes_[writer_idx].name);
+                ok = false;
+            }
+        }
+    }
+    if (ok)
+        fprintf(stdout, "[RenderPassGraph] Validate() OK — %d passes, no ordering violations\n",
+                count_);
+    return ok;
+}
+
 } // namespace md

@@ -28,7 +28,37 @@ static char* ReadTextFile(const char* path) {
 
 #ifdef MD_SDL_GPU
 
+// ── SPIR-V bytecode cache ─────────────────────────────────────────────────────
+// Avoids disk reads when the same .spv file is loaded multiple times
+// (hot-reload, shared vertex shaders across pipeline variants).
+
+static constexpr int SPV_CACHE_MAX = 64;
+
+struct SpvEntry {
+    uint32_t hash   = 0;
+    void*    data   = nullptr;
+    size_t   size   = 0;
+    bool     used   = false;
+};
+
+static SpvEntry s_spv_cache[SPV_CACHE_MAX];
+
+static uint32_t SpvHash(const char* s) {
+    uint32_t h = 2166136261u;
+    for (; *s; ++s) h = (h ^ (uint8_t)*s) * 16777619u;
+    return h ? h : 1u;
+}
+
 static void* ReadBinaryFile(const char* path, size_t* out_size) {
+    uint32_t h = SpvHash(path);
+    // Check cache.
+    for (int i = 0; i < SPV_CACHE_MAX; ++i) {
+        if (s_spv_cache[i].used && s_spv_cache[i].hash == h) {
+            *out_size = s_spv_cache[i].size;
+            return s_spv_cache[i].data;  // caller must NOT free this pointer
+        }
+    }
+    // Cache miss: read from disk.
     FILE* f = fopen(path, "rb");
     if (!f) return nullptr;
     fseek(f, 0, SEEK_END);
@@ -39,8 +69,44 @@ static void* ReadBinaryFile(const char* path, size_t* out_size) {
     fread(buf, 1, (size_t)len, f);
     fclose(f);
     *out_size = (size_t)len;
+    // Insert into cache (find empty slot).
+    for (int i = 0; i < SPV_CACHE_MAX; ++i) {
+        if (!s_spv_cache[i].used) {
+            s_spv_cache[i] = { h, buf, (size_t)len, true };
+            return buf;
+        }
+    }
+    // Cache full — return data without caching (caller must free).
     return buf;
 }
+
+// Called by LoadSpvShader ONLY when data did NOT come from cache.
+static bool SpvIsCached(const void* ptr) {
+    for (int i = 0; i < SPV_CACHE_MAX; ++i)
+        if (s_spv_cache[i].used && s_spv_cache[i].data == ptr) return true;
+    return false;
+}
+
+void MdSpvCache_Shutdown() {
+    int freed = 0;
+    for (int i = 0; i < SPV_CACHE_MAX; ++i) {
+        if (s_spv_cache[i].used) {
+            free(s_spv_cache[i].data);
+            s_spv_cache[i] = {};
+            ++freed;
+        }
+    }
+    if (freed) fprintf(stdout, "[SpvCache] shutdown: freed %d SPIR-V entries\n", freed);
+}
+
+int MdSpvCache_Stats(int* out_count) {
+    int n = 0;
+    for (int i = 0; i < SPV_CACHE_MAX; ++i)
+        if (s_spv_cache[i].used) ++n;
+    if (out_count) *out_count = n;
+    return n;
+}
+
 
 // Derive SPIR-V path: "shaders/pbr.vert" → "shaders/spirv/pbr.vert.spv"
 static void MakeSpvPath(char* out, size_t out_sz, const char* glsl_path) {
@@ -106,7 +172,8 @@ static SDL_GPUShader* LoadSpvShader(SDL_GPUDevice* dev,
     info.num_storage_buffers = num_storage_bufs;
     info.num_samplers      = num_samplers;
     SDL_GPUShader* sh = SDL_CreateGPUShader(dev, &info);
-    free(code);
+    // Only free if not owned by the SPIR-V cache.
+    if (!SpvIsCached(code)) free(code);
     if (!sh) MD_LOG(MD_LOG_WARNING, "[GpuPipeline] SDL_CreateGPUShader failed: %s", SDL_GetError());
     return sh;
 }

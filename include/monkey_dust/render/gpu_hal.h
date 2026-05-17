@@ -551,3 +551,13 @@ private:
 #endif
 };
 
+// ── SPIR-V bytecode cache ─────────────────────────────────────────────────────
+// GpuPipeline::Create() caches SPIR-V bytecode by path (FNV-1a hash) so that
+// repeated pipeline creation (hot-reload, multiple passes sharing a shader)
+// reads from memory instead of disk.  MAX 64 entries per session.
+//
+// MdSpvCache_Shutdown(): frees all cached bytecode buffers. Call at app exit.
+// MdSpvCache_Stats(out): returns total cached count; fills *out if non-null.
+void MdSpvCache_Shutdown();
+int  MdSpvCache_Stats(int* out_count = nullptr);
+

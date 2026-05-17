@@ -32,3 +32,17 @@ MdTexture MdLoadTextureFromMemory(const uint8_t* data, int w, int h);
 void MdUnloadTexture(MdTexture& t);
 void MdBindTexture  (MdTexture t, int unit);  // OpenGL only; no-op in SDL_GPU-only builds
 
+// ── Texture cache ─────────────────────────────────────────────────────────────
+// MdLoadTexture / MdLoadTexturePixelArt cache results by FNV-1a path hash.
+// Repeated loads of the same path return the cached MdTexture without hitting disk.
+// MdUnloadTexture on a cached texture zeroes the caller's copy; GPU resources stay
+// alive until MdTextureCache_Shutdown() is called (typically at app exit).
+//
+// Max capacity: 128 entries per variant (pixel-art / linear).
+// Call MdTextureCache_Shutdown() once before SDL_GPU device destruction.
+void MdTextureCache_Shutdown();
+
+// Returns total number of cached entries (pixel-art + linear combined).
+// Writes per-variant counts if out_pa / out_lin are non-null.
+int  MdTextureCache_Stats(int* out_pa = nullptr, int* out_lin = nullptr);
+

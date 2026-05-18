@@ -292,10 +292,9 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     out.loaded = false;  // Upload() sets this
 
     // ── 4. NavMesh ────────────────────────────────────────────────────────────
-    // Non-fatal: dtCreateNavMeshData returns false when zero walkable polys
-    // (steep or varied terrain). Geometry + heightmap are always valid.
-    out.navmesh.BuildTileMap(s_nav_pos, TERRAIN_VERTS, s_nav_tri, TERRAIN_TRIS,
-                             p.nav_cs, p.nav_ch);
+    // Per-chunk navmesh disabled: NPC pathfinding uses NavSystem singleton.
+    // Building 256×256 per-chunk navmeshes costs 15+ seconds at startup.
+    (void)p.nav_cs; (void)p.nav_ch;
     return true;
 }
 

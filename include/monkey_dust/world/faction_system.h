@@ -2,15 +2,17 @@
 #include <cstdint>
 #include <cstring>
 
-static constexpr int    MAX_FACTIONS       = 16;
+static constexpr int    MAX_FACTIONS       = 20;
 static constexpr int8_t HOSTILE_THRESHOLD  = -25;
 static constexpr int8_t FRIENDLY_THRESHOLD = +25;
 
 struct FactionData {
     uint32_t id;
     char     name[32];
+    char     slug[32];          // string id from kenshi_world.json
     int8_t   relations[MAX_FACTIONS + 1];
     int8_t   default_relation;
+    float    color_r, color_g, color_b;
     bool     loaded;
 };
 
@@ -22,6 +24,7 @@ public:
     }
 
     int LoadFromFile(const char* path);
+    int LoadFromJson(const char* path);  // parse kenshi_world.json factions array
 
     int8_t GetRelation(uint32_t from, uint32_t to) const;
 
@@ -62,6 +65,6 @@ private:
     FactionData* FindFaction(uint32_t id);
     const FactionData* FindFaction(uint32_t id) const;
 
-    FactionData factions_[MAX_FACTIONS];
+    FactionData factions_[MAX_FACTIONS];  // indexed 0..faction_count_-1
     int         faction_count_ = 0;
 };

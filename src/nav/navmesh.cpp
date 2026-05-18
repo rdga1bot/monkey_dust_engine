@@ -21,10 +21,10 @@ bool NavMesh::BuildInternal()
     rcConfig cfg = {};
     cfg.cs                     = cs;
     cfg.ch                     = ch;
-    cfg.walkableSlopeAngle     = 45.0f;
-    cfg.walkableHeight         = (int)ceilf(1.8f / ch);
+    cfg.walkableSlopeAngle     = 60.0f;   // RE-1: Kenshi hkaiNavMeshGenerationSettings π/3
+    cfg.walkableHeight         = (int)ceilf(1.75f / ch); // RE-1: Kenshi agentHeight=1.75m
     cfg.walkableClimb          = (int)floorf(0.3f / ch);
-    cfg.walkableRadius         = (int)ceilf(0.4f / cs);
+    cfg.walkableRadius         = (int)ceilf(0.26f / cs); // RE-1: Kenshi pathfind footprint radius≈0.26m
     cfg.maxEdgeLen             = (int)(12.0f / cs);
     cfg.maxSimplificationError = 1.3f;
     cfg.minRegionArea          = (int)rcSqr(8);
@@ -91,6 +91,10 @@ bool NavMesh::BuildInternal()
         if (pmesh->areas[i] == RC_WALKABLE_AREA)
             pmesh->flags[i] = 0x01;
 
+    if (pmesh->npolys == 0) {  // no walkable polys — silent skip
+        rcFreePolyMesh(pmesh); rcFreePolyMeshDetail(dmesh); return false;
+    }
+
     dtNavMeshCreateParams params = {};
     params.verts            = pmesh->verts;
     params.vertCount        = pmesh->nverts;
@@ -104,8 +108,8 @@ bool NavMesh::BuildInternal()
     params.detailVertsCount = dmesh->nverts;
     params.detailTris       = dmesh->tris;
     params.detailTriCount   = dmesh->ntris;
-    params.walkableHeight   = 1.8f;
-    params.walkableRadius   = 0.4f;
+    params.walkableHeight   = 1.75f;  // RE-1
+    params.walkableRadius   = 0.26f;  // RE-1
     params.walkableClimb    = 0.3f;
     rcVcopy(params.bmin, pmesh->bmin);
     rcVcopy(params.bmax, pmesh->bmax);
@@ -350,12 +354,12 @@ bool NavMesh::BuildFromExternal(const float* verts, int nverts,
     rcConfig cfg = {};
     cfg.cs                     = cs;
     cfg.ch                     = ch;
-    cfg.walkableSlopeAngle     = 45.0f;
-    cfg.walkableHeight         = (int)ceilf(1.8f  / ch);
+    cfg.walkableSlopeAngle     = 60.0f;   // RE-1: Kenshi hkaiNavMeshGenerationSettings
+    cfg.walkableHeight         = (int)ceilf(1.75f / ch); // RE-1: Kenshi agentHeight=1.75m
     // Minimum climb = 1 cell so gentle terrain is walkable regardless of ch.
     cfg.walkableClimb          = (int)floorf(0.6f / ch);
     if (cfg.walkableClimb < 1) cfg.walkableClimb = 1;
-    cfg.walkableRadius         = (int)ceilf(0.4f  / cs);
+    cfg.walkableRadius         = (int)ceilf(0.26f / cs); // RE-1: Kenshi footprint radius≈0.26m
     cfg.maxEdgeLen             = (int)(12.0f / cs);
     cfg.maxSimplificationError = 1.3f;
     cfg.minRegionArea          = 1;               // preserve single-tile corridors
@@ -413,6 +417,10 @@ bool NavMesh::BuildFromExternal(const float* verts, int nverts,
         if (pmesh->areas[i] == RC_WALKABLE_AREA)
             pmesh->flags[i] = 0x01;
 
+    if (pmesh->npolys == 0) {  // no walkable polys — silent skip
+        rcFreePolyMesh(pmesh); rcFreePolyMeshDetail(dmesh); return false;
+    }
+
     dtNavMeshCreateParams params = {};
     params.verts            = pmesh->verts;
     params.vertCount        = pmesh->nverts;
@@ -426,8 +434,8 @@ bool NavMesh::BuildFromExternal(const float* verts, int nverts,
     params.detailVertsCount = dmesh->nverts;
     params.detailTris       = dmesh->tris;
     params.detailTriCount   = dmesh->ntris;
-    params.walkableHeight   = 1.8f;
-    params.walkableRadius   = 0.4f;
+    params.walkableHeight   = 1.75f;  // RE-1
+    params.walkableRadius   = 0.26f;  // RE-1
     params.walkableClimb    = 0.3f;
     rcVcopy(params.bmin, pmesh->bmin);
     rcVcopy(params.bmax, pmesh->bmax);

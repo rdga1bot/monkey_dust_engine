@@ -165,6 +165,11 @@ public:
     }
     SDL_GPUBuffer* SDLBonesBuffer()    const { return bones_ssbo_.SDLBuffer(); }
     SDL_GPUBuffer* SDLAnimStateBuffer() const { return anim_state_ring_.SDLBuffer(); }
+    // CPU-side bone matrices upload (bypasses skinning.comp for real-mesh animation).
+    // data: float[npc_count * MAX_BONES * 16], laid out at slot offsets 0..npc_count-1
+    void UploadBonesInCmd(SDL_GPUCommandBuffer* cmd, const void* data, int bytes, int byte_offset = 0) {
+        if (bones_ssbo_.SDLBuffer()) bones_ssbo_.UploadInCmd(cmd, data, bytes, byte_offset);
+    }
 #endif
 
     void Shutdown() {

@@ -122,6 +122,7 @@ static SDL_GPUVertexElementFormat ToSDLFmt(GpuAttribFmt f) {
     case GpuAttribFmt::F3:        return SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
     case GpuAttribFmt::F4:        return SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
     case GpuAttribFmt::U8x4_NORM: return SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM;
+    case GpuAttribFmt::U8x4:      return SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4;
     }
     return SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
 }

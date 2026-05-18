@@ -77,6 +77,76 @@ int FactionSystem::LoadFromFile(const char* path) {
     return faction_count_;
 }
 
+static bool ParseFloat(const char* p, const char* key, float& out) {
+    const char* found = strstr(p, key);
+    if (!found) return false;
+    found += strlen(key);
+    while (*found && (*found == '"' || *found == ':' || *found == ' '))
+        found++;
+    if (!*found) return false;
+    out = (float)strtod(found, nullptr);
+    return true;
+}
+
+int FactionSystem::LoadFromJson(const char* path) {
+    FILE* fp = fopen(path, "rb");
+    if (!fp) { fprintf(stderr, "[FactionSystem] Cannot open: %s\n", path); return 0; }
+    static char buf[32768];
+    int bytes = (int)fread(buf, 1, sizeof(buf) - 1, fp);
+    fclose(fp);
+    buf[bytes] = '\0';
+
+    const char* arr = strstr(buf, "\"factions\"");
+    if (!arr) return 0;
+    arr = strchr(arr, '[');
+    if (!arr) return 0;
+
+    faction_count_ = 0;
+    const char* cursor = arr + 1;
+    uint32_t nid = 0;
+
+    while (faction_count_ < MAX_FACTIONS) {
+        const char* obj = strchr(cursor, '{');
+        if (!obj) break;
+        const char* end = strchr(obj + 1, '}');
+        if (!end) break;
+
+        FactionData& fd = factions_[faction_count_];
+        memset(&fd, 0, sizeof(fd));
+        fd.id = nid;
+        fd.color_r = 0.7f; fd.color_g = 0.7f; fd.color_b = 0.7f;
+
+        ParseStr(obj, "\"id\"",   fd.slug, sizeof(fd.slug));
+        ParseStr(obj, "\"name\"", fd.name, sizeof(fd.name));
+
+        char attitude[64] = {};
+        ParseStr(obj, "\"attitude\"", attitude, sizeof(attitude));
+        if      (strstr(attitude, "hostile"))    fd.default_relation = -50;
+        else if (strstr(attitude, "aggressive")) fd.default_relation = -20;
+        else if (strstr(attitude, "friendly"))   fd.default_relation =  50;
+        else                                     fd.default_relation =   0;
+
+        const char* col = strstr(obj, "\"color_rgb\"");
+        if (col && col < end) {
+            const char* cb = strchr(col, '[');
+            if (cb) {
+                float r = 0.7f, g = 0.7f, b = 0.7f;
+                sscanf(cb + 1, "%f , %f , %f", &r, &g, &b);
+                fd.color_r = r; fd.color_g = g; fd.color_b = b;
+            }
+        }
+
+        for (int i = 0; i <= MAX_FACTIONS; ++i) fd.relations[i] = fd.default_relation;
+        fd.relations[fd.id] = 100;
+        fd.loaded = true;
+        faction_count_++;
+        nid++;
+        cursor = end + 1;
+    }
+    fprintf(stdout, "[FactionSystem] Loaded %d Kenshi factions from %s\n", faction_count_, path);
+    return faction_count_;
+}
+
 FactionData* FactionSystem::FindFaction(uint32_t id) {
     for (int i = 0; i < faction_count_; ++i)
         if (factions_[i].id == id) return &factions_[i];

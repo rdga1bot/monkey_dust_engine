@@ -68,6 +68,8 @@ target_include_directories(monkey_dust_engine
     PRIVATE ${CMAKE_SOURCE_DIR}/third_party/recastnavigation/Recast/Include
     PRIVATE ${CMAKE_SOURCE_DIR}/third_party/recastnavigation/Detour/Include
     PRIVATE ${CMAKE_SOURCE_DIR}/third_party/recastnavigation/DetourCrowd/Include
+    PUBLIC  ${CMAKE_SOURCE_DIR}/third_party/ozz-animation/include
+    PUBLIC  ${CMAKE_SOURCE_DIR}/third_party/JoltPhysics
     PRIVATE ${CMAKE_SOURCE_DIR}/third_party/imgui
     PRIVATE ${LUA_INCLUDE_DIR}
     # Vendor: glad, stb headers — PUBLIC so game/ and tools/ can find them too
@@ -95,6 +97,8 @@ target_include_directories(monkey_dust_engine PUBLIC
 
 target_link_libraries(monkey_dust_engine PRIVATE
     Recast Detour DetourCrowd
+    ozz_animation ozz_base
+    Jolt
     ${LUA_LIBRARIES}
 )
 

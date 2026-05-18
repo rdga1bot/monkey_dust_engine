@@ -29,7 +29,8 @@ enum class GpuTopology : uint8_t { TRIANGLES, POINTS, LINES };
 // ── Vertex attribute format ───────────────────────────────────────────────────
 enum class GpuAttribFmt : uint8_t {
     F1, F2, F3, F4,       // float scalars / vectors
-    U8x4_NORM             // uint8×4 normalized [0,1] → vec4
+    U8x4_NORM,            // uint8×4 normalized [0,1] → vec4
+    U8x4                  // uint8×4 raw (bone joint indices → uvec4)
 };
 
 // ── Blend factor (portable; maps to GL and SDL_GPU) ───────────────────────────

@@ -23,5 +23,7 @@ public:
     GpuStaticBuffer ibo;
     uint32_t        index_count = 0;
     bool            loaded      = false;
-    bool            indices_u16 = true;  // true=uint16_t, false=uint32_t
+    bool            indices_u16 = true;
+    float           aabb_y_min  = 0.0f;  // model-space Y extent (for animation)
+    float           aabb_y_max  = 1.0f;
 };

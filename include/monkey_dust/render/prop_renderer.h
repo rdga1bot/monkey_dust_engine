@@ -14,7 +14,7 @@
 
 class PropRenderer {
 public:
-    static constexpr int   MAX_PROPS = 64;
+    static constexpr int   MAX_PROPS = 512;
     static constexpr float SCALE     = 1.5f;  // rock scale in metres
 
     // Init: load GLB mesh + create pipeline.
@@ -28,6 +28,7 @@ public:
     // positions_xyz: float array [count * 3], each triple is (x, y, z) world pos.
     // vp16:   column-major mat4 (64 bytes).
     // sun32:  TerrainRenderer::SunParams (32 bytes: vec4 sun_dir_str + vec4 ambient).
+    // anim_mode: 0=static, 1=wind sway (vegetation), 2=character bob
     void DrawRaw(
 #ifdef MD_SDL_GPU
         SDL_GPURenderPass*    rp,
@@ -36,7 +37,10 @@ public:
         const float* positions_xyz,
         int          count,
         const float* vp16,
-        const float* sun32);
+        const float* sun32,
+        float        scale      = SCALE,
+        float        anim_mode  = 0.0f,
+        float        anim_time  = 0.0f);
 
 private:
     PropMesh    mesh_;

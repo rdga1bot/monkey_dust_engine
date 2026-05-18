@@ -66,13 +66,18 @@ bool PropMesh::LoadGLB(const char* path) {
 
     // Build interleaved VBO: PropVertex { pos(12) + norm(12) }.
     static PropVertex s_verts[131072];
+    float y_min =  1e30f, y_max = -1e30f;
     for (cgltf_size i = 0; i < vert_count; ++i) {
         float p[3] = {0.f, 0.f, 0.f};
         float n[3] = {0.f, 1.f, 0.f};
         cgltf_accessor_read_float(pos_acc,  i, p, 3);
         cgltf_accessor_read_float(norm_acc, i, n, 3);
         s_verts[i] = { p[0], p[1], p[2], n[0], n[1], n[2] };
+        if (p[1] < y_min) y_min = p[1];
+        if (p[1] > y_max) y_max = p[1];
     }
+    aabb_y_min = y_min;
+    aabb_y_max = y_max;
 
     vbo.Init(0x8892u /*GL_ARRAY_BUFFER*/,
              s_verts,

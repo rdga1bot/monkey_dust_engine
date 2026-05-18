@@ -52,14 +52,16 @@ void PropRenderer::Shutdown() {
     mesh_.Shutdown();
 }
 
-// Vertex UBO layout (std140, 80 bytes):
-//   mat4 vp            — 64 bytes (columns 0-3)
+// Vertex UBO layout (std140, 96 bytes):
+//   mat4 vp              — 64 bytes
 //   vec4 model_pos_scale — 16 bytes (xyz=world pos, w=scale)
+//   vec4 anim_params     — 16 bytes (x=time, y=mode, z=mesh_height, w=phase)
 struct alignas(16) PropVertUBO {
     float vp[16];              // 64 bytes
     float model_pos_scale[4];  // 16 bytes
+    float anim_params[4];      // 16 bytes
 };
-static_assert(sizeof(PropVertUBO) == 80, "PropVertUBO size mismatch");
+static_assert(sizeof(PropVertUBO) == 96, "PropVertUBO size mismatch");
 
 void PropRenderer::DrawRaw(
 #ifdef MD_SDL_GPU
@@ -69,7 +71,10 @@ void PropRenderer::DrawRaw(
     const float* positions_xyz,
     int          count,
     const float* vp16,
-    const float* sun32)
+    const float* sun32,
+    float        scale,
+    float        anim_mode,
+    float        anim_time)
 {
     if (!mesh_.loaded || count <= 0) return;
     if (count > MAX_PROPS) count = MAX_PROPS;
@@ -96,17 +101,27 @@ void PropRenderer::DrawRaw(
     PropVertUBO v_ubo;
     memcpy(v_ubo.vp, vp16, 64);
 
+    // mesh_height from AABB (y-extent in model space, before scale)
+    float mesh_h = mesh_.aabb_y_max - mesh_.aabb_y_min;
+
+    v_ubo.anim_params[0] = anim_time;
+    v_ubo.anim_params[1] = anim_mode;
+    v_ubo.anim_params[2] = mesh_h;
+
     for (int i = 0; i < count; ++i) {
         const float* p = positions_xyz + i * 3;
         v_ubo.model_pos_scale[0] = p[0];
         v_ubo.model_pos_scale[1] = p[1];
         v_ubo.model_pos_scale[2] = p[2];
-        v_ubo.model_pos_scale[3] = SCALE;
+        v_ubo.model_pos_scale[3] = scale;
+        // per-instance phase: hash of XZ position so each instance is offset
+        v_ubo.anim_params[3] = (p[0] * 0.31f + p[2] * 0.17f);
 
         SDL_PushGPUVertexUniformData(cmd, 0, &v_ubo, sizeof(v_ubo));
         SDL_DrawGPUIndexedPrimitives(rp, mesh_.index_count, 1, 0, 0, 0);
     }
 #else
     (void)positions_xyz; (void)count; (void)vp16; (void)sun32;
+    (void)scale; (void)anim_mode; (void)anim_time;
 #endif
 }

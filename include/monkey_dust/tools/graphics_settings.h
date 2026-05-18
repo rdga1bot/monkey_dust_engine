@@ -24,9 +24,9 @@ struct GraphicsSettings {
     static GraphicsSettings& Get() { static GraphicsSettings s; return s; }
 
     // ── Display ───────────────────────────────────────────────────────────────
-    float fog_near     = 80.f;
-    float fog_far      = 150.f;
-    float fog_color[3] = {0.18f, 0.20f, 0.25f};
+    float fog_near     = 300.f;   // canyon-scale: fog starts at 300m
+    float fog_far      = 700.f;   // fades to sky at 700m
+    float fog_color[3] = {0.38f, 0.58f, 0.82f};  // matches sky clear color
     bool  fog_enabled  = true;
 
     bool  vsync            = true;

@@ -352,7 +352,9 @@ bool NavMesh::BuildFromExternal(const float* verts, int nverts,
     cfg.ch                     = ch;
     cfg.walkableSlopeAngle     = 45.0f;
     cfg.walkableHeight         = (int)ceilf(1.8f  / ch);
-    cfg.walkableClimb          = (int)floorf(0.3f / ch);
+    // Minimum climb = 1 cell so gentle terrain is walkable regardless of ch.
+    cfg.walkableClimb          = (int)floorf(0.6f / ch);
+    if (cfg.walkableClimb < 1) cfg.walkableClimb = 1;
     cfg.walkableRadius         = (int)ceilf(0.4f  / cs);
     cfg.maxEdgeLen             = (int)(12.0f / cs);
     cfg.maxSimplificationError = 1.3f;

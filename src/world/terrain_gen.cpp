@@ -2,6 +2,7 @@
 #include <monkey_dust/world/chunk_def.h>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
 
 // ── Simplex noise (Stefan Gustavson / Ashima Arts — public domain) ────────────
 
@@ -113,14 +114,93 @@ static uint16_t      s_idx_buf  [TERRAIN_IDX];
 static float         s_nav_pos  [TERRAIN_VERTS * 3];
 static int           s_nav_tri  [TERRAIN_IDX];   // same indices, cast to int
 
+// Load r32 heightmap file into a flat buffer (width*height floats).
+// Returns false on error. Caller owns buffer (use delete[]).
+static bool s_load_r32(const char* path, float*& buf_out, int& w_out, int& h_out,
+                        float& hmin_out, float& hmax_out) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    unsigned int w, h;
+    float hmin, hmax;
+    if (fread(&w, 4, 1, f) != 1 || fread(&h, 4, 1, f) != 1 ||
+        fread(&hmin, 4, 1, f) != 1 || fread(&hmax, 4, 1, f) != 1) {
+        fclose(f); return false;
+    }
+    buf_out  = new float[w * h];
+    w_out    = (int)w; h_out = (int)h;
+    hmin_out = hmin;   hmax_out = hmax;
+    bool ok  = fread(buf_out, sizeof(float), w * h, f) == w * h;
+    fclose(f);
+    if (!ok) { delete[] buf_out; buf_out = nullptr; return false; }
+    return true;
+}
+
+static float s_hmap_sample(const float* hmap, int hmap_w, int hmap_h,
+                             float u, float v) {
+    // Bilinear sample; u,v in [0,1]
+    float fx = u * (hmap_w - 1);
+    float fz = v * (hmap_h - 1);
+    int   x0 = (int)fx, z0 = (int)fz;
+    int   x1 = x0 + 1 < hmap_w ? x0 + 1 : x0;
+    int   z1 = z0 + 1 < hmap_h ? z0 + 1 : z0;
+    float tx = fx - x0, tz = fz - z0;
+    float h00 = hmap[z0 * hmap_w + x0];
+    float h10 = hmap[z0 * hmap_w + x1];
+    float h01 = hmap[z1 * hmap_w + x0];
+    float h11 = hmap[z1 * hmap_w + x1];
+    float h0  = h00 + tx * (h10 - h00);
+    float h1  = h01 + tx * (h11 - h01);
+    return h0 + tz * (h1 - h0);
+}
+
+// Number of chunks per side (must match the TNKN used in main.cpp = 16).
+static constexpr int HMAP_CHUNKS = 16;
+
 bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParams& p) {
     float world_origin_x = coord.x * CHUNK_SIZE;
     float world_origin_z = coord.z * CHUNK_SIZE;
 
     // ── 1. Heights ────────────────────────────────────────────────────────────
-    for (int row = 0; row <= TERRAIN_GRID; ++row) {
-        for (int col = 0; col <= TERRAIN_GRID; ++col) {
-            out.heightmap.h[s_idx(col, row)] = s_gen_height(col, row, coord, p);
+    if (p.heightmap_r32) {
+        // Load Kenshi heightmap and sample heights for this chunk
+        static const float* s_hmap     = nullptr;
+        static int          s_hmap_w   = 0, s_hmap_h = 0;
+        static float        s_hmap_range = 1.0f;
+        static const char*  s_hmap_path = nullptr;
+
+        if (s_hmap_path != p.heightmap_r32) {
+            delete[] s_hmap;
+            float hmin, hmax;
+            float* tmp = nullptr;
+            if (s_load_r32(p.heightmap_r32, tmp, s_hmap_w, s_hmap_h, hmin, hmax)) {
+                s_hmap      = tmp;
+                s_hmap_range = (hmax - hmin > 1e-3f) ? (hmax - hmin) : 1.0f;
+                s_hmap_path  = p.heightmap_r32;
+            } else {
+                s_hmap = nullptr; s_hmap_path = nullptr;
+            }
+        }
+
+        float total_size = HMAP_CHUNKS * CHUNK_SIZE;
+        for (int row = 0; row <= TERRAIN_GRID; ++row) {
+            for (int col = 0; col <= TERRAIN_GRID; ++col) {
+                float wx  = (coord.x * CHUNK_SIZE + col * TERRAIN_STEP) + p.world_offset_x;
+                float wz  = (coord.z * CHUNK_SIZE + row * TERRAIN_STEP) + p.world_offset_z;
+                float u   = (wx - p.world_offset_x + total_size * 0.5f) / total_size;
+                float v   = (wz - p.world_offset_z + total_size * 0.5f) / total_size;
+                u = u < 0.f ? 0.f : (u > 1.f ? 1.f : u);
+                v = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
+                float raw = s_hmap ? s_hmap_sample(s_hmap, s_hmap_w, s_hmap_h, u, v) : 0.f;
+                // Normalize raw to [-1,1] then scale by amplitude
+                float h = (raw / s_hmap_range) * p.amplitude;
+                out.heightmap.h[s_idx(col, row)] = h;
+            }
+        }
+    } else {
+        for (int row = 0; row <= TERRAIN_GRID; ++row) {
+            for (int col = 0; col <= TERRAIN_GRID; ++col) {
+                out.heightmap.h[s_idx(col, row)] = s_gen_height(col, row, coord, p);
+            }
         }
     }
 
@@ -136,9 +216,9 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             s_verts_buf[vi].y = h;
             s_verts_buf[vi].z = wz;
 
-            // World-space UV for texture tiling (1m = 1 UV unit / texture repeat)
-            s_verts_buf[vi].u = wx;
-            s_verts_buf[vi].v = wz;
+            // UV: repeat every ~8m so texture looks natural at any terrain scale
+            s_verts_buf[vi].u = wx * 0.125f;
+            s_verts_buf[vi].v = wz * 0.125f;
 
             s_splat(h, p.amplitude, s_verts_buf[vi].splat);
 

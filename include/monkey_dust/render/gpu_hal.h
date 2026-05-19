@@ -97,6 +97,10 @@ enum ShaderFeature : uint32_t {
     SF_Skinned   = 1u << 0,  // GPU skeletal animation via SSBO bones (binding 4)
     SF_Shadows   = 1u << 1,  // CSM shadow sampling (3 cascades)
     SF_AlphaTest = 1u << 2,  // frag discard for alpha-tested geometry
+    // VBfA-R9: character material variants (same animated.vert, different FS)
+    SF_Emissive  = 1u << 3,  // animated_emissive.frag — glowing NPC (fire/magic)
+    SF_Dissolve  = 1u << 4,  // animated_dissolve.frag — death/despawn noise clip
+    SF_Ice       = 1u << 5,  // animated_ice.frag (future: frozen NPC effect)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

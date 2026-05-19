@@ -3,10 +3,12 @@
 // SenseSystemUpdate(now_ms): call once per logic tick, after frame_flags dispatch.
 // Visual cone: max contribution from ViewConeSet; Audio: linear falloff 15m.
 // Rising edge on threshold_hi → writes last_activated_ms + last_known_x/z (Visual).
+// VBfA-AI2: AwarenessLimits caps applied — prevents O(n²) reaction cascades.
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ai/sense_registry.h>
+#include <monkey_dust/ai/awareness_limits.h>
 #include <monkey_dust/ecs/registry.h>
 #include <cmath>
 
@@ -29,6 +31,9 @@ static inline float sense_cone_activation(const ViewCone& cone,
 }
 
 inline void SenseSystemUpdate(float now_ms) {
+    // VBfA-AI2: reset per-tick reaction caps (prevents O(n²) alert cascades)
+    AwarenessLimits::g_frame.Reset();
+
     auto& reg = Registry::Get();
 
     entt::entity player = entt::null;
@@ -54,28 +59,47 @@ inline void SenseSystemUpdate(float now_ms) {
         float angle_to   = atan2f(dx, dz);
         float angle_diff = fabsf(sense_wrap_angle(angle_to - wt.rot_y)) * SENSE_RAD2DEG;
 
-        // Visual (index 0)
-        const ViewConeSet* vcs = SenseRegistry::Get().At(sc.cone_set_idx);
+        // ── Visual (index 0) ─────────────────────────────────────────────────
+        // VBfA-AI2: hard range cap — skip cone computation beyond MAX_VISION_RANGE.
+        // This is an O(n) perf win: NPCs beyond 22m skip the cone loop entirely.
         float visual_act = 0.f;
-        if (vcs) {
-            for (int c = 0; c < vcs->cone_count; ++c) {
-                float contrib = sense_cone_activation(vcs->cones[c], dist, angle_diff);
-                if (contrib > visual_act) visual_act = contrib;
+        if (dist <= AwarenessLimits::MAX_VISION_RANGE) {
+            const ViewConeSet* vcs = SenseRegistry::Get().At(sc.cone_set_idx);
+            if (vcs) {
+                for (int c = 0; c < vcs->cone_count; ++c) {
+                    float contrib = sense_cone_activation(vcs->cones[c], dist, angle_diff);
+                    if (contrib > visual_act) visual_act = contrib;
+                }
             }
         }
-        bool was_hi = sc.activation[0] >= sc.threshold_hi;
+
+        bool vis_was_hi = sc.activation[0] >= sc.threshold_hi;
         sc.activation[0] = visual_act;
-        if (!was_hi && visual_act >= sc.threshold_hi) {
-            sc.last_activated_ms[0] = uint32_now;
-            sc.last_known_x = pwt->x;
-            sc.last_known_z = pwt->z;
+        if (!vis_was_hi && visual_act >= sc.threshold_hi) {
+            // VBfA-AI2: cap at MAX_REACT_TO_PLAYER per tick.
+            // Beyond cap: NPC perceives player (activation=high) but doesn't react
+            // (last_activated_ms unchanged → BT SenseTimeCheck sees no recent event).
+            if (AwarenessLimits::g_frame.reacted_to_player
+                    < AwarenessLimits::MAX_REACT_TO_PLAYER) {
+                sc.last_activated_ms[0] = uint32_now;
+                sc.last_known_x = pwt->x;
+                sc.last_known_z = pwt->z;
+                ++AwarenessLimits::g_frame.reacted_to_player;
+            }
         }
 
-        // Audio (index 1): linear falloff within 15m
+        // ── Audio (index 1): linear falloff within SENSE_AUDIO_RADIUS_M ─────
+        // Audio range already acts as combat-noise distance (15m ≈ VBfA MAX_OBSCURED_HEARING).
+        // Rising-edge cap limits how many NPCs "hear" combat per tick (VBfA MAX_REACT_TO_COMBAT=7).
         float audio_act = fmaxf(0.f, 1.f - dist / SENSE_AUDIO_RADIUS_M);
-        was_hi = sc.activation[1] >= sc.threshold_hi;
+        bool  aud_was_hi = sc.activation[1] >= sc.threshold_hi;
         sc.activation[1] = audio_act;
-        if (!was_hi && audio_act >= sc.threshold_hi)
-            sc.last_activated_ms[1] = uint32_now;
+        if (!aud_was_hi && audio_act >= sc.threshold_hi) {
+            if (AwarenessLimits::g_frame.reacted_to_combat
+                    < AwarenessLimits::MAX_REACT_TO_COMBAT) {
+                sc.last_activated_ms[1] = uint32_now;
+                ++AwarenessLimits::g_frame.reacted_to_combat;
+            }
+        }
     });
 }

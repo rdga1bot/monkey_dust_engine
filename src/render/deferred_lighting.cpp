@@ -6,11 +6,14 @@
 
 // ── Fragment UBO (must match DeferredAmbientUBO std140 in deferred_lighting.frag) ──
 struct DeferredAmbientUBO {
-    float sun_dir[4];        // vec4 @  0 (xyz=sun→surface, w=unused)
-    float sun_color[4];      // vec4 @ 16
-    float ambient_color[4];  // vec4 @ 32
-    float emissive_scale;    // float @ 48
-    float _pad[3];           // align to 64 B
+    float sun_dir[4];           // vec4 @  0 (xyz=sun→surface, w=unused)
+    float sun_color[4];         // vec4 @ 16
+    float ambient_color[4];     // vec4 @ 32
+    float emissive_scale;       // float @ 48
+    // VBfA-R7: shadow fade params (repurposed from _pad[3], same 64B total)
+    float shadow_dist_scalar;   // float @ 52  1/fade_distance
+    float shadow_height_scalar; // float @ 56  world-Y fade scalar
+    float shadow_height_offset; // float @ 60  world-Y fade offset
 };
 static_assert(sizeof(DeferredAmbientUBO) == 64);
 
@@ -110,7 +113,10 @@ void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
     ubo.sun_color[2]      = sun_color[2];     ubo.sun_color[3] = 0.0f;
     ubo.ambient_color[0]  = ambient_color[0]; ubo.ambient_color[1] = ambient_color[1];
     ubo.ambient_color[2]  = ambient_color[2]; ubo.ambient_color[3] = 0.0f;
-    ubo.emissive_scale    = emissive_scale;
+    ubo.emissive_scale        = emissive_scale;
+    ubo.shadow_dist_scalar    = 1.f / 120.f;  // shadow fades at 120m
+    ubo.shadow_height_scalar  = 0.f;           // height fade off (flat world default)
+    ubo.shadow_height_offset  = 1.f;           // always 1.0 at ground level
     SDL_PushGPUFragmentUniformData(cmd, 0, &ubo, sizeof(ubo));
 
     // Draw fullscreen triangle (3 vertices, no VBO)

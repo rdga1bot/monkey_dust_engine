@@ -58,12 +58,12 @@ public:
         float hR = GetHeight(wx + D, wz);
         float hB = GetHeight(wx, wz - D);
         float hF = GetHeight(wx, wz + D);
-        // Cross product of tangent vectors
+        // N = tangentZ × tangentX  (upward-facing normal)
         float tx = 2.f * D, ty = hR - hL, tz = 0.f;
         float bx = 0.f,     by = hF - hB, bz = 2.f * D;
-        nx = ty * bz - tz * by;
-        ny = tz * bx - tx * bz;
-        nz = tx * by - ty * bx;
+        nx = by * tz - bz * ty;
+        ny = bz * tx - bx * tz;
+        nz = bx * ty - by * tx;
         float len = sqrtf(nx*nx + ny*ny + nz*nz);
         if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
         else             { nx = 0.f; ny = 1.f; nz = 0.f; }

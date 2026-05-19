@@ -38,6 +38,28 @@ public:
         brdf_lut = MdLoadTextureFromMemory(pixels, BRDF_LUT_SIZE, BRDF_LUT_SIZE);
     }
 
+    // VBfA-R3: compute 6-sample directional light probe for NPC ambient.
+    // probe_out: float[24] — 6 groups of (R, G, B, pad), one per ±XYZ direction.
+    // Order: [0]=+X [1]=-X [2]=+Y [3]=-Y [4]=+Z [5]=-Z
+    // Formula: probe[i] = ambient + max(0, dot(dir_i, toSun)) * sun_color * kSun
+    void ComputeProbe(float probe_out[24]) const {
+        static const float kDirs[6][3] = {
+            { 1, 0, 0}, {-1, 0, 0},
+            { 0, 1, 0}, { 0,-1, 0},
+            { 0, 0, 1}, { 0, 0,-1}
+        };
+        // sun_dir = sun→surface direction; toSun = -sun_dir (surface→sun)
+        const float ts[3] = { -sun_dir.x, -sun_dir.y, -sun_dir.z };
+        for (int i = 0; i < 6; i++) {
+            float ndotl = kDirs[i][0]*ts[0] + kDirs[i][1]*ts[1] + kDirs[i][2]*ts[2];
+            if (ndotl < 0.f) ndotl = 0.f;
+            probe_out[i*4+0] = ambient_color.x + sun_color.x * ndotl * 0.45f;
+            probe_out[i*4+1] = ambient_color.y + sun_color.y * ndotl * 0.45f;
+            probe_out[i*4+2] = ambient_color.z + sun_color.z * ndotl * 0.45f;
+            probe_out[i*4+3] = 0.f;
+        }
+    }
+
     // Sets sunDir, sunColor, ambientColor uniforms on any shader by name.
     // sunDir is "to sun" in fragment shader convention (light dir reversed).
     void Apply(MdShader shader) const {

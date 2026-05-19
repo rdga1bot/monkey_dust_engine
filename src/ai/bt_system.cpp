@@ -1,4 +1,6 @@
 #include <monkey_dust/ai/bt_system.h>
+#include <monkey_dust/ai/ai_budget.h>
+#include <monkey_dust/components/ai_agent.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/world/transform_soa.h>
 
@@ -62,6 +64,19 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
             }
             // Tier 1 (<30m): always tick — falls through here.
         }
+
+        // VBfA-AI3: budget check (after LOD, before expensive BT tick).
+        // Player is exempt; schedule NPCs (bt_template_id==255) cost 0.2;
+        // all other NPCs cost 1.0 (default combat unit).
+        float cost = BtBudgetCost::kGuard;
+        if (as.lcflags.test(lcf::IS_PLAYER)) {
+            cost = BtBudgetCost::kPlayer;
+        } else {
+            const AIAgent* ag = reg.try_get<AIAgent>(e);
+            if (ag && ag->bt_template_id == 255)
+                cost = BtBudgetCost::kScheduleNpc;
+        }
+        if (!AIBudget::Get().TryConsume(cost)) return;  // budget exhausted: skip BT
 
         btc.tree->tick(ctx, e, nowMs);
     });

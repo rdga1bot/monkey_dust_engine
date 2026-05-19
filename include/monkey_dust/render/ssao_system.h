@@ -44,9 +44,16 @@ public:
                   SDL_GPUTexture*       hw_depth,
                   SDL_GPUSampler*       hw_sampler);
 
-    // VBfA-R2 stubs (implemented in R2 sprint).
-    void MainPass(SDL_GPUCommandBuffer* cmd);  // linear_depth → ssao_raw
-    void BlurPass(SDL_GPUCommandBuffer* cmd);  // bilateral blur → ssao_blurred
+    // VBfA-R2: full AO computation.
+    // MainPass: linear_depth → ssao_raw RGBA8 (R=AO, GB=packed edges).
+    // BlurPass: ssao_raw → blur_temp_ (H) → ssao_blurred_ (V).
+    // ApplyPass: draw fullscreen multiply-blend onto supplied swapchain texture.
+    // inv_proj_x = 1/proj[0][0], inv_proj_y = 1/proj[1][1] from camera projection.
+    void MainPass(SDL_GPUCommandBuffer* cmd,
+                  float inv_proj_x = 1.f, float inv_proj_y = 1.f);
+    void BlurPass(SDL_GPUCommandBuffer* cmd);
+    void ApplyPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* swapchain_tex,
+                   int sw, int sh);
 
     // Legacy 16-tap compute path (ssao.comp) — kept for reference/testing.
     void Dispatch(SDL_GPUCommandBuffer* cmd,
@@ -89,9 +96,14 @@ private:
     SDL_GPUSampler*   linear_sampler_= nullptr;  // BILINEAR for final reads
     SDL_GPUSampler*   point_sampler_ = nullptr;  // NEAREST for bilateral blur
 
-    // VBfA-R2: AO output (stubs — nullptr until R2)
-    SDL_GPUTexture*   ssao_raw_      = nullptr;  // RGBA8 (R=AO, GB=packed edges)
-    SDL_GPUTexture*   ssao_blurred_  = nullptr;  // R8 final blurred AO
+    // VBfA-R2: AO textures + pipelines
+    GpuPipeline       main_pipeline_;            // depth→AO (ssao_main.frag)
+    GpuPipeline       blur_h_pipeline_;          // bilateral H (ssao_blur_h.frag)
+    GpuPipeline       blur_v_pipeline_;          // bilateral V (ssao_blur_v.frag)
+    GpuPipeline       apply_pipeline_;           // multiply onto swapchain (ssao_apply.frag)
+    SDL_GPUTexture*   ssao_raw_      = nullptr;  // RGBA8 half-res (R=AO, GB=packed edges)
+    SDL_GPUTexture*   blur_temp_     = nullptr;  // R8   half-res (H blur intermediate)
+    SDL_GPUTexture*   ssao_blurred_  = nullptr;  // R8   half-res (final AO)
 
     // Legacy compute AO
     GpuComputePipeline legacy_pipeline_;
@@ -104,12 +116,33 @@ private:
 
 } // namespace md
 
-// ── SSAOPrepUBO (std140, 16 bytes — must match ssao_prep.frag) ─────────────────
+// ── SSAOPrepUBO (std140, 16B — must match ssao_prep.frag) ──────────────────────
 struct SSAOPrepUBO {
     float near_z;
     float far_z;
     float _pad[2];
 };
 static_assert(sizeof(SSAOPrepUBO) == 16);
+
+// ── SSAOMainUBO (std140, 32B — must match ssao_main.frag) ──────────────────────
+struct SSAOMainUBO {
+    float inv_proj_x;   // 1/proj[0][0] = tan(fovy/2)*aspect
+    float inv_proj_y;   // 1/proj[1][1] = tan(fovy/2)
+    float pixel_w;      // 1.0/half_w
+    float pixel_h;      // 1.0/half_h
+    float kernel_scale; // 0.5
+    float bias;         // 0.03
+    float intensity;    // 1.2
+    float fade_scale;   // 1.0/80.0
+};
+static_assert(sizeof(SSAOMainUBO) == 32);
+
+// ── SSAOBlurUBO (std140, 16B — matches ssao_blur_h.frag / ssao_blur_v.frag) ────
+struct SSAOBlurUBO {
+    float pixel_w;
+    float pixel_h;
+    float _pad[2];
+};
+static_assert(sizeof(SSAOBlurUBO) == 16);
 
 #endif // MD_SDL_GPU

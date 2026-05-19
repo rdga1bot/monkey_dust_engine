@@ -142,9 +142,84 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
         legacy_pipeline_.Create(cd);
     }
 
+    // ── VBfA-R2: AO textures ─────────────────────────────────────────────────
+    auto make_rt = [&](SDL_GPUTextureFormat fmt, SDL_GPUTexture*& out) {
+        SDL_GPUTextureCreateInfo ti = {};
+        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+        ti.width                = (Uint32)half_w_;
+        ti.height               = (Uint32)half_h_;
+        ti.layer_count_or_depth = 1;
+        ti.num_levels           = 1;
+        ti.format               = fmt;
+        ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
+                                | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        out = SDL_CreateGPUTexture(dev, &ti);
+        return out != nullptr;
+    };
+
+    if (!make_rt(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, ssao_raw_)  ||
+        !make_rt(SDL_GPU_TEXTUREFORMAT_R8_UNORM,       blur_temp_) ||
+        !make_rt(SDL_GPU_TEXTUREFORMAT_R8_UNORM,       ssao_blurred_)) {
+        MD_LOG(MD_LOG_WARNING, "SSAOSystem: R2 texture create failed: %s", SDL_GetError());
+    }
+
+    // ── VBfA-R2: AO pipelines ────────────────────────────────────────────────
+    // Helper: build a fullscreen-triangle pipeline targeting a given format
+    auto make_fs_pipe = [&](const char* frag, int samplers, int ubos,
+                            SDL_GPUTextureFormat fmt, GpuPipeline& pipe) {
+        GpuPipeline::Desc d;
+        d.vert_path           = "shaders/deferred_lighting.vert";
+        d.frag_path           = frag;
+        d.layout.count        = 0;
+        d.layout.stride       = 0;
+        d.raster.blend_enable = false;
+        d.raster.depth_test   = false;
+        d.raster.depth_write  = false;
+        d.raster.cull_back    = false;
+        d.frag_samplers       = (uint32_t)samplers;
+        d.frag_uniform_bufs   = (uint32_t)ubos;
+        d.has_depth_target    = false;
+        d.color_format        = fmt;
+        if (!pipe.Create(d))
+            MD_LOG(MD_LOG_WARNING, "SSAOSystem: pipeline create failed: %s", frag);
+    };
+
+    if (ssao_raw_)
+        make_fs_pipe("shaders/ssao_main.frag",   1, 1,
+                     SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, main_pipeline_);
+    if (blur_temp_)
+        make_fs_pipe("shaders/ssao_blur_h.frag", 1, 1,
+                     SDL_GPU_TEXTUREFORMAT_R8_UNORM, blur_h_pipeline_);
+    if (ssao_blurred_) {
+        // V blur reads 2 samplers (u_ssao_h + u_ssao_raw)
+        make_fs_pipe("shaders/ssao_blur_v.frag", 2, 1,
+                     SDL_GPU_TEXTUREFORMAT_R8_UNORM, blur_v_pipeline_);
+    }
+
+    // Apply: multiply-blend onto swapchain (INVALID = use swapchain format)
+    {
+        GpuPipeline::Desc d;
+        d.vert_path           = "shaders/deferred_lighting.vert";
+        d.frag_path           = "shaders/ssao_apply.frag";
+        d.layout.count        = 0;
+        d.layout.stride       = 0;
+        d.raster.blend_enable = true;
+        d.raster.src_factor   = GpuBlendFactor::SRC_ALPHA;
+        d.raster.dst_factor   = GpuBlendFactor::ONE_MINUS_SRC_ALPHA;
+        d.raster.depth_test   = false;
+        d.raster.depth_write  = false;
+        d.raster.cull_back    = false;
+        d.frag_samplers       = 1;
+        d.frag_uniform_bufs   = 0;
+        d.has_depth_target    = false;
+        d.color_format        = SDL_GPU_TEXTUREFORMAT_INVALID; // swapchain format
+        if (!apply_pipeline_.Create(d))
+            MD_LOG(MD_LOG_WARNING, "SSAOSystem: apply pipeline create failed");
+    }
+
     enabled_ = true;
-    MD_LOG(MD_LOG_INFO, "SSAOSystem: %dx%d R32F linear_depth ready (near=%.2f far=%.1f)",
-           half_w_, half_h_, near_z, far_z);
+    MD_LOG(MD_LOG_INFO, "SSAOSystem R1+R2: %dx%d — prep+main+blur+apply ready",
+           half_w_, half_h_);
 }
 
 void SSAOSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
@@ -183,12 +258,103 @@ void SSAOSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
     SDL_EndGPURenderPass(pass);
 }
 
-void SSAOSystem::MainPass(SDL_GPUCommandBuffer*) {
-    // VBfA-R2 — implemented in next sprint
+// ── Helper: begin a fullscreen render pass on an RT, draw 3 verts, end ────────
+static void FullscreenPass(SDL_GPUCommandBuffer* cmd, SDL_GPUGraphicsPipeline* pipeline,
+                            SDL_GPUTexture* target, int tw, int th,
+                            const SDL_GPUTextureSamplerBinding* sbs, int nsbs,
+                            const void* frag_ubo, uint32_t frag_ubo_sz) {
+    SDL_GPUColorTargetInfo ct = {};
+    ct.texture  = target;
+    ct.load_op  = SDL_GPU_LOADOP_DONT_CARE;
+    ct.store_op = SDL_GPU_STOREOP_STORE;
+
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    if (!pass) return;
+
+    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+    if (nsbs > 0)
+        SDL_BindGPUFragmentSamplers(pass, 0, sbs, (Uint32)nsbs);
+    if (frag_ubo)
+        SDL_PushGPUFragmentUniformData(cmd, 0, frag_ubo, frag_ubo_sz);
+
+    SDL_GPUViewport vp = { 0.f, 0.f, (float)tw, (float)th, 0.f, 1.f };
+    SDL_SetGPUViewport(pass, &vp);
+    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+
+    SDL_EndGPURenderPass(pass);
 }
 
-void SSAOSystem::BlurPass(SDL_GPUCommandBuffer*) {
-    // VBfA-R2 — implemented in next sprint
+void SSAOSystem::MainPass(SDL_GPUCommandBuffer* cmd,
+                          float inv_px, float inv_py) {
+    if (!enabled_ || !ssao_raw_ || !main_pipeline_.SDLPipeline()) return;
+    if (!linear_depth_)  return;
+
+    SSAOMainUBO ubo;
+    ubo.inv_proj_x   = inv_px;
+    ubo.inv_proj_y   = inv_py;
+    ubo.pixel_w      = 1.f / (float)half_w_;
+    ubo.pixel_h      = 1.f / (float)half_h_;
+    ubo.kernel_scale = 0.5f;
+    ubo.bias         = 0.03f;
+    ubo.intensity    = 1.2f;
+    ubo.fade_scale   = 1.f / 80.f;
+
+    SDL_GPUTextureSamplerBinding sb = { linear_depth_, linear_sampler_ };
+    FullscreenPass(cmd, main_pipeline_.SDLPipeline(),
+                   ssao_raw_, half_w_, half_h_,
+                   &sb, 1, &ubo, sizeof(ubo));
+}
+
+void SSAOSystem::BlurPass(SDL_GPUCommandBuffer* cmd) {
+    if (!enabled_ || !blur_temp_ || !ssao_blurred_) return;
+    if (!blur_h_pipeline_.SDLPipeline() || !blur_v_pipeline_.SDLPipeline()) return;
+
+    SSAOBlurUBO ubo = { 1.f/(float)half_w_, 1.f/(float)half_h_, {0.f,0.f} };
+
+    // Horizontal: ssao_raw → blur_temp_
+    {
+        SDL_GPUTextureSamplerBinding sb = { ssao_raw_, point_sampler_ };
+        FullscreenPass(cmd, blur_h_pipeline_.SDLPipeline(),
+                       blur_temp_, half_w_, half_h_,
+                       &sb, 1, &ubo, sizeof(ubo));
+    }
+
+    // Vertical: blur_temp_ + ssao_raw_ → ssao_blurred_
+    {
+        SDL_GPUTextureSamplerBinding sbs[2] = {
+            { blur_temp_, point_sampler_ },
+            { ssao_raw_,  point_sampler_ }
+        };
+        FullscreenPass(cmd, blur_v_pipeline_.SDLPipeline(),
+                       ssao_blurred_, half_w_, half_h_,
+                       sbs, 2, &ubo, sizeof(ubo));
+    }
+}
+
+void SSAOSystem::ApplyPass(SDL_GPUCommandBuffer* cmd,
+                            SDL_GPUTexture* swapchain_tex, int sw, int sh) {
+    if (!enabled_ || !ssao_blurred_ || !apply_pipeline_.SDLPipeline()) return;
+    if (!swapchain_tex) return;
+
+    // Open a LOAD render pass on the swapchain (don't clear the scene)
+    SDL_GPUColorTargetInfo ct = {};
+    ct.texture  = swapchain_tex;
+    ct.load_op  = SDL_GPU_LOADOP_LOAD;   // preserve existing scene
+    ct.store_op = SDL_GPU_STOREOP_STORE;
+
+    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    if (!pass) return;
+
+    SDL_BindGPUGraphicsPipeline(pass, apply_pipeline_.SDLPipeline());
+
+    SDL_GPUTextureSamplerBinding sb = { ssao_blurred_, linear_sampler_ };
+    SDL_BindGPUFragmentSamplers(pass, 0, &sb, 1);
+
+    SDL_GPUViewport vp = { 0.f, 0.f, (float)sw, (float)sh, 0.f, 1.f };
+    SDL_SetGPUViewport(pass, &vp);
+    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+
+    SDL_EndGPURenderPass(pass);
 }
 
 void SSAOSystem::Dispatch(SDL_GPUCommandBuffer* cmd,
@@ -244,6 +410,10 @@ void SSAOSystem::Dispatch(SDL_GPUCommandBuffer* cmd,
 void SSAOSystem::Shutdown() {
     if (!dev_) return;
     prep_pipeline_.Destroy();
+    main_pipeline_.Destroy();
+    blur_h_pipeline_.Destroy();
+    blur_v_pipeline_.Destroy();
+    apply_pipeline_.Destroy();
     legacy_pipeline_.Destroy();
     auto rel_tex = [&](SDL_GPUTexture*& t){
         if (t) { SDL_ReleaseGPUTexture(dev_, t); t = nullptr; }
@@ -253,6 +423,7 @@ void SSAOSystem::Shutdown() {
     };
     rel_tex(linear_depth_);
     rel_tex(ssao_raw_);
+    rel_tex(blur_temp_);
     rel_tex(ssao_blurred_);
     rel_tex(ao_tex_);
     rel_sam(linear_sampler_);

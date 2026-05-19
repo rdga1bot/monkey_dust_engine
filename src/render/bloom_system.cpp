@@ -215,7 +215,14 @@ void BloomSystem::CompositePass(SDL_GPUCommandBuffer* cmd,
     };
     SDL_BindGPUFragmentSamplers(pass, 0, sbs, 2);
 
-    BloomCompositeUBO ubo = { bloom_intensity, exposure, {0.f, 0.f} };
+    BloomCompositeUBO ubo = {};
+    ubo.bloom_intensity = bloom_intensity;
+    ubo.exposure        = exposure;
+    ubo.gamma           = gamma;
+    // Copy colour grade polynomial (4 × 4 floats)
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            ubo.eq[i][j] = grade_eq[i][j];
     SDL_PushGPUFragmentUniformData(cmd, 0, &ubo, sizeof(ubo));
 
     SDL_GPUViewport vp = { 0.f, 0.f, (float)sw, (float)sh, 0.f, 1.f };
@@ -223,6 +230,59 @@ void BloomSystem::CompositePass(SDL_GPUCommandBuffer* cmd,
     SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
 
     SDL_EndGPURenderPass(pass);
+}
+
+// ── SetBiomeGrade (VBfA-R5) ───────────────────────────────────────────────────
+// Presets derived from VBfA PostProcessing TintEq + Kenshi biome palette.
+// All use grade_eq[2].a=1.0 (linear identity) as base; other terms add tint.
+void BloomSystem::SetBiomeGrade(const char* biome) {
+    // Reset to neutral first
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            grade_eq[i][j] = 0.f;
+    grade_eq[2][3] = 1.f;  // eq[2].a = 1 → linear identity
+    gamma = 2.2f;
+
+    if (!biome) return;
+
+    if (!__builtin_strcmp(biome, "desert") || !__builtin_strcmp(biome, "dust")) {
+        // Warm orange lift: boost reds, cut blues, neutral greens
+        grade_eq[3][0] =  0.04f;   // +red constant (lift)
+        grade_eq[3][1] =  0.01f;   // +green constant
+        grade_eq[3][2] = -0.03f;   // -blue constant
+        grade_eq[2][0] =  0.03f;   // +red linear
+        grade_eq[2][2] = -0.02f;   // -blue linear
+        gamma = 2.3f;              // slightly brighter
+    } else if (!__builtin_strcmp(biome, "highlands") ||
+               !__builtin_strcmp(biome, "grassland")) {
+        // Lush green: boost green linear slightly
+        grade_eq[2][1] =  0.03f;
+        grade_eq[2][2] = -0.01f;
+    } else if (!__builtin_strcmp(biome, "swamp") ||
+               !__builtin_strcmp(biome, "wetlands")) {
+        // Murky yellow-green: desaturate + warm mid
+        grade_eq[2][0] =  0.02f;
+        grade_eq[2][1] =  0.02f;
+        grade_eq[2][2] = -0.04f;
+        gamma = 2.35f;
+    } else if (!__builtin_strcmp(biome, "volcanic") ||
+               !__builtin_strcmp(biome, "badlands")) {
+        // Dark orange-red: strong warm tint + darker midtones
+        grade_eq[3][0] =  0.05f;
+        grade_eq[3][2] = -0.04f;
+        grade_eq[1][0] =  0.03f;   // quadratic red boost
+        grade_eq[1][2] = -0.02f;
+        gamma = 2.4f;
+    } else if (!__builtin_strcmp(biome, "snow") ||
+               !__builtin_strcmp(biome, "ice")) {
+        // Cool blue: boost blues, reduce reds
+        grade_eq[3][0] = -0.02f;
+        grade_eq[3][2] =  0.04f;
+        grade_eq[2][0] = -0.02f;
+        grade_eq[2][2] =  0.04f;
+        gamma = 2.1f;              // slightly dimmer gamma
+    }
+    // "scrubland", "canyon", "default", and unknown → neutral (already set)
 }
 
 // ── Shutdown ──────────────────────────────────────────────────────────────────

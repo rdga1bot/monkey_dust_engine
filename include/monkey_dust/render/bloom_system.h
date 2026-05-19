@@ -52,9 +52,26 @@ public:
     int  Width()  const { return w_; }
     int  Height() const { return h_; }
 
-    float bloom_threshold = 0.9f;   // luma cut-off (VBfA PostProcessing_BloomScalarOffset)
-    float bloom_intensity = 0.25f;  // additive scale
-    float exposure        = 1.0f;   // scene exposure multiplier
+    float bloom_threshold = 0.9f;   // luma cut-off
+    float bloom_intensity = 0.25f;  // additive bloom scale
+    float exposure        = 1.0f;   // scene exposure
+    float gamma           = 2.2f;   // output gamma
+
+    // VBfA-R5: colour grade polynomial eq[0..3] (vec4, RGB+luminance each).
+    // Formula: result = eq[3].rgb
+    //                 + (eq[2].rgb + eq[2].a) * t
+    //                 + (eq[1].rgb + eq[1].a) * t²
+    //                 + (eq[0].rgb + eq[0].a) * t³
+    // Neutral: eq[2].a=1, all else 0.  Applied before gamma correction.
+    float grade_eq[4][4] = {
+        {0.f, 0.f, 0.f, 0.f},   // cubic  (eq[0])
+        {0.f, 0.f, 0.f, 0.f},   // quadratic (eq[1])
+        {0.f, 0.f, 0.f, 1.f},   // linear  (eq[2]) — .a=1 = identity
+        {0.f, 0.f, 0.f, 0.f},   // constant (eq[3])
+    };
+
+    // Apply a named biome grade preset.
+    void SetBiomeGrade(const char* biome);
 
 private:
     BloomSystem() = default;
@@ -96,11 +113,14 @@ struct BloomBlurUBO {
 };
 static_assert(sizeof(BloomBlurUBO) == 16);
 
+// VBfA-R5: extended to include colour grade polynomial + gamma (80B total).
 struct BloomCompositeUBO {
-    float bloom_intensity;
-    float exposure;
-    float _pad[2];
+    float bloom_intensity;  //  0
+    float exposure;         //  4
+    float gamma;            //  8
+    float _pad;             // 12
+    float eq[4][4];         // 16..79 (4 × vec4)
 };
-static_assert(sizeof(BloomCompositeUBO) == 16);
+static_assert(sizeof(BloomCompositeUBO) == 80);
 
 #endif // MD_SDL_GPU

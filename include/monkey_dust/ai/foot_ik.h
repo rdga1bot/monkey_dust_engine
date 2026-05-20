@@ -111,13 +111,10 @@ static inline bool SolveLeg(
     float p_x = kh_x - proj*d_x, p_y = kh_y - proj*d_y, p_z = kh_z - proj*d_z;
     float plen = sqrtf(p_x*p_x + p_y*p_y + p_z*p_z);
     if (plen < 1e-6f) {
-        // Degenerate (straight leg) — use world-up as pole
-        float tmp_y = (fabsf(d_y) < 0.9f) ? 1.f : 0.f;
-        float tmp_x = (fabsf(d_y) < 0.9f) ? 0.f : 1.f;
-        float pp = tmp_x*d_x + tmp_y*d_y;
-        p_x = tmp_x - pp*d_x; p_y = tmp_y - pp*d_y; p_z = -pp*d_z;
-        plen = sqrtf(p_x*p_x + p_y*p_y + p_z*p_z);
-        if (plen < 1e-9f) return false;
+        // Straight leg — pole vector is degenerate, no reliable knee direction.
+        // Any fallback axis produces visually wrong rotation (ankle twists sideways).
+        // With tr.y tracking terrain, straight-leg bind pose is already correct; skip IK.
+        return false;
     }
     p_x /= plen; p_y /= plen; p_z /= plen;
 

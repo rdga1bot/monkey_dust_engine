@@ -1003,6 +1003,173 @@
             pc = nd.parent; continue;
         }
 
+        // ── Batch 33: RE HIGH-priority combat nodes ───────────────────────────
+        case BTNodeType::ActionAbortMeleeAttack: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_ABORT_MELEE);
+            result = BTStatus::Running; goto exit_loop;
+        }
+        case BTNodeType::ActionGetOutOfTheWay: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_GET_OUT_OF_WAY);
+            result = BTStatus::Running; goto exit_loop;
+        }
+        case BTNodeType::ActionHitTargetAndRun: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->lcflags.set(lcf::SHOULD_HIT_AND_RUN);
+            result = BTStatus::Running; goto exit_loop;
+        }
+        case BTNodeType::ActionMoveInDirection: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->move_direction = static_cast<uint8_t>(nd.data & 0x3u);
+                as->frame_flags |= (1ull << ff::SHOULD_MOVE_IN_DIRECTION);
+            }
+            result = BTStatus::Running; goto exit_loop;
+        }
+        case BTNodeType::ActionSuspend: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->lcflags.set(lcf::IS_SUSPENDED);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        case BTNodeType::ActionTakeStep: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_TAKE_STEP);
+            result = BTStatus::Running; goto exit_loop;
+        }
+        case BTNodeType::ActionThreatAware: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->frame_flags |= (1ull << ff::SHOULD_THREAT_AWARE);
+                as->lcflags.set(lcf::DOING_THREAT_ANIM);
+            }
+            result = BTStatus::Running; goto exit_loop;
+        }
+        case BTNodeType::ActionThreatEscalation: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->frame_flags |= (1ull << ff::SHOULD_THREAT_ESCALATE);
+                if (as->aggro_level < NpcAggroLevel::NoLimit)
+                    as->aggro_level = static_cast<NpcAggroLevel>(
+                        static_cast<uint8_t>(as->aggro_level) + 1u);
+            }
+            result = BTStatus::Running; goto exit_loop;
+        }
+
+        case BTNodeType::ConditionCanShootNow: {
+            const WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(e);
+            if (!wc || !wc->is_equipped || wc->needs_reload) {
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            const BlackboardEntry* en = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
+            if (!en || !Registry::Get().valid(static_cast<entt::entity>(en->val.e))) {
+                result = BTStatus::Failure; pc = nd.parent; continue;
+            }
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            result = (!sc || sc->activation[0] >= 0.5f) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionCheckHealthState: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->hp_pct <= static_cast<uint8_t>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionHasGroupAwarenessState: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (as->awareness >= static_cast<AwarenessState>(nd.data))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionHasMeleeBlockAvailable: {
+            const WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(e);
+            const AgentState*      as = Registry::Get().try_get<AgentState>(e);
+            if (!wc || !as) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = (wc->melee_available && as->combat_state == NpcCombatState::Blocking)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionHasMeleeCounterAttackAvailable: {
+            const WeaponComponent* wc = Registry::Get().try_get<WeaponComponent>(e);
+            if (!wc || !wc->melee_available) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            const BlackboardEntry* en = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const AgentState* tas = Registry::Get().try_get<AgentState>(tgt);
+            result = (tas && (tas->frame_flags & (1ull << ff::SHOULD_MELEE_ATTACK)))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionLastTimeTargetShotAtMe: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as || as->last_shot_at_ms == 0u) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            result = ((nowMs - as->last_shot_at_ms) <= nd.data)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionTargetIsInWeaponRange: {
+            const WorldTransform* self_wt = Registry::Get().try_get<WorldTransform>(e);
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const WorldTransform* twt = Registry::Get().try_get<WorldTransform>(tgt);
+            if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float dx = twt->x - self_wt->x, dz = twt->z - self_wt->z;
+            const WeaponComponent* twc = Registry::Get().try_get<WeaponComponent>(tgt);
+            float range = twc ? twc->attack_range : 1.5f;
+            result = (dx*dx + dz*dz <= range*range) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionTargetIsTargetingMe: {
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            // IS_TARGETED is set on self by CombatSystem when tgt->Combat.target == e
+            const AgentState* self_as = Registry::Get().try_get<AgentState>(e);
+            result = (self_as && self_as->lcflags.test(lcf::IS_TARGETED))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionTargetIsUsingMeleeAttack: {
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const AgentState* tas = Registry::Get().try_get<AgentState>(tgt);
+            result = (tas && (tas->frame_flags & (1ull << ff::SHOULD_MELEE_ATTACK)))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::DecoratorLoop: {
+            if (result == BTStatus::Running) {
+                // Fresh entry: reset counter, push child
+                st.counter = 0;
+                if (nd.childCount > 0) { pc = m_children[nd.childStart]; continue; }
+                result = BTStatus::Success; pc = nd.parent; continue;
+            }
+            if (result == BTStatus::Failure) { pc = nd.parent; continue; }
+            // Child succeeded: check loop count
+            if (nd.data > 0u && ++st.counter >= static_cast<uint16_t>(nd.data)) {
+                result = BTStatus::Success; pc = nd.parent; continue;
+            }
+            // Loop again
+            if (nd.childCount > 0) { pc = m_children[nd.childStart]; result = BTStatus::Running; continue; }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
         // ── Batch 32: TokenRegistry ───────────────────────────────────────────
         case BTNodeType::ConditionHasToken: {
             result = MdTokenRegistry::Get().AcquireToken(nd.data, e)

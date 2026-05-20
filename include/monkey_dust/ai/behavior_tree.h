@@ -617,11 +617,60 @@ enum class BTNodeType : uint8_t {
     // ── Batch 32: TokenRegistry ───────────────────────────────────────────────
     //   ConditionHasToken: data = token_id (FNV-1a of token name string)
     //     MdTokenRegistry::AcquireToken(data, e) → Success if slot available
-    //     Limits simultaneous attackers/roles (mirrors AI:Isolation ConditionHasToken)
     ConditionHasToken,
     //   ActionReleaseToken: data = token_id (FNV-1a of token name string)
     //     MdTokenRegistry::ReleaseToken(data, e); always Success
     ActionReleaseToken,
+
+    // ── Batch 33: RE HIGH-priority nodes (Kenshi/AI:Isolation combat) ────────
+    //   ActionAbortMeleeAttack:  data=0; sets ff::SHOULD_ABORT_MELEE; Running
+    ActionAbortMeleeAttack,
+    //   ActionGetOutOfTheWay:    data=0; sets ff::SHOULD_GET_OUT_OF_WAY; Running
+    ActionGetOutOfTheWay,
+    //   ActionHitTargetAndRun:   data=0; sets lcf::SHOULD_HIT_AND_RUN; Running
+    ActionHitTargetAndRun,
+    //   ActionMoveInDirection:   data=0(toward),1(away),2(left),3(right);
+    //     sets ff::SHOULD_MOVE_IN_DIRECTION + as->move_direction=data; Running
+    ActionMoveInDirection,
+    //   ActionSuspend:           data=0; sets lcf::IS_SUSPENDED; Success
+    //     (BTSystem::Tick skips entity while IS_SUSPENDED is set)
+    ActionSuspend,
+    //   ActionTakeStep:          data=0; sets ff::SHOULD_TAKE_STEP; Running
+    ActionTakeStep,
+    //   ActionThreatAware:       data=0; sets ff::SHOULD_THREAT_AWARE + lcf::DOING_THREAT_ANIM; Running
+    ActionThreatAware,
+    //   ActionThreatEscalation:  data=0; sets ff::SHOULD_THREAT_ESCALATE; increments aggro_level; Running
+    ActionThreatEscalation,
+    //   ConditionCanShootNow:    data=0; Success if wc->is_equipped && !wc->needs_reload
+    //     && bb["target_entity"] valid && sc->activation[0] >= 0.5f
+    ConditionCanShootNow,
+    //   ConditionCheckHealthState: data=threshold_pct (uint8, 0-100);
+    //     Success if as->hp_pct <= threshold_pct (for "I need healing/retreat" checks)
+    ConditionCheckHealthState,
+    //   ConditionHasGroupAwarenessState: data=AwarenessState (uint8);
+    //     Success if as->awareness >= AwarenessState(data) (individual proxy for group)
+    ConditionHasGroupAwarenessState,
+    //   ConditionHasMeleeBlockAvailable: data=0;
+    //     Success if wc->melee_available && as->combat_state == Blocking
+    ConditionHasMeleeBlockAvailable,
+    //   ConditionHasMeleeCounterAttackAvailable: data=0;
+    //     Success if wc->melee_available && target has ff::SHOULD_MELEE_ATTACK set
+    ConditionHasMeleeCounterAttackAvailable,
+    //   ConditionLastTimeTargetShotAtMe: data=max_elapsed_ms (uint32);
+    //     Success if (nowMs - as->last_shot_at_ms) <= data && last_shot_at_ms != 0
+    ConditionLastTimeTargetShotAtMe,
+    //   ConditionTargetIsInWeaponRange: data=0;
+    //     reads target from bb["target_entity"]; Success if dist <= target->wc.attack_range (or 1.5m)
+    ConditionTargetIsInWeaponRange,
+    //   ConditionTargetIsTargetingMe: data=0;
+    //     Success if target has lcf::IS_TARGETED set on self (CombatSystem sets this)
+    ConditionTargetIsTargetingMe,
+    //   ConditionTargetIsUsingMeleeAttack: data=0;
+    //     Success if target has ff::SHOULD_MELEE_ATTACK set this tick
+    ConditionTargetIsUsingMeleeAttack,
+    //   DecoratorLoop: data=N (0=infinite); repeats child until N successes or child Failure
+    //     Uses st.counter to track iteration count
+    DecoratorLoop,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -798,6 +847,24 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionAngleNPCToTargetsAimLessThan:     data = angle_deg(uint8); reads target bb; target's rot_y vs (target→self)
 //   ConditionHasToken:    data = token_id (FNV-1a); MdTokenRegistry::AcquireToken → Success if slot free
 //   ActionReleaseToken:   data = token_id (FNV-1a); MdTokenRegistry::ReleaseToken; always Success
+//   ActionAbortMeleeAttack:  0 → ff::SHOULD_ABORT_MELEE; Running
+//   ActionGetOutOfTheWay:    0 → ff::SHOULD_GET_OUT_OF_WAY; Running
+//   ActionHitTargetAndRun:   0 → lcf::SHOULD_HIT_AND_RUN; Running
+//   ActionMoveInDirection:   0=toward,1=away,2=left,3=right → ff::SHOULD_MOVE_IN_DIRECTION + as->move_direction
+//   ActionSuspend:           0 → lcf::IS_SUSPENDED; Success
+//   ActionTakeStep:          0 → ff::SHOULD_TAKE_STEP; Running
+//   ActionThreatAware:       0 → ff::SHOULD_THREAT_AWARE + lcf::DOING_THREAT_ANIM; Running
+//   ActionThreatEscalation:  0 → ff::SHOULD_THREAT_ESCALATE + aggro_level++; Running
+//   ConditionCanShootNow:    0; wc equipped && !reload && target in bb && sc activation[0]>=0.5
+//   ConditionCheckHealthState: threshold_pct uint8; as->hp_pct <= threshold → Success
+//   ConditionHasGroupAwarenessState: AwarenessState uint8; as->awareness >= state → Success
+//   ConditionHasMeleeBlockAvailable: 0; wc->melee_available && combat_state==Blocking
+//   ConditionHasMeleeCounterAttackAvailable: 0; wc->melee_available && target ff::SHOULD_MELEE_ATTACK
+//   ConditionLastTimeTargetShotAtMe: max_elapsed_ms uint32; nowMs-last_shot_at_ms <= data
+//   ConditionTargetIsInWeaponRange: 0; dist(self, target) <= target wc.attack_range (or 1.5m)
+//   ConditionTargetIsTargetingMe: 0; target has lcf::IS_TARGETED on self
+//   ConditionTargetIsUsingMeleeAttack: 0; target ff::SHOULD_MELEE_ATTACK set
+//   DecoratorLoop: N (0=infinite); loops child N times; st.counter tracks iterations
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -1182,10 +1249,32 @@ public:
     uint16_t addConditionAngleNPCToTargetsAimLessThan(float angle_deg);
 
     // ── Batch 32: TokenRegistry ───────────────────────────────────────────────
-    // ConditionHasToken: AcquireToken — Success if ≤ limit NPCs already hold token_id.
     uint16_t addConditionHasToken(uint32_t token_id);
-    // ActionReleaseToken: ReleaseToken — always Success.
     uint16_t addActionReleaseToken(uint32_t token_id);
+
+    // ── Batch 33: RE HIGH-priority combat nodes ───────────────────────────────
+    uint16_t addActionAbortMeleeAttack();
+    uint16_t addActionGetOutOfTheWay();
+    uint16_t addActionHitTargetAndRun();
+    // direction: 0=toward 1=away 2=strafe_left 3=strafe_right
+    uint16_t addActionMoveInDirection(uint8_t direction = 0);
+    uint16_t addActionSuspend();
+    uint16_t addActionTakeStep();
+    uint16_t addActionThreatAware();
+    uint16_t addActionThreatEscalation();
+    uint16_t addConditionCanShootNow();
+    // threshold_pct: 0-100; Success if hp_pct <= threshold (damaged state check)
+    uint16_t addConditionCheckHealthState(uint8_t threshold_pct);
+    uint16_t addConditionHasGroupAwarenessState(AwarenessState state);
+    uint16_t addConditionHasMeleeBlockAvailable();
+    uint16_t addConditionHasMeleeCounterAttackAvailable();
+    // max_elapsed_ms: window in ms; Success if shot at within this window
+    uint16_t addConditionLastTimeTargetShotAtMe(uint32_t max_elapsed_ms);
+    uint16_t addConditionTargetIsInWeaponRange();
+    uint16_t addConditionTargetIsTargetingMe();
+    uint16_t addConditionTargetIsUsingMeleeAttack();
+    // count: 0=infinite; repeats child until count successes or child Failure
+    uint16_t addDecoratorLoop(uint32_t count = 0);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

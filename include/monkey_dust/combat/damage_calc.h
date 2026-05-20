@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <algorithm>
 
 // ─────────────────────────────────────────────────────────
 // DamageCalc — розрахунок пошкоджень.
@@ -22,57 +21,60 @@ enum class DamageType : uint8_t {
     Pierce = 2
 };
 
+// Kenshi: armour_grade scales resist values (0=poor quality, 1=masterwork).
+// Kenshi: armour_penetration on weapons bypasses a fraction of armour (0=none, 1=full bypass).
 struct ArmorStats {
-    float blunt_resist;   // 0.0 – 0.9
+    float blunt_resist;       // 0.0 – 0.9
     float cut_resist;
     float pierce_resist;
+    float armour_grade = 1.f; // Kenshi armour grade: multiplies all resist values
 };
 
 struct WeaponStats {
     float       damage;
     DamageType  type;
-    float       attack_range;   // метри
-    uint32_t    attack_ms;      // мілісекунди між ударами
+    float       attack_range;         // метри
+    uint32_t    attack_ms;            // мілісекунди між ударами
+    float       armour_penetration = 0.f; // Kenshi: 0=no pen, 1=ignore armour entirely
 };
 
 // Набори зброї (data-driven в майбутньому, зараз константи)
 namespace Weapons {
-    constexpr WeaponStats Fists   = { 8.0f,  DamageType::Blunt,  1.2f, 1200 };
-    constexpr WeaponStats Sword   = { 28.0f, DamageType::Cut,    1.5f,  900 };
-    constexpr WeaponStats Spear   = { 22.0f, DamageType::Pierce, 2.2f, 1100 };
-    constexpr WeaponStats Mace    = { 35.0f, DamageType::Blunt,  1.4f, 1400 };
-    constexpr WeaponStats Dagger  = { 18.0f, DamageType::Pierce, 1.1f,  700 };
+    constexpr WeaponStats Fists   = { 8.0f,  DamageType::Blunt,  1.2f, 1200, 0.00f };
+    constexpr WeaponStats Sword   = { 28.0f, DamageType::Cut,    1.5f,  900, 0.05f };
+    constexpr WeaponStats Spear   = { 22.0f, DamageType::Pierce, 2.2f, 1100, 0.20f };
+    constexpr WeaponStats Mace    = { 35.0f, DamageType::Blunt,  1.4f, 1400, 0.10f };
+    constexpr WeaponStats Dagger  = { 18.0f, DamageType::Pierce, 1.1f,  700, 0.15f };
 }
 
 namespace Armors {
-    constexpr ArmorStats None     = { 0.00f, 0.00f, 0.00f };
-    constexpr ArmorStats Leather  = { 0.10f, 0.25f, 0.15f };
-    constexpr ArmorStats Chain    = { 0.25f, 0.40f, 0.30f };
-    constexpr ArmorStats Plate    = { 0.50f, 0.55f, 0.45f };
+    constexpr ArmorStats None    = { 0.00f, 0.00f, 0.00f, 1.f };
+    constexpr ArmorStats Leather = { 0.10f, 0.25f, 0.15f, 1.f };
+    constexpr ArmorStats Chain   = { 0.25f, 0.40f, 0.30f, 1.f };
+    constexpr ArmorStats Plate   = { 0.50f, 0.55f, 0.45f, 1.f };
 }
 
-// Розрахувати ефективне пошкодження з урахуванням типу і броні.
+// Розрахувати ефективне пошкодження з урахуванням типу, броні, grade і penetration.
+// effective_resist = base * armour_grade * (1 - armour_penetration)
 inline float CalcDamage(const WeaponStats& wpn, const ArmorStats& armor,
                         float hit_zone_mult = 1.0f)
 {
     float raw = wpn.damage;
-    float effective = 0.0f;
+    float pen_factor = 1.0f - wpn.armour_penetration;
+    float effective  = 0.0f;
 
     switch (wpn.type) {
     case DamageType::Blunt:
-        effective = raw * (1.0f - armor.blunt_resist);
+        effective = raw * (1.0f - armor.blunt_resist * armor.armour_grade * pen_factor);
         break;
     case DamageType::Cut:
-        // Cut ефективніше проти неброньованих (порівняно з Blunt)
-        effective = raw * (1.0f - armor.cut_resist * 0.7f);
+        effective = raw * (1.0f - armor.cut_resist * 0.7f * armor.armour_grade * pen_factor);
         break;
     case DamageType::Pierce:
-        // Pierce пробиває 20% більше броні
-        effective = raw * (1.0f - armor.pierce_resist * 0.8f);
+        effective = raw * (1.0f - armor.pierce_resist * 0.8f * armor.armour_grade * pen_factor);
         break;
     }
 
     effective *= hit_zone_mult;
-    // Мінімум 1 пошкодження (завжди щось проходить)
     return effective < 1.0f ? 1.0f : effective;
 }

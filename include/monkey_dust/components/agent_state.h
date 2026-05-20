@@ -109,6 +109,8 @@ namespace lcf {
     static constexpr uint8_t HAS_SEARCHED_RECENT_SENSED_POS     = 44;  // Batch 22
     static constexpr uint8_t IS_DONE_SUSPECT_RESPONSE_MOVETO    = 45;  // Batch 26
     static constexpr uint8_t HAS_KILLTRAP                        = 46;  // Batch 26: searched most recent sensed position
+    static constexpr uint8_t IS_TARGETED                         = 47;  // Batch 33: another entity has this as Combat::target (game combat sets)
+    static constexpr uint8_t IS_USING_MELEE                      = 48;  // Batch 33: entity performed melee this tick (game combat sets)
 }
 
 struct LogicCharacterFlags {
@@ -381,6 +383,12 @@ namespace ff {
     static constexpr uint8_t SHOULD_BACK_OFF                       = 37; // Batch 30: retreat to safe distance
     static constexpr uint8_t SHOULD_CROUCH_MOVE                    = 38; // Batch 30: move while crouching
     static constexpr uint8_t SHOULD_VAULT                          = 39; // Batch 30: vault over obstacle
+    static constexpr uint8_t SHOULD_ABORT_MELEE                   = 40; // Batch 33: cancel in-progress melee attack
+    static constexpr uint8_t SHOULD_GET_OUT_OF_WAY                = 41; // Batch 33: clear path for ally/projectile
+    static constexpr uint8_t SHOULD_TAKE_STEP                     = 42; // Batch 33: advance one step toward target
+    static constexpr uint8_t SHOULD_THREAT_AWARE                  = 43; // Batch 33: play threat-aware animation
+    static constexpr uint8_t SHOULD_THREAT_ESCALATE               = 44; // Batch 33: escalate aggro_level by one step
+    static constexpr uint8_t SHOULD_MOVE_IN_DIRECTION             = 45; // Batch 33: strafe/advance; direction in as->move_direction
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────
@@ -509,6 +517,11 @@ struct AgentState {
     ViewconeType           viewcone_type;             // Batch 18: shape of visual detection frustum
     SensoryType            last_sensory_type;         // Batch 18: channel that last triggered sense activation
     uint32_t               last_searched_ms;          // Batch 26: ms when entity last searched a position; 0=never
+    // ── Batch 33 fields ────────────────────────────────────────────────────────
+    uint32_t               last_shot_at_ms   = 0;    // ms when this entity last took ranged damage; 0=never
+    uint8_t                hp_pct            = 100;  // 0-100 HP ratio; game CombatSystem writes each tick
+    uint8_t                move_direction    = 0;    // 0=toward 1=away 2=strafe_left 3=strafe_right
+    uint8_t                _pad_b33[2]       = {};
 };
 
 // ── AgentStateSnapshot ────────────────────────────────────────────────────────

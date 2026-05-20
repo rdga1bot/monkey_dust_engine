@@ -1119,6 +1119,77 @@ uint16_t BehaviorTree::addConditionAngleNPCToTargetsAimLessThan(float angle_deg)
     return i;
 }
 
+// ── Batch 33 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addActionAbortMeleeAttack() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionAbortMeleeAttack); return i;
+}
+uint16_t BehaviorTree::addActionGetOutOfTheWay() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionGetOutOfTheWay); return i;
+}
+uint16_t BehaviorTree::addActionHitTargetAndRun() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionHitTargetAndRun); return i;
+}
+uint16_t BehaviorTree::addActionMoveInDirection(uint8_t direction) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionMoveInDirection);
+    m_nodes[i].data = direction & 0x3u;
+    return i;
+}
+uint16_t BehaviorTree::addActionSuspend() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionSuspend); return i;
+}
+uint16_t BehaviorTree::addActionTakeStep() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionTakeStep); return i;
+}
+uint16_t BehaviorTree::addActionThreatAware() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionThreatAware); return i;
+}
+uint16_t BehaviorTree::addActionThreatEscalation() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionThreatEscalation); return i;
+}
+uint16_t BehaviorTree::addConditionCanShootNow() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionCanShootNow); return i;
+}
+uint16_t BehaviorTree::addConditionCheckHealthState(uint8_t threshold_pct) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionCheckHealthState);
+    m_nodes[i].data = threshold_pct;
+    return i;
+}
+uint16_t BehaviorTree::addConditionHasGroupAwarenessState(AwarenessState state) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHasGroupAwarenessState);
+    m_nodes[i].data = static_cast<uint32_t>(state);
+    return i;
+}
+uint16_t BehaviorTree::addConditionHasMeleeBlockAvailable() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasMeleeBlockAvailable); return i;
+}
+uint16_t BehaviorTree::addConditionHasMeleeCounterAttackAvailable() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionHasMeleeCounterAttackAvailable); return i;
+}
+uint16_t BehaviorTree::addConditionLastTimeTargetShotAtMe(uint32_t max_elapsed_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionLastTimeTargetShotAtMe);
+    m_nodes[i].data = max_elapsed_ms;
+    return i;
+}
+uint16_t BehaviorTree::addConditionTargetIsInWeaponRange() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionTargetIsInWeaponRange); return i;
+}
+uint16_t BehaviorTree::addConditionTargetIsTargetingMe() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionTargetIsTargetingMe); return i;
+}
+uint16_t BehaviorTree::addConditionTargetIsUsingMeleeAttack() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionTargetIsUsingMeleeAttack); return i;
+}
+uint16_t BehaviorTree::addDecoratorLoop(uint32_t count) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorLoop);
+    m_nodes[i].data = count;
+    return i;
+}
+
 // ── Batch 32 ──────────────────────────────────────────────────────────────────
 uint16_t BehaviorTree::addConditionHasToken(uint32_t token_id) {
     uint16_t i = m_nodeCount++;

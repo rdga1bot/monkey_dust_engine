@@ -1119,6 +1119,95 @@ uint16_t BehaviorTree::addConditionAngleNPCToTargetsAimLessThan(float angle_deg)
     return i;
 }
 
+// ── Batch 34 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addActionForceSearch() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionForceSearch); return i;
+}
+uint16_t BehaviorTree::addActionResetSearchJobs() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionResetSearchJobs); return i;
+}
+uint16_t BehaviorTree::addActionSetFrameFlag(uint8_t bit_idx) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionSetFrameFlag);
+    m_nodes[i].data = bit_idx;
+    return i;
+}
+uint16_t BehaviorTree::addActionSetGaugeAmount(GaugeType gauge, float value) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionSetGaugeAmount);
+    uint32_t v = static_cast<uint32_t>(value * 1000.f + 0.5f);
+    if (v > 0xFFFFu) v = 0xFFFFu;
+    m_nodes[i].data = (static_cast<uint32_t>(gauge) << 16) | v;
+    return i;
+}
+uint16_t BehaviorTree::addConditionHasSenseActivationBeenAbove(uint8_t sense_idx,
+                                                                SenseThresholdQualifier q) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHasSenseActivationBeenAbove);
+    m_nodes[i].data = (static_cast<uint32_t>(sense_idx) << 8) | static_cast<uint32_t>(q);
+    return i;
+}
+uint16_t BehaviorTree::addConditionIsCoverTooClose(float min_dist_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionIsCoverTooClose);
+    m_nodes[i].data = static_cast<uint32_t>(min_dist_m * 10.f + 0.5f);
+    return i;
+}
+uint16_t BehaviorTree::addConditionIsInCombatArea() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsInCombatArea); return i;
+}
+uint16_t BehaviorTree::addConditionMostRecentSenseActivationHasBeenAbove(SenseThresholdQualifier q) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionMostRecentSenseActivationHasBeenAbove);
+    m_nodes[i].data = static_cast<uint32_t>(q);
+    return i;
+}
+uint16_t BehaviorTree::addConditionNeedsToGetOutOfTheWay() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionNeedsToGetOutOfTheWay); return i;
+}
+uint16_t BehaviorTree::addConditionObjectiveIsInCombatArea() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionObjectiveIsInCombatArea); return i;
+}
+uint16_t BehaviorTree::addConditionObjectiveIsWithinDistance(float max_dist_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionObjectiveIsWithinDistance);
+    m_nodes[i].data = static_cast<uint32_t>(max_dist_m * 10.f + 0.5f);
+    return i;
+}
+uint16_t BehaviorTree::addConditionShouldFollow() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionShouldFollow); return i;
+}
+uint16_t BehaviorTree::addConditionTargetIsInCombatArea() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionTargetIsInCombatArea); return i;
+}
+uint16_t BehaviorTree::addConditionTargetIsWithinAggroRadius(float radius_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionTargetIsWithinAggroRadius);
+    m_nodes[i].data = static_cast<uint32_t>(radius_m * 10.f + 0.5f);
+    return i;
+}
+uint16_t BehaviorTree::addConditionTargetNearestStandPointIsWithinDistance(float max_dist_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionTargetNearestStandPointIsWithinDistance);
+    m_nodes[i].data = static_cast<uint32_t>(max_dist_m * 10.f + 0.5f);
+    return i;
+}
+uint16_t BehaviorTree::addDecoratorSetSenseSet(uint8_t sense_set_id) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::DecoratorSetSenseSet);
+    m_nodes[i].data = sense_set_id;
+    return i;
+}
+uint16_t BehaviorTree::addDecoratorSuspiciousItemInProgress() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::DecoratorSuspiciousItemInProgress); return i;
+}
+uint16_t BehaviorTree::addSelectorLinear() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::SelectorLinear); return i;
+}
+uint16_t BehaviorTree::addSequenceLinear() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::SequenceLinear); return i;
+}
+
 // ── Batch 33 ──────────────────────────────────────────────────────────────────
 uint16_t BehaviorTree::addActionAbortMeleeAttack() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionAbortMeleeAttack); return i;

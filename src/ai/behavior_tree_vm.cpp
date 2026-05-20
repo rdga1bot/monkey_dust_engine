@@ -25,6 +25,9 @@
 #include <monkey_dust/ai/token_registry.h>
 
 static constexpr uint32_t TARGET_ENTITY_BB_KEY            = md::fnv1a("target_entity");
+static constexpr uint32_t SQUAD_TX_BB_KEY                 = md::fnv1a("squad_tx");
+static constexpr uint32_t SQUAD_TZ_BB_KEY                 = md::fnv1a("squad_tz");
+static constexpr uint32_t SQUAD_ACTIVITY_BB_KEY           = md::fnv1a("squad_activity");
 static constexpr uint32_t NEXT_TARGET_ENTITY_BB_KEY       = md::fnv1a("next_target_entity");
 static constexpr uint32_t HAS_SEARCHED_POS_BB_KEY         = md::fnv1a("has_searched_pos");
 static constexpr uint32_t DONE_SUSPECT_MOVETO_BB_KEY      = md::fnv1a("done_suspect_moveto");

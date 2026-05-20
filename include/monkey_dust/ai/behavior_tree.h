@@ -671,6 +671,51 @@ enum class BTNodeType : uint8_t {
     //   DecoratorLoop: data=N (0=infinite); repeats child until N successes or child Failure
     //     Uses st.counter to track iteration count
     DecoratorLoop,
+
+    // ── Batch 34: RE MEDIUM-priority nodes ───────────────────────────────────
+    //   ActionForceSearch:      data=0; ff::SHOULD_FORCE_SEARCH; Running
+    ActionForceSearch,
+    //   ActionResetSearchJobs:  data=0; clears HAS_SEARCHED_RECENT_SENSED_POS + last_searched_ms=0; Success
+    ActionResetSearchJobs,
+    //   ActionSetFrameFlag:     data=bit_idx (ff::*); sets that frame flag bit; Success
+    ActionSetFrameFlag,
+    //   ActionSetGaugeAmount:   data=(GaugeType<<16)|(uint16)(value*1000); sets gauge; Success
+    ActionSetGaugeAmount,
+    //   ConditionHasSenseActivationBeenAbove: data=(sense_idx<<8)|SenseThresholdQualifier
+    //     Success if sc->last_activated_ms[sense_idx]!=0 AND activation[idx] >= qualifier
+    ConditionHasSenseActivationBeenAbove,
+    //   ConditionIsCoverTooClose: data=min_dist_m*10; Success if IS_IN_COVER && dist(self,target)<=min_dist
+    ConditionIsCoverTooClose,
+    //   ConditionIsInCombatArea: data=0; Success if as->awareness >= Aware (combat engagement proxy)
+    ConditionIsInCombatArea,
+    //   ConditionMostRecentSenseActivationHasBeenAbove: data=SenseThresholdQualifier
+    //     finds sense with most recent last_activated_ms; Success if its activation >= qualifier
+    ConditionMostRecentSenseActivationHasBeenAbove,
+    //   ConditionNeedsToGetOutOfTheWay: data=0; Success if ff::SHOULD_GET_OUT_OF_WAY is set
+    ConditionNeedsToGetOutOfTheWay,
+    //   ConditionObjectiveIsInCombatArea: data=0; Success if bb["squad_activity"] >= AttackMove(9)
+    ConditionObjectiveIsInCombatArea,
+    //   ConditionObjectiveIsWithinDistance: data=max_dist_m*10
+    //     reads bb["squad_tx"/"squad_tz"]; Success if dist(self, objective) <= max_dist
+    ConditionObjectiveIsWithinDistance,
+    //   ConditionShouldFollow: data=0; Success if bb["squad_activity"] >= AttackMove(9)
+    ConditionShouldFollow,
+    //   ConditionTargetIsInCombatArea: data=0; Success if target as->awareness >= Aware
+    ConditionTargetIsInCombatArea,
+    //   ConditionTargetIsWithinAggroRadius: data=radius_m*10; dist(self,target)<=radius — Success
+    ConditionTargetIsWithinAggroRadius,
+    //   ConditionTargetNearestStandPointIsWithinDistance: data=max_dist_m*10
+    //     Euclidean dist + 1m buffer (stand-point offset); approximation of nav standing-point
+    ConditionTargetNearestStandPointIsWithinDistance,
+    //   DecoratorSetSenseSet: data=sense_set_id; no-op passthrough (sense sets not implemented)
+    DecoratorSetSenseSet,
+    //   DecoratorSuspiciousItemInProgress: gate child on nm->event_count > 0
+    DecoratorSuspiciousItemInProgress,
+    //   SelectorLinear: standard left-to-right selector (same semantics as Selector)
+    SelectorLinear,
+    //   SequenceLinear: stateful sequence — remembers child position across ticks
+    //     (unlike SequenceStateless which resets to child 0 every entry)
+    SequenceLinear,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -1275,6 +1320,27 @@ public:
     uint16_t addConditionTargetIsUsingMeleeAttack();
     // count: 0=infinite; repeats child until count successes or child Failure
     uint16_t addDecoratorLoop(uint32_t count = 0);
+
+    // ── Batch 34: RE MEDIUM-priority nodes ───────────────────────────────────
+    uint16_t addActionForceSearch();
+    uint16_t addActionResetSearchJobs();
+    uint16_t addActionSetFrameFlag(uint8_t bit_idx);
+    uint16_t addActionSetGaugeAmount(GaugeType gauge, float value);
+    uint16_t addConditionHasSenseActivationBeenAbove(uint8_t sense_idx, SenseThresholdQualifier q);
+    uint16_t addConditionIsCoverTooClose(float min_dist_m);
+    uint16_t addConditionIsInCombatArea();
+    uint16_t addConditionMostRecentSenseActivationHasBeenAbove(SenseThresholdQualifier q);
+    uint16_t addConditionNeedsToGetOutOfTheWay();
+    uint16_t addConditionObjectiveIsInCombatArea();
+    uint16_t addConditionObjectiveIsWithinDistance(float max_dist_m);
+    uint16_t addConditionShouldFollow();
+    uint16_t addConditionTargetIsInCombatArea();
+    uint16_t addConditionTargetIsWithinAggroRadius(float radius_m);
+    uint16_t addConditionTargetNearestStandPointIsWithinDistance(float max_dist_m);
+    uint16_t addDecoratorSetSenseSet(uint8_t sense_set_id);
+    uint16_t addDecoratorSuspiciousItemInProgress();
+    uint16_t addSelectorLinear();
+    uint16_t addSequenceLinear();
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

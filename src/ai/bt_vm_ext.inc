@@ -1003,6 +1003,218 @@
             pc = nd.parent; continue;
         }
 
+        // ── Batch 34: RE MEDIUM-priority nodes ───────────────────────────────
+        case BTNodeType::ActionForceSearch: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) as->frame_flags |= (1ull << ff::SHOULD_FORCE_SEARCH);
+            result = BTStatus::Running; goto exit_loop;
+        }
+        case BTNodeType::ActionResetSearchJobs: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                as->lcflags.clear(lcf::HAS_SEARCHED_RECENT_SENSED_POS);
+                as->last_searched_ms = 0u;
+            }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        case BTNodeType::ActionSetFrameFlag: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as && nd.data < 64u) as->frame_flags |= (1ull << static_cast<uint8_t>(nd.data));
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+        case BTNodeType::ActionSetGaugeAmount: {
+            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (as) {
+                auto   gt  = static_cast<GaugeType>((nd.data >> 16) & 0xFFu);
+                float  val = static_cast<float>(nd.data & 0xFFFFu) / 1000.f;
+                as->gauges.set(gt, val < 0.f ? 0.f : val > 1.f ? 1.f : val);
+            }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ConditionHasSenseActivationBeenAbove: {
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            uint8_t  idx = static_cast<uint8_t>((nd.data >> 8) & 0xFFu);
+            auto     q   = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
+            if (idx >= static_cast<uint8_t>(SenseType::COUNT) ||
+                sc->last_activated_ms[idx] == 0u) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float act = sc->activation[idx];
+            bool  ok  = false;
+            switch (q) {
+                case SenseThresholdQualifier::Trace:     ok = act > 0.f;              break;
+                case SenseThresholdQualifier::Lower:     ok = act >= sc->threshold_lo; break;
+                case SenseThresholdQualifier::Activated: ok = act >= sc->threshold_hi; break;
+                case SenseThresholdQualifier::Upper:     ok = act >= 1.0f;             break;
+            }
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionIsCoverTooClose: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            if (!as || !as->lcflags.test(lcf::IS_IN_COVER)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const WorldTransform* self_wt = Registry::Get().try_get<WorldTransform>(e);
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const WorldTransform* twt = Registry::Get().try_get<WorldTransform>(tgt);
+            if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float dx = twt->x - self_wt->x, dz = twt->z - self_wt->z;
+            float min_d = static_cast<float>(nd.data) / 10.f;
+            result = (dx*dx + dz*dz <= min_d*min_d) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionIsInCombatArea: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            result = (as && as->awareness >= AwarenessState::Aware)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionMostRecentSenseActivationHasBeenAbove: {
+            const SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            auto q = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
+            // Find sense with most recent activation timestamp
+            uint32_t best_ms = 0u; int best_i = -1;
+            for (int si = 0; si < static_cast<int>(SenseType::COUNT); ++si) {
+                if (sc->last_activated_ms[si] > best_ms) { best_ms = sc->last_activated_ms[si]; best_i = si; }
+            }
+            if (best_i < 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float act = sc->activation[best_i]; bool ok = false;
+            switch (q) {
+                case SenseThresholdQualifier::Trace:     ok = act > 0.f;              break;
+                case SenseThresholdQualifier::Lower:     ok = act >= sc->threshold_lo; break;
+                case SenseThresholdQualifier::Activated: ok = act >= sc->threshold_hi; break;
+                case SenseThresholdQualifier::Upper:     ok = act >= 1.0f;             break;
+            }
+            result = ok ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionNeedsToGetOutOfTheWay: {
+            const AgentState* as = Registry::Get().try_get<AgentState>(e);
+            result = (as && (as->frame_flags & (1ull << ff::SHOULD_GET_OUT_OF_WAY)))
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionObjectiveIsInCombatArea: {
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, SQUAD_ACTIVITY_BB_KEY);
+            // AttackMove = 9; squad committed to attack → objective is "in combat area"
+            result = (en && en->val.i >= 9) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionObjectiveIsWithinDistance: {
+            const WorldTransform* wt = Registry::Get().try_get<WorldTransform>(e);
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* ex = bb_find(*ab, SQUAD_TX_BB_KEY);
+            const BlackboardEntry* ez = bb_find(*ab, SQUAD_TZ_BB_KEY);
+            if (!ex || !ez) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float dx = ex->val.f - wt->x, dz = ez->val.f - wt->z;
+            float max_d = static_cast<float>(nd.data) / 10.f;
+            result = (dx*dx + dz*dz <= max_d*max_d) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionShouldFollow: {
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, SQUAD_ACTIVITY_BB_KEY);
+            result = (en && en->val.i >= 9) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionTargetIsInCombatArea: {
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const AgentState* tas = Registry::Get().try_get<AgentState>(tgt);
+            result = (tas && tas->awareness >= AwarenessState::Aware)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionTargetIsWithinAggroRadius: {
+            const WorldTransform* self_wt = Registry::Get().try_get<WorldTransform>(e);
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const WorldTransform* twt = Registry::Get().try_get<WorldTransform>(tgt);
+            if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float dx = twt->x - self_wt->x, dz = twt->z - self_wt->z;
+            float r = static_cast<float>(nd.data) / 10.f;
+            result = (dx*dx + dz*dz <= r*r) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::ConditionTargetNearestStandPointIsWithinDistance: {
+            const WorldTransform* self_wt = Registry::Get().try_get<WorldTransform>(e);
+            const AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
+            if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            const WorldTransform* twt = Registry::Get().try_get<WorldTransform>(tgt);
+            if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
+            float dx = twt->x - self_wt->x, dz = twt->z - self_wt->z;
+            // +1m offset approximates nearest standing point around target body
+            float max_d = static_cast<float>(nd.data) / 10.f + 1.0f;
+            result = (dx*dx + dz*dz <= max_d*max_d) ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::DecoratorSetSenseSet: {
+            // Sense sets not implemented — passthrough, always runs child
+            if (result == BTStatus::Running) {
+                if (nd.childCount > 0) { pc = m_children[nd.childStart]; continue; }
+                result = BTStatus::Success; pc = nd.parent; continue;
+            }
+            pc = nd.parent; continue;
+        }
+        case BTNodeType::DecoratorSuspiciousItemInProgress: {
+            if (result == BTStatus::Running) {
+                const NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+                if (!nm || nm->event_count == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
+                if (nd.childCount > 0) { pc = m_children[nd.childStart]; continue; }
+                result = BTStatus::Success; pc = nd.parent; continue;
+            }
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::SelectorLinear: {
+            if (result == BTStatus::Running) {
+                st.currentChild = 0;
+                if (nd.childCount == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
+                pc = m_children[nd.childStart]; continue;
+            }
+            if (result == BTStatus::Success) { pc = nd.parent; continue; }
+            if (++st.currentChild < nd.childCount) {
+                pc = m_children[nd.childStart + st.currentChild];
+                result = BTStatus::Running; continue;
+            }
+            result = BTStatus::Failure; pc = nd.parent; continue;
+        }
+        case BTNodeType::SequenceLinear: {
+            if (result == BTStatus::Running) {
+                st.currentChild = 0;
+                if (nd.childCount == 0) { result = BTStatus::Success; pc = nd.parent; continue; }
+                pc = m_children[nd.childStart]; continue;
+            }
+            if (result == BTStatus::Failure) { pc = nd.parent; continue; }
+            if (++st.currentChild < nd.childCount) {
+                pc = m_children[nd.childStart + st.currentChild];
+                result = BTStatus::Running; continue;
+            }
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
         // ── Batch 33: RE HIGH-priority combat nodes ───────────────────────────
         case BTNodeType::ActionAbortMeleeAttack: {
             AgentState* as = Registry::Get().try_get<AgentState>(e);

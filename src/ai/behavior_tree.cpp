@@ -1119,6 +1119,76 @@ uint16_t BehaviorTree::addConditionAngleNPCToTargetsAimLessThan(float angle_deg)
     return i;
 }
 
+// ── Batch 35 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addActionApplyPrimaryDamageControlResponse() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionApplyPrimaryDamageControlResponse); return i;
+}
+uint16_t BehaviorTree::addActionBrokenCover() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionBrokenCover); return i;
+}
+uint16_t BehaviorTree::addActionMoveToObjective() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionMoveToObjective); return i;
+}
+uint16_t BehaviorTree::addActionSetLogicCharacterFlags(uint8_t bit_idx, bool do_set) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionSetLogicCharacterFlags);
+    m_nodes[i].data = (static_cast<uint32_t>(bit_idx) << 8) | (do_set ? 1u : 0u);
+    return i;
+}
+uint16_t BehaviorTree::addConditionAllowedToDoSuspiciousWarning() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionAllowedToDoSuspiciousWarning); return i;
+}
+uint16_t BehaviorTree::addConditionCanTakeStep() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionCanTakeStep); return i;
+}
+uint16_t BehaviorTree::addConditionGameIsDifficulty() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionGameIsDifficulty); return i;
+}
+uint16_t BehaviorTree::addConditionHasAnySenseBeenAboveWithinTime(SenseThresholdQualifier q,
+                                                                   uint32_t time_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHasAnySenseBeenAboveWithinTime);
+    m_nodes[i].data = (static_cast<uint32_t>(q) << 24) | (time_ms & 0x00FFFFFFu);
+    return i;
+}
+uint16_t BehaviorTree::addConditionIsCorpseTrap() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionIsCorpseTrap); return i;
+}
+uint16_t BehaviorTree::addConditionIsGaugeAmountBelow(GaugeType gauge, float threshold) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionIsGaugeAmountBelow);
+    uint32_t t = static_cast<uint32_t>(threshold * 1000.f + 0.5f);
+    m_nodes[i].data = (static_cast<uint32_t>(gauge) << 24) | (t & 0x00FFFFFFu);
+    return i;
+}
+uint16_t BehaviorTree::addConditionLastTimeWasAbleToShootTarget(uint32_t max_elapsed_ms) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionLastTimeWasAbleToShootTarget);
+    m_nodes[i].data = max_elapsed_ms;
+    return i;
+}
+uint16_t BehaviorTree::addConditionRequiresPrimaryDamageControlResponse(uint8_t threshold_pct) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionRequiresPrimaryDamageControlResponse);
+    m_nodes[i].data = threshold_pct;
+    return i;
+}
+uint16_t BehaviorTree::addConditionTargetIsPlayer() {
+    uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ConditionTargetIsPlayer); return i;
+}
+uint16_t BehaviorTree::addConditionTargetIsWithinDistanceUnobscured(float max_dist_m) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionTargetIsWithinDistanceUnobscured);
+    m_nodes[i].data = static_cast<uint32_t>(max_dist_m * 10.f + 0.5f);
+    return i;
+}
+uint16_t BehaviorTree::addConditionTargetLogicCharacterFlags(uint8_t bit_idx, bool check_set) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionTargetLogicCharacterFlags);
+    m_nodes[i].data = (static_cast<uint32_t>(bit_idx) << 8) | (check_set ? 1u : 0u);
+    return i;
+}
+
 // ── Batch 34 ──────────────────────────────────────────────────────────────────
 uint16_t BehaviorTree::addActionForceSearch() {
     uint16_t i = m_nodeCount++; initNode(m_nodes[i], BTNodeType::ActionForceSearch); return i;

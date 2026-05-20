@@ -390,6 +390,8 @@ namespace ff {
     static constexpr uint8_t SHOULD_THREAT_ESCALATE               = 44; // Batch 33: escalate aggro_level by one step
     static constexpr uint8_t SHOULD_MOVE_IN_DIRECTION             = 45; // Batch 33: strafe/advance; direction in as->move_direction
     static constexpr uint8_t SHOULD_FORCE_SEARCH                  = 46; // Batch 34: force search regardless of conditions
+    static constexpr uint8_t SHOULD_APPLY_DAMAGE_CONTROL          = 47; // Batch 35: apply first aid / damage control response
+    static constexpr uint8_t SHOULD_MOVE_TO_OBJECTIVE             = 48; // Batch 35: move to squad objective (bb squad_tx/tz)
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────

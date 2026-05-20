@@ -716,6 +716,43 @@ enum class BTNodeType : uint8_t {
     //   SequenceLinear: stateful sequence — remembers child position across ticks
     //     (unlike SequenceStateless which resets to child 0 every entry)
     SequenceLinear,
+
+    // ── Batch 35: remaining LOW-priority nodes ────────────────────────────────
+    //   ActionApplyPrimaryDamageControlResponse: data=0; ff::SHOULD_APPLY_DAMAGE_CONTROL; Running
+    ActionApplyPrimaryDamageControlResponse,
+    //   ActionBrokenCover: data=0; clear lcf::IS_IN_COVER + ff::SHOULD_BREAKOUT; Success
+    ActionBrokenCover,
+    //   ActionMoveToObjective: data=0; reads bb["squad_tx/tz"] → NavAgent target + ff::SHOULD_MOVE_TO_OBJECTIVE; Running
+    ActionMoveToObjective,
+    //   ActionSetLogicCharacterFlags: data=(bit_idx<<8)|(1=set/0=clear); modifies lcf bit; Success
+    ActionSetLogicCharacterFlags,
+    //   ConditionAllowedToDoSuspiciousWarning: data=0; aggro_level>=Warning && awareness>=Suspicious; Success
+    ConditionAllowedToDoSuspiciousWarning,
+    //   ConditionCanTakeStep: data=0; awareness>=Suspicious && !IS_DEAD && target in bb; Success
+    ConditionCanTakeStep,
+    //   ConditionGameIsDifficulty: data=0; always Success (no difficulty system)
+    ConditionGameIsDifficulty,
+    //   ConditionHasAnySenseBeenAboveWithinTime: data=(qualifier<<24)|(time_ms 24-bit)
+    //     Success if any sense last_activated_ms within time_ms AND activation>=qualifier
+    ConditionHasAnySenseBeenAboveWithinTime,
+    //   ConditionIsCorpseTrap: data=0; Success if lcf::IS_CORPSE_TRAP is set
+    ConditionIsCorpseTrap,
+    //   ConditionIsGaugeAmountBelow: data=(GaugeType<<24)|(threshold*1000 24-bit); gauge < threshold → Success
+    ConditionIsGaugeAmountBelow,
+    //   ConditionLastTimeWasAbleToShootTarget: data=max_elapsed_ms
+    //     Success if sc->last_activated_ms[0]!=0 && (nowMs-last_activated_ms[0])<=data
+    ConditionLastTimeWasAbleToShootTarget,
+    //   ConditionRequiresPrimaryDamageControlResponse: data=threshold_pct (uint8);
+    //     Success if as->hp_pct <= threshold (critical HP — needs first aid)
+    ConditionRequiresPrimaryDamageControlResponse,
+    //   ConditionTargetIsPlayer: data=0; reads target from bb; Success if target lcf::IS_PLAYER
+    ConditionTargetIsPlayer,
+    //   ConditionTargetIsWithinDistanceUnobscured: data=max_dist_m*10;
+    //     dist(self,target)<=max_dist AND sc->activation[0]>=threshold_lo
+    ConditionTargetIsWithinDistanceUnobscured,
+    //   ConditionTargetLogicCharacterFlags: data=(bit_idx<<8)|(check_set:1/check_clear:0)
+    //     reads target from bb; checks target's lcf bit
+    ConditionTargetLogicCharacterFlags,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -1341,6 +1378,23 @@ public:
     uint16_t addDecoratorSuspiciousItemInProgress();
     uint16_t addSelectorLinear();
     uint16_t addSequenceLinear();
+
+    // ── Batch 35 ──────────────────────────────────────────────────────────────
+    uint16_t addActionApplyPrimaryDamageControlResponse();
+    uint16_t addActionBrokenCover();
+    uint16_t addActionMoveToObjective();
+    uint16_t addActionSetLogicCharacterFlags(uint8_t bit_idx, bool do_set);
+    uint16_t addConditionAllowedToDoSuspiciousWarning();
+    uint16_t addConditionCanTakeStep();
+    uint16_t addConditionGameIsDifficulty();
+    uint16_t addConditionHasAnySenseBeenAboveWithinTime(SenseThresholdQualifier q, uint32_t time_ms);
+    uint16_t addConditionIsCorpseTrap();
+    uint16_t addConditionIsGaugeAmountBelow(GaugeType gauge, float threshold);
+    uint16_t addConditionLastTimeWasAbleToShootTarget(uint32_t max_elapsed_ms);
+    uint16_t addConditionRequiresPrimaryDamageControlResponse(uint8_t threshold_pct = 25);
+    uint16_t addConditionTargetIsPlayer();
+    uint16_t addConditionTargetIsWithinDistanceUnobscured(float max_dist_m);
+    uint16_t addConditionTargetLogicCharacterFlags(uint8_t bit_idx, bool check_set = true);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

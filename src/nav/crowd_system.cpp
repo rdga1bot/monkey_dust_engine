@@ -97,6 +97,9 @@ void CrowdSystem::FlushRange(entt::registry& reg, int start, int end) const {
             if (speed > 0.2f) {
                 nav.is_moving  = true;
                 nav.move_speed = speed / 3.5f;
+            } else {
+                nav.is_moving  = false;
+                nav.move_speed = 0.f;
             }
         }
     }

@@ -72,30 +72,34 @@ void CrowdSystem::Update(float dt) {
     if (crowd_) crowd_->update(dt, nullptr);
 }
 
-void CrowdSystem::FlushToNavAgent(entt::registry& reg) const {
+void CrowdSystem::FlushRange(entt::registry& reg, int start, int end) const {
     if (!crowd_) return;
-    for (int i = 0; i < MAX_AGENTS; ++i) {
+    if (end > MAX_AGENTS) end = MAX_AGENTS;
+    for (int i = start; i < end; ++i) {
         if (agent_entity_[i] == entt::null) continue;
         if (!reg.valid(agent_entity_[i])) continue;
         const dtCrowdAgent* ag = crowd_->getAgent(i);
         if (!ag || !ag->active) continue;
 
-        // Update WorldTransform position from crowd agent
         if (reg.all_of<WorldTransform>(agent_entity_[i])) {
             auto& tr = reg.get<WorldTransform>(agent_entity_[i]);
             tr.x = ag->npos[0];
             tr.z = ag->npos[2];
         }
-
-        // Update NavAgent movement state
         if (reg.all_of<NavAgent>(agent_entity_[i])) {
             auto& nav = reg.get<NavAgent>(agent_entity_[i]);
             float vx = ag->vel[0], vz = ag->vel[2];
             float speed = sqrtf(vx*vx + vz*vz);
-            nav.is_moving  = speed > 0.2f;
-            nav.move_speed = speed / 3.5f;  // normalised 0..1
+            if (speed > 0.2f) {
+                nav.is_moving  = true;
+                nav.move_speed = speed / 3.5f;
+            }
         }
     }
+}
+
+void CrowdSystem::FlushToNavAgent(entt::registry& reg) const {
+    FlushRange(reg, 0, MAX_AGENTS);
 }
 
 void CrowdSystem::GetPosition(int idx, float& x, float& z) const {

@@ -39,6 +39,10 @@ public:
     // Call after Update(), before JoltWorld::Step().
     void FlushToNavAgent(entt::registry& reg) const;
 
+    // VBfA-AI7: flush a sub-range of agents [start, end) — thread-safe as long
+    // as each entity appears in exactly one range (no aliasing between threads).
+    void FlushRange(entt::registry& reg, int start, int end) const;
+
     // Shortcut: position of agent idx (x, z).
     void GetPosition(int idx, float& x, float& z) const;
 

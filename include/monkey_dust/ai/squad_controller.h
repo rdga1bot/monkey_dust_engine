@@ -32,15 +32,28 @@
 #include <monkey_dust/ai/fnv.h>
 #include <entt/entt.hpp>
 #include <cmath>
-#include <cstring>
 
 // ── Squad activity states (VBfA AT_SQUAD_ACTIVITY_*) ─────────────────────────
+// Expanded from 5 → 13 states matching VBfA RE data.
+// Startup states last one think-tick (THINK_INTERVAL_MS = 2s) then auto-advance.
+// BT members can read squad_activity from blackboard key "squad_activity" (uint8).
 enum class SquadActivity : uint8_t {
-    Idle         = 0,   // no target, members stand still
-    PatrolRagged = 1,   // random wander within radius, NO pathfinding
-    Patrol       = 2,   // return toward home position
-    AttackMove   = 3,   // advance on player position
-    Fight        = 4,   // full combat — BT drives individuals, squad updates BB only
+    // ── Idle / pre-battle ────────────────────────────────────────────────────
+    Idle                    = 0,  // AT_SQUAD_ACT_IDLE — no threat, members stand still
+    IdlePriorToBattle       = 1,  // AT_SQUAD_ACT_IDLE_PRIOR_TO_BATTLE — aware, weapon holstered
+    IdlePriorToBattleReady  = 2,  // AT_SQUAD_ACT_IDLE_PRIOR_TO_BATTLE_MOTIVATED — aware, weapon ready
+    DrawWeapon              = 3,  // AT_SQUAD_ACT_DRAW_WEAPON — one-tick transition before attack
+    // ── Patrol ───────────────────────────────────────────────────────────────
+    PatrolRagged            = 4,  // AT_SQUAD_ACTIVITY_PATROL_RAGGED_START — wander, no pathfind
+    PatrolStartup           = 5,  // AT_SQUAD_ACTIVITY_PATROL_STARTUP — 1-tick before Patrol
+    Patrol                  = 6,  // AT_SQUAD_ACTIVITY_GUARD_PATROLLING — structured patrol route
+    PatrolFailed            = 7,  // AT_SQUAD_ACTIVITY_PATROL_PF_FAILED — nav failed, replan
+    // ── Attack ───────────────────────────────────────────────────────────────
+    AttackStartup           = 8,  // AT_SQUAD_ACTIVITY_ATTACK_STARTUP — 1-tick commit before advance
+    AttackMove              = 9,  // AT_SQUAD_ACTIVITY_ATTACK_PATROL — advance on target
+    AttackFightStartup      = 10, // AT_SQUAD_ACTIVITY_ATTACK_FIGHT_STARTUP — 1-tick before melee
+    Fight                   = 11, // AT_SQUAD_ACTIVITY_ATTACK_FIGHT — full combat, BT drives members
+    StandGround             = 12, // AT_SQUAD_ACTIVITY_ATTACK_STAND_GROUND_COMBAT — hold + fight
 };
 
 // ── SquadController component (lives on squad entity, not on member NPCs) ─────
@@ -53,6 +66,7 @@ struct SquadController {
     int           member_count         = 0;
 
     SquadActivity activity             = SquadActivity::PatrolRagged;
+    SquadActivity prev_activity        = SquadActivity::Idle; // for transition detection
     float         home_x              = 0.f;
     float         home_z              = 0.f;
     float         target_x            = 0.f;
@@ -69,8 +83,9 @@ struct SquadController {
 class SquadSystem {
 public:
     // Blackboard keys (compile-time FNV-1a) for member BT nodes.
-    static constexpr uint32_t kSquadTx = md::fnv1a("squad_tx");
-    static constexpr uint32_t kSquadTz = md::fnv1a("squad_tz");
+    static constexpr uint32_t kSquadTx       = md::fnv1a("squad_tx");
+    static constexpr uint32_t kSquadTz       = md::fnv1a("squad_tz");
+    static constexpr uint32_t kSquadActivity = md::fnv1a("squad_activity"); // uint8 SquadActivity
 
     // Create a squad entity and return its handle.
     // members[count]: pre-spawned NPC entities to include.
@@ -111,26 +126,70 @@ public:
             if (sc.think_accum_ms < SquadController::THINK_INTERVAL_MS) return;
             sc.think_accum_ms = 0.f;
 
-            // ── Activity ladder: dist(home → player), ONE check per squad ────
+            // ── Activity ladder with VBfA startup transitions ────────────────
             float dx   = sc.home_x - player_x;
             float dz   = sc.home_z - player_z;
             float dist = sqrtf(dx * dx + dz * dz);
 
-            SquadActivity new_act;
-            if      (dist > 60.f) new_act = SquadActivity::PatrolRagged;
-            else if (dist > 40.f) new_act = SquadActivity::Patrol;
-            else if (dist > 20.f) new_act = SquadActivity::AttackMove;
-            else                  new_act = SquadActivity::Fight;
-            sc.activity = new_act;
+            sc.prev_activity = sc.activity;
+
+            // Startup states auto-advance to their running state each think tick.
+            // Distance ladder then decides if we need a new transition.
+            switch (sc.activity) {
+                case SquadActivity::DrawWeapon:
+                    sc.activity = SquadActivity::AttackStartup; break;
+                case SquadActivity::PatrolStartup:
+                    sc.activity = SquadActivity::Patrol; break;
+                case SquadActivity::AttackStartup:
+                    sc.activity = SquadActivity::AttackMove; break;
+                case SquadActivity::AttackFightStartup:
+                    sc.activity = SquadActivity::Fight; break;
+                default: break;
+            }
+
+            // Distance-driven transitions (only on stable running states)
+            if (dist > 60.f) {
+                if (sc.activity == SquadActivity::Fight ||
+                    sc.activity == SquadActivity::AttackMove ||
+                    sc.activity == SquadActivity::StandGround)
+                    sc.activity = SquadActivity::PatrolStartup;    // disengage → patrol
+                else if (sc.activity != SquadActivity::Patrol &&
+                         sc.activity != SquadActivity::PatrolStartup)
+                    sc.activity = SquadActivity::PatrolRagged;
+            } else if (dist > 40.f) {
+                if (sc.activity == SquadActivity::PatrolRagged ||
+                    sc.activity == SquadActivity::Idle)
+                    sc.activity = SquadActivity::PatrolStartup;
+            } else if (dist > 20.f) {
+                if (sc.activity == SquadActivity::Patrol ||
+                    sc.activity == SquadActivity::PatrolRagged ||
+                    sc.activity == SquadActivity::IdlePriorToBattle)
+                    sc.activity = SquadActivity::DrawWeapon;       // commit to attack
+                else if (sc.activity == SquadActivity::Fight ||
+                         sc.activity == SquadActivity::StandGround)
+                    sc.activity = SquadActivity::AttackMove;       // player backed off
+            } else {
+                if (sc.activity == SquadActivity::AttackMove)
+                    sc.activity = SquadActivity::AttackFightStartup;
+                else if (sc.activity == SquadActivity::Fight && dist < 5.f)
+                    sc.activity = SquadActivity::StandGround;      // AT_SQUAD_STAND_GROUND
+                else if (sc.activity == SquadActivity::Patrol ||
+                         sc.activity == SquadActivity::PatrolRagged)
+                    sc.activity = SquadActivity::IdlePriorToBattle; // threat spotted
+            }
+
+            // Determine if members are in active fight (for BroadcastTarget)
+            const bool is_fight = (sc.activity == SquadActivity::Fight ||
+                                   sc.activity == SquadActivity::StandGround);
 
             // ── Compute squad target ─────────────────────────────────────────
             switch (sc.activity) {
                 case SquadActivity::Idle:
+                case SquadActivity::IdlePriorToBattle:
+                case SquadActivity::IdlePriorToBattleReady:
                     break;
 
                 case SquadActivity::PatrolRagged:
-                    // New random wander point every WANDER_INTERVAL_MS (VBfA "ragged patrol").
-                    // NO pathfinding — just pick a point in radius, ORCA steers there.
                     if (sc.wander_accum_ms >= SquadController::WANDER_INTERVAL_MS) {
                         sc.wander_accum_ms = 0.f;
                         sc.rng_state = sc.rng_state * 1664525u + 1013904223u;
@@ -141,13 +200,19 @@ public:
                     }
                     break;
 
+                case SquadActivity::PatrolStartup:
                 case SquadActivity::Patrol:
+                case SquadActivity::PatrolFailed:
                     sc.target_x = sc.home_x;
                     sc.target_z = sc.home_z;
                     break;
 
+                case SquadActivity::DrawWeapon:
+                case SquadActivity::AttackStartup:
                 case SquadActivity::AttackMove:
+                case SquadActivity::AttackFightStartup:
                 case SquadActivity::Fight:
+                case SquadActivity::StandGround:
                     sc.target_x = player_x;
                     sc.target_z = player_z;
                     break;
@@ -161,28 +226,32 @@ public:
 private:
     static void BroadcastTarget(SquadController& sc, entt::registry& reg) {
         const float tx = sc.target_x, tz = sc.target_z;
-        const bool  is_fight = (sc.activity == SquadActivity::Fight);
+        const bool is_fight = (sc.activity == SquadActivity::Fight ||
+                               sc.activity == SquadActivity::StandGround);
+        const bool is_moving = (sc.activity != SquadActivity::Idle &&
+                                sc.activity != SquadActivity::IdlePriorToBattle &&
+                                sc.activity != SquadActivity::StandGround);
+        const uint8_t act_u8 = static_cast<uint8_t>(sc.activity);
 
         for (int i = 0; i < sc.member_count; ++i) {
             entt::entity m = sc.members[i];
             if (!reg.valid(m)) continue;
 
-            // Update blackboard so BT nodes (actMoveToTarget etc.) can read squad goal
             auto* bb = reg.try_get<AgentBlackboard>(m);
             if (bb) {
                 bb_set_float(*bb, kSquadTx, tx);
                 bb_set_float(*bb, kSquadTz, tz);
+                bb_set_int  (*bb, kSquadActivity, static_cast<int32_t>(act_u8));
             }
 
-            // In Fight mode: BT drives individual movement; skip CrowdSystem redirect
+            // In Fight/StandGround: BT drives individual movement
             if (is_fight) continue;
 
-            // Non-Fight: SquadSystem drives movement via ORCA (1 target per squad)
             auto* nav = reg.try_get<NavAgent>(m);
             if (!nav) continue;
-            nav->target_x = tx;
-            nav->target_z = tz;
-            nav->is_moving = (sc.activity != SquadActivity::Idle);
+            nav->target_x  = tx;
+            nav->target_z  = tz;
+            nav->is_moving = is_moving;
 
             if (nav->crowd_idx >= 0 && CrowdSystem::Get().IsReady())
                 CrowdSystem::Get().SetTarget(nav->crowd_idx, tx, tz);

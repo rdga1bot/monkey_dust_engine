@@ -1,7 +1,7 @@
 # monkey_dust — Engine
 
 Open-source C++17 game engine library for a Flare-inspired isometric RPG sandbox.
-Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, and a custom stackless **Behavior Tree VM**.
+Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Behavior Tree VM**, **ozz-animation**, and **Jolt Physics**.
 
 > **Full documentation →** [rdga1bot.github.io/monkey\_dust\_engine/monkey\_dust\_docs.html](https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html)
 
@@ -40,6 +40,18 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, and a custom stackless 
 
 ### ECS — EnTT
 15 engine-side components: `WorldTransform` · `AIAgent` · `Health` · `Combat` · `Renderable` · `Building` · `Inventory` · `ProjectileComponent` · `SenseComponent` · `AgentState` · `NpcMemoryComponent` · `BehaviorTreeComponent` · `DirectorHintComponent` · `FlareSpriteAnim` · `NpcInteractionComponent`
+
+### Physics & Animation
+- **Jolt Physics** — `JoltWorld`: `CharacterVirtual` (max_bodies=512); `TempAllocatorImpl` 8 MB
+- **ozz-animation** — `OzzAnimPlayer`: blend trees, `Eval/EvalBlend`; 30-joint Biped rig
+- **DetourCrowd** — `CrowdSystem` ORCA; max_agents=64
+- **Foot IK** (M59) — analytic 2-bone foot placement; TerrainQuery ray-cast
+
+### Terrain
+- `TerrainQuery` singleton — single source of truth for terrain heights/normals/slopes
+- `TerrainAtlas` — `world_hmap.r32` (67 MB, 4096 zones 65×65); O(1) RAM lookup; dirty-zone partial save
+- Cross-chunk normal stitching via atlas (no file I/O, no seam artefacts)
+- `TerrainGen_Build` / `TerrainGen_Upload` — worker-thread mesh gen + GPU upload
 
 ### Navigation
 - Recast/Detour integration; async SPSC pathfinding worker
@@ -98,7 +110,7 @@ bash scripts/compile_shaders.sh
 ```
 
 **Dependencies** (bring your own or via CMake FetchContent):
-`SDL3` · `EnTT` · `Recast/Detour` · `miniaudio` · `Lua 5.4` · `ImGui 1.92` (for editor builds)
+`SDL3` · `EnTT` · `Recast/Detour` · `ozz-animation` · `JoltPhysics` · `miniaudio` · `Lua 5.4` · `ImGui 1.92` (for editor builds)
 
 ---
 
@@ -106,10 +118,10 @@ bash scripts/compile_shaders.sh
 
 ```bash
 ninja -C build md_tests
-./build/tests/md_tests          # 1535 tests across 200+ suites
+./build/tests/md_tests          # 1557 tests across 200+ suites
 ```
 
-Suites: FNV · AgentBlackboard · FlowGraph · DirectorSystem · PowerSlotManager · NpcConfig · HotReload · FlowVar · AI Patterns C1–C20 · BT VM · Batch 3–31 · M47–M58 (NavLod, ReplaySnapshot, AllianceMatrix, SenseSystem, BT Archetypes, CombatDispatch, DeferredLighting, DialogQuest) · O3DE-1–4 (MaterialDesc, MdPrefabRegistry, SaveVersionChain, MdModuleRegistry) · ZLD-1–2 (MdIniReader, MdFeature) · FL-3–4 (MdStatusRegistry, MdEventScheduler)
+Suites: FNV · AgentBlackboard · FlowGraph · DirectorSystem · PowerSlotManager · NpcConfig · HotReload · FlowVar · AI Patterns C1–C20 · BT VM · Batch 3–31 · M47–M59 (NavLod, ReplaySnapshot, AllianceMatrix, SenseSystem, BT Archetypes, CombatDispatch, DeferredLighting, DialogQuest, FootIK) · O3DE-1–4 (MaterialDesc, MdPrefabRegistry, SaveVersionChain, MdModuleRegistry) · ZLD-1–2 (MdIniReader, MdFeature) · FL-3–4 (MdStatusRegistry, MdEventScheduler) · KEN-1–8 (SkinMesh, OzzAnimPlayer, JoltWorld, CrowdSystem) · VBfA-R1–9 · VBfA-AI1–6
 
 ---
 

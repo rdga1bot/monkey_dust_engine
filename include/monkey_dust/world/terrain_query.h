@@ -34,19 +34,28 @@ public:
 
     bool IsReady() const { return ready_; }
 
-    // Ground height at world (wx, wz).  Returns 0 if outside loaded terrain.
-    float GetHeight(float wx, float wz) const {
-        if (!ready_) return 0.f;
+    // Ground height at world (wx, wz).
+    // Returns false if outside loaded terrain — caller keeps previous Y.
+    bool GetHeight(float wx, float wz, float& out_h) const {
+        if (!ready_) return false;
         float gx = wx - world_off_x_;
         float gz = wz - world_off_z_;
         int   cx = (int)(gx / chunk_size_);
         int   cz = (int)(gz / chunk_size_);
-        if (cx < 0 || cx >= tnkn_ || cz < 0 || cz >= tnkn_) return 0.f;
+        if (cx < 0 || cx >= tnkn_ || cz < 0 || cz >= tnkn_) return false;
         const TerrainChunk& chunk = chunks_[cz * tnkn_ + cx];
-        if (!chunk.loaded) return 0.f;
+        if (!chunk.loaded) return false;
         float lx = gx - cx * chunk_size_;
         float lz = gz - cz * chunk_size_;
-        return chunk.SampleHeight(lx, lz);
+        out_h = chunk.SampleHeight(lx, lz);
+        return true;
+    }
+
+    // Convenience overload — returns 0 when outside terrain (safe for non-entity use).
+    float GetHeight(float wx, float wz) const {
+        float h = 0.f;
+        GetHeight(wx, wz, h);
+        return h;
     }
 
     // Surface normal at world (wx, wz) — central difference over 0.5m.

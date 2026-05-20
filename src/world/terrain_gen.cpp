@@ -3,6 +3,93 @@
 #include <cmath>
 #include <cstring>
 #include <cstdio>
+#include <cstdint>
+#include <climits>
+
+// ── Terrain Atlas ─────────────────────────────────────────────────────────────
+static constexpr uint32_t ATLAS_MAGIC  = 0x414D4800u;
+static constexpr int      ATLAS_ZONES  = 64;
+static constexpr int      ATLAS_VERTS  = 65;           // TERRAIN_GRID+1
+static constexpr int      ATLAS_ZBLOCK = ATLAS_VERTS * ATLAS_VERTS; // 4225
+
+static float   s_atlas_h   [ATLAS_ZONES * ATLAS_ZONES * ATLAS_ZBLOCK]; // ~66 MB BSS
+static float   s_atlas_hmin[ATLAS_ZONES * ATLAS_ZONES];
+static float   s_atlas_hmax[ATLAS_ZONES * ATLAS_ZONES];
+static uint8_t s_atlas_dirty[ATLAS_ZONES * ATLAS_ZONES];
+static bool    s_atlas_loaded = false;
+static char    s_atlas_path[512] = {};
+
+static int s_atlas_zi(int zx, int zy)          { return zy * ATLAS_ZONES + zx; }
+static int s_atlas_hi(int zx, int zy, int c, int r) {
+    return s_atlas_zi(zx, zy) * ATLAS_ZBLOCK + r * ATLAS_VERTS + c;
+}
+
+bool TerrainAtlas_Load(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    uint32_t magic, zx, zy, verts;
+    if (fread(&magic, 4, 1, f) != 1 || magic != ATLAS_MAGIC ||
+        fread(&zx,    4, 1, f) != 1 || fread(&zy,    4, 1, f) != 1 ||
+        fread(&verts, 4, 1, f) != 1 ||
+        (int)zx != ATLAS_ZONES || (int)zy != ATLAS_ZONES || (int)verts != ATLAS_VERTS) {
+        fclose(f); return false;
+    }
+    for (int i = 0; i < ATLAS_ZONES * ATLAS_ZONES; ++i) {
+        fread(&s_atlas_hmin[i], 4, 1, f);
+        fread(&s_atlas_hmax[i], 4, 1, f);
+        fread(&s_atlas_h[i * ATLAS_ZBLOCK], 4, ATLAS_ZBLOCK, f);
+    }
+    memset(s_atlas_dirty, 0, sizeof(s_atlas_dirty));
+    s_atlas_loaded = true;
+    strncpy(s_atlas_path, path, sizeof(s_atlas_path) - 1);
+    fclose(f);
+    fprintf(stdout, "[TerrainAtlas] loaded %s\n", path);
+    return true;
+}
+
+bool TerrainAtlas_Loaded() { return s_atlas_loaded; }
+
+float TerrainAtlas_GetHeight(int zx, int zy, int col, int row) {
+    if (!s_atlas_loaded || zx < 0 || zx >= ATLAS_ZONES ||
+        zy < 0 || zy >= ATLAS_ZONES) return 0.f;
+    return s_atlas_h[s_atlas_hi(zx, zy, col, row)];
+}
+
+void TerrainAtlas_SetHeight(int zx, int zy, int col, int row, float h) {
+    if (!s_atlas_loaded || zx < 0 || zx >= ATLAS_ZONES ||
+        zy < 0 || zy >= ATLAS_ZONES) return;
+    int idx = s_atlas_hi(zx, zy, col, row);
+    s_atlas_h[idx] = h;
+    int zi = s_atlas_zi(zx, zy);
+    s_atlas_dirty[zi] = 1;
+    if (h < s_atlas_hmin[zi]) s_atlas_hmin[zi] = h;
+    if (h > s_atlas_hmax[zi]) s_atlas_hmax[zi] = h;
+}
+
+bool TerrainAtlas_ZoneDirty(int zx, int zy) {
+    if (zx < 0 || zx >= ATLAS_ZONES || zy < 0 || zy >= ATLAS_ZONES) return false;
+    return s_atlas_dirty[s_atlas_zi(zx, zy)] != 0;
+}
+
+bool TerrainAtlas_Save(const char* path) {
+    if (!s_atlas_loaded) return false;
+    FILE* f = fopen(path, "r+b");
+    if (!f) return false;
+    int saved = 0;
+    for (int i = 0; i < ATLAS_ZONES * ATLAS_ZONES; ++i) {
+        if (!s_atlas_dirty[i]) continue;
+        long off = 16L + (long)i * (8L + ATLAS_ZBLOCK * 4L);
+        fseek(f, off, SEEK_SET);
+        fwrite(&s_atlas_hmin[i], 4, 1, f);
+        fwrite(&s_atlas_hmax[i], 4, 1, f);
+        fwrite(&s_atlas_h[i * ATLAS_ZBLOCK], 4, ATLAS_ZBLOCK, f);
+        s_atlas_dirty[i] = 0;
+        ++saved;
+    }
+    fclose(f);
+    fprintf(stdout, "[TerrainAtlas] saved %d dirty zone(s)\n", saved);
+    return true;
+}
 
 // ── Simplex noise (Stefan Gustavson / Ashima Arts — public domain) ────────────
 
@@ -153,15 +240,45 @@ static float s_hmap_sample(const float* hmap, int hmap_w, int hmap_h,
     return h0 + tz * (h1 - h0);
 }
 
-// Number of chunks per side (must match the TNKN used in main.cpp = 16).
-static constexpr int HMAP_CHUNKS = 16;
-
 bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParams& p) {
     float world_origin_x = coord.x * CHUNK_SIZE;
     float world_origin_z = coord.z * CHUNK_SIZE;
 
     // ── 1. Heights ────────────────────────────────────────────────────────────
-    if (p.heightmap_r32) {
+    if (p.zone_origin_x >= 0) {
+        int zx = p.zone_origin_x + coord.x;
+        int zy = p.zone_origin_z + coord.z;
+        bool loaded = false;
+        if (s_atlas_loaded && zx >= 0 && zx < ATLAS_ZONES && zy >= 0 && zy < ATLAS_ZONES) {
+            // Atlas path — direct copy from in-RAM buffer (no file I/O per chunk)
+            const float* src = &s_atlas_h[s_atlas_zi(zx, zy) * ATLAS_ZBLOCK];
+            for (int row = 0; row <= TERRAIN_GRID; ++row)
+                for (int col = 0; col <= TERRAIN_GRID; ++col)
+                    out.heightmap.h[s_idx(col, row)] = src[row * ATLAS_VERTS + col];
+            loaded = true;
+        }
+        if (!loaded) {
+            // Fallback: individual zone_X_Y.r32 files
+            char path[256];
+            snprintf(path, sizeof(path), "game/data/terrain/zone_%d_%d.r32", zx, zy);
+            float* hmap = nullptr; int hw = 0, hh = 0; float hmin, hmax;
+            if (s_load_r32(path, hmap, hw, hh, hmin, hmax) && hmap) {
+                for (int row = 0; row <= TERRAIN_GRID; ++row)
+                    for (int col = 0; col <= TERRAIN_GRID; ++col)
+                        out.heightmap.h[s_idx(col, row)] = hmap[row * (TERRAIN_GRID+1) + col];
+                delete[] hmap;
+                loaded = true;
+            }
+        }
+        if (!loaded) {
+            fprintf(stdout, "[TerrainGen] zone %d/%d missing — noise fallback\n", zx, zy);
+            TerrainGenParams fp = p;
+            fp.zone_origin_x = -1;
+            for (int row = 0; row <= TERRAIN_GRID; ++row)
+                for (int col = 0; col <= TERRAIN_GRID; ++col)
+                    out.heightmap.h[s_idx(col, row)] = s_gen_height(col, row, coord, fp);
+        }
+    } else if (p.heightmap_r32) {
         // Load Kenshi heightmap and sample heights for this chunk
         static const float* s_hmap     = nullptr;
         static int          s_hmap_w   = 0, s_hmap_h = 0;
@@ -181,7 +298,7 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             }
         }
 
-        float total_size = HMAP_CHUNKS * CHUNK_SIZE;
+        float total_size = 7 * CHUNK_SIZE;  // legacy single-file mode: 7×7 grid
         for (int row = 0; row <= TERRAIN_GRID; ++row) {
             for (int col = 0; col <= TERRAIN_GRID; ++col) {
                 float wx  = (coord.x * CHUNK_SIZE + col * TERRAIN_STEP) + p.world_offset_x;
@@ -203,6 +320,7 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             }
         }
     }
+    // (zone_origin_x >= 0 branch closes above via its own else-if)
 
     // ── 2. Vertices ────────────────────────────────────────────────────────────
     for (int row = 0; row <= TERRAIN_GRID; ++row) {
@@ -286,6 +404,68 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
         float len = sqrtf(nx*nx + ny*ny + nz*nz);
         if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
         else { nx = 0.0f; ny = 1.0f; nz = 0.0f; }
+    }
+
+    // ── Cross-chunk normal stitching (atlas mode) ─────────────────────────────
+    // Edge vertices only have normals from triangles within this chunk.
+    // Sample adjacent zone heights from the atlas for correct central-difference normals.
+    if (p.zone_origin_x >= 0 && s_atlas_loaded) {
+        int zx0 = p.zone_origin_x + coord.x;
+        int zy0 = p.zone_origin_z + coord.z;
+
+        // Get height from atlas with bounds check
+        auto atlas_h = [&](int zx, int zy, int col, int row) -> float {
+            if (zx < 0 || zx >= ATLAS_ZONES || zy < 0 || zy >= ATLAS_ZONES) return 0.f;
+            col = col < 0 ? 0 : (col > ATLAS_VERTS-1 ? ATLAS_VERTS-1 : col);
+            row = row < 0 ? 0 : (row > ATLAS_VERTS-1 ? ATLAS_VERTS-1 : row);
+            return s_atlas_h[s_atlas_hi(zx, zy, col, row)];
+        };
+
+        auto fix_normal = [&](int col, int row,
+                               float hL, float hR, float hD, float hU) {
+            float dhdx = (hR - hL) / (2.0f * TERRAIN_STEP);
+            float dhdz = (hU - hD) / (2.0f * TERRAIN_STEP);
+            float nx = -dhdx, ny = 1.0f, nz = -dhdz;
+            float len = sqrtf(nx*nx + ny*ny + nz*nz);
+            if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
+            int vi = s_idx(col, row);
+            s_verts_buf[vi].nx = nx;
+            s_verts_buf[vi].ny = ny;
+            s_verts_buf[vi].nz = nz;
+        };
+
+        // Right edge (col = TERRAIN_GRID): hR comes from col=1 of zone (zx0+1)
+        for (int row = 1; row < TERRAIN_GRID; ++row) {
+            fix_normal(TERRAIN_GRID, row,
+                out.heightmap.h[s_idx(TERRAIN_GRID-1, row)],
+                atlas_h(zx0+1, zy0, 1, row),
+                out.heightmap.h[s_idx(TERRAIN_GRID, row-1)],
+                out.heightmap.h[s_idx(TERRAIN_GRID, row+1)]);
+        }
+        // Left edge (col = 0): hL comes from col=TERRAIN_GRID-1 of zone (zx0-1)
+        for (int row = 1; row < TERRAIN_GRID; ++row) {
+            fix_normal(0, row,
+                atlas_h(zx0-1, zy0, TERRAIN_GRID-1, row),
+                out.heightmap.h[s_idx(1, row)],
+                out.heightmap.h[s_idx(0, row-1)],
+                out.heightmap.h[s_idx(0, row+1)]);
+        }
+        // Bottom edge (row = 0): hD comes from row=TERRAIN_GRID-1 of zone (zx0, zy0-1)
+        for (int col = 1; col < TERRAIN_GRID; ++col) {
+            fix_normal(col, 0,
+                out.heightmap.h[s_idx(col-1, 0)],
+                out.heightmap.h[s_idx(col+1, 0)],
+                atlas_h(zx0, zy0-1, col, TERRAIN_GRID-1),
+                out.heightmap.h[s_idx(col, 1)]);
+        }
+        // Top edge (row = TERRAIN_GRID): hU comes from row=1 of zone (zx0, zy0+1)
+        for (int col = 1; col < TERRAIN_GRID; ++col) {
+            fix_normal(col, TERRAIN_GRID,
+                out.heightmap.h[s_idx(col-1, TERRAIN_GRID)],
+                out.heightmap.h[s_idx(col+1, TERRAIN_GRID)],
+                out.heightmap.h[s_idx(col, TERRAIN_GRID-1)],
+                atlas_h(zx0, zy0+1, col, 1));
+        }
     }
 
     out.coord = coord;

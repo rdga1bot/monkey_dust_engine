@@ -9,7 +9,7 @@ static constexpr int8_t FRIENDLY_THRESHOLD = +25;
 struct FactionData {
     uint32_t id;
     char     name[32];
-    char     slug[32];          // string id from kenshi_world.json
+    char     slug[32];          // string id from md_world.json
     int8_t   relations[MAX_FACTIONS + 1];
     int8_t   default_relation;
     float    color_r, color_g, color_b;
@@ -24,7 +24,7 @@ public:
     }
 
     int LoadFromFile(const char* path);
-    int LoadFromJson(const char* path);  // parse kenshi_world.json factions array
+    int LoadFromJson(const char* path);  // parse md_world.json factions array
 
     int8_t GetRelation(uint32_t from, uint32_t to) const;
 

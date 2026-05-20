@@ -24,52 +24,66 @@ public:
         }
     };
 
-    // Vertex UBO: mat4 vp (64 bytes) + float uv_scale + float _pad[3] = 80 bytes.
+    // Vertex UBO: mat4 vp (64 bytes) + world params (16 bytes) = 80 bytes.
     struct TerrainVertUBO {
-        float vp[16];       // column-major 4×4 MVP
-        float uv_scale;     // world UV repeat factor (e.g. 0.125 = 8m tile)
-        float _pad[3];
+        float vp[16];           // column-major 4×4 MVP
+        float world_origin_x;   // world X → UV 0.5
+        float world_origin_z;   // world Z → UV 0.5
+        float world_to_uv;      // UV per metre (1 / kenshi_view_metres)
+        float _pad;
         // 80 bytes total
+    };
+
+    // Fragment UBO: sun(32 bytes) + world_params(16 bytes) = 48 bytes.
+    struct TerrainFragUBO {
+        float sun_dir_str[4];   // xyz=dir, w=strength
+        float ambient[4];       // xyz=colour, w=unused
+        float world_params[4];  // xy=origin_xz, z=world_to_uv, w=unused
+        // 48 bytes total
     };
 
     bool Init();
     void Shutdown();
 
-    // Load 4 diffuse textures for splat blending.
-    // Returns true if all 4 loaded; false if any failed (terrain still renders
-    // using 1×1 white fallback textures — colours come from the frag shader).
+    // Load Kenshi stitched colour overlay (md_terrain.png, 4096×4096).
+    bool InitKenshiOverlay(const char* path);
+
+    // Legacy 4-texture splat — kept for non-Kenshi terrain; no-op when Kenshi overlay loaded.
     bool InitTextures(const char* grass, const char* rock,
                       const char* dirt,  const char* bark);
 
     // Draw chunk inside an already-open GpuCommandBuffer colour pass.
     // vp16: column-major Mat4 (16 floats = 64 bytes).
     // For code that uses GpuCommandBuffer (demo):
+    // world_origin_x/z: world coords mapped to UV centre (0.5).
+    // world_to_uv: UV units per world-metre.  e.g. 1.0f/8000.0f shows 8km of Kenshi.
     void Draw(GpuCommandBuffer& cb,
               const TerrainChunk& chunk,
               const float* vp16,
               const SunParams& sun,
-              float uv_scale = 0.125f);
+              float world_origin_x = 0.f,
+              float world_origin_z = 0.f,
+              float world_to_uv    = 1.f / 8000.f);
 
-    // For code that uses raw SDL pointers (game main loop):
     void DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                  const TerrainChunk& chunk,
                  const float* vp16,
                  const SunParams& sun,
-                 float uv_scale = 0.125f);
+                 float world_origin_x = 0.f,
+                 float world_origin_z = 0.f,
+                 float world_to_uv    = 1.f / 8000.f);
 
     bool IsReady() const;
 
 private:
     GpuPipeline pipeline_;
-    GpuTexture  tex_[4];      // 0=grass 1=rock 2=dirt 3=bark
+    GpuTexture  tex_colour_;   // Kenshi colour overlay (slot 0)
+    GpuTexture  tex_[4];       // legacy splat (kept for InitTextures compat)
     bool        tex_loaded_ = false;
 
 #ifdef MD_SDL_GPU
-    // 1×1 white fallback used when a texture fails to load.
     SDL_GPUTexture* fallback_tex_     = nullptr;
     SDL_GPUSampler* fallback_sampler_ = nullptr;
-
-    // Fill a SDL_GPUTextureSamplerBinding[4] using loaded textures or fallbacks.
-    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[4]) const;
+    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[1]) const;
 #endif
 };

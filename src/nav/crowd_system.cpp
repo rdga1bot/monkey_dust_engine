@@ -2,6 +2,7 @@
 #include <monkey_dust/nav/crowd_system.h>
 #include <monkey_dust/components/nav_agent.h>
 #include <monkey_dust/world/world_transform.h>
+#include <monkey_dust/world/terrain_query.h>
 #include <DetourCrowd.h>
 #include <DetourNavMesh.h>
 #include <DetourNavMeshQuery.h>
@@ -85,6 +86,9 @@ void CrowdSystem::FlushRange(entt::registry& reg, int start, int end) const {
             auto& tr = reg.get<WorldTransform>(agent_entity_[i]);
             tr.x = ag->npos[0];
             tr.z = ag->npos[2];
+            // Keep Y on terrain surface as agent moves (DetourCrowd npos[1] may be
+            // stale/zero when navmesh is flat; TerrainQuery is always authoritative).
+            tr.y = TerrainQuery::Get().GetHeight(tr.x, tr.z);
         }
         if (reg.all_of<NavAgent>(agent_entity_[i])) {
             auto& nav = reg.get<NavAgent>(agent_entity_[i]);

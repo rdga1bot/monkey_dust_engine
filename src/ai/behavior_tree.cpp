@@ -1119,6 +1119,20 @@ uint16_t BehaviorTree::addConditionAngleNPCToTargetsAimLessThan(float angle_deg)
     return i;
 }
 
+// ── Batch 32 ──────────────────────────────────────────────────────────────────
+uint16_t BehaviorTree::addConditionHasToken(uint32_t token_id) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ConditionHasToken);
+    m_nodes[i].data = token_id;
+    return i;
+}
+uint16_t BehaviorTree::addActionReleaseToken(uint32_t token_id) {
+    uint16_t i = m_nodeCount++;
+    initNode(m_nodes[i], BTNodeType::ActionReleaseToken);
+    m_nodes[i].data = token_id;
+    return i;
+}
+
 void BehaviorTree::reset() {
     memset(m_state, 0, sizeof(BTState) * m_nodeCount);
 }

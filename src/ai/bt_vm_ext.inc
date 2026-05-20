@@ -1003,6 +1003,18 @@
             pc = nd.parent; continue;
         }
 
+        // ── Batch 32: TokenRegistry ───────────────────────────────────────────
+        case BTNodeType::ConditionHasToken: {
+            result = MdTokenRegistry::Get().AcquireToken(nd.data, e)
+                     ? BTStatus::Success : BTStatus::Failure;
+            pc = nd.parent; continue;
+        }
+
+        case BTNodeType::ActionReleaseToken: {
+            MdTokenRegistry::Get().ReleaseToken(nd.data, e);
+            result = BTStatus::Success; pc = nd.parent; continue;
+        }
+
         case BTNodeType::ConditionAngleNPCToTargetsAimLessThan: {
             const WorldTransform* self_wt = Registry::Get().try_get<WorldTransform>(e);
             AgentBlackboard*      ab      = Registry::Get().try_get<AgentBlackboard>(e);

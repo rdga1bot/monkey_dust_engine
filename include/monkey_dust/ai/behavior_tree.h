@@ -613,6 +613,15 @@ enum class BTNodeType : uint8_t {
     //     reads target from bb["target_entity"]; checks if target's forward (rot_y)
     //     is within angle_deg of direction (target→self); Success when target faces NPC
     ConditionAngleNPCToTargetsAimLessThan,
+
+    // ── Batch 32: TokenRegistry ───────────────────────────────────────────────
+    //   ConditionHasToken: data = token_id (FNV-1a of token name string)
+    //     MdTokenRegistry::AcquireToken(data, e) → Success if slot available
+    //     Limits simultaneous attackers/roles (mirrors AI:Isolation ConditionHasToken)
+    ConditionHasToken,
+    //   ActionReleaseToken: data = token_id (FNV-1a of token name string)
+    //     MdTokenRegistry::ReleaseToken(data, e); always Success
+    ActionReleaseToken,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
@@ -787,6 +796,8 @@ using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
 //   ConditionHasFlankedVentCloseToPlayer:      data = radius_m*10; uses VentRegistry + SenseComponent last_known
 //   ConditionTargetIsOnlyAccessibleCrouching:  data = 0; reads target bb; checks lcf::IS_IN_VENT
 //   ConditionAngleNPCToTargetsAimLessThan:     data = angle_deg(uint8); reads target bb; target's rot_y vs (target→self)
+//   ConditionHasToken:    data = token_id (FNV-1a); MdTokenRegistry::AcquireToken → Success if slot free
+//   ActionReleaseToken:   data = token_id (FNV-1a); MdTokenRegistry::ReleaseToken; always Success
 // flags encoding per node type:
 //   FlagCheck:        0=check set, 1=check clear
 //   FlagSet:          0=set bit, 1=clear bit
@@ -1169,6 +1180,12 @@ public:
     uint16_t addConditionHasFlankedVentCloseToPlayer(float radius_m);
     uint16_t addConditionTargetIsOnlyAccessibleCrouching();
     uint16_t addConditionAngleNPCToTargetsAimLessThan(float angle_deg);
+
+    // ── Batch 32: TokenRegistry ───────────────────────────────────────────────
+    // ConditionHasToken: AcquireToken — Success if ≤ limit NPCs already hold token_id.
+    uint16_t addConditionHasToken(uint32_t token_id);
+    // ActionReleaseToken: ReleaseToken — always Success.
+    uint16_t addActionReleaseToken(uint32_t token_id);
 
     void addChild(uint16_t parent, uint16_t child);
     void setRoot (uint16_t node);

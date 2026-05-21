@@ -36,6 +36,19 @@ public:
     void AddStaticMesh(const float* verts, int nv,
                        const int*   tris,  int nt);
 
+    // Add terrain chunk as a static MeshShape from its heightmap.
+    // heights: (grid+1)×(grid+1) row-major floats.
+    // Returns the BodyID (use RemoveBody to remove during streaming).
+    JPH::BodyID AddTerrainMesh(const float* heights, int grid,
+                               float cell_size,
+                               float origin_x, float origin_z);
+    void RemoveBody(JPH::BodyID id);
+
+    // Cast a ray from (fx,fy,fz) toward (tx,ty,tz).
+    // Returns fraction [0,1] of first hit, or 1.0 if no hit.
+    float CastRay(float fx, float fy, float fz,
+                  float tx, float ty, float tz);
+
     JPH::PhysicsSystem& System() { return physics_system_; }
 
 private:

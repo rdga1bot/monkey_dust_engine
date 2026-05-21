@@ -17,6 +17,8 @@
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Physics/Character/CharacterBase.h>
 #include <Jolt/Physics/EPhysicsUpdateError.h>
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/CastResult.h>
 
 #include <monkey_dust/physics/jolt_world.h>
 #include <cstdio>
@@ -182,6 +184,62 @@ void JoltWorld::Step(float dt) {
 
     // Advance physics world (terrain, ragdolls, etc.)
     physics_system_.Update(dt, 1, temp_alloc_, job_system_);
+}
+
+// ── Terrain chunk as static MeshShape ────────────────────────────────────────
+JPH::BodyID JoltWorld::AddTerrainMesh(const float* heights, int grid,
+                                       float cell_size,
+                                       float origin_x, float origin_z)
+{
+    if (!ready_) return JPH::BodyID();
+    const int N = grid;
+    JPH::TriangleList tris;
+    tris.reserve((size_t)(N * N * 2));
+    auto pos = [&](int c, int r) -> JPH::Float3 {
+        float h = heights[r * (N + 1) + c];
+        return JPH::Float3(origin_x + c * cell_size, h, origin_z + r * cell_size);
+    };
+    for (int r = 0; r < N; ++r) {
+        for (int c = 0; c < N; ++c) {
+            tris.push_back(JPH::Triangle(pos(c,r), pos(c+1,r), pos(c,r+1)));
+            tris.push_back(JPH::Triangle(pos(c+1,r), pos(c+1,r+1), pos(c,r+1)));
+        }
+    }
+    JPH::MeshShapeSettings mss(tris);
+    auto result = mss.Create();
+    if (result.HasError()) {
+        fprintf(stderr, "[Jolt] TerrainMesh failed: %s\n", result.GetError().c_str());
+        return JPH::BodyID();
+    }
+    JPH::BodyCreationSettings bcs(result.Get(),
+        JPH::RVec3::sZero(), JPH::Quat::sIdentity(),
+        JPH::EMotionType::Static, Layers::NON_MOVING);
+    return physics_system_.GetBodyInterface().CreateAndAddBody(
+        bcs, JPH::EActivation::DontActivate);
+}
+
+void JoltWorld::RemoveBody(JPH::BodyID id)
+{
+    if (!ready_ || id.IsInvalid()) return;
+    auto& bi = physics_system_.GetBodyInterface();
+    bi.RemoveBody(id);
+    bi.DestroyBody(id);
+}
+
+float JoltWorld::CastRay(float fx, float fy, float fz,
+                          float tx, float ty, float tz)
+{
+    if (!ready_) return 1.f;
+    JPH::Vec3 origin(fx, fy, fz);
+    JPH::Vec3 dir(tx - fx, ty - fy, tz - fz);
+    JPH::RRayCast ray(origin, dir);
+    JPH::RayCastResult hit;
+    if (physics_system_.GetNarrowPhaseQuery().CastRay(
+            ray, hit,
+            physics_system_.GetDefaultBroadPhaseLayerFilter(Layers::NON_MOVING),
+            physics_system_.GetDefaultLayerFilter(Layers::NON_MOVING)))
+        return hit.mFraction;
+    return 1.f;
 }
 
 // ── Static terrain mesh ──────────────────────────────────────────────────────

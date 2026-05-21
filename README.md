@@ -109,10 +109,10 @@ Intel HD 520 (Skylake, AVX2) · Vulkan via SDL\_GPU · 4–8 GB shared RAM · 12
 # Static library only
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
 ninja -C build monkey_dust_engine
-
-# SPIR-V shaders (after any .vert/.frag/.comp change)
-bash scripts/compile_shaders.sh
 ```
+
+> **Shaders** live in the parent [`monkey_dust`](https://github.com/rdga1bot/monkey_dust) game repository (`shaders/` + `scripts/compile_shaders.sh`).
+> The engine library itself is shader-agnostic — it loads pre-compiled SPIR-V at runtime via `GpuPipeline::Create(desc)`.
 
 **Dependencies** (bring your own or via CMake FetchContent):
 `SDL3` · `EnTT` · `Recast/Detour` · `ozz-animation` · `JoltPhysics` · `miniaudio` · `Lua 5.4` · `ImGui 1.92` (for editor builds)

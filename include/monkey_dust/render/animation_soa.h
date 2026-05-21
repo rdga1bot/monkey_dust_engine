@@ -57,8 +57,9 @@ public:
         for (int i = 0; i < MAX_ANIMATED_NPC; ++i)
             states_[i].slot = (uint32_t)i;
         // mat4 = 64 bytes; finalBoneMatrices: MAX_ANIMATED_NPC * MAX_BONES * 64
-        // bones_ssbo_ is written by skinning.comp (not CPU) — regular SSBO.
-        bones_ssbo_.Init(MAX_ANIMATED_NPC * MAX_BONES * 64);
+        // bones_ssbo_ is written by CPU/compute and read in vertex shaders.
+        bones_ssbo_.Init(MAX_ANIMATED_NPC * MAX_BONES * 64,
+                         SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ);
         // anim_state_ring_ is written by CPU each frame — ring-buffered.
         anim_state_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState)), 5);
         // Skinning compute pipeline — loaded once, dispatched each frame.

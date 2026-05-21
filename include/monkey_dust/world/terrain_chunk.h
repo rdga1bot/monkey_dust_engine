@@ -4,12 +4,23 @@
 #include <monkey_dust/nav/navmesh.h>
 #include <monkey_dust/world/chunk_def.h>
 
-// Terrain grid: 64×64 quads = 65×65 vertices per chunk (CHUNK_SIZE=64m → 1m/quad)
+// Terrain grid: 64×64 quads = 65×65 vertices per chunk (CHUNK_SIZE=500m → 7.8m/quad)
 static constexpr int   TERRAIN_GRID  = 64;
 static constexpr int   TERRAIN_VERTS = (TERRAIN_GRID + 1) * (TERRAIN_GRID + 1); // 4225
 static constexpr int   TERRAIN_TRIS  = TERRAIN_GRID * TERRAIN_GRID * 2;         // 8192
 static constexpr int   TERRAIN_IDX   = TERRAIN_TRIS * 3;                         // 24576
-static constexpr float TERRAIN_STEP  = CHUNK_SIZE / TERRAIN_GRID;               // 1.0m
+static constexpr float TERRAIN_STEP  = CHUNK_SIZE / TERRAIN_GRID;               // 7.8m
+
+// LOD levels (same VBO, coarser IBO — steps of 2/4/8 vertices)
+static constexpr int   TERRAIN_LOD_LEVELS    = 3;
+static constexpr int   TERRAIN_LOD_STEPS[3]  = { 2, 4, 8 };
+static constexpr int   TERRAIN_LOD_IDX[3]    = {
+    (TERRAIN_GRID/2) * (TERRAIN_GRID/2) * 6,  // 6144  (32×32 quads)
+    (TERRAIN_GRID/4) * (TERRAIN_GRID/4) * 6,  // 1536  (16×16 quads)
+    (TERRAIN_GRID/8) * (TERRAIN_GRID/8) * 6   //  384  (8×8 quads)
+};
+// Camera-to-chunk-centre distance thresholds to switch LOD levels
+static constexpr float TERRAIN_LOD_DIST[3]   = { 600.f, 1200.f, 2000.f };
 
 // Vertex layout (stride = 48 bytes):
 //   location 0: vec3 pos    (12)
@@ -17,12 +28,13 @@ static constexpr float TERRAIN_STEP  = CHUNK_SIZE / TERRAIN_GRID;               
 //   location 2: vec2 uv     (8)   — world-space UV for texture tiling
 //   location 3: vec4 splat  (16)  — float weights: [grass, rock, dirt, snow]
 struct TerrainVertex {
-    float x, y, z;           // world position
-    float nx, ny, nz;         // normal
-    float u, v;               // UV (world-space, for tiling)
-    float splat[4];           // [grass, rock, dirt, snow], sum=1
+    float x, y, z;           // world position        offset  0
+    float nx, ny, nz;         // normal                offset 12
+    float u, v;               // UV (world-space)      offset 24
+    float splat[4];           // [grass,rock,dirt,snow] offset 32
+    float morph_y;            // geomorph target Y for L0→L1 transition; offset 48
 };
-static_assert(sizeof(TerrainVertex) == 48, "TerrainVertex size mismatch");
+static_assert(sizeof(TerrainVertex) == 52, "TerrainVertex size mismatch");
 
 // Raw heightmap data — stored separately for CPU-side queries (NPC grounding, etc.)
 struct TerrainHeightmap {
@@ -31,10 +43,13 @@ struct TerrainHeightmap {
 
 struct TerrainChunk {
     ChunkCoord      coord;
-    GpuStaticBuffer vbo;       // TerrainVertex * TERRAIN_VERTS
-    GpuStaticBuffer ibo;       // uint16_t * TERRAIN_IDX
+    float           center_x = 0.f;    // world-space centre (set by TerrainGen_Build)
+    float           center_z = 0.f;
+    GpuStaticBuffer vbo;               // TerrainVertex * TERRAIN_VERTS
+    GpuStaticBuffer ibo;               // uint16_t * TERRAIN_IDX  (L0: 64×64)
+    GpuStaticBuffer ibo_lod[3];        // L1: 32×32, L2: 16×16, L3: 8×8
     NavMesh         navmesh;
-    TerrainHeightmap heightmap; // CPU copy for height queries
+    TerrainHeightmap heightmap;        // CPU copy for height queries
     bool            loaded = false;
 
     // Sample height at local chunk coords (0..CHUNK_SIZE).
@@ -60,4 +75,10 @@ struct TerrainGenParams {
     // Optional Kenshi heightmap file (.r32).  When set, noise is replaced by
     // sampled heights from the file.  amplitude still scales the result.
     const char* heightmap_r32 = nullptr;
+
+    // Per-zone Kenshi heightmaps (overrides heightmap_r32 when zone_origin_x >= 0).
+    // Each chunk (coord.x, coord.z) loads zone_{zone_origin_x+coord.x}_{zone_origin_z+coord.z}.r32.
+    // Heights are stored in metres; amplitude is ignored.
+    int zone_origin_x = -1;   // Kenshi zone X for chunk coord(0,0)
+    int zone_origin_z = -1;   // Kenshi zone Z for chunk coord(0,0)
 };

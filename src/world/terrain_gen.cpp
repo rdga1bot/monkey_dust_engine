@@ -468,8 +468,37 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
         }
     }
 
-    out.coord = coord;
-    out.loaded = false;  // Upload() sets this
+    // ── Geomorph targets (L0→L1 transition) ──────────────────────────────────────
+    // morph_y = height the vertex would have on the step=2 coarser grid.
+    // Even vertices survive in L1 → morph_y = own y (no displacement).
+    // Odd vertices disappear in L1 → morph_y = average of even neighbours.
+    // Blending is applied in terrain_pom.vert when approaching the LOD threshold.
+    for (int row = 0; row <= TERRAIN_GRID; ++row) {
+        for (int col = 0; col <= TERRAIN_GRID; ++col) {
+            int vi = s_idx(col, row);
+            float fy;
+            if ((col & 1) == 0 && (row & 1) == 0) {
+                fy = s_verts_buf[vi].y;
+            } else if ((col & 1) != 0 && (row & 1) == 0) {
+                fy = (s_verts_buf[s_idx(col-1, row)].y +
+                      s_verts_buf[s_idx(col+1, row)].y) * 0.5f;
+            } else if ((col & 1) == 0 && (row & 1) != 0) {
+                fy = (s_verts_buf[s_idx(col, row-1)].y +
+                      s_verts_buf[s_idx(col, row+1)].y) * 0.5f;
+            } else {
+                fy = (s_verts_buf[s_idx(col-1, row-1)].y +
+                      s_verts_buf[s_idx(col+1, row-1)].y +
+                      s_verts_buf[s_idx(col-1, row+1)].y +
+                      s_verts_buf[s_idx(col+1, row+1)].y) * 0.25f;
+            }
+            s_verts_buf[vi].morph_y = fy;
+        }
+    }
+
+    out.coord    = coord;
+    out.center_x = p.world_offset_x + coord.x * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
+    out.center_z = p.world_offset_z + coord.z * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
+    out.loaded   = false;  // Upload() sets this
 
     // ── 4. NavMesh ────────────────────────────────────────────────────────────
     // Per-chunk navmesh disabled: NPC pathfinding uses NavSystem singleton.

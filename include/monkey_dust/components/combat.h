@@ -13,6 +13,7 @@ struct Combat {
     float        death_timer;
     bool         is_dead;
     unsigned int rng_state;
+    uint16_t     atk_voc_id = 0;   // audio ID played on successful hit (0 = silent)
 
     static Combat MakeBandit() {
         Combat c = {};

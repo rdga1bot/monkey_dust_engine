@@ -3,7 +3,7 @@
 #include <cmath>
 #include <entt/entt.hpp>
 
-static constexpr float CHUNK_SIZE            = 64.0f;
+static constexpr float CHUNK_SIZE            = 500.0f;  // Kenshi zone size
 static constexpr int   CHUNK_LOAD_RADIUS     = 3;
 static constexpr int   MAX_CHUNKS_ACTIVE     = (CHUNK_LOAD_RADIUS * 2 + 1)
                                               * (CHUNK_LOAD_RADIUS * 2 + 1); // 49

@@ -129,7 +129,8 @@ void GpuDepthTexture::Init(int w, int h, bool shadow_border) {
 
     SDL_GPUTextureCreateInfo ti = {};
     ti.type                  = SDL_GPU_TEXTURETYPE_2D;
-    ti.format                = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+    // D32_SFLOAT is universally supported for SAMPLER usage in Vulkan (D24_UNORM is not on Intel Gen9).
+    ti.format                = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
     ti.usage                 = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET |
                                SDL_GPU_TEXTUREUSAGE_SAMPLER;
     ti.width                 = (Uint32)w;

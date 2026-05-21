@@ -19,16 +19,21 @@ public:
     }
 
     // Call once after terrain chunks are loaded.
+    // cx_base/cz_base: circular buffer offsets — physical = (logical + base) % tnkn.
     void Init(TerrainChunk* chunks,  // [tnkn][tnkn] row-major
               int    tnkn,           // chunks per side
               float  chunk_size,
               float  world_off_x,
-              float  world_off_z) {
+              float  world_off_z,
+              int    cx_base = 0,
+              int    cz_base = 0) {
         chunks_      = chunks;
         tnkn_        = tnkn;
         chunk_size_  = chunk_size;
         world_off_x_ = world_off_x;
         world_off_z_ = world_off_z;
+        cx_base_     = cx_base;
+        cz_base_     = cz_base;
         ready_       = true;
     }
 
@@ -43,7 +48,9 @@ public:
         int   cx = (int)(gx / chunk_size_);
         int   cz = (int)(gz / chunk_size_);
         if (cx < 0 || cx >= tnkn_ || cz < 0 || cz >= tnkn_) return false;
-        const TerrainChunk& chunk = chunks_[cz * tnkn_ + cx];
+        int pcx = (cx + cx_base_) % tnkn_;
+        int pcz = (cz + cz_base_) % tnkn_;
+        const TerrainChunk& chunk = chunks_[pcz * tnkn_ + pcx];
         if (!chunk.loaded) return false;
         float lx = gx - cx * chunk_size_;
         float lz = gz - cz * chunk_size_;
@@ -92,5 +99,7 @@ private:
     float         chunk_size_  = 64.f;
     float         world_off_x_ = 0.f;
     float         world_off_z_ = 0.f;
+    int           cx_base_     = 0;
+    int           cz_base_     = 0;
     bool          ready_       = false;
 };

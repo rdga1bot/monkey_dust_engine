@@ -24,10 +24,11 @@ enum class DamageType : uint8_t {
 // Kenshi: armour_grade scales resist values (0=poor quality, 1=masterwork).
 // Kenshi: armour_penetration on weapons bypasses a fraction of armour (0=none, 1=full bypass).
 struct ArmorStats {
-    float blunt_resist;       // 0.0 – 0.9
-    float cut_resist;
-    float pierce_resist;
-    float armour_grade = 1.f; // Kenshi armour grade: multiplies all resist values
+    float    blunt_resist;       // 0.0 – 0.9
+    float    cut_resist;
+    float    pierce_resist;
+    float    armour_grade = 1.f; // Kenshi armour grade: multiplies all resist values
+    uint16_t hit_sfx_id   = 0;  // AudioSystem SFX slot played on hit (0 = silent)
 };
 
 struct WeaponStats {

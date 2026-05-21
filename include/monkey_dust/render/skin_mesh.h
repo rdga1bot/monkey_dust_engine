@@ -48,10 +48,37 @@ public:
     // out_bones must point to at least MAX_SKIN_BONES * 16 floats.
     void GetFinalBones(int clip_idx, float time_s, float* out_bones) const;
 
+    // Same loop, but also outputs model-space bone positions (xyz, 3 floats per bone)
+    // and optionally the pre-invbind world matrices (float[MAX_SKIN_BONES * 16]).
+    // out_world_mats: required by FootIK::SolveLeg — pass s_ik_worlds[MAX_SKIN_BONES*16].
+    void GetFinalBonesFull(int clip_idx, float time_s,
+                           float* out_bones,
+                           float* out_model_xyz,
+                           float* out_world_mats = nullptr) const;
+
+    // Patch one skinning matrix after IK correction:
+    //   out_bones[bone_idx*16] = new_world_16 * inv_bind_[bone_idx]
+    void PatchBoneIK(int bone_idx, const float* new_world_16,
+                     float* out_bones) const;
+
     int ClipCount()            const { return clip_count_; }
     int ClipIndexByName(const char* name) const;
     const char* ClipName(int i) const { return (i>=0&&i<clip_count_)?clips_[i].name:""; }
     float ClipDuration(int i)  const { return (i>=0&&i<clip_count_)?clips_[i].duration:0.f; }
+
+    // Apply inverse bind matrices to ozz LocalToModel output: bones[i] = bones[i] * inv_bind_[i].
+    // Call after OzzAnimPlayer::Eval/EvalBlend to get correct GPU skinning matrices.
+    void ApplyInvBind(float* bones) const;
+
+    // Upper/lower body blend: evaluate base_clip for all bones, then override lower-body
+    // bones from override_clip (use lower_mask[i]=true for bones to override).
+    // Pass lower_mask=nullptr to skip override (equivalent to plain GetFinalBones).
+    // out_world_mats: optional float[MAX_SKIN_BONES*16] — same world mats used internally,
+    //   required by FootIK::SolveLeg so IK uses the same matrices as the skinning output.
+    void GetFinalBonesBlend(int base_clip, float base_t,
+                            int override_clip, float override_t,
+                            const bool* lower_mask, float* out,
+                            float* out_world_mats = nullptr) const;
 
     GpuStaticBuffer vbo;
     GpuStaticBuffer ibo;
@@ -59,23 +86,26 @@ public:
     bool            loaded       = false;
     bool            indices_u16  = true;
     int             bone_count   = 0;
+    char            bone_names[MAX_SKIN_BONES][32] = {};
 
 private:
     // Inverse bind matrices per bone (mat4, column-major)
     float inv_bind_[MAX_SKIN_BONES][16] = {};
     // Parent index per bone (-1 = root)
     int   parent_[MAX_SKIN_BONES]  = {};
-    // Bind-pose local translation per bone
+    // Bind-pose local TRS per bone
     float bind_t_[MAX_SKIN_BONES][3] = {};
-    // Bind-pose local rotation (quaternion xyzw) per bone
     float bind_q_[MAX_SKIN_BONES][4] = {};
+    float bind_s_[MAX_SKIN_BONES][3] = {};
+    // Topological processing order (parent always before child)
+    int   process_order_[MAX_SKIN_BONES] = {};
 
     SkinClip clips_[MAX_SKIN_CLIPS];
     int      clip_count_ = 0;
 
     // Helpers
     static void mat4_identity(float* m);
-    static void mat4_from_tq(float* m, const float* t, const float* q);
+    static void mat4_from_trs(float* m, const float* t, const float* q, const float* s);
     static void mat4_mul(float* out, const float* a, const float* b);
     static void quat_lerp(float* out, const float* a, const float* b, float t);
     static void lerp3(float* out, const float* a, const float* b, float t);

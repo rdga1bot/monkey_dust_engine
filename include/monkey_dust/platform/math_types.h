@@ -32,6 +32,7 @@
    inline Mat4 mat4_ortho(float l, float r, float b, float t, float n, float f)
                                              { return MatrixOrtho(l, r, b, t, n, f); }
    inline const float* mat4_ptr(const Mat4& m) { return &m.m0; }
+   inline Mat4 mat4_inv(Mat4 m)               { return MatrixInvert(m); }
 #else
 // SDL_GPU/Vulkan clip space: depth [0,1], Y points down.
 // GLM_FORCE_DEPTH_ZERO_TO_ONE makes perspective() generate depth in [0,1].
@@ -67,6 +68,7 @@
    inline Mat4 mat4_ortho(float l, float r, float b, float t, float n, float f)
                                              { return glm::ortho(l, r, b, t, n, f); }
    inline const float* mat4_ptr(const Mat4& m) { return glm::value_ptr(m); }
+   inline Mat4 mat4_inv(Mat4 m)               { return glm::inverse(m); }
 #endif
 
 // Simple ray: origin + normalised direction.  Defined after Vec3 aliases.

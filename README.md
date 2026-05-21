@@ -22,6 +22,7 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Be
 | GPU skinning | AnimationSoA; SSBO skeletal bones (MAX\_BONES=6); compute dispatch |
 | Particles | ParticleSoA CPU-sim; SMOKE/SPARK/BLOOD types |
 | Material system | O3DE-inspired: JSON → `GpuPipeline::Desc`; **parent inheritance** (`"parent": "base_pbr"`); `shader_features` bitmask; `MaterialTypeRegistry` (MAX=32) |
+| Terrain POM | Parallax Occlusion Mapping + self-shadow; per-vertex geomorphing L0→L1; 4-level mesh LOD (64/32/16/8×8 quads per chunk) |
 
 ### AI — Behavior Tree VM
 - Stackless BT VM (`BehaviorTree.h`) — 30+ node types, zero heap allocations
@@ -52,6 +53,10 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Be
 - `TerrainAtlas` — `world_hmap.r32` (67 MB, 4096 zones 65×65); O(1) RAM lookup; dirty-zone partial save
 - Cross-chunk normal stitching via atlas (no file I/O, no seam artefacts)
 - `TerrainGen_Build` / `TerrainGen_Upload` — worker-thread mesh gen + GPU upload
+- **Parallax Occlusion Mapping** — `terrain_pom.vert/frag`; linear search + binary refinement; self-shadowing with view-angle attenuation; 15 m distance cutoff; detail tile 8×; `height_scale=0.04`
+- **Mesh LOD** — 4 levels (64/32/16/8 quads) via separate IBOs per chunk; distance thresholds 600/1200/2000 m; `TERRAIN_LOD_DIST[3]` / `TERRAIN_LOD_IDX[3]`
+- **Per-vertex geomorphing** — `morph_y` field in `TerrainVertex` (stride 48→52); L0→L1 blend zone 420–600 m computed per-vertex in `terrain_pom.vert`; eliminates LOD pop
+- **`PoissonScatter`** — Bridson O(n) Poisson Disk Sampling for prop placement; min-distance guarantee; slope + embed constraints; deterministic seed; used for mixed rock+vegetation scatter
 
 ### Navigation
 - Recast/Detour integration; async SPSC pathfinding worker

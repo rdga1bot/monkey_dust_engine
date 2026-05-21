@@ -13,25 +13,26 @@ void SkinMesh::mat4_identity(float* m) {
     m[0] = m[5] = m[10] = m[15] = 1.f;
 }
 
-void SkinMesh::mat4_from_tq(float* m, const float* t, const float* q) {
+void SkinMesh::mat4_from_trs(float* m, const float* t, const float* q, const float* s) {
     float qx=q[0],qy=q[1],qz=q[2],qw=q[3];
     float x2=qx*2,y2=qy*2,z2=qz*2;
     float xx=qx*x2,yy=qy*y2,zz=qz*z2;
     float xy=qx*y2,xz=qx*z2,yz=qy*z2;
     float wx=qw*x2,wy=qw*y2,wz=qw*z2;
-    m[0]=1-(yy+zz); m[1]=(xy+wz);   m[2]=(xz-wy);   m[3]=0;
-    m[4]=(xy-wz);   m[5]=1-(xx+zz); m[6]=(yz+wx);   m[7]=0;
-    m[8]=(xz+wy);   m[9]=(yz-wx);   m[10]=1-(xx+yy);m[11]=0;
-    m[12]=t[0];     m[13]=t[1];     m[14]=t[2];     m[15]=1;
+    // Column-major: each column scaled by the corresponding scale component
+    m[0]=(1-(yy+zz))*s[0]; m[1]=(xy+wz)*s[0];    m[2]=(xz-wy)*s[0];    m[3]=0;
+    m[4]=(xy-wz)*s[1];     m[5]=(1-(xx+zz))*s[1]; m[6]=(yz+wx)*s[1];    m[7]=0;
+    m[8]=(xz+wy)*s[2];     m[9]=(yz-wx)*s[2];     m[10]=(1-(xx+yy))*s[2];m[11]=0;
+    m[12]=t[0];            m[13]=t[1];             m[14]=t[2];            m[15]=1;
 }
 
 void SkinMesh::mat4_mul(float* out, const float* a, const float* b) {
     float tmp[16];
-    for (int r = 0; r < 4; ++r)
-        for (int c = 0; c < 4; ++c) {
+    for (int row = 0; row < 4; ++row)
+        for (int col = 0; col < 4; ++col) {
             float s = 0;
-            for (int k = 0; k < 4; ++k) s += a[r*4+k] * b[k*4+c];
-            tmp[r*4+c] = s;
+            for (int k = 0; k < 4; ++k) s += a[k*4+row] * b[col*4+k];
+            tmp[col*4+row] = s;
         }
     memcpy(out, tmp, 64);
 }
@@ -125,12 +126,12 @@ bool SkinMesh::LoadGLB(const char* path) {
     static SkinVertex s_verts[131072];
     for (cgltf_size i = 0; i < nv; ++i) {
         float p[3]={0,0,0}, n[3]={0,1,0}, uv[2]={0,0}, w[4]={1,0,0,0};
-        float ji[4]={0,0,0,0};
+        unsigned int ji[4]={0,0,0,0};
         cgltf_accessor_read_float(pos_acc, i, p, 3);
         cgltf_accessor_read_float(nor_acc, i, n, 3);
         if (uv_acc)  cgltf_accessor_read_float(uv_acc,  i, uv, 2);
         if (wgt_acc) cgltf_accessor_read_float(wgt_acc, i, w, 4);
-        if (jnt_acc) cgltf_accessor_read_uint (jnt_acc, i, (unsigned*)ji, 4);
+        if (jnt_acc) cgltf_accessor_read_uint (jnt_acc, i, ji, 4);
         s_verts[i].x=p[0]; s_verts[i].y=p[1]; s_verts[i].z=p[2];
         s_verts[i].nx=n[0]; s_verts[i].ny=n[1]; s_verts[i].nz=n[2];
         s_verts[i].u=uv[0]; s_verts[i].v=uv[1];
@@ -167,9 +168,12 @@ bool SkinMesh::LoadGLB(const char* path) {
                 cgltf_accessor_read_float(sk.inverse_bind_matrices,(cgltf_size)i,inv_bind_[i],16);
         }
 
-        // Parent array and bind-pose local TRS
+        // Parent array, bind-pose local TRS, bone names
         for (int i=0;i<bone_count;++i) {
             cgltf_node* node = sk.joints[i];
+            // Bone name for upper/lower body masking
+            if (node->name) strncpy(bone_names[i], node->name, 31);
+            else bone_names[i][0] = '\0';
             // Find parent index within joints array
             parent_[i] = -1;
             if (node->parent) {
@@ -181,7 +185,22 @@ bool SkinMesh::LoadGLB(const char* path) {
             else { bind_t_[i][0]=bind_t_[i][1]=bind_t_[i][2]=0; }
             if (node->has_rotation) { bind_q_[i][0]=node->rotation[0]; bind_q_[i][1]=node->rotation[1]; bind_q_[i][2]=node->rotation[2]; bind_q_[i][3]=node->rotation[3]; }
             else { bind_q_[i][0]=bind_q_[i][1]=bind_q_[i][2]=0; bind_q_[i][3]=1; }
+            if (node->has_scale) { bind_s_[i][0]=node->scale[0]; bind_s_[i][1]=node->scale[1]; bind_s_[i][2]=node->scale[2]; }
+            else { bind_s_[i][0]=bind_s_[i][1]=bind_s_[i][2]=1.f; }
         }
+
+        // Build topological processing order (parent always before child).
+        // Needed because GLB joint arrays are not required to be parent-first.
+        bool topo_added[MAX_SKIN_BONES] = {};
+        int  n_order = 0;
+        // Add roots first
+        for (int i = 0; i < bone_count; ++i)
+            if (parent_[i] < 0) { process_order_[n_order++] = i; topo_added[i] = true; }
+        // Then repeatedly add bones whose parent is already in the order
+        for (int pass = 0; pass < bone_count && n_order < bone_count; ++pass)
+            for (int i = 0; i < bone_count; ++i)
+                if (!topo_added[i] && parent_[i] >= 0 && topo_added[parent_[i]])
+                    { process_order_[n_order++] = i; topo_added[i] = true; }
     }
 
     // ── Animations ────────────────────────────────────────────────────────
@@ -248,6 +267,8 @@ bool SkinMesh::LoadGLB(const char* path) {
     loaded = true;
     fprintf(stdout,"[SkinMesh] %s  verts=%u idx=%u bones=%d clips=%d\n",
             path,(unsigned)nv,(unsigned)ni,bone_count,clip_count_);
+    for (int i=0;i<bone_count;++i)
+        fprintf(stdout,"  bone[%2d] parent=%2d  '%s'\n", i, parent_[i], bone_names[i]);
     return true;
 }
 
@@ -277,7 +298,9 @@ void SkinMesh::GetFinalBones(int clip_idx, float time_s, float* out) const {
     float world[MAX_SKIN_BONES][16];
     float local[16];
 
-    for (int i = 0; i < bone_count; ++i) {
+    // Process in topological order (parent always before child)
+    for (int oi = 0; oi < bone_count; ++oi) {
+        int i = process_order_[oi];
         float lt[3], lq[4];
 
         if (clip_idx >= 0 && clip_idx < clip_count_) {
@@ -294,16 +317,130 @@ void SkinMesh::GetFinalBones(int clip_idx, float time_s, float* out) const {
             lq[0]=bind_q_[i][0]; lq[1]=bind_q_[i][1]; lq[2]=bind_q_[i][2]; lq[3]=bind_q_[i][3];
         }
 
-        mat4_from_tq(local, lt, lq);
+        mat4_from_trs(local, lt, lq, bind_s_[i]);
 
         int pi = parent_[i];
         if (pi < 0) memcpy(world[i], local, 64);
         else        mat4_mul(world[i], world[pi], local);
 
-        // final = world[i] * inv_bind[i]
         mat4_mul(out + i*16, world[i], inv_bind_[i]);
     }
     // Identity for unused bone slots
     for (int i = bone_count; i < MAX_SKIN_BONES; ++i)
         mat4_identity(out + i*16);
+
+}
+
+void SkinMesh::GetFinalBonesFull(int clip_idx, float time_s,
+                                  float* out_bones,
+                                  float* out_model_xyz,
+                                  float* out_world_mats) const {
+    float t = time_s;
+    if (clip_idx >= 0 && clip_idx < clip_count_) {
+        float dur = clips_[clip_idx].duration;
+        if (dur > 1e-6f) t = fmodf(t, dur);
+    }
+
+    float world[MAX_SKIN_BONES][16];
+    float local[16];
+
+    for (int oi = 0; oi < bone_count; ++oi) {
+        int i = process_order_[oi];
+        float lt[3], lq[4];
+
+        if (clip_idx >= 0 && clip_idx < clip_count_) {
+            const SkinClip& cl = clips_[clip_idx];
+            const SkinTrack& tr = cl.tracks[i];
+            if (tr.count > 0) {
+                slerp_t(tr, t, lt, lq);
+            } else {
+                lt[0]=bind_t_[i][0]; lt[1]=bind_t_[i][1]; lt[2]=bind_t_[i][2];
+                lq[0]=bind_q_[i][0]; lq[1]=bind_q_[i][1]; lq[2]=bind_q_[i][2]; lq[3]=bind_q_[i][3];
+            }
+        } else {
+            lt[0]=bind_t_[i][0]; lt[1]=bind_t_[i][1]; lt[2]=bind_t_[i][2];
+            lq[0]=bind_q_[i][0]; lq[1]=bind_q_[i][1]; lq[2]=bind_q_[i][2]; lq[3]=bind_q_[i][3];
+        }
+
+        mat4_from_trs(local, lt, lq, bind_s_[i]);
+        int pi = parent_[i];
+        if (pi < 0) memcpy(world[i], local, 64);
+        else        mat4_mul(world[i], world[pi], local);
+
+        mat4_mul(out_bones + i*16, world[i], inv_bind_[i]);
+
+        // Model-space position = translation column of world[i]
+        if (out_model_xyz) {
+            out_model_xyz[i*3+0] = world[i][12];
+            out_model_xyz[i*3+1] = world[i][13];
+            out_model_xyz[i*3+2] = world[i][14];
+        }
+        if (out_world_mats) {
+            memcpy(out_world_mats + i*16, world[i], 64);
+        }
+    }
+    for (int i = bone_count; i < MAX_SKIN_BONES; ++i) {
+        mat4_identity(out_bones + i*16);
+        if (out_model_xyz)  { out_model_xyz[i*3]=out_model_xyz[i*3+1]=out_model_xyz[i*3+2]=0.f; }
+        if (out_world_mats) { mat4_identity(out_world_mats + i*16); }
+    }
+}
+
+void SkinMesh::PatchBoneIK(int bone_idx, const float* new_world_16,
+                             float* out_bones) const {
+    if (bone_idx < 0 || bone_idx >= bone_count) return;
+    mat4_mul(out_bones + bone_idx * 16, new_world_16, inv_bind_[bone_idx]);
+}
+
+void SkinMesh::GetFinalBonesBlend(int base_clip, float base_t,
+                                   int override_clip, float override_t,
+                                   const bool* lower_mask, float* out,
+                                   float* out_world_mats) const {
+    if (!lower_mask || override_clip < 0 || override_clip >= clip_count_) {
+        GetFinalBones(base_clip, base_t, out);
+        return;
+    }
+    // Loop times
+    float bt = base_t;
+    if (base_clip >= 0 && base_clip < clip_count_) {
+        float d = clips_[base_clip].duration;
+        if (d > 1e-6f) bt = fmodf(bt, d);
+    }
+    float ot = override_t;
+    { float d = clips_[override_clip].duration; if (d > 1e-6f) ot = fmodf(ot, d); }
+
+    float world[MAX_SKIN_BONES][16];
+    float local[16];
+    for (int oi = 0; oi < bone_count; ++oi) {
+        int i = process_order_[oi];
+        float lt[3], lq[4];
+        bool use_ovr = lower_mask[i];
+        const SkinClip* sc = use_ovr ? &clips_[override_clip]
+                           : (base_clip >= 0 ? &clips_[base_clip] : nullptr);
+        float st = use_ovr ? ot : bt;
+        if (sc && sc->tracks[i].count > 0) {
+            slerp_t(sc->tracks[i], st, lt, lq);
+        } else {
+            lt[0]=bind_t_[i][0]; lt[1]=bind_t_[i][1]; lt[2]=bind_t_[i][2];
+            lq[0]=bind_q_[i][0]; lq[1]=bind_q_[i][1]; lq[2]=bind_q_[i][2]; lq[3]=bind_q_[i][3];
+        }
+        mat4_from_trs(local, lt, lq, bind_s_[i]);
+        int pi = parent_[i];
+        if (pi < 0) memcpy(world[i], local, 64);
+        else        mat4_mul(world[i], world[pi], local);
+        mat4_mul(out + i*16, world[i], inv_bind_[i]);
+        if (out_world_mats) memcpy(out_world_mats + i*16, world[i], 64);
+    }
+    for (int i = bone_count; i < MAX_SKIN_BONES; ++i) {
+        mat4_identity(out + i*16);
+        if (out_world_mats) mat4_identity(out_world_mats + i*16);
+    }
+}
+
+void SkinMesh::ApplyInvBind(float* bones) const {
+    float tmp[16];
+    for (int i = 0; i < bone_count; ++i) {
+        mat4_mul(tmp, bones + i*16, inv_bind_[i]);
+        memcpy(bones + i*16, tmp, 64);
+    }
 }

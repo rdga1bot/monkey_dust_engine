@@ -104,7 +104,8 @@ public:
 
     void RenderShadowPassSDL(SDL_GPUCommandBuffer* cmd, int active_npc_count,
                               SDL_GPUBuffer* transform_buf, SDL_GPUBuffer* bones_buf,
-                              SDL_GPUBuffer* npc_vbuf, SDL_GPUBuffer* npc_ibuf) {
+                              SDL_GPUBuffer* npc_vbuf, SDL_GPUBuffer* npc_ibuf,
+                              bool npc_idx_u16 = true) {
         if (!sdl_init_ || active_npc_count <= 0 || !cmd) return;
         if (!shadow_pipeline_.SDLPipeline()) return;
 
@@ -142,7 +143,9 @@ public:
                 SDL_GPUBufferBinding vb = { npc_vbuf, 0 };
                 SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
                 SDL_GPUBufferBinding ib = { npc_ibuf, 0 };
-                SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+                SDL_BindGPUIndexBuffer(rp, &ib,
+                    npc_idx_u16 ? SDL_GPU_INDEXELEMENTSIZE_16BIT
+                                : SDL_GPU_INDEXELEMENTSIZE_32BIT);
                 SDL_GPUBuffer* sv[3] = {
                     transform_buf,
                     shadow_vis_buf_.SDLBuffer(),

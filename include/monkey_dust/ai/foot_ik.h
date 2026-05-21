@@ -139,27 +139,18 @@ static inline bool SolveLeg(
     out_hip16[13] = world_mats[hip_idx*16+13];
     out_hip16[14] = world_mats[hip_idx*16+14];
 
-    // Knee: rotate around hinge axis (thigh × calf) by delta angle only — no twist
-    float ot_nx = ot_x/ot_l, ot_ny = ot_y/ot_l, ot_nz = ot_z/ot_l;
+    // Knee: rotate calf from old direction → new direction.
+    // rot_from_to is rig-convention independent — no explicit hinge axis needed.
     float oc_x = ax-kx, oc_y = ay-ky, oc_z = az-kz;
     float oc_l = sqrtf(oc_x*oc_x+oc_y*oc_y+oc_z*oc_z);
     if (oc_l < 1e-6f) return false;
     float oc_nx = oc_x/oc_l, oc_ny = oc_y/oc_l, oc_nz = oc_z/oc_l;
-    // Hinge axis perpendicular to leg plane
-    float hx_ = ot_ny*oc_nz - ot_nz*oc_ny;
-    float hy_ = ot_nz*oc_nx - ot_nx*oc_nz;
-    float hz_ = ot_nx*oc_ny - ot_ny*oc_nx;
-    float hl = sqrtf(hx_*hx_+hy_*hy_+hz_*hz_);
-    if (hl < 1e-6f) { hx_=0.f; hy_=1.f; hz_=0.f; } else { hx_/=hl; hy_/=hl; hz_/=hl; }
-    // Delta angle = new_knee_angle - old_knee_angle
-    float cos_k_old = -(ot_nx*oc_nx + ot_ny*oc_ny + ot_nz*oc_nz); // dot(thigh,-calf)
-    cos_k_old = (cos_k_old > 1.f ? 1.f : cos_k_old < -1.f ? -1.f : cos_k_old);
-    float cos_k_new = (upper*upper + lower*lower - dist*dist) / (2.f*upper*lower);
-    cos_k_new = (cos_k_new > 1.f ? 1.f : cos_k_new < -1.f ? -1.f : cos_k_new);
-    float delta_angle = acosf(cos_k_new) - acosf(cos_k_old);
-    rot_axis_angle(rot, hx_, hy_, hz_, delta_angle);
+    float nc_x = tax-nkx, nc_y = tay-nky, nc_z = taz-nkz;
+    float nc_l = sqrtf(nc_x*nc_x+nc_y*nc_y+nc_z*nc_z);
+    if (nc_l < 1e-6f) return false;
+    rot_from_to(rot, oc_nx, oc_ny, oc_nz, nc_x/nc_l, nc_y/nc_l, nc_z/nc_l);
     apply_rot(world_mats + knee_idx*16, rot, out_knee16);
-    out_knee16[12] = nkx;  // new knee world position
+    out_knee16[12] = nkx;
     out_knee16[13] = nky;
     out_knee16[14] = nkz;
 

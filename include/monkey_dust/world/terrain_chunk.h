@@ -41,6 +41,27 @@ struct TerrainHeightmap {
     float h[TERRAIN_VERTS];   // [row * (TERRAIN_GRID+1) + col]
 };
 
+// ── Per-chunk procedural props ────────────────────────────────────────────────
+// Props are generated during PropGen_Build (game-side) and stored per-chunk.
+// They stream in/out automatically with terrain chunk loading.
+enum ChunkPropType : uint8_t {
+    kPropRock      = 0,  // rock_01       (~2 m)
+    kPropFormation = 1,  // rock_formation (~2 m)
+    kPropHatRock   = 2,  // hat_rock       (~5 m, dramatic, rare)
+    kPropYucca     = 3,  // yucca          (~1.7 m)
+    kPropCanyonRock= 4,  // canyon_rock    (~1.3 m, small stony plant)
+    kPropDeadTree  = 5,  // dead_tree      (~1.8 m)
+    kPropTypeCount = 6
+};
+
+struct ChunkPropInstance {
+    float   x, y, z;   // world-space position (y already accounts for embed)
+    uint8_t type;       // ChunkPropType
+    uint8_t _pad[3];
+};
+static_assert(sizeof(ChunkPropInstance) == 16, "ChunkPropInstance size");
+static constexpr int CHUNK_MAX_PROPS = 64;
+
 struct TerrainChunk {
     ChunkCoord      coord;
     float           center_x = 0.f;    // world-space centre (set by TerrainGen_Build)
@@ -50,6 +71,8 @@ struct TerrainChunk {
     GpuStaticBuffer ibo_lod[3];        // L1: 32×32, L2: 16×16, L3: 8×8
     NavMesh         navmesh;
     TerrainHeightmap heightmap;        // CPU copy for height queries
+    ChunkPropInstance props[CHUNK_MAX_PROPS];
+    int             prop_count = 0;    // valid entries in props[]
     bool            loaded = false;
 
     // Sample height at local chunk coords (0..CHUNK_SIZE).

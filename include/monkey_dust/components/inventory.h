@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <cstring>
 
-static constexpr int INV_MAX_SLOTS = 16;
+static constexpr int INV_MAX_SLOTS = 64;
 
 struct Inventory {
     uint32_t item_ids[INV_MAX_SLOTS];

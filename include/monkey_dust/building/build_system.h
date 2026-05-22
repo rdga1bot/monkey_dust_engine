@@ -7,8 +7,8 @@
 #include <cstdint>
 #include <cmath>
 
-static constexpr int MAX_BUILDING_DEFS = 16;
-static constexpr int MAX_BUILDINGS     = 256;
+static constexpr int MAX_BUILDING_DEFS = 512;
+static constexpr int MAX_BUILDINGS     = 8192;
 static constexpr int MAX_GRID          = 200;
 static constexpr int GRID_HALF         = MAX_GRID / 2;
 

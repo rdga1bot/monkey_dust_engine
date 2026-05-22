@@ -52,8 +52,9 @@ void ProjectileSystem::Tick(float dt) {
                 for (int i = 0; i < hit_count; ++i) {
                     if (!reg.valid(hit_ents[i]) || !reg.all_of<Health>(hit_ents[i])) continue;
                     auto& hp = reg.get<Health>(hit_ents[i]);
-                    hp.current -= pc.damage;
-                    if (hp.current < 0.0f) hp.current = 0.0f;
+                    hp.hp[1] -= pc.damage;  // Torso (index 1)
+                    if (hp.hp[1] < 0.0f) hp.hp[1] = 0.0f;
+                    hp.UpdateIncap();
                 }
                 hit = true;
             }

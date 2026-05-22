@@ -56,8 +56,9 @@ void PowerSystem::DoMelee(entt::entity caster, float cx, float cz,
     for (int i = 0; i < hit_count; ++i) {
         if (!reg.valid(hits[i].e) || !reg.all_of<Health>(hits[i].e)) continue;
         auto& hp = reg.get<Health>(hits[i].e);
-        hp.current -= damage;
-        if (hp.current < 0.0f) hp.current = 0.0f;
+        hp.hp[1] -= damage;  // Torso (index 1)
+        if (hp.hp[1] < 0.0f) hp.hp[1] = 0.0f;
+        hp.UpdateIncap();
     }
 }
 

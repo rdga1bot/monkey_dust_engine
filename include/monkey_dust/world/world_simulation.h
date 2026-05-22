@@ -13,9 +13,9 @@
 // Integration: call Tick(now_s) from logic_tick.cpp (~every 10 logic ticks = 1s).
 // Access: WorldSimulation::Get() singleton; all arrays are fixed BSS.
 
-static constexpr int WS_MAX_FACTIONS = 8;
-static constexpr int WS_MAX_ROUTES   = 32;
-static constexpr int WS_MAX_RAIDS    = 4;
+static constexpr int WS_MAX_FACTIONS = 64;
+static constexpr int WS_MAX_ROUTES   = 128;
+static constexpr int WS_MAX_RAIDS    = 16;
 
 struct FactionState {
     uint8_t  faction_id    = 0;

@@ -7,7 +7,7 @@ static constexpr float CHUNK_SIZE            = 500.0f;  // Kenshi zone size
 static constexpr int   CHUNK_LOAD_RADIUS     = 3;
 static constexpr int   MAX_CHUNKS_ACTIVE     = (CHUNK_LOAD_RADIUS * 2 + 1)
                                               * (CHUNK_LOAD_RADIUS * 2 + 1); // 49
-static constexpr int   MAX_ENTITIES_PER_CHUNK = 256;
+static constexpr int   MAX_ENTITIES_PER_CHUNK = 2048;
 
 struct ChunkCoord {
     int x, z;

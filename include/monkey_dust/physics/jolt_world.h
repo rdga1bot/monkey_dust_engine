@@ -71,7 +71,7 @@ private:
     JPH::Ref<JPH::Shape> char_shape_;
 
     // Track created characters for update step
-    static constexpr int MAX_CHARS = 64;
+    static constexpr int MAX_CHARS = 512;
     JPH::CharacterVirtual* chars_[MAX_CHARS] = {};
     int char_count_ = 0;
 };

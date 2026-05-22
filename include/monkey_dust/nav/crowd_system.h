@@ -18,7 +18,7 @@ struct dtCrowdAgentParams;
 class CrowdSystem {
 public:
     static CrowdSystem& Get() { static CrowdSystem s; return s; }
-    static constexpr int MAX_AGENTS = 128;
+    static constexpr int MAX_AGENTS = 512;
 
     void Init(const dtNavMesh* nav_mesh, int max_agents = MAX_AGENTS);
     void Shutdown();

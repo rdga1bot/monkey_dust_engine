@@ -80,6 +80,7 @@ public:
     static DirectorSystem& Get();
 
     void  Init(const char* profiles_json_path);
+    bool  LoadConfig(const char* config_json_path);
     void  Tick(float dt);
 
     // Switch active profile by name; logs warning if not found (keeps current).
@@ -98,7 +99,9 @@ public:
     // Call once per logic tick per NPC, after Tick().
     MotivationType ChooseMotivation(AgentState& as, uint32_t now_ms) noexcept;
 
-    const DirectorProfile* GetCurrentProfile() const;
+    const DirectorProfile*  GetCurrentProfile() const;
+    const DirectorConfig&   GetConfig() const { return config_; }
+    void                    SetConfig(const DirectorConfig& c) { config_ = c; }
 
     // Batch 12 P6: active AlienConfigPreset tracking for ConditionAlienIsAllowed.
     AlienConfigurationType GetActiveConfig() const { return active_config_; }
@@ -109,6 +112,7 @@ private:
 
     static constexpr int MAX_PROFILES = 8;
 
+    DirectorConfig config_;
     float         menace_       = 0.f;
     DirectorStage stage_        = DirectorStage::Unaware;
     AlienConfigurationType active_config_ = AlienConfigurationType::Default;

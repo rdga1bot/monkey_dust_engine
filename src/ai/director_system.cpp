@@ -143,6 +143,63 @@ void DirectorSystem::SetProfile(const char* name) {
     MD_LOG(MD_LOG_WARNING, "DirectorSystem: profile '%s' not found", name);
 }
 
+// ── LoadConfig ────────────────────────────────────────────────────────────────
+
+bool DirectorSystem::LoadConfig(const char* json_path) {
+    FILE* f = fopen(json_path, "rb");
+    if (!f) {
+        MD_LOG(MD_LOG_WARNING, "DirectorSystem: no config at '%s' — using defaults", json_path);
+        return false;
+    }
+    fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);
+    if (sz <= 0 || sz > 8192) { fclose(f); return false; }
+    char* buf = (char*)malloc((size_t)sz + 1);
+    fread(buf, 1, (size_t)sz, f); buf[sz] = '\0'; fclose(f);
+
+    auto rf = [&](const char* k, float def) {
+        const char* p = strstr(buf, k); if (!p) return def;
+        p += strlen(k);
+        while (*p == '"' || *p == ':' || *p == ' ') ++p;
+        return (float)atof(p);
+    };
+    auto ri = [&](const char* k, int def) {
+        const char* p = strstr(buf, k); if (!p) return def;
+        p += strlen(k);
+        while (*p == '"' || *p == ':' || *p == ' ') ++p;
+        return atoi(p);
+    };
+
+    config_.menace_fill_rate          = rf("menace_fill_rate",          config_.menace_fill_rate);
+    config_.menace_drain_rate         = rf("menace_drain_rate",         config_.menace_drain_rate);
+    config_.stage_suspicious_thresh   = rf("stage_suspicious_thresh",   config_.stage_suspicious_thresh);
+    config_.stage_hunting_thresh      = rf("stage_hunting_thresh",      config_.stage_hunting_thresh);
+    config_.stage_intense_thresh      = rf("stage_intense_thresh",      config_.stage_intense_thresh);
+    config_.escalation_mult           = rf("escalation_mult",           config_.escalation_mult);
+    config_.spawn_radius_m            = rf("spawn_radius_m",            config_.spawn_radius_m);
+    config_.despawn_radius_m          = rf("despawn_radius_m",          config_.despawn_radius_m);
+    config_.max_spawns_per_wave       = ri("max_spawns_per_wave",       config_.max_spawns_per_wave);
+    config_.spawn_cooldown_s          = rf("spawn_cooldown_s",          config_.spawn_cooldown_s);
+    config_.max_active_threats        = ri("max_active_threats",        config_.max_active_threats);
+    config_.chase_break_time_s        = rf("chase_break_time_s",        config_.chase_break_time_s);
+    config_.search_timeout_s          = rf("search_timeout_s",          config_.search_timeout_s);
+    config_.search_grid_size_m        = rf("search_grid_size_m",        config_.search_grid_size_m);
+    config_.patrol_radius_m           = rf("patrol_radius_m",           config_.patrol_radius_m);
+    config_.alert_propagation_range_m = rf("alert_propagation_range_m", config_.alert_propagation_range_m);
+    config_.flee_hp_fraction          = rf("flee_hp_fraction",          config_.flee_hp_fraction);
+    config_.backup_request_range_m    = rf("backup_request_range_m",    config_.backup_request_range_m);
+    config_.ambush_setup_time_s       = rf("ambush_setup_time_s",       config_.ambush_setup_time_s);
+    config_.trap_trigger_s            = rf("trap_trigger_s",            config_.trap_trigger_s);
+    config_.awareness_decay_s         = rf("awareness_decay_s",         config_.awareness_decay_s);
+    config_.hearing_decay_s           = rf("hearing_decay_s",           config_.hearing_decay_s);
+    config_.visual_decay_s            = rf("visual_decay_s",            config_.visual_decay_s);
+    config_.min_quiet_s               = rf("min_quiet_s",               config_.min_quiet_s);
+    config_.max_idle_menace           = rf("max_idle_menace",           config_.max_idle_menace);
+    config_.director_tick_s           = rf("director_tick_s",           config_.director_tick_s);
+
+    free(buf);
+    return true;
+}
+
 // ── Tick ──────────────────────────────────────────────────────────────────────
 
 static constexpr uint32_t K_MENACE = md::fnv1a("menace");
@@ -190,21 +247,21 @@ void DirectorSystem::Tick(float dt) {
         }
     }
 
-    // 2. Accumulate/decay menace
-    // Fill when any NPC perceives above their lo-threshold; decay otherwise.
-    // Decay is half the fill rate so menace is "sticky".
+    // 2. Accumulate/decay menace using DirectorConfig rates.
     if (MD_UNLIKELY(max_activation > 0.3f)) {
-        menace_ += pr.gauge_fill_rate * dt;
+        menace_ += config_.menace_fill_rate * dt;
     } else {
-        menace_ -= pr.gauge_fill_rate * 0.5f * dt;
+        menace_ -= config_.menace_drain_rate * dt;
+        if (menace_ < config_.max_idle_menace)
+            menace_ = config_.max_idle_menace;
     }
     menace_ = menace_ < 0.f ? 0.f : menace_ > 1.f ? 1.f : menace_;
 
-    // 3. Update stage
-    if      (menace_ < 0.25f) stage_ = DirectorStage::Unaware;
-    else if (menace_ < 0.50f) stage_ = DirectorStage::Suspicious;
-    else if (menace_ < 0.75f) stage_ = DirectorStage::Hunting;
-    else                       stage_ = DirectorStage::Intense;
+    // 3. Update stage using config thresholds.
+    if      (menace_ < config_.stage_suspicious_thresh) stage_ = DirectorStage::Unaware;
+    else if (menace_ < config_.stage_hunting_thresh)    stage_ = DirectorStage::Suspicious;
+    else if (menace_ < config_.stage_intense_thresh)    stage_ = DirectorStage::Hunting;
+    else                                                 stage_ = DirectorStage::Intense;
 
     // 4. Broadcast to all AgentBlackboards — skip if nothing changed.
     // Threshold 0.005 avoids per-tick broadcast for tiny float drift.

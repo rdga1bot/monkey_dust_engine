@@ -34,27 +34,49 @@
 #include <cmath>
 
 // ── Squad activity states (VBfA AT_SQUAD_ACTIVITY_*) ─────────────────────────
-// Expanded from 5 → 13 states matching VBfA RE data.
+// Expanded from 13 → 29 states (VBfA-R VB-4 gap fill).
 // Startup states last one think-tick (THINK_INTERVAL_MS = 2s) then auto-advance.
 // BT members can read squad_activity from blackboard key "squad_activity" (uint8).
 enum class SquadActivity : uint8_t {
     // ── Idle / pre-battle ────────────────────────────────────────────────────
-    Idle                    = 0,  // AT_SQUAD_ACT_IDLE — no threat, members stand still
-    IdlePriorToBattle       = 1,  // AT_SQUAD_ACT_IDLE_PRIOR_TO_BATTLE — aware, weapon holstered
-    IdlePriorToBattleReady  = 2,  // AT_SQUAD_ACT_IDLE_PRIOR_TO_BATTLE_MOTIVATED — aware, weapon ready
-    DrawWeapon              = 3,  // AT_SQUAD_ACT_DRAW_WEAPON — one-tick transition before attack
+    Idle                    = 0,  // AT_SQUAD_ACT_IDLE
+    IdlePriorToBattle       = 1,  // AT_SQUAD_ACT_IDLE_PRIOR_TO_BATTLE
+    IdlePriorToBattleReady  = 2,  // AT_SQUAD_ACT_IDLE_PRIOR_TO_BATTLE_MOTIVATED
+    DrawWeapon              = 3,  // AT_SQUAD_ACT_DRAW_WEAPON — 1-tick transition
     // ── Patrol ───────────────────────────────────────────────────────────────
-    PatrolRagged            = 4,  // AT_SQUAD_ACTIVITY_PATROL_RAGGED_START — wander, no pathfind
-    PatrolStartup           = 5,  // AT_SQUAD_ACTIVITY_PATROL_STARTUP — 1-tick before Patrol
-    Patrol                  = 6,  // AT_SQUAD_ACTIVITY_GUARD_PATROLLING — structured patrol route
-    PatrolFailed            = 7,  // AT_SQUAD_ACTIVITY_PATROL_PF_FAILED — nav failed, replan
+    PatrolRagged            = 4,  // AT_SQUAD_ACTIVITY_PATROL_RAGGED_START
+    PatrolStartup           = 5,  // AT_SQUAD_ACTIVITY_PATROL_STARTUP
+    Patrol                  = 6,  // AT_SQUAD_ACTIVITY_GUARD_PATROLLING
+    PatrolFailed            = 7,  // AT_SQUAD_ACTIVITY_PATROL_PF_FAILED
     // ── Attack ───────────────────────────────────────────────────────────────
-    AttackStartup           = 8,  // AT_SQUAD_ACTIVITY_ATTACK_STARTUP — 1-tick commit before advance
-    AttackMove              = 9,  // AT_SQUAD_ACTIVITY_ATTACK_PATROL — advance on target
-    AttackFightStartup      = 10, // AT_SQUAD_ACTIVITY_ATTACK_FIGHT_STARTUP — 1-tick before melee
-    Fight                   = 11, // AT_SQUAD_ACTIVITY_ATTACK_FIGHT — full combat, BT drives members
-    StandGround             = 12, // AT_SQUAD_ACTIVITY_ATTACK_STAND_GROUND_COMBAT — hold + fight
+    AttackStartup           = 8,  // AT_SQUAD_ACTIVITY_ATTACK_STARTUP
+    AttackMove              = 9,  // AT_SQUAD_ACTIVITY_ATTACK_PATROL
+    AttackFightStartup      = 10, // AT_SQUAD_ACTIVITY_ATTACK_FIGHT_STARTUP
+    Fight                   = 11, // AT_SQUAD_ACTIVITY_ATTACK_FIGHT
+    StandGround             = 12, // AT_SQUAD_ACTIVITY_ATTACK_STAND_GROUND_COMBAT
+    // ── Retreat / regroup ────────────────────────────────────────────────────
+    Retreating              = 13, // VBfA-R: squad falling back
+    Regrouping              = 14, // VBfA-R: squad gathering around home point
+    Fleeing                 = 15, // VBfA-R: full rout — high-speed flee
+    // ── Cover / suppression ──────────────────────────────────────────────────
+    TakingCover             = 16, // VBfA-R: moving to cover node
+    InCover                 = 17, // VBfA-R: behind cover, suppressed
+    Flanking                = 18, // VBfA-R: flanking maneuver
+    Suppressed              = 19, // VBfA-R: pinned, cannot advance
+    // ── Non-combat activity ───────────────────────────────────────────────────
+    Guarding                = 20, // VBfA-R: guarding position or object
+    Escorting               = 21, // VBfA-R: escorting VIP or cargo
+    Scouting                = 22, // VBfA-R: scouting ahead
+    Looting                 = 23, // VBfA-R: looting bodies / containers
+    Investigating           = 24, // VBfA-R: investigating suspicious area
+    // ── Social / labour ──────────────────────────────────────────────────────
+    Resting                 = 25, // VBfA-R: resting / sleeping
+    Working                 = 26, // VBfA-R: labour / crafting task
+    Alerted                 = 27, // VBfA-R: suspicious, weapon half-drawn
+    Dead                    = 28, // VBfA-R: squad wiped out
+    COUNT                   = 29
 };
+static constexpr uint8_t SQUAD_ACTIVITY_COUNT = 29;
 
 // ── SquadController component (lives on squad entity, not on member NPCs) ─────
 struct SquadController {

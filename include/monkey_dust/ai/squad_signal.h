@@ -30,6 +30,7 @@ enum class SquadSignal : uint8_t {
 };
 static constexpr uint8_t SQUAD_SIGNAL_COUNT = 8;
 
+
 struct SquadMemberComponent {
     uint8_t squad_id;  // 0 – MAX_SQUADS-1; channels NPCs into a shared broadcast group
     uint8_t _pad[7];
@@ -38,9 +39,10 @@ static_assert(sizeof(SquadMemberComponent) == 8, "SquadMemberComponent must be 8
 
 struct SquadChannel {
     SquadSignal signal    = SquadSignal::None;
-    uint8_t     _pad1[3];
-    uint32_t    sender    = 0;      // raw entity id of last notifier
-    uint32_t    timestamp = 0;      // nowMs when signal was written
+    uint8_t     activity  = 0;     // VBfA-R: SquadActivity cast to uint8 (avoids cross-include)
+    uint8_t     _pad1[2];
+    uint32_t    sender    = 0;     // raw entity id of last notifier
+    uint32_t    timestamp = 0;     // nowMs when signal was written
     uint8_t     _pad2[4];
 };
 static_assert(sizeof(SquadChannel) == 16, "SquadChannel must be 16 bytes");

@@ -48,6 +48,19 @@ struct SenseModifiers {
 };
 static_assert(sizeof(SenseModifiers) == 40, "SenseModifiers must be 40 bytes");
 
+// ── VisualSenseEffects ────────────────────────────────────────────────────────
+// AI-3: instantaneous visual effect overrides applied to the SenseComponent
+// during special events (e.g. flashbang, darkness grenade, eye damage).
+// All fields are additive deltas on the SenseComponent activation for one tick.
+// sizeof = 16 bytes (4 floats).
+struct VisualSenseEffects {
+    float blind_duration_s  = 0.f;  // seconds of full visual blackout
+    float dazzle_mult       = 0.f;  // activation multiplier during dazzle (0=blind)
+    float range_override_m  = 0.f;  // hard cap on visual range_m (0=no override)
+    float fade_rate         = 0.f;  // how fast effects decay per second
+};
+static_assert(sizeof(VisualSenseEffects) == 16, "VisualSenseEffects must be 16 bytes");
+
 // ── SenseComponent ───────────────────────────────────────────────────────────
 // M19 component. References a ViewConeSet (loaded into SenseRegistry by index).
 // activation[i] ∈ [0..1] per SenseType; threshold_lo/hi shared across all senses.

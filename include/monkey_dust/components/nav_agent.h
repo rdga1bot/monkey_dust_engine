@@ -8,9 +8,11 @@ struct NavAgent {
     int      path_idx;
     bool     is_moving     = false;  // set by actMoveToTarget, read by animator
     float    move_speed    = 0.0f;   // 0=still, 1=walk, 2=run (for blend)
-    float    walk_speed    = 3.5f;   // m/s — walk animation threshold
-    float    run_speed     = 7.0f;   // m/s — run animation threshold; used by chase/flee
+    float    walk_speed    = 1.7f;   // m/s — Kenshi walk ~5.5 km/h (was 3.5)
+    float    run_speed     = 4.5f;   // m/s — Kenshi run ~16 km/h (was 7.0)
     int      crowd_idx     = -1;     // dtCrowd agent index; -1 = not in crowd
-    float    desired_vel_x = 0.0f;   // set by CrowdSystem, read by JoltWorld
+    float    desired_vel_x = 0.0f;   // set by CrowdSystem, read by JoltWorld + render lerp
     float    desired_vel_z = 0.0f;
+    float    render_x      = 0.0f;   // render-rate extrapolated position (smoothing)
+    float    render_z      = 0.0f;
 };

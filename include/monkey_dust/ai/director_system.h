@@ -25,6 +25,49 @@ struct DirectorProfile {
     int   max_menaces;        // max simultaneous threat sources (default=1)
 };
 
+// ── DirectorConfig ────────────────────────────────────────────────────────────
+// AI-1: full 26-field Director tuning config (Kenshi/VBfA-R AI RE).
+// One instance is active at runtime; loaded from data/ai/director_config.json.
+struct DirectorConfig {
+    // ── Menace / stage thresholds ─────────────────────────────────────────────
+    float menace_fill_rate        = 0.05f;  // menace/s while threat active
+    float menace_drain_rate       = 0.02f;  // menace/s while safe
+    float stage_suspicious_thresh = 0.25f;  // menace ≥ this → Suspicious
+    float stage_hunting_thresh    = 0.50f;  // menace ≥ this → Hunting
+    float stage_intense_thresh    = 0.75f;  // menace ≥ this → Intense
+    float escalation_mult         = 2.0f;   // fill rate multiplier during combat
+
+    // ── Spawn / despawn ───────────────────────────────────────────────────────
+    float spawn_radius_m          = 80.0f;  // max dist from player to spawn threats
+    float despawn_radius_m        = 150.0f; // dist at which threats despawn
+    int   max_spawns_per_wave     = 4;      // entities per spawn wave
+    float spawn_cooldown_s        = 30.0f;  // seconds between waves
+    int   max_active_threats      = 16;     // hard cap on active director-spawned entities
+
+    // ── Search / patrol ───────────────────────────────────────────────────────
+    float chase_break_time_s      = 15.0f;  // give up chase after this duration
+    float search_timeout_s        = 45.0f;  // total search budget before de-escalate
+    float search_grid_size_m      = 10.0f;  // grid cell size for systematic search
+    float patrol_radius_m         = 40.0f;  // default patrol wander radius
+    float alert_propagation_range_m = 30.0f;// range at which alert spreads to allies
+
+    // ── Combat behaviour ─────────────────────────────────────────────────────
+    float flee_hp_fraction        = 0.25f;  // HP fraction below which NPCs flee
+    float backup_request_range_m  = 50.0f;  // range to call for backup
+    float ambush_setup_time_s     = 5.0f;   // time to take position before ambush fires
+    float trap_trigger_s          = 3.0f;   // seconds until killtrap fires after setup
+
+    // ── Awareness decay ───────────────────────────────────────────────────────
+    float awareness_decay_s       = 20.0f;  // seconds for full awareness to decay
+    float hearing_decay_s         = 8.0f;   // seconds for sound memory to expire
+    float visual_decay_s          = 5.0f;   // seconds for visual memory to expire
+
+    // ── Director pacing ───────────────────────────────────────────────────────
+    float min_quiet_s             = 60.0f;  // min quiet time before next escalation
+    float max_idle_menace         = 0.10f;  // menace kept > 0 even when all clear
+    float director_tick_s         = 2.0f;   // director update interval (s)
+};
+
 // ── DirectorSystem ────────────────────────────────────────────────────────────
 // Singleton. Reads SenseComponent.activation from all NPC entities,
 // accumulates menace gauge, updates DirectorStage, and broadcasts

@@ -80,7 +80,7 @@ static constexpr uint8_t SQUAD_ACTIVITY_COUNT = 29;
 
 // ── SquadController component (lives on squad entity, not on member NPCs) ─────
 struct SquadController {
-    static constexpr int   MAX_MEMBERS       = 16;
+    static constexpr int   MAX_MEMBERS       = 30;  // F3: 16 → 30 (Kenshi patrol squads up to 20+)
     static constexpr float THINK_INTERVAL_MS = 2000.f;
     static constexpr float WANDER_INTERVAL_MS = 4000.f; // PatrolRagged retarget
 
@@ -99,6 +99,12 @@ struct SquadController {
     float         think_accum_ms      = 0.f;
     float         wander_accum_ms     = WANDER_INTERVAL_MS; // fire immediately
     uint32_t      rng_state           = 0xDEADBEEFu;
+
+    // F3: squad-level morale + reinforcement (Kenshi RE patterns)
+    uint8_t       morale              = 128;  // 0=routing, 255=fearless
+    uint8_t       flee_threshold      = 30;   // morale below this → Fleeing
+    uint8_t       reinforcement_id    = 0;    // faction_id of backup squad (0=none)
+    uint8_t       _pad                = 0;
 };
 
 // ── SquadSystem ───────────────────────────────────────────────────────────────
@@ -154,6 +160,15 @@ public:
             float dist = sqrtf(dx * dx + dz * dz);
 
             sc.prev_activity = sc.activity;
+
+            // F3: morale check — low morale overrides activity to Fleeing
+            if (sc.morale < sc.flee_threshold &&
+                sc.activity != SquadActivity::Fleeing &&
+                sc.activity != SquadActivity::Dead) {
+                sc.activity = SquadActivity::Fleeing;
+            }
+            // Recover morale slowly when not in combat
+            if (sc.activity == SquadActivity::Fleeing && sc.morale < 255) ++sc.morale;
 
             // Startup states auto-advance to their running state each think tick.
             // Distance ladder then decides if we need a new transition.
@@ -238,6 +253,15 @@ public:
                     sc.target_x = player_x;
                     sc.target_z = player_z;
                     break;
+
+                case SquadActivity::Fleeing:
+                case SquadActivity::Retreating:
+                    // F3: flee away from player (mirror position through home)
+                    sc.target_x = sc.home_x + (sc.home_x - player_x) * 0.5f;
+                    sc.target_z = sc.home_z + (sc.home_z - player_z) * 0.5f;
+                    break;
+
+                default: break;
             }
 
             // ── Broadcast target to all members ──────────────────────────────

@@ -1,0 +1,209 @@
+#include <monkey_dust/physics/ragdoll.h>
+#include <monkey_dust/components/health.h>
+#include <monkey_dust/components/agent_state.h>
+#include <monkey_dust/world/world_transform.h>
+#include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/platform/md_log.h>
+
+#ifndef JPH_DEBUG_RENDERER
+#define JPH_DEBUG_RENDERER 0
+#endif
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/Ragdoll/Ragdoll.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
+#include <Jolt/Skeleton/Skeleton.h>
+#include <Jolt/Skeleton/SkeletonPose.h>
+#include <Jolt/Physics/EActivation.h>
+#include <cstring>
+#include <cmath>
+
+// ── Simplified 6-segment skeleton: root=Torso, children=Head,LArm,RArm,LLeg,RLeg ──
+//
+// Proportions are approximate for 1.8m character at world scale.
+// Full 30-bone ragdoll deferred to Phase 4 content pipeline.
+//
+//   Segment  | idx | shape           | parent
+//   Torso    |  0  | Capsule r=0.15 h=0.5 | root (no constraint)
+//   Head     |  1  | Capsule r=0.10 h=0.2 | Torso (swing-twist)
+//   LArm     |  2  | Capsule r=0.06 h=0.5 | Torso (swing-twist)
+//   RArm     |  3  | Capsule r=0.06 h=0.5 | Torso (swing-twist)
+//   LLeg     |  4  | Capsule r=0.08 h=0.6 | Torso (swing-twist)
+//   RLeg     |  5  | Capsule r=0.08 h=0.6 | Torso (swing-twist)
+
+static const char* k_joint_names[6] = {
+    "Torso","Head","LArm","RArm","LLeg","RLeg"
+};
+static const int k_parent[6] = { -1, 0, 0, 0, 0, 0 };
+
+// Capsule half-height (m) and radius (m)
+static const float k_half_h[6] = { 0.25f, 0.10f, 0.25f, 0.25f, 0.30f, 0.30f };
+static const float k_radius[6] = { 0.15f, 0.10f, 0.06f, 0.06f, 0.08f, 0.08f };
+
+// Joint offset from parent origin (Y axis up)
+static const float k_offset_y[6] = { 0.f, 0.55f, 0.f, 0.f, -0.55f, -0.55f };
+static const float k_offset_x[6] = { 0.f, 0.f, -0.25f, 0.25f, -0.15f, 0.15f };
+
+bool RagdollSystem::Init(const char* /*glb_path*/) {
+    if (!JoltWorld::Get().IsReady()) {
+        MD_LOG(MD_LOG_WARNING, "RagdollSystem: JoltWorld not ready");
+        return false;
+    }
+
+    // Build skeleton
+    skeleton_ = new JPH::Skeleton;
+    for (int i = 0; i < 6; ++i)
+        skeleton_->AddJoint(k_joint_names[i], k_parent[i]);
+
+    // Build RagdollSettings — one Part per joint
+    settings_ = new JPH::RagdollSettings;
+    settings_->mSkeleton = skeleton_;
+    settings_->mParts.resize(6);
+
+    JPH::PhysicsSystem& ps = JoltWorld::Get().System();
+
+    for (int i = 0; i < 6; ++i) {
+        auto& part = settings_->mParts[i];
+
+        // Capsule shape for this segment
+        JPH::CapsuleShapeSettings cs(k_half_h[i], k_radius[i]);
+        auto shape_res = cs.Create();
+        if (shape_res.HasError()) {
+            MD_LOG(MD_LOG_WARNING, "RagdollSystem: capsule %d error: %s",
+                   i, shape_res.GetError().c_str());
+            return false;
+        }
+        part.SetShape(shape_res.Get());
+
+        // Initial position (origin; will be overridden by Activate)
+        part.mPosition = JPH::RVec3(k_offset_x[i], k_offset_y[i], 0.f);
+        part.mMotionType = (i == 0)
+            ? JPH::EMotionType::Dynamic
+            : JPH::EMotionType::Dynamic;
+        part.mObjectLayer = 1;  // moving objects layer
+
+        // Swing-twist constraint to parent (skip root)
+        if (k_parent[i] >= 0) {
+            auto* st = new JPH::SwingTwistConstraintSettings;
+            st->mNormalHalfConeAngle = 0.5f;   // ~30° swing
+            st->mPlaneHalfConeAngle  = 0.5f;
+            st->mTwistMinAngle       = -0.3f;
+            st->mTwistMaxAngle       =  0.3f;
+            part.mToParent = st;
+        }
+    }
+
+    settings_->DisableParentChildCollisions();
+
+    MD_LOG(MD_LOG_INFO, "RagdollSystem: initialised (6-segment skeleton)");
+    return true;
+}
+
+void RagdollSystem::Activate(entt::entity e, entt::registry& reg) {
+    if (!settings_) return;
+
+    const WorldTransform* tr = reg.try_get<WorldTransform>(e);
+    if (!tr) return;
+
+    auto& rc = reg.get_or_emplace<RagdollComponent>(e);
+    if (rc.active) return;
+
+    JPH::Ragdoll* rd = settings_->CreateRagdoll(
+        next_group_id_++, (JPH::uint64)e, &JoltWorld::Get().System());
+    if (!rd) return;
+
+    // Position root (Torso) at entity world position
+    JPH::SkeletonPose pose;
+    pose.SetSkeleton(skeleton_);
+    auto& root_jt = pose.GetJoint(0);
+    root_jt.mTranslation = JPH::Vec3(tr->x, tr->y + 0.8f, tr->z);
+    root_jt.mRotation    = JPH::Quat::sIdentity();
+    for (int i = 1; i < 6; ++i) {
+        auto& jt = pose.GetJoint(i);
+        jt.mTranslation = JPH::Vec3(k_offset_x[i], k_offset_y[i], 0.f);
+        jt.mRotation    = JPH::Quat::sIdentity();
+    }
+    rd->SetPose(pose);
+    rd->AddToPhysicsSystem(JPH::EActivation::Activate);
+
+    rc.ragdoll = rd;
+    rc.active  = true;
+    rc.time_active_s = 0.f;
+}
+
+void RagdollSystem::Deactivate(entt::entity e, entt::registry& reg) {
+    auto* rc = reg.try_get<RagdollComponent>(e);
+    if (!rc || !rc->active || !rc->ragdoll) return;
+    rc->ragdoll->RemoveFromPhysicsSystem();
+    delete rc->ragdoll;
+    rc->ragdoll = nullptr;
+    rc->active  = false;
+}
+
+void RagdollSystem::Tick(float dt, float player_x, float player_z) {
+    if (!settings_) return;
+
+    auto& reg = Registry::Get();
+    const float lod2 = LOD_RADIUS_M * LOD_RADIUS_M;
+
+    // Activate dead NPCs within LOD range; deactivate those beyond.
+    auto view = reg.view<LimbHealth, WorldTransform>();
+    for (auto [e, lh, tr] : view.each()) {
+        if (!lh.incapacitated) continue;
+
+        float dx = tr.x - player_x;
+        float dz = tr.z - player_z;
+        float d2 = dx * dx + dz * dz;
+
+        auto* rc = reg.try_get<RagdollComponent>(e);
+        bool  in_range = (d2 <= lod2);
+
+        if (in_range && (!rc || !rc->active)) {
+            Activate(e, reg);
+        } else if (!in_range && rc && rc->active) {
+            Deactivate(e, reg);
+        }
+    }
+
+    // Advance timers on active ragdolls; remove after SLEEP_SETTLE_S.
+    auto rc_view = reg.view<RagdollComponent>();
+    for (auto [e, rc] : rc_view.each()) {
+        if (!rc.active) continue;
+        rc.time_active_s += dt;
+        if (rc.time_active_s > SLEEP_SETTLE_S) {
+            Deactivate(e, reg);
+        }
+    }
+}
+
+void RagdollSystem::DeactivateChunk(float min_x, float min_z,
+                                    float max_x, float max_z) {
+    auto& reg = Registry::Get();
+    auto view = reg.view<RagdollComponent, WorldTransform>();
+    for (auto [e, rc, tr] : view.each()) {
+        if (!rc.active) continue;
+        if (tr.x >= min_x && tr.x <= max_x && tr.z >= min_z && tr.z <= max_z)
+            Deactivate(e, reg);
+    }
+}
+
+bool RagdollSystem::GetBoneMatrices(entt::entity e, float* out_matrices,
+                                     int bone_count) const {
+    auto& reg = Registry::Get();
+    const auto* rc = reg.try_get<RagdollComponent>(e);
+    if (!rc || !rc->active || !rc->ragdoll) return false;
+
+    int n = bone_count < 6 ? bone_count : 6;
+    JPH::SkeletonPose pose;
+    pose.SetSkeleton(skeleton_);
+    rc->ragdoll->GetPose(pose);
+
+    for (int i = 0; i < n; ++i) {
+        const auto& jt  = pose.GetJoint(i);
+        JPH::Mat44  mat = JPH::Mat44::sRotationTranslation(jt.mRotation,
+                                                            jt.mTranslation);
+        memcpy(out_matrices + i * 16, &mat, sizeof(float) * 16);
+    }
+    return true;
+}

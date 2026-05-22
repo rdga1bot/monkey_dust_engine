@@ -37,9 +37,10 @@ void WorldSimulation::Tick(float delta_s) noexcept {
         raid.active = 0;  // consume
     }
 
-    // Apply trade routes
+    // F3: Economy — dynamic trade routes with prosperity-scaled efficiency.
+    // Kenshi RE: wealthy factions attract more trade volume (demand scaling).
     for (int r = 0; r < route_count_; ++r) {
-        const TradeRoute& rt = routes_[r];
+        TradeRoute& rt = routes_[r];
         if (!rt.active || rt.volume == 0) continue;
         FactionState* src = nullptr;
         FactionState* dst = nullptr;
@@ -47,19 +48,35 @@ void WorldSimulation::Tick(float delta_s) noexcept {
             if (factions_[i].faction_id == rt.from_faction) src = &factions_[i];
             if (factions_[i].faction_id == rt.to_faction)   dst = &factions_[i];
         }
-        if (src && src->gold >= rt.volume) {
+        if (!src || !dst) continue;
+        // Route blocked if aggression between parties is high (conflict check)
+        if (src->aggression > 180u || dst->aggression > 180u) {
+            rt.active = 0; // war closes trade route
+            continue;
+        }
+        if (src->gold >= rt.volume) {
             src->gold = (uint16_t)(src->gold - rt.volume);
-            if (dst) {
-                uint16_t gain = (uint16_t)(rt.volume / 2u);
-                dst->gold = (uint16_t)(dst->gold + gain < 0xFFFF ? dst->gold + gain : 0xFFFF);
-            }
+            // Destination prosperity boosts return: 50% base + 0-25% prosperity bonus
+            uint32_t bonus  = (uint32_t)dst->prosperity * rt.volume / 512u;
+            uint32_t gain   = rt.volume / 2u + bonus;
+            src->gold = (uint16_t)((uint32_t)src->gold + gain < 0xFFFFu
+                                   ? (uint32_t)src->gold + gain : 0xFFFFu);
+            // Destination prosperity rises from incoming trade
+            if (dst->prosperity < 255) ++dst->prosperity;
+        }
+        // Closed route if src runs dry too often — auto-downscale volume
+        else if (rt.volume > 1 && (tick_count_ % 5u) == 0u) {
+            --rt.volume;
         }
     }
 
     // Update faction economy
     for (int i = 0; i < faction_count_; ++i) {
         FactionState& f = factions_[i];
-        if (f.gold < 0xFFFF) ++f.gold;  // passive income
+        // Passive income scales with population (more people = more production)
+        uint8_t income = (uint8_t)(1u + f.population / 64u);
+        if ((uint32_t)f.gold + income < 0xFFFFu) f.gold = (uint16_t)(f.gold + income);
+        else f.gold = 0xFFFFu;
         if (f.gold > 0 && f.prosperity < 255) ++f.prosperity;
         else if (f.gold == 0 && f.prosperity > 0) --f.prosperity;
         if (f.prosperity < 32u && f.aggression < 255) ++f.aggression;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>monkey_dust — Документація розробника v7.0</title>
+<title>monkey_dust — Документація розробника v8.0</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;800&family=Inter:wght@300;400;500&display=swap');
 
@@ -134,7 +134,7 @@
 <div id="sidebar">
   <div class="sidebar-logo">
     <div class="title">monkey_dust</div>
-    <div class="subtitle">Developer Docs · v7.0 · M46+C20+BT VM+IMP-9</div>
+    <div class="subtitle">Developer Docs · v9.0 · RD-4 Terrain Seam Fix · 2026-05-22</div>
   </div>
   <div class="sidebar-search">
     <input type="text" id="search-input" placeholder="Пошук..." oninput="filterNav(this.value)">
@@ -168,6 +168,8 @@
     <a href="#lua"          class="nav-link"><span class="nav-icon">📜</span> Lua Sandbox</a>
 
     <div class="nav-section">Інструменти</div>
+    <a href="#terrain"      class="nav-link"><span class="nav-icon">🌍</span> Terrain Atlas + F7 Brush</a>
+    <a href="#asset-pipeline" class="nav-link"><span class="nav-icon">🔧</span> Asset Pipeline (md_*)</a>
     <a href="#editor"       class="nav-link"><span class="nav-icon">🗺️</span> Map Editor (M9)</a>
     <a href="#wicked"       class="nav-link"><span class="nav-icon">🖥️</span> Wicked Editor (14 panels)</a>
     <a href="#flare-demo"   class="nav-link"><span class="nav-icon">▶️</span> md_flare_demo</a>
@@ -203,17 +205,17 @@
 <section class="doc-section" id="intro">
   <div class="breadcrumb"><span>Документація</span> <span class="sep">›</span> Огляд</div>
   <div class="hero">
-    <div class="version-badge">v7.0 · M46+AI-Ext-1–20+BT VM+IMP-1–9 · C++17 · SDL3 + SDL_GPU (Vulkan) · EnTT · Recast/Detour · AVX2</div>
+    <div class="version-badge">v8.0 · M46–M59+KEN-1–8+VBfA-R1–9+VBfA-AI1–6+Atlas · C++17 · SDL3 + SDL_GPU (Vulkan) · EnTT · Recast/Detour · ozz-animation · Jolt Physics · AVX2</div>
     <h1>monkey_dust</h1>
     <p style="font-size:17px;color:var(--text);margin-bottom:0;">
-      Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Бекенд: SDL3 + SDL_GPU (Vulkan), виключний — OpenGL/Raylib повністю видалено (FIX-8). AI архітектура натхненна механіками Alien: Isolation. 9 нових покращень з аналізу механік OGRE/Echo/Cocos2d-x. Цільове залізо: Intel HD 520 (AVX2).
+      Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Бекенд: SDL3 + SDL_GPU (Vulkan), виключний — OpenGL/Raylib повністю видалено (FIX-8). AI архітектура натхненна механіками Alien: Isolation. Kenshi asset pipeline (KEN-1–8): cgltf GLB, ozz-animation, Jolt CharacterVirtual, DetourCrowd. Terrain atlas <code>world_hmap.r32</code> (67 MB, 4096 зон). Цільове залізо: Intel HD 520 (AVX2).
     </p>
     <div class="hero-meta">
       <div class="hero-meta-item"><span class="dot">●</span> C++17, без C++20</div>
       <div class="hero-meta-item"><span class="dot">●</span> Linux · Intel HD 520 (AVX2)</div>
       <div class="hero-meta-item"><span class="dot">●</span> 1280×720 · 60 FPS</div>
       <div class="hero-meta-item"><span class="dot">●</span> SDL3 + SDL_GPU (Vulkan)</div>
-      <div class="hero-meta-item"><span class="dot">●</span> 1252 GTests · Proprietary</div>
+      <div class="hero-meta-item"><span class="dot">●</span> 1557 GTests · Proprietary</div>
     </div>
   </div>
 
@@ -280,6 +282,7 @@ ninja -C build monkey_dust          # гра       → build/game/monkey_dust
 ninja -C build monkey_dust_editor   # редактор  → build/tools/monkey_dust_editor
 ninja -C build md_flare_demo        # viewer    → build/tools/md_flare_demo
 ninja -C build md_flare_convert     # конвертер → build/tools/md_flare_convert
+ninja -C build ozz_bake             # anim      → build/tools/ozz_bake (GLB→.ozz)
 
 # З wicked-style editor в грі:
 cmake -S . -B build -G Ninja -DUSE_SDL3=ON -DMONKEY_DUST_EDITOR=ON
@@ -290,7 +293,7 @@ ninja -C build monkey_dust</code></pre>
       <div class="step-num">3</div>
       <div class="step-body">
         <h4>Тести та SPIR-V шейдери</h4>
-        <pre><code># Запустити 131 GTests:
+        <pre><code># Запустити 1557 GTests:
 ninja -C build md_tests && build/tests/md_tests
 
 # Перекомпілювати SPIR-V після зміни .vert/.frag/.comp:
@@ -312,7 +315,7 @@ bash scripts/compile_shaders.sh</code></pre>
 
 <!-- ═══ STRUCTURE ═══ -->
 <section class="doc-section" id="structure">
-  <h2>📁 Monorepo структура (M46 + AI-Ext-1–20 + BT VM + IMP-1–9)</h2>
+  <h2>📁 Monorepo структура (M46–M59 + KEN-1–8 + VBfA + Atlas)</h2>
 
   <div class="file-tree">
 <span class="dir">monkey_dust/</span>
@@ -354,20 +357,33 @@ bash scripts/compile_shaders.sh</code></pre>
 │       └── <span class="hl">world/world_simulation.cpp</span> <span class="note">1Hz economy tick (IMP-6)</span>
 │
 ├── <span class="dir">game/</span>                          <span class="note">← Executable: monkey_dust</span>
-│   └── <span class="dir">src/</span>
-│       ├── <span class="hl">main.cpp</span>               <span class="note">10 TPS logic / 60 FPS render; SDL_GPU game loop</span>
-│       ├── <span class="hl">ai/bt_loader.h</span>         <span class="note">JSON BT templates + WatchFile/PollReload live reload (IMP-2)</span>
-│       ├── <span class="dir">ai/ · combat/ · building/ · nav/ · systems/</span>
-│       └── <span class="dir">save/world_serializer.h</span>  <span class="note">v8 + CRC32 (FIX-4); POSIX mkdir (FIX-1)</span>
+│   ├── <span class="dir">src/</span>
+│   │   ├── <span class="hl">main.cpp</span>               <span class="note">10 TPS logic / 60 FPS render; F7 terrain brush; atlas load</span>
+│   │   ├── <span class="hl">ai/bt_loader.h</span>         <span class="note">JSON BT templates + WatchFile/PollReload live reload (IMP-2)</span>
+│   │   ├── <span class="dir">ai/ · combat/ · building/ · nav/ · world/</span>
+│   │   └── <span class="dir">save/world_serializer.h</span>  <span class="note">v10 + CRC32 (FIX-4); POSIX mkdir (FIX-1)</span>
+│   └── <span class="dir">data/</span>
+│       ├── <span class="hl">terrain/world_hmap.r32</span>   <span class="note">67 MB terrain atlas (4096 зон)</span>
+│       ├── <span class="hl">props/md_human.glb</span>       <span class="note">SkinMesh (15504 verts, 30 bones, 6 clips)</span>
+│       ├── <span class="hl">anim/md_human.ozz</span>        <span class="note">ozz skeleton + animation clips</span>
+│       ├── <span class="hl">textures/md_terrain.png</span>  <span class="note">Terrain atlas texture</span>
+│       └── <span class="hl">md_world.json</span>            <span class="note">World registry: 34 zones, biome, factions</span>
 │
 ├── <span class="dir">tools/</span>
 │   ├── <span class="dir">flare_demo/</span>                <span class="hl">md_flare_demo — SDL_GPU Vulkan Flare tile viewer</span>
+│   ├── <span class="dir">ozz_bake/</span>                  <span class="hl">ozz_bake — offline GLB→ozz converter</span>
 │   ├── <span class="dir">editor/</span>                    <span class="hl">monkey_dust_editor — wicked-style JSON + map editor</span>
 │   │   ├── <span class="note">editor_core · editor_hierarchy · editor_inspector · editor_map_view</span>
+│   │   ├── <span class="hl">editor_world_panel.h</span>    <span class="note">World tab: Zone/Faction/Town + map preview (KEN-5)</span>
 │   │   ├── <span class="hl">editor_viewcone_panel.h</span>  <span class="note">SenseComponent activation bars (M38)</span>
 │   │   ├── <span class="hl">editor_flowgraph_panel.h</span> <span class="note">FlowGraph nodes/vars/pending (M39)</span>
 │   │   ├── <span class="hl">editor_director_panel.h</span>  <span class="note">menace + stage + manual override (M40)</span>
 │   │   └── <span class="hl">editor_gpu_profiler_panel.h</span> <span class="note">pass budget bars (M41)</span>
+│   ├── <span class="dir">md_terrain/</span>               <span class="note">md2terrain.py — terrain zone convert helpers</span>
+│   ├── <span class="dir">md_mesh_conv/</span>             <span class="note">md_chars.py · ogre2glb.py — OGRE XML→GLB</span>
+│   ├── <span class="hl">md_extract_terrain.py</span>    <span class="note">fullmap.tif → 4096 zone_X_Y.r32 → world_hmap.r32</span>
+│   ├── <span class="hl">md_convert.py</span>            <span class="note">OGRE mesh → GLB pipeline</span>
+│   ├── <span class="hl">md_mod_import.py</span>         <span class="note">JSON mod data → md_world.json (key: md_id)</span>
 │   └── <span class="dir">flare_convert/</span>             <span class="note">md_flare_convert — FLARE INI→JSON</span>
 │
 ├── <span class="dir">shaders/</span>                       <span class="note">#version 460 GLSL + SPIR-V (compile_shaders.sh)</span>
@@ -404,6 +420,7 @@ bash scripts/compile_shaders.sh</code></pre>
     <tr><td>Flare viewer</td><td><code>ninja -C build md_flare_demo</code></td><td><code>build/tools/md_flare_demo</code></td></tr>
     <tr><td>Standalone editor</td><td><code>ninja -C build monkey_dust_editor</code></td><td><code>build/tools/monkey_dust_editor</code></td></tr>
     <tr><td>Flare конвертер</td><td><code>ninja -C build md_flare_convert</code></td><td><code>build/tools/md_flare_convert</code></td></tr>
+    <tr><td>ozz_bake</td><td><code>ninja -C build ozz_bake</code></td><td><code>build/tools/ozz_bake</code> — GLB→ozz converter</td></tr>
     <tr><td>Test suite</td><td><code>ninja -C build md_tests</code></td><td><code>build/tests/md_tests</code></td></tr>
     <tr><td>SPIR-V шейдери</td><td><code>bash scripts/compile_shaders.sh</code></td><td><code>shaders/spirv/*.spv</code></td></tr>
   </table>
@@ -1113,6 +1130,161 @@ LuaEventBus::Get().Fire("player_died", L);</code></pre>
   </table>
 </section>
 
+<!-- ═══ TERRAIN ATLAS ═══ -->
+<section class="doc-section" id="terrain">
+  <h2>🌍 Terrain Atlas + F7 Brush (2026-05-20)</h2>
+
+  <div class="callout ok">
+    <div class="callout-title">world_hmap.r32 — єдиний файл замість 4096+42 окремих .r32</div>
+    67 MB BSS-буфер замінив 4096 зонових файлів (~248 MB) + 42 biome файлів (~168 MB). Всі 4096 зон повністю вибудовані з <code>fullmap.tif</code> (16385×16385 uint16) через <code>tools/md_extract_terrain.py</code>.
+  </div>
+
+  <h3>Формат atlas (TerrainAtlas API)</h3>
+  <pre><code>// Заголовок (16 B): magic=0x414D4800, n_zones=4096, hmin_global, hmax_global
+// Зона (zx,zy): offset = 16 + (zy*64+zx) * 16908 bytes
+// zone_block: float hmin + float hmax + float[65*65] heights (row=Z, col=X)
+// Сумарно: 16 + 4096 * 16908 = 69,222,928 bytes ≈ 67 MB
+
+bool  TerrainAtlas_Load("game/data/terrain/world_hmap.r32");
+float TerrainAtlas_GetHeight(int zx, int zy, int col, int row);  // 0..64
+void  TerrainAtlas_SetHeight(int zx, int zy, int col, int row, float h);
+bool  TerrainAtlas_Save("game/data/terrain/world_hmap.r32");     // лише dirty зони</code></pre>
+
+  <h3>TerrainQuery — єдине джерело висот</h3>
+  <pre><code>// engine/include/monkey_dust/world/terrain_query.h
+// Кожна система що потребує висоту terrain — використовує TerrainQuery.
+// Ніколи не викликати TerrainChunk::SampleHeight() напряму.
+
+TerrainQuery&amp; tq = TerrainQuery::Get();
+
+// bool overload — повертає false якщо чанк не завантажений (caller зберігає попередній Y):
+float h;
+if (tq.GetHeight(wx, wz, h)) entity_y = h;  // безпечно під час rebuild
+
+// float overload — повертає 0 за межами (лише для не-entity використання):
+float ground = tq.GetHeight(wx, wz);
+
+// Нормаль поверхні (central difference, 0.5m):
+float nx, ny, nz;
+tq.GetNormal(wx, wz, nx, ny, nz);
+
+// Кут нахилу (0=flat, π/2=cliff):
+float slope = tq.GetSlope(wx, wz);</code></pre>
+
+  <div class="callout warn">
+    <div class="callout-title">TerrainQuery::Init() — викликати ОДИН раз після rebuild усіх чанків</div>
+    НЕ викликати <code>TerrainQuery::Init()</code> всередині циклу по вершинах або всередині <code>TerrainGen_Build()</code>. Один виклик після прапорця <code>any_chunk_rebuilt</code> наприкінці кадру.
+  </div>
+
+  <h3>F7 Brush — терейн-скульптинг у runtime</h3>
+  <table>
+    <tr><th>Клавіша/Дія</th><th>Ефект</th></tr>
+    <tr><td><span class="key">F7</span></td><td>Toggle terrain edit mode (приховує курсор)</td></tr>
+    <tr><td><span class="key">LMB</span></td><td>Підняти terrain (brush strength = 3 m/s)</td></tr>
+    <tr><td><span class="key">RMB</span></td><td>Опустити terrain</td></tr>
+    <tr><td><span class="key">Shift+LMB</span></td><td>Smooth (усереднення сусідів)</td></tr>
+    <tr><td><span class="key">Scroll</span></td><td>Змінити радіус пензля (10..200 m)</td></tr>
+    <tr><td><span class="key">S</span></td><td>Зберегти atlas (<code>TerrainAtlas_Save</code>)</td></tr>
+  </table>
+  <pre><code>// Globals (game/src/main.cpp):
+static bool  g_terrain_edit = false;   // F7 toggle
+static float g_brush_r      = 30.f;   // радіус пензля, метри
+static float g_brush_str    = 3.f;    // сила підйому/опускання, м/с
+
+// Щоб підняти вершину (col, row) у зоні (zx, zy):
+float h = TerrainAtlas_GetHeight(zx, zy, col, row);
+TerrainAtlas_SetHeight(zx, zy, col, row, h + g_brush_str * dt);
+// Після цього → TerrainGen_Build() → TerrainGen_Upload() → TerrainQuery::Init()</code></pre>
+
+  <h3>Zone Seam Fix (RD-4, 2026-05-22)</h3>
+  <div class="callout ok">
+    <div class="callout-title">TerrainAtlas_SmoothBoundaries() — виклик обов'язковий після Load()</div>
+    Kenshi <code>fullmap.tif</code> має стрибки висот до 22.9 m на першій внутрішній вершині зони (71° cliff → NdotL=0 → чорний сектор). <code>SmoothBoundaries()</code> з N=15 усуває це: кожний крок ≤10°, NdotL≥0.65.
+  </div>
+  <pre><code>// main.cpp та editor_world_3d_sdlgpu.h:
+TerrainAtlas_Load("game/data/terrain/world_hmap.r32");
+TerrainAtlas_SmoothBoundaries();   // ← ОБОВ'ЯЗКОВО до TerrainGen_Build()
+// ...
+// terrain_pom.frag:
+float ndl = max(dot(N, sun_dir), 0.57);  // 0.57 = dot((0,1,0),(0.57,0.57,0.57)) = flat NdotL</code></pre>
+  <div class="callout warn">
+    <div class="callout-title">F3 Brush — безпечна зона: ≥16 вершин від межі зони (≥125 m)</div>
+    F3 зберігає через <code>TerrainAtlas_Save()</code> прямо у <code>world_hmap.r32</code>. При наступному старті <code>SmoothBoundaries()</code> перезаписує col=1..15 від межі зони — правки в тій зоні будуть частково відкочені. Редагуй далі 125 m від краю зони або знову виклич <code>SmoothBoundaries()</code> перед <code>TerrainGen_Build()</code>.
+  </div>
+
+  <h3>Cross-chunk нормалі через atlas (без seams)</h3>
+  <p>Крайові нормалі чанків обчислюються з <code>s_atlas_h[]</code> сусідніх зон — без читання файлів.
+  Ліва/права/нижня/верхня грані отримують сусідній рядок/стовпець через <code>atlas_h(zx±1, zy, ...)</code> або <code>atlas_h(zx, zy±1, ...)</code>. Результат: нульові seam-артефакти між чанками.</p>
+
+  <h3>Генерація atlas</h3>
+  <pre><code># Повне перегенерування (4096 зон з fullmap.tif):
+python3 tools/md_extract_terrain.py extract   # → tmp/zone_X_Y.r32 (65×65 float)
+python3 tools/md_extract_terrain.py pack_atlas # → game/data/terrain/world_hmap.r32
+
+# Backup оригіналу (зберігати локально, не пушити):
+cp game/data/terrain/world_hmap.r32 game/data/terrain/world_hmap_backup.r32</code></pre>
+
+  <div class="callout tip">
+    <div class="callout-title">Процедурна регенерація у майбутньому</div>
+    Atlas зберігає <strong>тільки float-висоти</strong> (незалежно від джерела). Замінити вміст зон через <code>TerrainAtlas_SetHeight()</code> або перегенерувати через FBM/AI heightmap і упакувати через <code>pack_atlas()</code> — повна сумісність із рушієм.
+  </div>
+</section>
+
+<!-- ═══ ASSET PIPELINE ═══ -->
+<section class="doc-section" id="asset-pipeline">
+  <h2>🔧 Asset Pipeline — md_* інструменти (2026-05-20)</h2>
+
+  <div class="callout tip">
+    <div class="callout-title">Всі публічні інструменти мають префікс md_</div>
+    Приставка <code>kenshi_</code> замінена на <code>md_</code> в усіх публічних репозиторіях (<code>tools/</code>, <code>engine/</code>) для відповідності EULA. RE-дані залишаються виключно у приватному репо.
+  </div>
+
+  <h3>Python скрипти у tools/</h3>
+  <table>
+    <tr><th>Скрипт</th><th>Призначення</th></tr>
+    <tr><td><code>md_extract_terrain.py</code></td><td>Вибудовує всі 4096 зон з <code>fullmap.tif</code> → <code>zone_X_Y.r32</code>; <code>pack_atlas</code> → <code>world_hmap.r32</code></td></tr>
+    <tr><td><code>md_convert.py</code></td><td>Основний конвертер меш/анімацій → GLB (використовує ogre2glb.py)</td></tr>
+    <tr><td><code>md_mod_import.py</code></td><td>Імпорт JSON-мод-даних → <code>game/data/md_world.json</code> (ключ: <code>md_id</code>)</td></tr>
+    <tr><td><code>md_biome_import.py</code></td><td>Імпорт biome-мап у форматі JSON</td></tr>
+    <tr><td><code>md_heightmap_import.py</code></td><td>Імпорт raw heightmap у atlas-формат</td></tr>
+    <tr><td><code>md_stitch_terrain.py</code></td><td>Зшивання сусідніх зон (post-process крайових seams)</td></tr>
+    <tr><td><code>tools/md_terrain/md2terrain.py</code></td><td>Terrain-специфічний конвертер (stitch + atlas ops)</td></tr>
+    <tr><td><code>tools/md_mesh_conv/md_chars.py</code></td><td>Character mesh batch конвертер</td></tr>
+    <tr><td><code>tools/md_mesh_conv/ogre2glb.py</code></td><td>OGRE XML skeleton/mesh → cgltf GLB</td></tr>
+  </table>
+
+  <h3>Asset файли у game/data/</h3>
+  <table>
+    <tr><th>Файл</th><th>Вміст</th></tr>
+    <tr><td><code>game/data/terrain/world_hmap.r32</code></td><td>Terrain atlas 67 MB (4096 зон, 65×65 float кожна)</td></tr>
+    <tr><td><code>game/data/md_world.json</code></td><td>World registry: 34 Kenshi-зони, biome, danger, factions</td></tr>
+    <tr><td><code>game/data/props/md_human.glb</code></td><td>Kenshi human male mesh (15504 verts, 30 bones, 6 clips)</td></tr>
+    <tr><td><code>game/data/props/md_human_f.glb</code></td><td>Kenshi human female mesh</td></tr>
+    <tr><td><code>game/data/props/md_skeleton.glb</code></td><td>Kenshi skeleton mesh</td></tr>
+    <tr><td><code>game/data/anim/md_human.ozz</code></td><td>ozz skeleton + animation clips (idle, walk, run, breathing)</td></tr>
+    <tr><td><code>game/data/textures/md_terrain.png</code></td><td>Terrain atlas texture</td></tr>
+    <tr><td><code>game/data/textures/md_human_body.png</code></td><td>Human body diffuse texture</td></tr>
+    <tr><td><code>game/data/textures/md_human_female_body.png</code></td><td>Human female body diffuse texture</td></tr>
+  </table>
+
+  <h3>ozz_bake — GLB → ozz converter</h3>
+  <pre><code># Конвертувати GLB у ozz skeleton + animation clips:
+ninja -C build ozz_bake
+./build/tools/ozz_bake   # читає game/data/props/md_human.glb
+                          # пише game/data/anim/*.ozz</code></pre>
+
+  <h3>Kenshi Asset Pipeline (KEN-1–8)</h3>
+  <pre><code># 1. Конвертація OGRE → GLB:
+OgreXMLConverter data/character/meshes/human/human_male.mesh /tmp/md_mesh/human_male.mesh.xml
+python3 tools/md_convert.py   # → game/data/props/md_human.glb (30 bones, 6 clips)
+
+# 2. Bake animations:
+./build/tools/ozz_bake        # → game/data/anim/md_human.ozz
+
+# 3. Terrain atlas:
+python3 tools/md_extract_terrain.py pack_atlas  # → game/data/terrain/world_hmap.r32</code></pre>
+</section>
+
 <!-- ═══ EDITOR ═══ -->
 <section class="doc-section" id="editor">
   <h2>🗺️ Standalone Editor (monkey_dust_editor)</h2>
@@ -1734,14 +1906,18 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
     <tr><td>NpcMemoryComponent: max 8 spatial/events</td><td>Events не записуються</td><td>AddSpatial → LRU evict oldest; AddEvent → ring overwrite index 0 (IMP-3)</td></tr>
     <tr><td>WorldSimulation не fire'ится</td><td>Економіка не оновлюється</td><td>Tick(LOGIC_TICK_S) у logic_tick.cpp — накопичує accum_s_, спрацьовує при ≥1.0f (10 logic ticks = 1 секунда) (IMP-6)</td></tr>
     <tr><td>TileMapRenderer dirty_ не скинутий</td><td>Стара карта залишається у кеші</td><td>MarkDirty() або SetAtlases() — скидай dirty_=true після зміни карти (IMP-4)</td></tr>
+    <tr><td>TerrainQuery::Init() у циклі</td><td>Гравець провалюється під terrain (y=0) під час rebuild</td><td>Викликати Init() ОДИН раз після прапорця any_chunk_rebuilt, не всередині vertex loop</td></tr>
+    <tr><td>TerrainQuery float overload → 0 при відсутності чанку</td><td>Entity телепортується на y=0</td><td>Використовувати bool overload: <code>if (tq.GetHeight(x,z,h)) pos.y = h;</code> — зберігати попередній Y</td></tr>
+    <tr><td>Terrain atlas seams (вертикальні стіни)</td><td>Вертикальні cliff-seams між зонами</td><td>Переконатися що всі 4096 зон заповнені у world_hmap.r32 (не лише зони з .zone файлами)</td></tr>
+    <tr><td>Normal seams між чанками</td><td>Темні діагональні лінії на межах чанків</td><td>Крайові нормалі мають читати atlas_h() сусідніх зон, не зануляти (s_atlas_loaded == true)</td></tr>
   </table>
 </section>
 
 <!-- ═══ ROADMAP ═══ -->
 <section class="doc-section" id="roadmap">
-  <h2>🗓️ Roadmap — стан на 2026-05-16</h2>
+  <h2>🗓️ Roadmap — стан на 2026-05-22</h2>
 
-  <h3>Завершено (M0–M58 + FIX-1–10 + AI-Ext-1–20 + BT VM + IMP-1–9 + Batch 3–27)</h3>
+  <h3>Завершено (M0–M59 + FIX-1–10 + AI-Ext-1–20 + BT VM + IMP-1–9 + Batch 3–31 + KEN-1–8 + VBfA-R1–9 + VBfA-AI1–6)</h3>
   <table>
     <tr><th>Milestone</th><th>Зміст</th><th>Статус</th></tr>
     <tr><td>M0–M34</td><td>Core gameplay: ECS, AI, Nav, Combat, Build, Save, Dialog, Quest, Editor, Chunk, GPU</td><td><span class="badge done">✅</span></td></tr>
@@ -1783,6 +1959,23 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
     <tr><td><strong>M57</strong></td><td>DeferredLightingSystem: fullscreen triangle (no VBO); GBuffer RT0+RT1 → RGBA16F hdr_color; DeferredAmbientUBO std140 64B (sun_dir/sun_color/ambient_color/emissive_scale=1.4875); deferred_lighting.vert/frag SPIR-V; gate IsDeferred(); 17 tests</td><td><span class="badge done">✅ 2026-05-16 · 1220 tests</span></td></tr>
     <tr><td><strong>M58</strong></td><td>DialogCondType::QuestActive=4+QuestComplete=5; "quest_active:N"/"quest_complete:N" JSON; NpcInteractionComponent(20B, range 2.5m, cooldown 5s); dialogs.json expanded (nodes 4+5 quest-gated); 32 tests</td><td><span class="badge done">✅ 2026-05-16 · 1252 tests</span></td></tr>
     <tr><td><strong>Batch 3–27</strong></td><td>77 BT node types, SenseType×9, SquadSignalBus, NpcDevelopment, AlienConfig, VentLock, NpcRelationship, ActionAdjustMenace, lcf::IS_SUSPENDED/IS_PLAYER, ConditionTargetDist/RoutingDist, ShaderFeature, TileCullBounds, NamedBranchRegistry, NpcSoundBus</td><td><span class="badge done">✅ 2026-05-16</span></td></tr>
+    <tr><td><strong>Batch 28–31</strong></td><td>O3DE-1–4 (MaterialDesc, MdPrefabRegistry, SaveVersionChain, MdModuleRegistry); ZLD-1–2 (MdIniReader, MdFeature); FL-3–4 (MdStatusRegistry, MdEventScheduler)</td><td><span class="badge done">✅ 2026-05-16 · 1305 tests</span></td></tr>
+    <tr><td><strong>KEN-1</strong></td><td>OGRE v1.100 mesh/skeleton parsing → <code>tools/md_convert.py</code> → <code>md_human.glb</code> (30 bones)</td><td><span class="badge done">✅ 2026-05-18</span></td></tr>
+    <tr><td><strong>KEN-2</strong></td><td>SkinMesh — cgltf GLB loader; SkinVertex stride=52; GPU LBS via <code>animated.vert</code></td><td><span class="badge done">✅ 2026-05-18</span></td></tr>
+    <tr><td><strong>KEN-3</strong></td><td>Body texture DDS→PNG→GPU sampler (set=2 binding=3)</td><td><span class="badge done">✅ 2026-05-18</span></td></tr>
+    <tr><td><strong>KEN-4</strong></td><td>WorldMapUI aspect ratio fix; player crosshair pin (state=2); Kenshi-artistic world map</td><td><span class="badge done">✅ 2026-05-18</span></td></tr>
+    <tr><td><strong>KEN-5</strong></td><td><code>editor_world_panel.h</code> — World tab у editor (Zone/Faction/Town editing + map preview)</td><td><span class="badge done">✅ 2026-05-18</span></td></tr>
+    <tr><td><strong>KEN-6</strong></td><td>NavMesh spam fix — silent <code>npolys==0</code> early-return; per-chunk navmesh disabled</td><td><span class="badge done">✅ 2026-05-18</span></td></tr>
+    <tr><td><strong>KEN-7</strong></td><td>OzzAnimPlayer — ozz-animation blend trees; <code>ozz_bake</code> converter; 30-joint Biped rig</td><td><span class="badge done">✅ 2026-05-18</span></td></tr>
+    <tr><td><strong>KEN-8</strong></td><td>Variant C — JoltWorld (CharacterVirtual, max_bodies=512); CrowdSystem (ORCA, max_agents=64)</td><td><span class="badge done">✅ 2026-05-18</span></td></tr>
+    <tr><td><strong>VBfA-R1–R9</strong></td><td>SSAO, bloom, color grade, 6-sample ambient probe, snow shader, shadow fade, motion blur, emissive/dissolve material variants</td><td><span class="badge done">✅ 2026-05-19</span></td></tr>
+    <tr><td><strong>VBfA-AI1–AI6</strong></td><td>BT LOD tiers, awareness limits, AI budget scheduler, repulsion forces, squad controller, impact events</td><td><span class="badge done">✅ 2026-05-19</span></td></tr>
+    <tr><td><strong>M59 Foot IK</strong></td><td>Аналітичний 2-bone foot placement IK (ray-cast → TerrainQuery → ankle rotate)</td><td><span class="badge done">✅ 2026-05-19</span></td></tr>
+    <tr><td><strong>Terrain Atlas</strong></td><td><code>world_hmap.r32</code> (67 MB): 4096 зон з fullmap.tif; замінив 415 MB окремих файлів; cross-chunk normal stitching через atlas RAM; F7 runtime brush (raise/lower/smooth/save)</td><td><span class="badge done">✅ 2026-05-20 · 1557 tests</span></td></tr>
+    <tr><td><strong>md_* rename</strong></td><td>Всі <code>kenshi_*</code> → <code>md_*</code> у публічних репо (tools/, engine/): 6 Python scripts, 2 директорії, game/data assets, JSON keys</td><td><span class="badge done">✅ 2026-05-20</span></td></tr>
+    <tr><td><strong>RD-2</strong></td><td>Sky render order fix (depth_test=false перший у pass); skintone sat/bri (colorize GLSL); combat idle combatstance; Kenshi RE 6 файлів; CharacterDef morph_names</td><td><span class="badge done">✅ 2026-05-21</span></td></tr>
+    <tr><td><strong>RD-3</strong></td><td><code>monkey_dust_editor</code> мігровано на SDL_GPU/Vulkan: <code>imgui_impl_sdlgpu3</code>; TerrainRenderer у редакторі (7×7 chunks, async load 21s, RTT→ImGui::Image)</td><td><span class="badge done">✅ 2026-05-21</span></td></tr>
+    <tr><td><strong>RD-4</strong></td><td>Terrain zone seam bug fix: LOD IBO T-junction → disabled (always L0); <code>TerrainAtlas_SmoothBoundaries()</code> N=15 (22.9m cliff → ≤10° per step); <code>ndl_min=0.57</code> = flat-terrain NdotL (warm/cool ambient split eliminated); camera spring arm endpoint clamp (ray-march trembling fix). Повний debug-log: <code>CLAUDE_TERRAIN_SEAM.md</code></td><td><span class="badge done">✅ 2026-05-22</span></td></tr>
   </table>
 </section>
 

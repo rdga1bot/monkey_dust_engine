@@ -22,7 +22,7 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Be
 | GPU skinning | AnimationSoA; SSBO skeletal bones (MAX\_BONES=6); compute dispatch |
 | Particles | ParticleSoA CPU-sim; SMOKE/SPARK/BLOOD types |
 | Material system | O3DE-inspired: JSON → `GpuPipeline::Desc`; **parent inheritance** (`"parent": "base_pbr"`); `shader_features` bitmask; `MaterialTypeRegistry` (MAX=32) |
-| Terrain POM | Parallax Occlusion Mapping + self-shadow; per-vertex geomorphing L0→L1; 4-level mesh LOD (64/32/16/8×8 quads per chunk) |
+| Terrain POM | Parallax Occlusion Mapping + self-shadow; per-vertex geomorphing L0→L1; LOD IBO disabled (T-junction seam fix — always L0 mesh) |
 
 ### AI — Behavior Tree VM
 - Stackless BT VM (`BehaviorTree.h`) — 30+ node types, zero heap allocations
@@ -51,7 +51,9 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Be
 ### Terrain
 - `TerrainQuery` singleton — single source of truth for terrain heights/normals/slopes
 - `TerrainAtlas` — `world_hmap.r32` (67 MB, 4096 zones 65×65); O(1) RAM lookup; dirty-zone partial save
+- **`TerrainAtlas_SmoothBoundaries()`** — N=15 kernel blends zone boundary heights (eliminates Kenshi fullmap 22m+ height-jump seams → NdotL cliffs)
 - Cross-chunk normal stitching via atlas (no file I/O, no seam artefacts)
+- **`ndl_min=0.57`** in `terrain_pom.frag` — floor = flat-terrain NdotL; zone-boundary faces match flat ground (no warm/cool split)
 - `TerrainGen_Build` / `TerrainGen_Upload` — worker-thread mesh gen + GPU upload
 - **Parallax Occlusion Mapping** — `terrain_pom.vert/frag`; linear search + binary refinement; self-shadowing with view-angle attenuation; 15 m distance cutoff; detail tile 8×; `height_scale=0.04`
 - **Mesh LOD** — 4 levels (64/32/16/8 quads) via separate IBOs per chunk; distance thresholds 600/1200/2000 m; `TERRAIN_LOD_DIST[3]` / `TERRAIN_LOD_IDX[3]`
@@ -123,7 +125,7 @@ ninja -C build monkey_dust_engine
 
 ```bash
 ninja -C build md_tests
-./build/tests/md_tests          # 1557 tests across 200+ suites
+./build/tests/md_tests          # 1557 tests across 206+ suites
 ```
 
 Suites: FNV · AgentBlackboard · FlowGraph · DirectorSystem · PowerSlotManager · NpcConfig · HotReload · FlowVar · AI Patterns C1–C20 · BT VM · Batch 3–31 · M47–M59 (NavLod, ReplaySnapshot, AllianceMatrix, SenseSystem, BT Archetypes, CombatDispatch, DeferredLighting, DialogQuest, FootIK) · O3DE-1–4 (MaterialDesc, MdPrefabRegistry, SaveVersionChain, MdModuleRegistry) · ZLD-1–2 (MdIniReader, MdFeature) · FL-3–4 (MdStatusRegistry, MdEventScheduler) · KEN-1–8 (SkinMesh, OzzAnimPlayer, JoltWorld, CrowdSystem) · VBfA-R1–9 · VBfA-AI1–6

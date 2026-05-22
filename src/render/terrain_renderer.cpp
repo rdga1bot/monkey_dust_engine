@@ -195,19 +195,11 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
     SDL_GPUBufferBinding vb { chunk.vbo.SDLBuffer(), 0u };
     SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
 
-    // LOD selection: pick coarsest IBO whose distance threshold is exceeded.
-    float dx = cam_x - chunk.center_x;
-    float dz = cam_z - chunk.center_z;
-    float dist = sqrtf(dx * dx + dz * dz);
+    // LOD IBO disabled: adjacent chunks at different LOD levels produce T-junctions
+    // (mismatched edge vertex counts → steep triangular faces with NdotL≈0 → dark seams).
+    // 49 chunks × 8192 tris ≈ 401K tris — within Intel HD 520 60fps budget.
     const SDL_GPUBuffer* ibo_buf  = chunk.ibo.SDLBuffer();
     uint32_t             idx_count = (uint32_t)TERRAIN_IDX;
-    for (int li = TERRAIN_LOD_LEVELS - 1; li >= 0; --li) {
-        if (dist > TERRAIN_LOD_DIST[li] && chunk.ibo_lod[li].SDLBuffer()) {
-            ibo_buf   = chunk.ibo_lod[li].SDLBuffer();
-            idx_count = (uint32_t)TERRAIN_LOD_IDX[li];
-            break;
-        }
-    }
     SDL_GPUBufferBinding ib { const_cast<SDL_GPUBuffer*>(ibo_buf), 0u };
     SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
 

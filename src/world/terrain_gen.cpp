@@ -91,6 +91,61 @@ bool TerrainAtlas_Save(const char* path) {
     return true;
 }
 
+// SaveEdits/LoadEdits/HasEdits — thin wrappers over the r32 atlas API
+// (editor brush tool calls these; for r32 backend Save writes directly to atlas file)
+bool TerrainAtlas_SaveEdits(const char* path) { return TerrainAtlas_Save(path); }
+bool TerrainAtlas_LoadEdits(const char*)       { return s_atlas_loaded; } // already loaded by TerrainAtlas_Load
+bool TerrainAtlas_HasEdits() {
+    for (int i = 0; i < ATLAS_ZONES * ATLAS_ZONES; ++i)
+        if (s_atlas_dirty[i]) return true;
+    return false;
+}
+
+void TerrainAtlas_SmoothBoundaries() {
+    if (!s_atlas_loaded) return;
+    // Kenshi fullmap zone pixel boundaries can have >20m height jumps in one
+    // 7.8m terrain step (71° cliff faces → NdotL=0 → sharp dark seams).
+    // Blend 15 vertices on each side toward the shared boundary vertex.
+    // Kernel: h[k] = lerp(h_bnd, h[k], k/(N+1)) for k=1..N.
+    // k=1 → 94% boundary; k=15 → 6% boundary.
+    // N=15: worst 71° cliff (22.9m/7.8m step) → ≤10° per step, NdotL≥0.65 → indistinguishable from flat.
+    constexpr int N = 15;
+
+    // X-direction seams: right edge of zone (zx) = left edge of zone (zx+1)
+    for (int zy = 0; zy < ATLAS_ZONES; ++zy) {
+        for (int zx = 0; zx < ATLAS_ZONES - 1; ++zx) {
+            for (int row = 0; row < ATLAS_VERTS; ++row) {
+                float h_bnd = s_atlas_h[s_atlas_hi(zx, zy, ATLAS_VERTS-1, row)];
+                for (int k = 1; k <= N; ++k) {
+                    float t = (float)k / (N + 1);
+                    // Smooth interior of right zone toward boundary
+                    float& hr = s_atlas_h[s_atlas_hi(zx+1, zy, k, row)];
+                    hr = (1.f-t)*h_bnd + t*hr;
+                    // Smooth interior of left zone toward boundary
+                    float& hl = s_atlas_h[s_atlas_hi(zx, zy, ATLAS_VERTS-1-k, row)];
+                    hl = (1.f-t)*h_bnd + t*hl;
+                }
+            }
+        }
+    }
+
+    // Z-direction seams: top edge of zone (zy) = bottom edge of zone (zy+1)
+    for (int zy = 0; zy < ATLAS_ZONES - 1; ++zy) {
+        for (int zx = 0; zx < ATLAS_ZONES; ++zx) {
+            for (int col = 0; col < ATLAS_VERTS; ++col) {
+                float h_bnd = s_atlas_h[s_atlas_hi(zx, zy, col, ATLAS_VERTS-1)];
+                for (int k = 1; k <= N; ++k) {
+                    float t = (float)k / (N + 1);
+                    float& ht = s_atlas_h[s_atlas_hi(zx, zy+1, col, k)];
+                    ht = (1.f-t)*h_bnd + t*ht;
+                    float& hb = s_atlas_h[s_atlas_hi(zx, zy, col, ATLAS_VERTS-1-k)];
+                    hb = (1.f-t)*h_bnd + t*hb;
+                }
+            }
+        }
+    }
+}
+
 // ── Simplex noise (Stefan Gustavson / Ashima Arts — public domain) ────────────
 
 static const int perm[512] = {

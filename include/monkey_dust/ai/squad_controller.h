@@ -279,6 +279,12 @@ private:
                                 sc.activity != SquadActivity::StandGround);
         const uint8_t act_u8 = static_cast<uint8_t>(sc.activity);
 
+        // Formation radius: spread members around target to avoid heap convergence.
+        // Combat: tight (1.5m), patrol: loose (3m).
+        const float form_r = is_fight ? 1.5f : 3.0f;
+        const float angle_step = (sc.member_count > 1)
+            ? 6.2832f / (float)sc.member_count : 0.f;
+
         for (int i = 0; i < sc.member_count; ++i) {
             entt::entity m = sc.members[i];
             if (!reg.valid(m)) continue;
@@ -295,12 +301,17 @@ private:
 
             auto* nav = reg.try_get<NavAgent>(m);
             if (!nav) continue;
-            nav->target_x  = tx;
-            nav->target_z  = tz;
+
+            // Per-member angular offset so they don't converge to a single point.
+            float ang   = angle_step * i;
+            float mtx   = tx + cosf(ang) * form_r;
+            float mtz   = tz + sinf(ang) * form_r;
+            nav->target_x  = mtx;
+            nav->target_z  = mtz;
             nav->is_moving = is_moving;
 
             if (nav->crowd_idx >= 0 && CrowdSystem::Get().IsReady())
-                CrowdSystem::Get().SetTarget(nav->crowd_idx, tx, tz);
+                CrowdSystem::Get().SetTarget(nav->crowd_idx, mtx, mtz);
         }
     }
 };

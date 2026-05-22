@@ -8,7 +8,7 @@
 #include <cstring>
 #include <cmath>
 
-static constexpr int MAX_SKIN_BONES = 64;
+static constexpr int MAX_SKIN_BONES = 30;  // Kenshi Biped has 30 joints (was 64)
 static constexpr int MAX_SKIN_CLIPS = 16;
 static constexpr int MAX_SKIN_KF    = 512; // keyframes per track
 

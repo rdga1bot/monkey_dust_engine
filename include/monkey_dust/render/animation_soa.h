@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 
-static constexpr int MAX_BONES        = 64;  // full humanoid rig: spine+head+2×arm(3)+2×leg(3)+hands+feet+fingers; SSBO 500×64×64B = 2 MB
+static constexpr int MAX_BONES        = 30;  // Kenshi Biped: 30 joints; SSBO 500×30×64B = 0.96 MB (was 2 MB at 64)
 static constexpr int MAX_ANIMATED_NPC = 500;
 static constexpr int MAX_ANIM_CLIPS   = 8;
 

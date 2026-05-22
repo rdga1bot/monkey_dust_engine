@@ -91,8 +91,9 @@ target_include_directories(monkey_dust_engine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/vendor/moc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor/moc)
 target_include_directories(monkey_dust_engine PUBLIC
-    # miniaudio.h lives in raylib/src/external/ — header-only; Raylib itself is NOT linked.
-    ${CMAKE_SOURCE_DIR}/third_party/raylib/src)
+    # miniaudio.h copied from raylib/src/external/ → engine/src/audio/external/miniaudio.h
+    # Raylib submodule no longer needed.
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/audio)
 
 target_link_libraries(monkey_dust_engine PRIVATE
     Recast Detour DetourCrowd

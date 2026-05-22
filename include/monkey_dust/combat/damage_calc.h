@@ -80,3 +80,19 @@ inline float CalcDamage(const WeaponStats& wpn, const ArmorStats& armor,
     return effective < 1.0f ? 1.0f : effective;
 }
 
+// VBfA-R: stagger and combo timing config.
+// BASH style: short stagger windows (jab/bash weapon pattern).
+// BUTTON style: longer commit windows (heavy swing pattern).
+struct CombatConfig {
+    float stagger_start_s;  // seconds after attack starts: stagger window opens
+    float stagger_peak_s;   // seconds: max stagger force moment (impact frame)
+    float stagger_end_s;    // seconds: stagger window closes
+
+    static constexpr CombatConfig Bash() {
+        return { 0.333f, 0.500f, 0.667f };
+    }
+    static constexpr CombatConfig Button() {
+        return { 1.000f, 1.250f, 1.500f };
+    }
+};
+

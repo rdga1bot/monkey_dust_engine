@@ -8,7 +8,7 @@
 //   BLUNT — тупий удар. Добре проти броні, але менше кровотечі.
 //           Формула: ефективне = raw * (1 - armor_blunt_resist)
 //   CUT   — ріжучий. Середньо проти броні, кровотеча.
-//           Формула: ефективне = raw * (1 - armor_cut_resist * 0.7)
+//           Формула: ефективне = raw * (1 - armor_cut_resist * 0.5)
 //   PIERCE— колючий. Частково ігнорує броню (20% пробиття).
 //           Формула: ефективне = raw * (1 - armor_pierce_resist * 0.8)
 //
@@ -69,7 +69,7 @@ inline float CalcDamage(const WeaponStats& wpn, const ArmorStats& armor,
         effective = raw * (1.0f - armor.blunt_resist * armor.armour_grade * pen_factor);
         break;
     case DamageType::Cut:
-        effective = raw * (1.0f - armor.cut_resist * 0.7f * armor.armour_grade * pen_factor);
+        effective = raw * (1.0f - armor.cut_resist * 0.5f * armor.armour_grade * pen_factor);
         break;
     case DamageType::Pierce:
         effective = raw * (1.0f - armor.pierce_resist * 0.8f * armor.armour_grade * pen_factor);

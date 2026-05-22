@@ -66,8 +66,8 @@ public:
     const char* ClipName(int i) const { return (i>=0&&i<clip_count_)?clips_[i].name:""; }
     float ClipDuration(int i)  const { return (i>=0&&i<clip_count_)?clips_[i].duration:0.f; }
 
-    // Apply inverse bind matrices to ozz LocalToModel output: bones[i] = bones[i] * inv_bind_[i].
-    // Call after OzzAnimPlayer::Eval/EvalBlend to get correct GPU skinning matrices.
+    // Apply inverse bind matrices: bones[i] = bones[i] * inv_bind_[i].
+    // Call after GetFinalBones*() to get correct GPU skinning matrices.
     void ApplyInvBind(float* bones) const;
 
     // Upper/lower body blend: evaluate base_clip for all bones, then override lower-body

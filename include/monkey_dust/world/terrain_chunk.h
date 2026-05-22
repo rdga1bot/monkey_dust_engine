@@ -4,6 +4,9 @@
 #include <monkey_dust/nav/navmesh.h>
 #include <monkey_dust/world/chunk_def.h>
 
+// LOD IBO disabled in RD-4; always L0 64×64. Set to 1 to re-enable geomorphing.
+#define TERRAIN_GEOMORPH_ENABLED 0
+
 // Terrain grid: 64×64 quads = 65×65 vertices per chunk (CHUNK_SIZE=500m → 7.8m/quad)
 static constexpr int   TERRAIN_GRID  = 64;
 static constexpr int   TERRAIN_VERTS = (TERRAIN_GRID + 1) * (TERRAIN_GRID + 1); // 4225
@@ -32,7 +35,7 @@ struct TerrainVertex {
     float nx, ny, nz;         // normal                offset 12
     float u, v;               // UV (world-space)      offset 24
     float splat[4];           // [grass,rock,dirt,snow] offset 32
-    float morph_y;            // geomorph target Y for L0→L1 transition; offset 48
+    float morph_y;            // geomorph target Y for L0→L1; guarded by TERRAIN_GEOMORPH_ENABLED
 };
 static_assert(sizeof(TerrainVertex) == 52, "TerrainVertex size mismatch");
 

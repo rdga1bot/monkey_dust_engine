@@ -79,3 +79,4 @@ inline float CalcDamage(const WeaponStats& wpn, const ArmorStats& armor,
     effective *= hit_zone_mult;
     return effective < 1.0f ? 1.0f : effective;
 }
+

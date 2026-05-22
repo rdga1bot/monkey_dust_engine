@@ -1,0 +1,61 @@
+#pragma once
+// VBfA-R: AoE damage helpers.
+// Include this AFTER damage_calc.h, combat.h, health.h are resolved.
+#include <monkey_dust/combat/damage_calc.h>
+#include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/world/world_transform.h>
+#include <monkey_dust/components/health.h>
+#include <monkey_dust/components/combat.h>
+#include <cmath>
+
+// VBfA-R: AoE radius constants (metres)
+namespace AoeRadius {
+    constexpr float SMALL  = 1.5f;
+    constexpr float MEDIUM = 3.0f;
+    constexpr float LARGE  = 6.0f;
+}
+
+// AoeHit result: collects up to MAX_HITS entities within radius.
+struct AoeResult {
+    static constexpr int MAX_HITS = 32;
+    entt::entity hits[MAX_HITS];
+    int          count = 0;
+};
+
+// Collect entities with WorldTransform within radius of (ox, oz).
+inline AoeResult AoeHit(float ox, float oz, float radius) {
+    AoeResult res{};
+    auto& reg = Registry::Get();
+    float r2  = radius * radius;
+    reg.view<WorldTransform>().each([&](entt::entity e, const WorldTransform& tr) {
+        if (res.count >= AoeResult::MAX_HITS) return;
+        float dx = tr.x - ox, dz = tr.z - oz;
+        if (dx*dx + dz*dz <= r2)
+            res.hits[res.count++] = e;
+    });
+    return res;
+}
+
+// Apply flat damage with linear falloff (1.0 centre → 0.5 edge) to all hits.
+// Damage lands on Torso (limb index 1); no zone roll for AoE.
+inline void AoeApply(const AoeResult& aoe, float ox, float oz,
+                     float radius, float dmg, DamageType type)
+{
+    auto& reg = Registry::Get();
+    WeaponStats wpn{ dmg, type, 0.f, 0u, 0.f };
+    for (int i = 0; i < aoe.count; ++i) {
+        entt::entity e = aoe.hits[i];
+        if (!reg.valid(e)) continue;
+        Health* hp  = reg.try_get<Health>(e);
+        Combat* cmb = reg.try_get<Combat>(e);
+        if (!hp || !cmb) continue;
+        const auto& tr = reg.get<WorldTransform>(e);
+        float dx = tr.x - ox, dz = tr.z - oz;
+        float dist    = sqrtf(dx*dx + dz*dz);
+        float falloff = (radius > 0.f) ? (1.0f - 0.5f * dist / radius) : 1.0f;
+        float eff = CalcDamage(wpn, cmb->armor) * falloff;
+        hp->hp[1] -= eff;
+        if (hp->hp[1] < 0.f) hp->hp[1] = 0.f;
+        hp->UpdateIncap();
+    }
+}

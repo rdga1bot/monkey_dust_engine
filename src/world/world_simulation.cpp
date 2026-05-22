@@ -1,4 +1,5 @@
 #include <monkey_dust/world/world_simulation.h>
+#include <monkey_dust/world/world_events.h>
 #include <monkey_dust/platform/md_log.h>
 
 // 1 Hz world-state tick. Call with LOGIC_TICK_S (0.1f) each logic tick.
@@ -85,6 +86,34 @@ void WorldSimulation::Tick(float delta_s) noexcept {
         if ((tick_count_ % 10u) == 0u) {
             if (f.prosperity > 128u && f.population < 255) ++f.population;
             if (f.aggression > 200u && f.population > 0)  --f.population;
+        }
+    }
+
+    // F4: World event generation — every 30 sim ticks (~30s real-time).
+    // Raids when aggression high, caravans when prosperity high.
+    if ((tick_count_ % 30u) == 0u && faction_count_ >= 2) {
+        auto& bus = WorldEventBus::Get();
+        for (int i = 0; i < faction_count_; ++i) {
+            const FactionState& src = factions_[i];
+            // Raid: high aggression + has gold to fund it
+            if (src.aggression > 160u && src.gold > 20u && faction_count_ > 1) {
+                // Pick a random different faction as target
+                int ti = (i + 1) % faction_count_;
+                WorldEvent ev{};
+                ev.type         = WorldEventType::Raid;
+                ev.from_faction = src.faction_id;
+                ev.to_faction   = factions_[ti].faction_id;
+                ev.strength     = (uint8_t)((src.aggression - 100u) / 10u + 1u);
+                bus.Push(ev);
+            }
+            // Caravan: high prosperity + active trade
+            if (src.prosperity > 180u && src.gold > 50u) {
+                WorldEvent ev{};
+                ev.type         = WorldEventType::Caravan;
+                ev.from_faction = src.faction_id;
+                ev.strength     = (uint8_t)(src.prosperity / 64u);
+                bus.Push(ev);
+            }
         }
     }
 }

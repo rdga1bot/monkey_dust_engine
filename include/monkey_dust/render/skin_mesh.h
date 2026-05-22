@@ -32,11 +32,41 @@ struct SkinTrack {
     int          count = 0;
 };
 
+// VBfA-R: animation clip metadata flags
+namespace AnimFlags {
+    constexpr uint32_t LOOPING       = 1u <<  0;  // clip loops continuously
+    constexpr uint32_t ROOT_MOTION   = 1u <<  1;  // apply root bone translation
+    constexpr uint32_t ADDITIVE      = 1u <<  2;  // additive layer blend
+    constexpr uint32_t MIRROR        = 1u <<  3;  // mirror left/right bones
+    constexpr uint32_t NO_IK         = 1u <<  4;  // skip foot IK for this clip
+    constexpr uint32_t UPPER_ONLY    = 1u <<  5;  // drive upper body only
+    constexpr uint32_t LOWER_ONLY    = 1u <<  6;  // drive lower body only
+    constexpr uint32_t IDLE_VAR      = 1u <<  7;  // idle variation (random pick)
+    constexpr uint32_t COMBAT        = 1u <<  8;  // combat-mode clip
+    constexpr uint32_t DEATH         = 1u <<  9;  // death/ragdoll lead-in
+    constexpr uint32_t STAGGER       = 1u << 10;  // stagger / hit-react
+    constexpr uint32_t WEAPON_DRAW   = 1u << 11;  // weapon draw/sheathe
+    constexpr uint32_t INTERACT      = 1u << 12;  // interaction (loot/use)
+    constexpr uint32_t SNEAK         = 1u << 13;  // sneak/crouch locomotion
+    constexpr uint32_t SPRINT        = 1u << 14;  // sprint
+    constexpr uint32_t SWIM          = 1u << 15;  // swimming
+    constexpr uint32_t CLIMB         = 1u << 16;  // climbing
+    constexpr uint32_t TURN_L        = 1u << 17;  // turn in place left
+    constexpr uint32_t TURN_R        = 1u << 18;  // turn in place right
+    constexpr uint32_t FOOTSTEP_L    = 1u << 19;  // left foot contact marker
+    constexpr uint32_t FOOTSTEP_R    = 1u << 20;  // right foot contact marker
+    constexpr uint32_t ATTACK_SWING  = 1u << 21;  // weapon swing arc
+    constexpr uint32_t ATTACK_THRUST = 1u << 22;  // weapon thrust
+    constexpr uint32_t BLOCK         = 1u << 23;  // blocking pose
+}
+
 struct SkinClip {
-    char      name[48]  = {};
-    float     duration  = 0.f;
+    char      name[48]   = {};
+    float     duration   = 0.f;
+    uint32_t  flags      = 0u;    // VBfA-R: bitmask of AnimFlags constants
+    float     impact_time= 0.f;  // VBfA-R: time (s) at which hit/impact fires
     SkinTrack tracks[MAX_SKIN_BONES];
-    int       bone_count= 0;
+    int       bone_count = 0;
 };
 
 class SkinMesh {

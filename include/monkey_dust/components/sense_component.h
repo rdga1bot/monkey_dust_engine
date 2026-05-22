@@ -30,6 +30,24 @@ enum class SenseType : uint8_t {
 };
 static constexpr uint8_t MAX_SENSES = static_cast<uint8_t>(SenseType::COUNT);
 
+// ── SenseModifiers ────────────────────────────────────────────────────────────
+// AI-2: per-entity multipliers that scale activation thresholds (Kenshi/AI RE, 40B).
+// Attach as a separate component for NPCs that differ from base SenseComponent defaults.
+// All fields are multiplicative (1.0 = no change).
+struct SenseModifiers {
+    float visual_range_mult    = 1.0f;  // scales cone length_m
+    float audio_range_mult     = 1.0f;  // scales audio detection radius
+    float activation_fill_mult = 1.0f;  // scales activation fill rate (all senses)
+    float activation_drain_mult= 1.0f;  // scales activation drain rate
+    float darkness_mult        = 1.0f;  // penalty when low light (exposure)
+    float fog_mult             = 1.0f;  // weather visibility penalty
+    float crouch_mult          = 1.0f;  // reduction when target is crouching
+    float sprint_mult          = 1.0f;  // boost when target is sprinting
+    float noise_mult           = 1.0f;  // scales sound stimulus amplitude
+    float smell_mult           = 1.0f;  // scales scent radius
+};
+static_assert(sizeof(SenseModifiers) == 40, "SenseModifiers must be 40 bytes");
+
 // ── SenseComponent ───────────────────────────────────────────────────────────
 // M19 component. References a ViewConeSet (loaded into SenseRegistry by index).
 // activation[i] ∈ [0..1] per SenseType; threshold_lo/hi shared across all senses.

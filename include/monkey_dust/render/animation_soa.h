@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 
-static constexpr int MAX_BONES        = 30;  // Kenshi Biped: 30 joints; SSBO 500×30×64B = 0.96 MB (was 2 MB at 64)
+static constexpr int MAX_BONES        = 64;  // SSBO stride fixed at 64 for SDL_GPU transfer alignment; Kenshi uses 30 of 64
 static constexpr int MAX_ANIMATED_NPC = 500;
 static constexpr int MAX_ANIM_CLIPS   = 8;
 

@@ -290,11 +290,13 @@ int SkinMesh::ClipIndexByName(const char* name) const {
 void SkinMesh::GetFinalBones(int clip_idx, float time_s, float* out) const {
     // out: float[MAX_SKIN_BONES * 16], column-major mat4 per bone
 
-    // Clamp / loop time
+    // Clamp / loop time. Clips with dur < 0.05s are single-frame reference
+    // poses (2 near-identical keyframes from OGRE export) — always sample t=0
+    // to avoid 30 Hz oscillation between the two keyframes.
     float t = time_s;
     if (clip_idx >= 0 && clip_idx < clip_count_) {
         float dur = clips_[clip_idx].duration;
-        if (dur > 1e-6f) t = fmodf(t, dur);
+        if (dur > 0.05f) t = fmodf(t, dur); else t = 0.f;
     }
 
     float world[MAX_SKIN_BONES][16];
@@ -340,7 +342,7 @@ void SkinMesh::GetFinalBonesFull(int clip_idx, float time_s,
     float t = time_s;
     if (clip_idx >= 0 && clip_idx < clip_count_) {
         float dur = clips_[clip_idx].duration;
-        if (dur > 1e-6f) t = fmodf(t, dur);
+        if (dur > 0.05f) t = fmodf(t, dur); else t = 0.f;
     }
 
     float world[MAX_SKIN_BONES][16];
@@ -402,14 +404,15 @@ void SkinMesh::GetFinalBonesBlend(int base_clip, float base_t,
         GetFinalBones(base_clip, base_t, out);
         return;
     }
-    // Loop times
+    // Loop times. Same reference-pose guard as GetFinalBones*.
     float bt = base_t;
     if (base_clip >= 0 && base_clip < clip_count_) {
         float d = clips_[base_clip].duration;
-        if (d > 1e-6f) bt = fmodf(bt, d);
+        if (d > 0.05f) bt = fmodf(bt, d); else bt = 0.f;
     }
     float ot = override_t;
-    { float d = clips_[override_clip].duration; if (d > 1e-6f) ot = fmodf(ot, d); }
+    { float d = clips_[override_clip].duration;
+      if (d > 0.05f) ot = fmodf(ot, d); else ot = 0.f; }
 
     float world[MAX_SKIN_BONES][16];
     float local[16];

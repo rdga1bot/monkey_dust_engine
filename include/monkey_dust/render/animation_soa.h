@@ -15,9 +15,9 @@ static constexpr int MAX_ANIM_CLIPS   = 8;
 // Per-NPC animation state — 16 bytes, matches std430 AnimState in skinning.comp
 struct AnimNpcState {
     uint32_t slot;
-    uint32_t clip_id;  // 0=IDLE, 1=WALK, 2=ATTACK
+    uint32_t clip_id;   // 0=IDLE, 1=WALK, 2=ATTACK
     float    time_s;
-    float    _pad;
+    uint32_t lod_tier;  // 0-2: skinning.comp runs; 3-4: skip (stale pose)
 };
 static_assert(sizeof(AnimNpcState) == 16, "AnimNpcState size mismatch");
 

@@ -14,10 +14,11 @@
 #include <cstdint>
 
 struct BleedComponent {
-    float bleed_rate  = 2.0f;  // HP/s while bleeding (Kenshi default: ~2 HP/s)
-    float clot_rate   = 0.5f;  // HP/s clot recovery when not actively bleeding
-    float accum       = 0.0f;  // fractional accumulator; apply floor each tick
-    bool  active      = false; // true = wound open, taking damage; false = clotting
-    uint8_t _pad[3]   = {};
+    float    bleed_rate  = 2.0f;  // HP/s while bleeding (Kenshi default: ~2 HP/s)
+    float    clot_rate   = 0.5f;  // HP/s clot recovery when not actively bleeding
+    float    accum       = 0.0f;  // fractional accumulator; apply floor each tick
+    bool     active      = false; // true = wound open, taking damage; false = clotting
+    uint8_t  bleed_zone  = 1;     // LimbHealth index of the wounded limb (default: Torso=1)
+    uint8_t  _pad[2]     = {};
 };
 static_assert(sizeof(BleedComponent) == 16, "BleedComponent must be 16 bytes");

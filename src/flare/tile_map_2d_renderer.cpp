@@ -712,5 +712,18 @@ void TileMap2DRenderer::ClearOverlayBlit(int slot) {
     overlay_blits_[slot] = {};
 }
 
+#ifdef MD_SDL_GPU
+void TileMap2DRenderer::RenderToTarget(const FlareMap& map, float now_s,
+                                        float origin_x, float origin_y, float scale,
+                                        int vp_w, int vp_h, uint8_t layer_mask,
+                                        SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target_tex)
+{
+    if (!init_ || !sdl_init_ || !cmd || !target_tex) return;
+    if (atlas_count_ == 0) return;
+    if (map.layer_count == 0 || map.width <= 0 || map.height <= 0) return;
+    RenderSDLGPU(map, now_s, origin_x, origin_y, scale, vp_w, vp_h, layer_mask, cmd, target_tex);
+}
+#endif
+
 } // namespace md::flare
 

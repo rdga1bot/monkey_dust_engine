@@ -203,7 +203,7 @@ bool GpuPipeline::Create(const Desc& desc) {
 
     SDL_GPUShader* vert_sh = LoadSpvShader(dev, spv_vert,
         SDL_GPU_SHADERSTAGE_VERTEX,
-        desc.vert_uniform_bufs, desc.vert_storage_bufs, 0);
+        desc.vert_uniform_bufs, desc.vert_storage_bufs, desc.vert_samplers);
     SDL_GPUShader* frag_sh = LoadSpvShader(dev, spv_frag,
         SDL_GPU_SHADERSTAGE_FRAGMENT,
         desc.frag_uniform_bufs, desc.frag_storage_bufs, desc.frag_samplers);
@@ -224,8 +224,10 @@ bool GpuPipeline::Create(const Desc& desc) {
     if (has_inst) {
         vbds[1].slot               = 1;
         vbds[1].pitch              = desc.layout.inst_stride;
-        vbds[1].input_rate         = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
-        vbds[1].instance_step_rate = 0; // SDL_GPU requires 0; INSTANCE input_rate controls stepping
+        vbds[1].input_rate         = desc.layout.inst_per_vertex
+                                     ? SDL_GPU_VERTEXINPUTRATE_VERTEX
+                                     : SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+        vbds[1].instance_step_rate = 0;
     }
 
     SDL_GPUVertexAttribute vattribs[16] = {};

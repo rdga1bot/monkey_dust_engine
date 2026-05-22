@@ -80,15 +80,21 @@ public:
                             const bool* lower_mask, float* out,
                             float* out_world_mats = nullptr) const;
 
+    // CPU vertex data — valid until next LoadGLB() call (points to internal static buffer).
+    const SkinVertex* CpuVerts()  const { return cpu_verts_; }
+    uint32_t          VertCount() const { return vert_count_; }
+
     GpuStaticBuffer vbo;
     GpuStaticBuffer ibo;
     uint32_t        index_count  = 0;
+    uint32_t        vert_count_  = 0;
     bool            loaded       = false;
     bool            indices_u16  = true;
     int             bone_count   = 0;
     char            bone_names[MAX_SKIN_BONES][32] = {};
 
 private:
+    const SkinVertex* cpu_verts_ = nullptr;
     // Inverse bind matrices per bone (mat4, column-major)
     float inv_bind_[MAX_SKIN_BONES][16] = {};
     // Parent index per bone (-1 = root)

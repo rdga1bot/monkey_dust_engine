@@ -56,16 +56,17 @@ struct GpuVertexAttrib {
 
 // ── Vertex buffer layout ──────────────────────────────────────────────────────
 // slot 0: per-vertex attributes (stride > 0 required).
-// slot 1: per-instance attributes (inst_stride > 0 activates second binding,
-//         SDL_GPU_VERTEXINPUTRATE_INSTANCE).  Zero by default — no instancing.
+// slot 1: second buffer — per-instance (inst_per_vertex=false, default) OR
+//         per-vertex (inst_per_vertex=true) when inst_stride > 0 && inst_count > 0.
 struct GpuVertexLayout {
     GpuVertexAttrib attribs[8] = {};
     uint32_t        count      = 0;
     uint32_t        stride     = 0;   // bytes per vertex (slot 0)
-    // Optional per-instance binding (slot 1).
+    // Optional second binding (slot 1).
     GpuVertexAttrib inst_attribs[8] = {};
     uint32_t        inst_count      = 0;
-    uint32_t        inst_stride     = 0;  // bytes per instance; 0 = disabled
+    uint32_t        inst_stride     = 0;    // bytes per element; 0 = disabled
+    bool            inst_per_vertex = false; // true = VERTEX rate; false = INSTANCE rate
 };
 
 // ── Rasterizer / output-merger state (immutable in pipeline) ─────────────────
@@ -120,6 +121,7 @@ public:
         // Shader resource counts required by SDL_GPUShaderCreateInfo.
         // Must match the SPIR-V descriptor declarations exactly.
         uint32_t vert_uniform_bufs = 0;
+        uint32_t vert_samplers     = 0;
         uint32_t vert_storage_bufs = 0;
         uint32_t frag_uniform_bufs = 0;
         uint32_t frag_storage_bufs = 0;

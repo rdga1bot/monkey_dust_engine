@@ -38,7 +38,8 @@ void TransformSoA::Init() {
         static constexpr uint32_t FACI_SIZE = MAX_SLOTS * sizeof(uint32_t);
 
         SDL_GPUBufferCreateInfo bi = {};
-        bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ;
+        bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
+                   SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
 
         bi.size  = XZYR_SIZE;
         sdl_xzyr_buf_ = SDL_CreateGPUBuffer(dev, &bi);

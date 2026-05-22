@@ -141,6 +141,8 @@ bool SkinMesh::LoadGLB(const char* path) {
         s_verts[i].w[2]=w[2]; s_verts[i].w[3]=w[3];
     }
     vbo.Init(0x8892u, s_verts, (uint32_t)(nv * sizeof(SkinVertex)));
+    cpu_verts_  = s_verts;
+    vert_count_ = (uint32_t)nv;
 
     cgltf_size ni = prim->indices->count;
     indices_u16 = (nv <= 65535);

@@ -46,6 +46,15 @@ public:
                 float origin_x, float origin_y, float scale,
                 int vp_w, int vp_h, uint8_t layer_mask = 0xFF);
 
+#ifdef MD_SDL_GPU
+    // Render to a caller-provided SDL_GPU texture (for editor RTT).
+    // The caller owns the command buffer lifecycle.
+    void RenderToTarget(const FlareMap& map, float now_s,
+                        float origin_x, float origin_y, float scale,
+                        int vp_w, int vp_h, uint8_t layer_mask,
+                        SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target_tex);
+#endif
+
     // Screen-space overlay: blit an SDL_GPU texture (void* cast) at pixel rect.
     // slot 0..MAX_OVERLAY_BLITS-1.  sdl_tex lifetime managed by caller.
     void SetOverlayBlit(int slot, void* sdl_tex, int x, int y, int w, int h);

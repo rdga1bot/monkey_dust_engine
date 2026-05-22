@@ -16,6 +16,9 @@
 #  include "glad.h"
 #  include <monkey_dust/render/md_camera.h>
 #  include <cstdio>
+#ifdef MD_SDL_GPU
+#  include <monkey_dust/render/gpu_device.h>
+#endif
 #if defined(DEBUG) || defined(MONKEY_DUST_STANDALONE_EDITOR)
 #  include "backends/imgui_impl_sdl3.h"
 #  include "backends/imgui_impl_opengl3.h"
@@ -93,9 +96,18 @@
        SDL_Quit();
    }
 
-   inline void window_set_vsync(int /*fps*/) {
-#ifndef MD_SDL_GPU
-       SDL_GL_SetSwapInterval(1);
+   inline void window_set_vsync(int fps) {
+#ifdef MD_SDL_GPU
+       auto& dev = md::GpuDevice::Get();
+       if (dev.IsReady()) {
+           SDL_GPUPresentMode mode = (fps > 0)
+               ? SDL_GPU_PRESENTMODE_VSYNC
+               : SDL_GPU_PRESENTMODE_IMMEDIATE;
+           SDL_SetGPUSwapchainParameters(dev.SDLDevice(), dev.Window(),
+               SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
+       }
+#else
+       SDL_GL_SetSwapInterval(fps > 0 ? 1 : 0);
 #endif
    }
    inline int  window_get_width()  { return _wnd::width(); }
@@ -173,7 +185,7 @@
 // SDL_GPU path: imgui_impl_sdlgpu3 + imgui_impl_sdl3
 // imgui_sdlgpu_init() must be called after GpuDevice::Init(), not at window creation.
 // GPU upload + render pass done in main.cpp (needs GpuDevice) via imgui_sdlgpu_draw().
-#if defined(MD_SDL_GPU) && defined(DEBUG)
+#if defined(MD_SDL_GPU) && (defined(DEBUG) || defined(MONKEY_DUST_STANDALONE_EDITOR))
 #  include "backends/imgui_impl_sdl3.h"
 #  include "backends/imgui_impl_sdlgpu3.h"
 #  include "imgui.h"

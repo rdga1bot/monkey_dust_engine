@@ -38,6 +38,45 @@ constexpr HitZoneInfo ZONE_TABLE[(int)HitZone::COUNT] = {
     { 0.9f, 0.08f, 25.0f },  // RightLeg
 };
 
+// ── AI-5: Bone → HitZone map (19 bones from md_human.glb skeleton) ───────────
+// bone_idx matches the joint order produced by tools/md_convert.py (cgltf order).
+// Unmapped bones (IK poles, toes, root helper) resolve to Torso as fallback.
+struct BoneZoneEntry {
+    uint8_t  bone_idx;
+    HitZone  zone;
+    char     bone_name[22]; // debug / JSON override key
+};
+
+static constexpr int BONE_ZONE_COUNT = 19;
+constexpr BoneZoneEntry BONE_ZONE_MAP[BONE_ZONE_COUNT] = {
+    {  0, HitZone::Torso,    "Hips"             },
+    {  1, HitZone::Torso,    "Spine"            },
+    {  2, HitZone::Torso,    "Spine1"           },
+    {  3, HitZone::Torso,    "Spine2"           },
+    {  4, HitZone::Head,     "Neck"             },
+    {  5, HitZone::Head,     "Head"             },
+    {  6, HitZone::LeftArm,  "LeftShoulder"     },
+    {  7, HitZone::LeftArm,  "LeftArm"          },
+    {  8, HitZone::LeftArm,  "LeftForeArm"      },
+    {  9, HitZone::LeftArm,  "LeftHand"         },
+    { 10, HitZone::RightArm, "RightShoulder"    },
+    { 11, HitZone::RightArm, "RightArm"         },
+    { 12, HitZone::RightArm, "RightForeArm"     },
+    { 13, HitZone::RightArm, "RightHand"        },
+    { 14, HitZone::LeftLeg,  "LeftUpLeg"        },
+    { 15, HitZone::LeftLeg,  "LeftLeg"          },
+    { 16, HitZone::LeftLeg,  "LeftFoot"         },
+    { 17, HitZone::RightLeg, "RightUpLeg"       },
+    { 18, HitZone::RightLeg, "RightLeg"         },
+};
+
+// Map a bone index to its HitZone; returns Torso for unmapped bones.
+inline HitZone BoneToHitZone(uint8_t bone_idx) {
+    for (int i = 0; i < BONE_ZONE_COUNT; ++i)
+        if (BONE_ZONE_MAP[i].bone_idx == bone_idx) return BONE_ZONE_MAP[i].zone;
+    return HitZone::Torso;
+}
+
 // Вибрати зону за псевдорандомом (зважена вибірка за hit_chance)
 inline HitZone RollHitZone(unsigned int& rng_state) {
     rng_state = rng_state * 1664525u + 1013904223u;

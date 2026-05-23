@@ -181,3 +181,78 @@ void FactionSystem::ModRelation(uint32_t from, uint32_t to, int8_t delta) {
     if (new_val < -100) new_val = -100;
     fd->relations[to] = (int8_t)new_val;
 }
+
+// ── FCS import (Phase 4) ──────────────────────────────────────────────────────
+// Parses GENERATION_TEMPLATE_FACTION records from gamedata.base / *.mod.
+// Tool-only path — kenshi_data_parser.h is in tools/; we use a lightweight
+// strstr-scan here instead to keep engine/ clean of tool headers.
+//
+// Binary record field names confirmed from hex analysis:
+//   "name" (string), "faction" (string ref), "relations" child records
+//
+// Simple extraction: scan raw bytes for faction name fields.
+int FactionSystem::LoadFromFcs(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long fsz = ftell(f);
+    rewind(f);
+    if (fsz <= 0 || fsz > 32 * 1024 * 1024) { fclose(f); return 0; }
+
+    char* buf = new char[(size_t)fsz + 1];
+    size_t rd = fread(buf, 1, (size_t)fsz, f);
+    fclose(f);
+    buf[rd] = 0;
+
+    int added = 0;
+    // Scan for "GENERATION_TEMPLATE_FACTION" type records.
+    // After the type+ref strings we extract the "name" string field.
+    // We use a heuristic: find ASCII "name" keys preceded by faction type markers.
+    const char* p = buf;
+    const char* end = buf + rd;
+    while (p < end - 64 && added < MAX_FACTIONS) {
+        // Look for the faction type marker in the raw bytes.
+        const char* marker = (const char*)memchr(p, 'G', (size_t)(end - p));
+        if (!marker) break;
+        if (strncmp(marker, "GENERATION_TEMPLATE_FACTION", 27) != 0) {
+            p = marker + 1;
+            continue;
+        }
+        // Found a faction record: scan forward for a "name" field string.
+        // In FCS format the string value follows [uint32 key_len="name"][uint32 str_len][str].
+        // We just search for the literal "name\0" bytes in the next 256 bytes.
+        const char* scan_end = marker + 256 < end ? marker + 256 : end;
+        const char* name_key = nullptr;
+        for (const char* s = marker; s < scan_end - 4; ++s) {
+            if (s[0]=='n' && s[1]=='a' && s[2]=='m' && s[3]=='e' && s[4]=='\0') {
+                name_key = s;
+                break;
+            }
+        }
+        if (name_key && faction_count_ < MAX_FACTIONS) {
+            // After "name\0": [uint32 str_len][char str[str_len]]
+            const uint8_t* after = (const uint8_t*)(name_key + 5);
+            if (after + 4 < (const uint8_t*)end) {
+                uint32_t slen = (uint32_t)after[0]
+                              | ((uint32_t)after[1] << 8)
+                              | ((uint32_t)after[2] << 16)
+                              | ((uint32_t)after[3] << 24);
+                if (slen > 0 && slen < 64 && after + 4 + slen <= (const uint8_t*)end) {
+                    FactionData& fd = factions_[faction_count_];
+                    memset(&fd, 0, sizeof(fd));
+                    uint32_t copy = slen < 31u ? slen : 31u;
+                    memcpy(fd.name, after + 4, copy);
+                    fd.name[copy] = 0;
+                    fd.id     = (uint32_t)faction_count_;
+                    fd.loaded = true;
+                    faction_count_++;
+                    added++;
+                }
+            }
+        }
+        p = marker + 27;
+    }
+
+    delete[] buf;
+    return added;
+}

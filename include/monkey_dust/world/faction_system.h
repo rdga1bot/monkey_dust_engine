@@ -24,7 +24,8 @@ public:
     }
 
     int LoadFromFile(const char* path);
-    int LoadFromJson(const char* path);  // parse md_world.json factions array
+    int LoadFromJson(const char* path);   // parse md_world.json factions array
+    int LoadFromFcs (const char* path);   // parse gamedata.base / *.mod (Phase 4)
 
     int8_t GetRelation(uint32_t from, uint32_t to) const;
 

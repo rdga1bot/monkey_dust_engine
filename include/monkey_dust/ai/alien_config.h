@@ -25,6 +25,12 @@ enum class AlienConfigurationType : uint8_t {
     BackstageAlert    = 6,
     BackstageHoldClose  = 7,
     BackstageHoldVClose = 8,
+    // ── Kenshi fauna presets (Phase 4, Task 4.8) ──────────────────────────────
+    BeakThing         = 9,   // Large aggressive predator — max menace, wide sweep
+    Bull              = 10,  // Stampeding herd — charges in straight line, no ambush
+    Leviathan         = 11,  // Massive passive — slow, ignores player unless attacked
+    Garru             = 12,  // Pack animal — timid, flees on threat
+    Bonedog           = 13,  // Scavenger — moderate aggression, hunts wounded
     Unknown           = 0xFF,
 };
 
@@ -90,8 +96,23 @@ inline const AlienConfigPreset& AlienConfigPreset::Get(AlienConfigurationType t)
         // BACKSTAGEHOLD_VCLOSE — ThreatAware only (2)
         { AlienConfigurationType::BackstageHoldVClose, 2, 2u, 150.f, 90.f, 45.f, 65.f, 15.f, 22.f,
           7.f, 5.f, 120.f, 3.f, 16.f, 30.f, 10.f, 50.f, 30.f },
+        // BEAK_THING — all actions, fast fill, large sweep (apex predator)
+        { AlienConfigurationType::BeakThing, 6, 106u, 15.f, 30.f, 30.f, 45.f, 8.f, 12.f,
+          15.f, 10.f, 60.f, 2.f, 10.f, 80.f, 5.f, 20.f, 10.f },
+        // BULL — ThreatAware + WillFlank (34=2+32): charges straight, no killtrap/ambush
+        { AlienConfigurationType::Bull, 3, 34u, 20.f, 40.f, 40.f, 60.f, 5.f, 8.f,
+          20.f, 15.f, 90.f, 0.f, 8.f, 100.f, 20.f, 15.f, 8.f },
+        // LEVIATHAN — ThreatAware only (2), extremely slow, huge range
+        { AlienConfigurationType::Leviathan, 1, 2u, 600.f, 300.f, 120.f, 180.f, 60.f, 90.f,
+          40.f, 30.f, 600.f, 0.f, 60.f, 200.f, 50.f, 120.f, 80.f },
+        // GARRU — ThreatAware only, high drain (flees quickly), small sweep
+        { AlienConfigurationType::Garru, 1, 2u, 300.f, 60.f, 60.f, 90.f, 10.f, 15.f,
+          4.f, 3.f, 60.f, 0.f, 5.f, 20.f, 5.f, 60.f, 40.f },
+        // BONEDOG — ThreatAware + WillAmbush (66): scavenger, hunts wounded
+        { AlienConfigurationType::Bonedog, 3, 66u, 40.f, 50.f, 35.f, 55.f, 10.f, 15.f,
+          8.f, 6.f, 90.f, 2.f, 12.f, 40.f, 8.f, 35.f, 22.f },
     };
     uint8_t idx = static_cast<uint8_t>(t);
-    if (idx >= 9u) return table[0];  // fallback to DEFAULT
+    if (idx >= 14u) return table[0];  // fallback to DEFAULT
     return table[idx];
 }

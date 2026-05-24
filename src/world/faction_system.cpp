@@ -256,3 +256,40 @@ int FactionSystem::LoadFromFcs(const char* path) {
     delete[] buf;
     return added;
 }
+
+// ── BountyRecord management ───────────────────────────────────────────────────
+
+uint32_t FactionSystem::AddBounty(uint32_t faction_id, entt::entity target,
+                                   uint32_t amount, uint8_t crime_flags) {
+    for (int i = 0; i < bounty_count_; ++i) {
+        if (bounties_[i].faction_id == faction_id && bounties_[i].target == target) {
+            bounties_[i].amount      += amount;
+            bounties_[i].crime_flags |= crime_flags;
+            return bounties_[i].amount;
+        }
+    }
+    if (bounty_count_ >= MAX_BOUNTIES) return 0;
+    auto& r        = bounties_[bounty_count_++];
+    r.faction_id   = faction_id;
+    r.target       = target;
+    r.amount       = amount;
+    r.crime_flags  = crime_flags;
+    return amount;
+}
+
+uint32_t FactionSystem::GetBounty(uint32_t faction_id, entt::entity target) const {
+    for (int i = 0; i < bounty_count_; ++i) {
+        if (bounties_[i].faction_id == faction_id && bounties_[i].target == target)
+            return bounties_[i].amount;
+    }
+    return 0;
+}
+
+void FactionSystem::ClearBounty(uint32_t faction_id, entt::entity target) {
+    for (int i = 0; i < bounty_count_; ++i) {
+        if (bounties_[i].faction_id == faction_id && bounties_[i].target == target) {
+            bounties_[i] = bounties_[--bounty_count_];
+            return;
+        }
+    }
+}

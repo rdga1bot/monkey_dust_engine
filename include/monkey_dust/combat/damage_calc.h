@@ -57,11 +57,12 @@ namespace Armors {
 }
 
 // Розрахувати ефективне пошкодження з урахуванням типу, броні, grade і penetration.
+// skill_level [0..100]: Kenshi Phase 2, Task 2.8 — damage × (1 + skill × 0.01)
 // effective_resist = base * armour_grade * (1 - armour_penetration)
 inline float CalcDamage(const WeaponStats& wpn, const ArmorStats& armor,
-                        float hit_zone_mult = 1.0f)
+                        float hit_zone_mult = 1.0f, int skill_level = 0)
 {
-    float raw = wpn.damage;
+    float raw = wpn.damage * (1.0f + (float)skill_level * 0.01f);
     float pen_factor = 1.0f - wpn.armour_penetration;
     float effective  = 0.0f;
 

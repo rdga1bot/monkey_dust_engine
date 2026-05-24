@@ -97,9 +97,15 @@ void CrowdSystem::FlushRange(entt::registry& reg, int start, int end) const {
             if (speed > 0.2f) {
                 nav.is_moving  = true;
                 nav.move_speed = speed / 3.5f;
+                // Sync actual crowd velocity so render extrapolation matches real movement.
+                // BT overwrites desired_vel at the next tick before Jolt uses it.
+                nav.desired_vel_x = vx;
+                nav.desired_vel_z = vz;
             } else {
-                nav.is_moving  = false;
-                nav.move_speed = 0.f;
+                nav.is_moving     = false;
+                nav.move_speed    = 0.f;
+                nav.desired_vel_x = 0.f;
+                nav.desired_vel_z = 0.f;
             }
         }
     }

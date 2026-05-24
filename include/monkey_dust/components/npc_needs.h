@@ -15,7 +15,8 @@ struct NpcNeeds {
     float morale   = 1.f;    // [0, 1]: mood/morale; decreases from hunger+fatigue
     uint8_t hungry_thresh  = 200; // scaled: 200/255 ≈ 0.78 → NPC seeks food
     uint8_t sleepy_thresh  = 220; // scaled: 220/255 ≈ 0.86 → NPC seeks sleep
-    uint8_t _pad[2] = {};
+    uint8_t is_sleeping    = 0;   // hysteresis: 1 while sleeping until fatigue<FATIGUE_SLEEP_DONE
+    uint8_t _pad           = 0;
 };
 static_assert(sizeof(NpcNeeds) == 16, "NpcNeeds must be 16 bytes");
 

@@ -89,6 +89,10 @@ void WorldSimulation::Tick(float delta_s) noexcept {
         }
     }
 
+    // WageSystem: pay NPC wages once per game-day (every TICKS_PER_GAME_DAY ticks).
+    if ((tick_count_ % TICKS_PER_GAME_DAY) == 0u)
+        PayDailyWages();
+
     // F4: World event generation — every 30 sim ticks (~30s real-time).
     // Raids when aggression high, caravans when prosperity high.
     if ((tick_count_ % 30u) == 0u && faction_count_ >= 2) {
@@ -114,6 +118,26 @@ void WorldSimulation::Tick(float delta_s) noexcept {
                 ev.strength     = (uint8_t)(src.prosperity / 64u);
                 bus.Push(ev);
             }
+        }
+    }
+}
+
+// WageSystem: deduct NPC wages from faction gold once per game-day.
+// Wages = population × BASE_WAGE_PER_DAY × wage_class_mult.
+// If faction cannot afford wages: prosperity -5, aggression +2.
+void WorldSimulation::PayDailyWages() noexcept {
+    for (int i = 0; i < faction_count_; ++i) {
+        FactionState& f = factions_[i];
+        if (f.population == 0) continue;
+        float mult    = WAGE_CLASS_MULT[wage_class_[i] < 3 ? wage_class_[i] : 0];
+        uint32_t cost = (uint32_t)((float)f.population * BASE_WAGE_PER_DAY * mult);
+        if (cost > 0xFFFFu) cost = 0xFFFFu;
+        if (f.gold >= (uint16_t)cost) {
+            f.gold -= (uint16_t)cost;
+        } else {
+            f.gold = 0;
+            f.prosperity = (f.prosperity > 5u) ? (uint8_t)(f.prosperity - 5u) : 0u;
+            f.aggression = (f.aggression < 253u) ? (uint8_t)(f.aggression + 2u) : 255u;
         }
     }
 }

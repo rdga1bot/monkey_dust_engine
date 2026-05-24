@@ -40,7 +40,7 @@ struct MdCamera {
 
     Mat4 ProjMatrix(float aspect) const {
         static constexpr float DEG2R = 0.01745329251f;
-        return mat4_perspective(fovy * DEG2R, aspect, 0.1f, 300.f);
+        return mat4_perspective(fovy * DEG2R, aspect, 0.5f, 4000.f);
     }
 
     inline void CamPosToArr(float out[3]) const {
@@ -74,7 +74,7 @@ struct MdCamera {
 #  else
         return MatrixMultiply(
             MatrixLookAt(pos, target, up),
-            MatrixPerspective(fovy * DEG2R, aspect, 0.1f, 300.f)
+            MatrixPerspective(fovy * DEG2R, aspect, 0.5f, 4000.f)
         );
 #  endif
     }

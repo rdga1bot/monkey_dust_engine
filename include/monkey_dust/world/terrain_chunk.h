@@ -107,4 +107,33 @@ struct TerrainGenParams {
     // Heights are stored in metres; amplitude is ignored.
     int zone_origin_x = -1;   // Kenshi zone X for chunk coord(0,0)
     int zone_origin_z = -1;   // Kenshi zone Z for chunk coord(0,0)
+
+    // Procedural open-world parameters (defaults = disabled, preserves existing behaviour).
+    float domain_warp_strength = 0.f;   // 0=disabled; 80.f for open world
+    float ridge_weight         = 0.f;   // 0=disabled; 0.12f for open world
+    float redistribution_power = 1.f;   // 1=no change; 3.0f for open world
+    bool  force_noise          = false; // true = ignore atlas/r32, always use noise
+
+    // Biome + faction (PROC-2). biome_scale controls region size in world-space.
+    float biome_scale   = 0.f;   // 0=disabled; 0.00025f for open world (~4km regions)
+    float faction_scale = 0.f;   // unused at gen time; kept for future query API
+    int   num_factions  = 0;     // 0=disabled; 8 for open world
+
+    // Targets world_hmap.r32 stats: avg≈17m, σ≈22m, 95.9% below 60m, max≈280m.
+    static TerrainGenParams ProcWorld(int seed = 42) {
+        TerrainGenParams p;
+        p.seed                 = seed;
+        p.base_scale           = 0.004f;   // 250m per wavelength — Kenshi dune scale
+        p.amplitude            = 280.f;    // matches Kenshi max ~280m
+        p.octaves              = 6;
+        p.persistence          = 0.50f;
+        p.lacunarity           = 2.00f;
+        p.domain_warp_strength = 15.f;
+        p.ridge_weight         = 0.08f;
+        p.redistribution_power = 6.5f;
+        p.force_noise          = true;
+        p.biome_scale          = 0.00025f; // ~4km biome regions
+        p.num_factions         = 8;
+        return p;
+    }
 };

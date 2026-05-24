@@ -24,8 +24,8 @@ struct GraphicsSettings {
     static GraphicsSettings& Get() { static GraphicsSettings s; return s; }
 
     // ── Display ───────────────────────────────────────────────────────────────
-    float fog_near     = 300.f;   // canyon-scale: fog starts at 300m
-    float fog_far      = 700.f;   // fades to sky at 700m
+    float fog_near     = 1200.f;  // open-world: fog starts at 1200m (past LOD-1 at 600m)
+    float fog_far      = 2800.f;  // fully sky at 2800m (hides streaming edge at ~3×500m)
     float fog_color[3] = {0.38f, 0.58f, 0.82f};  // matches sky clear color
     bool  fog_enabled  = true;
 

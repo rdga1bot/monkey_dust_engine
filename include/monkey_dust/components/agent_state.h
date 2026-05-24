@@ -20,6 +20,10 @@ enum class MotivationType : uint8_t {
     Ambush         = 11,  // AMBUSH_MOTIVATION
     Breakout       = 12,  // BREAKOUT_MOTIVATION
     PlayerHiding   = 13,  // PLAYER_HIDE_MOTIVATION
+    Work           = 14,  // Kenshi: NPC working at building/task
+    Rest           = 15,  // Kenshi: sleeping/resting
+    Trade          = 16,  // Kenshi: trading at shop
+    Medic          = 17,  // Kenshi: healing self or ally
     COUNT
 };
 
@@ -524,7 +528,8 @@ struct AgentState {
     uint32_t               last_shot_at_ms   = 0;    // ms when this entity last took ranged damage; 0=never
     uint8_t                hp_pct            = 100;  // 0-100 HP ratio; game CombatSystem writes each tick
     uint8_t                move_direction    = 0;    // 0=toward 1=away 2=strafe_left 3=strafe_right
-    uint8_t                _pad_b33[2]       = {};
+    uint8_t                sched_priority    = 0;    // priority of current schedule-driven motivation
+    uint8_t                _pad_b33[1]       = {};
 };
 
 // ── AgentStateSnapshot ────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 #include <monkey_dust/world/terrain_gen.h>
 #include <monkey_dust/world/chunk_def.h>
+#include <monkey_dust/world/biome_system.h>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
@@ -146,6 +147,96 @@ void TerrainAtlas_SmoothBoundaries() {
     }
 }
 
+// forward declaration — definition is after s_load_r32 below
+static float s_hmap_sample(const float* hmap, int hmap_w, int hmap_h, float u, float v);
+
+// ── Master heightmap (macro geography, loaded once at startup) ────────────────
+// Loaded via TerrainMaster_Load(); sampled in s_gen_height() when available.
+// Format: uint32 w, uint32 h, float hmin, float hmax, then w*h float32 heights.
+// Covers [0, ATLAS_ZONES*CHUNK_SIZE] × [0, ATLAS_ZONES*CHUNK_SIZE] world space.
+
+static float* s_master_h    = nullptr;
+static int    s_master_w    = 0;
+static int    s_master_hh   = 0;   // height (rows) — avoid clash with s_master_h ptr name
+static float  s_master_wext = 1.f; // world extent X (metres) — set in TerrainMaster_Load
+static float  s_master_zext = 1.f; // world extent Z (metres)
+static float  s_master_hmax = 0.f; // stored hmax from file header
+
+bool TerrainMaster_Load(const char* path, float world_extent_x, float world_extent_z) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    unsigned int w = 0, h = 0;
+    float hmin = 0.f, hmax = 0.f;
+    if (fread(&w, 4, 1, f) != 1 || fread(&h, 4, 1, f) != 1 ||
+        fread(&hmin, 4, 1, f) != 1 || fread(&hmax, 4, 1, f) != 1 ||
+        w == 0 || h == 0) {
+        fclose(f); return false;
+    }
+    delete[] s_master_h;
+    s_master_h    = new float[w * h];
+    s_master_w    = (int)w;
+    s_master_hh   = (int)h;
+    s_master_wext = world_extent_x > 0.f ? world_extent_x : 1.f;
+    s_master_zext = world_extent_z > 0.f ? world_extent_z : 1.f;
+    s_master_hmax = hmax;
+    bool ok = fread(s_master_h, sizeof(float), w * h, f) == w * h;
+    fclose(f);
+    if (!ok) { delete[] s_master_h; s_master_h = nullptr; return false; }
+    fprintf(stdout, "[TerrainMaster] loaded %s (%u×%u, hmax=%.1fm)\n",
+            path, w, h, hmax);
+    return true;
+}
+
+bool TerrainMaster_Loaded() { return s_master_h != nullptr; }
+
+float TerrainMaster_SampleWorld(float wx, float wz) {
+    if (!s_master_h) return 0.f;
+    float u = wx / s_master_wext;
+    float v = wz / s_master_zext;
+    u = u < 0.f ? 0.f : (u > 1.f ? 1.f : u);
+    v = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
+    return s_hmap_sample(s_master_h, s_master_w, s_master_hh, u, v);
+}
+
+float TerrainMaster_GetPixel(int col, int row) {
+    if (!s_master_h) return 0.f;
+    col = col < 0 ? 0 : (col >= s_master_w  ? s_master_w  - 1 : col);
+    row = row < 0 ? 0 : (row >= s_master_hh ? s_master_hh - 1 : row);
+    return s_master_h[row * s_master_w + col];
+}
+
+void TerrainMaster_SetPixel(int col, int row, float h) {
+    if (!s_master_h) return;
+    if (col < 0 || col >= s_master_w || row < 0 || row >= s_master_hh) return;
+    s_master_h[row * s_master_w + col] = h;
+}
+
+int   TerrainMaster_Width()  { return s_master_w; }
+int   TerrainMaster_Height() { return s_master_hh; }
+float TerrainMaster_HMax()   { return s_master_hmax; }
+
+bool TerrainMaster_Save(const char* path) {
+    if (!s_master_h) return false;
+    FILE* f = fopen(path, "wb");
+    if (!f) return false;
+    unsigned int w = (unsigned int)s_master_w;
+    unsigned int h = (unsigned int)s_master_hh;
+    float hmin = s_master_h[0], hmax = s_master_h[0];
+    int n = s_master_w * s_master_hh;
+    for (int i = 1; i < n; ++i) {
+        if (s_master_h[i] < hmin) hmin = s_master_h[i];
+        if (s_master_h[i] > hmax) hmax = s_master_h[i];
+    }
+    s_master_hmax = hmax;
+    bool ok = fwrite(&w, 4, 1, f) == 1 &&
+              fwrite(&h, 4, 1, f) == 1 &&
+              fwrite(&hmin, 4, 1, f) == 1 &&
+              fwrite(&hmax, 4, 1, f) == 1 &&
+              fwrite(s_master_h, sizeof(float), n, f) == (size_t)n;
+    fclose(f);
+    return ok;
+}
+
 // ── Simplex noise (Stefan Gustavson / Ashima Arts — public domain) ────────────
 
 static const int perm[512] = {
@@ -225,10 +316,58 @@ float FBM2(float x, float y, int octaves, float persistence, float lacunarity) {
 static float s_gen_height(int col, int row, ChunkCoord coord, const TerrainGenParams& p) {
     float wx = (coord.x * CHUNK_SIZE) + col * TERRAIN_STEP;
     float wz = (coord.z * CHUNK_SIZE) + row * TERRAIN_STEP;
-    float n = FBM2(wx * p.base_scale + p.seed * 127.1f,
-                   wz * p.base_scale + p.seed *  311.7f,
-                   p.octaves, p.persistence, p.lacunarity);
-    float h = ((n + 1.0f) * 0.5f) * p.amplitude;  // remap [-1,1] → [0, amplitude]
+
+    // ── Master heightmap: macro geography base layer ──────────────────────────
+    // When loaded, provides the large-scale structure (mountain ranges, valleys).
+    // Noise adds surface detail on top; amplitude is scaled down accordingly.
+    float h_macro = 0.f;
+    float detail_scale = 1.f;   // fraction of amplitude used for noise detail
+    if (s_master_h) {
+        float u = (wx + p.world_offset_x) / s_master_wext;
+        float v = (wz + p.world_offset_z) / s_master_zext;
+        u = u < 0.f ? 0.f : (u > 1.f ? 1.f : u);
+        v = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
+        h_macro = s_hmap_sample(s_master_h, s_master_w, s_master_hh, u, v);
+        detail_scale = 0.18f;   // noise adds ±18% of amplitude as surface detail
+    }
+
+    // ── Noise detail layer ────────────────────────────────────────────────────
+    float sx = wx * p.base_scale + p.seed * 127.1f;
+    float sz = wz * p.base_scale + p.seed * 311.7f;
+
+    if (p.domain_warp_strength > 0.f) {
+        float ws = p.base_scale * p.domain_warp_strength;
+        sx += SimplexNoise2(sx + 1.7f, sz + 9.2f) * ws;
+        sz += SimplexNoise2(sx + 8.3f, sz + 2.8f) * ws;
+    }
+
+    float base = (FBM2(sx, sz, p.octaves, p.persistence, p.lacunarity) + 1.f) * 0.5f;
+
+    if (p.redistribution_power != 1.f)
+        base = powf(base, p.redistribution_power);
+
+    float h = h_macro + base * p.amplitude * detail_scale;
+
+    if (p.ridge_weight > 0.f) {
+        // Ridged multifractal: 3 octaves, signal-dependent weighting.
+        // Each octave is (1-|s|)² weighted by the previous octave's value
+        // → high-freq detail appears only near ridge peaks, not in valleys.
+        // Produces irregular, jagged ridges instead of smooth mathematical triangles.
+        float rx = wx * p.base_scale * 0.5f + p.seed * 73.1f;
+        float rz = wz * p.base_scale * 0.5f + p.seed * 149.3f;
+        float ridge = 0.f, ra = 0.625f, prev = 1.f;
+        for (int ro = 0; ro < 3; ++ro) {
+            float s = 1.f - fabsf(SimplexNoise2(rx, rz));
+            s = s * s * prev;
+            ridge += s * ra;
+            prev  =  s;
+            ra   *= 0.5f;
+            rx   *= 2.17f;  // slightly off 2.0 → breaks repetitive symmetry
+            rz   *= 2.17f;
+        }
+        h += ridge * p.amplitude * p.ridge_weight;
+    }
+
     return h < p.sea_level ? p.sea_level : h;
 }
 
@@ -236,15 +375,51 @@ static inline int s_idx(int col, int row) { return row * (TERRAIN_GRID + 1) + co
 
 // ── Splat weights from height ──────────────────────────────────────────────────
 
-static void s_splat(float h, float amp, float* splat) {
-    float t = (amp > 0.0f) ? (h / amp) : 0.0f;  // [0,1]
-    // Low → grass+dirt, mid → grass+rock, high → rock only (no snow unless amp very high)
-    float grass = 1.0f - t * 1.6f;  if (grass < 0.0f) grass = 0.0f;
-    float dirt  = (1.0f - t) * 0.3f;
-    float rock  = t * 0.9f;         if (rock  > 1.0f) rock  = 1.0f;
-    float snow  = 0.0f;  // removed — appears only when amp > ~12m
-    float sum   = grass + rock + dirt + snow;
-    if (sum > 0.0f) { grass /= sum; rock /= sum; dirt /= sum; snow /= sum; }
+// splat[0]=grass  splat[1]=rock  splat[2]=dirt  splat[3]=snow
+static void s_splat(float h, float amp, float* splat, BiomeType biome) {
+    float t = (amp > 0.0f) ? (h / amp) : 0.0f;  // [0,1] height fraction
+    float grass = 0.f, rock = 0.f, dirt = 0.f, snow = 0.f;
+
+    switch (biome) {
+    case BiomeType::Desert:
+        dirt  = 0.75f - t * 0.3f;  if (dirt  < 0.f) dirt  = 0.f;
+        rock  = 0.20f + t * 0.6f;  if (rock  > 1.f) rock  = 1.f;
+        grass = 0.05f;
+        break;
+    case BiomeType::Badlands:
+        rock  = 0.50f + t * 0.4f;  if (rock  > 1.f) rock  = 1.f;
+        dirt  = 0.35f - t * 0.2f;  if (dirt  < 0.f) dirt  = 0.f;
+        grass = 0.15f * (1.f - t);
+        break;
+    case BiomeType::Grassland:
+        grass = 0.70f - t * 0.8f;  if (grass < 0.f) grass = 0.f;
+        dirt  = 0.20f;
+        rock  = 0.10f + t * 0.7f;  if (rock  > 1.f) rock  = 1.f;
+        break;
+    case BiomeType::Rocky:
+        rock  = 0.80f + t * 0.2f;  if (rock  > 1.f) rock  = 1.f;
+        dirt  = 0.15f * (1.f - t);
+        grass = 0.05f * (1.f - t);
+        break;
+    case BiomeType::Swamp:
+        grass = 0.55f - t * 0.4f;  if (grass < 0.f) grass = 0.f;
+        dirt  = 0.35f + t * 0.1f;
+        rock  = 0.10f + t * 0.3f;  if (rock  > 1.f) rock  = 1.f;
+        break;
+    case BiomeType::Tundra:
+        snow  = 0.50f + t * 0.4f;  if (snow  > 1.f) snow  = 1.f;
+        rock  = 0.30f + t * 0.4f;  if (rock  > 1.f) rock  = 1.f;
+        dirt  = 0.20f * (1.f - t);
+        break;
+    default:
+        grass = 1.0f - t * 1.6f;   if (grass < 0.f) grass = 0.f;
+        dirt  = (1.0f - t) * 0.3f;
+        rock  = t * 0.9f;           if (rock  > 1.f) rock  = 1.f;
+        break;
+    }
+
+    float sum = grass + rock + dirt + snow;
+    if (sum > 1e-6f) { grass /= sum; rock /= sum; dirt /= sum; snow /= sum; }
     splat[0] = grass; splat[1] = rock; splat[2] = dirt; splat[3] = snow;
 }
 
@@ -300,7 +475,7 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     float world_origin_z = coord.z * CHUNK_SIZE;
 
     // ── 1. Heights ────────────────────────────────────────────────────────────
-    if (p.zone_origin_x >= 0) {
+    if (!p.force_noise && p.zone_origin_x >= 0) {
         int zx = p.zone_origin_x + coord.x;
         int zy = p.zone_origin_z + coord.z;
         bool loaded = false;
@@ -333,7 +508,7 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
                 for (int col = 0; col <= TERRAIN_GRID; ++col)
                     out.heightmap.h[s_idx(col, row)] = s_gen_height(col, row, coord, fp);
         }
-    } else if (p.heightmap_r32) {
+    } else if (!p.force_noise && p.heightmap_r32) {
         // Load Kenshi heightmap and sample heights for this chunk
         static const float* s_hmap     = nullptr;
         static int          s_hmap_w   = 0, s_hmap_h = 0;
@@ -393,7 +568,49 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             s_verts_buf[vi].u = wx * 0.125f;
             s_verts_buf[vi].v = wz * 0.125f;
 
-            s_splat(h, p.amplitude, s_verts_buf[vi].splat);
+            // Biome-aware splat weights with soft boundary blending.
+            // Sample temperature/moisture at 2× the biome_scale for a second
+            // "offset" position, then lerp between the two resolved biomes by a
+            // smooth-step on the noise magnitude — this blurs hard biome edges
+            // over ~200-400m without extra noise calls.
+            if (p.biome_scale > 0.f) {
+                float bs = p.biome_scale;
+                float so = (float)p.seed;
+
+                float raw_t = SimplexNoise2(wx*bs + so*0.7f + 1000.f*bs,
+                                            wz*bs + so*0.3f + 1000.f*bs);
+                float raw_m = SimplexNoise2(wx*bs + so*0.4f + 2000.f*bs,
+                                            wz*bs + so*0.9f + 2000.f*bs);
+                float temp0 = (raw_t + 1.f) * 0.5f;
+                float mois0 = (raw_m + 1.f) * 0.5f;
+                BiomeType b0 = BiomeResolver::Resolve(temp0, mois0, h);
+
+                // Offset sample for blending (half frequency → smoother transitions)
+                float raw_t2 = SimplexNoise2(wx*bs*0.5f + so*0.7f + 1000.f*bs + 37.3f,
+                                             wz*bs*0.5f + so*0.3f + 1000.f*bs + 19.7f);
+                float raw_m2 = SimplexNoise2(wx*bs*0.5f + so*0.4f + 2000.f*bs + 53.1f,
+                                             wz*bs*0.5f + so*0.9f + 2000.f*bs + 41.9f);
+                float temp1 = (raw_t2 + 1.f) * 0.5f;
+                float mois1 = (raw_m2 + 1.f) * 0.5f;
+                BiomeType b1 = BiomeResolver::Resolve(temp1, mois1, h);
+
+                if (b0 == b1) {
+                    s_splat(h, p.amplitude, s_verts_buf[vi].splat, b0);
+                } else {
+                    // Blend: smooth-step on the difference of noise magnitudes
+                    float diff = fabsf(raw_t - raw_t2) + fabsf(raw_m - raw_m2);
+                    float t_blend = diff * 2.5f;  // scale → [0,1] range
+                    if (t_blend > 1.f) t_blend = 1.f;
+                    t_blend = t_blend * t_blend * (3.f - 2.f * t_blend); // smooth-step
+                    float s0[4], s1[4];
+                    s_splat(h, p.amplitude, s0, b0);
+                    s_splat(h, p.amplitude, s1, b1);
+                    for (int k = 0; k < 4; ++k)
+                        s_verts_buf[vi].splat[k] = s0[k] + t_blend * (s1[k] - s0[k]);
+                }
+            } else {
+                s_splat(h, p.amplitude, s_verts_buf[vi].splat, BiomeType::Desert);
+            }
 
             // Nav positions (flat float array for Recast)
             s_nav_pos[vi * 3 + 0] = wx;
@@ -461,10 +678,70 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
         else { nx = 0.0f; ny = 1.0f; nz = 0.0f; }
     }
 
-    // ── Cross-chunk normal stitching (atlas mode) ─────────────────────────────
+    // ── Cross-chunk normal stitching ──────────────────────────────────────────
     // Edge vertices only have normals from triangles within this chunk.
-    // Sample adjacent zone heights from the atlas for correct central-difference normals.
-    if (p.zone_origin_x >= 0 && s_atlas_loaded) {
+    // Two paths: atlas (zone_origin_x>=0) samples the BSS atlas; noise path
+    // calls s_gen_height on the adjacent chunk coord.
+
+    // Noise-path stitching: sample neighbor heights via s_gen_height.
+    // s_edge(col,row): col/row may be -1 or TERRAIN_GRID+1 — wraps to neighbor chunk.
+    if (p.force_noise) {
+        auto s_edge = [&](int col, int row) -> float {
+            ChunkCoord nc = coord;
+            if      (col < 0)              { nc.x--; col += TERRAIN_GRID; }
+            else if (col > TERRAIN_GRID)   { nc.x++; col -= TERRAIN_GRID; }
+            if      (row < 0)              { nc.z--; row += TERRAIN_GRID; }
+            else if (row > TERRAIN_GRID)   { nc.z++; row -= TERRAIN_GRID; }
+            return s_gen_height(col, row, nc, p);
+        };
+
+        auto fix_n = [&](int col, int row,
+                         float hL, float hR, float hD, float hU) {
+            float dhdx = (hR - hL) / (2.0f * TERRAIN_STEP);
+            float dhdz = (hU - hD) / (2.0f * TERRAIN_STEP);
+            float nx = -dhdx, ny = 1.0f, nz = -dhdz;
+            float len = sqrtf(nx*nx + ny*ny + nz*nz);
+            if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
+            int vi = s_idx(col, row);
+            s_verts_buf[vi].nx = nx;
+            s_verts_buf[vi].ny = ny;
+            s_verts_buf[vi].nz = nz;
+        };
+
+        for (int row = 1; row < TERRAIN_GRID; ++row) {
+            fix_n(TERRAIN_GRID, row,
+                out.heightmap.h[s_idx(TERRAIN_GRID-1, row)],
+                s_edge(TERRAIN_GRID+1, row),
+                out.heightmap.h[s_idx(TERRAIN_GRID, row-1)],
+                out.heightmap.h[s_idx(TERRAIN_GRID, row+1)]);
+            fix_n(0, row,
+                s_edge(-1, row),
+                out.heightmap.h[s_idx(1, row)],
+                out.heightmap.h[s_idx(0, row-1)],
+                out.heightmap.h[s_idx(0, row+1)]);
+        }
+        for (int col = 1; col < TERRAIN_GRID; ++col) {
+            fix_n(col, 0,
+                out.heightmap.h[s_idx(col-1, 0)],
+                out.heightmap.h[s_idx(col+1, 0)],
+                s_edge(col, -1),
+                out.heightmap.h[s_idx(col, 1)]);
+            fix_n(col, TERRAIN_GRID,
+                out.heightmap.h[s_idx(col-1, TERRAIN_GRID)],
+                out.heightmap.h[s_idx(col+1, TERRAIN_GRID)],
+                out.heightmap.h[s_idx(col, TERRAIN_GRID-1)],
+                s_edge(col, TERRAIN_GRID+1));
+        }
+        // Four corners: all four neighbours contribute — sample diagonals via s_edge.
+        const int G = TERRAIN_GRID;
+        fix_n(0,  0,  s_edge(-1,0),   out.heightmap.h[s_idx(1,0)],  s_edge(0,-1),  out.heightmap.h[s_idx(0,1)]);
+        fix_n(G,  0,  out.heightmap.h[s_idx(G-1,0)], s_edge(G+1,0), s_edge(G,-1),  out.heightmap.h[s_idx(G,1)]);
+        fix_n(0,  G,  s_edge(-1,G),   out.heightmap.h[s_idx(1,G)],  out.heightmap.h[s_idx(0,G-1)], s_edge(0,G+1));
+        fix_n(G,  G,  out.heightmap.h[s_idx(G-1,G)], s_edge(G+1,G), out.heightmap.h[s_idx(G,G-1)], s_edge(G,G+1));
+    }
+
+    // Atlas-path stitching (unchanged).
+    if (!p.force_noise && p.zone_origin_x >= 0 && s_atlas_loaded) {
         int zx0 = p.zone_origin_x + coord.x;
         int zy0 = p.zone_origin_z + coord.z;
 

@@ -100,11 +100,22 @@
 #ifdef MD_SDL_GPU
        auto& dev = md::GpuDevice::Get();
        if (dev.IsReady()) {
-           SDL_GPUPresentMode mode = (fps > 0)
-               ? SDL_GPU_PRESENTMODE_VSYNC
-               : SDL_GPU_PRESENTMODE_IMMEDIATE;
-           SDL_SetGPUSwapchainParameters(dev.SDLDevice(), dev.Window(),
+           bool has_vsync   = SDL_WindowSupportsGPUPresentMode(dev.SDLDevice(), dev.Window(), SDL_GPU_PRESENTMODE_VSYNC);
+           bool has_mailbox = SDL_WindowSupportsGPUPresentMode(dev.SDLDevice(), dev.Window(), SDL_GPU_PRESENTMODE_MAILBOX);
+           SDL_Log("[vsync] supported: vsync=%d mailbox=%d requested=%s",
+                   has_vsync, has_mailbox, fps > 0 ? "vsync" : "no-vsync");
+           SDL_GPUPresentMode mode;
+           if (fps > 0 && has_vsync) {
+               mode = SDL_GPU_PRESENTMODE_VSYNC;
+           } else if (!fps && has_mailbox) {
+               mode = SDL_GPU_PRESENTMODE_MAILBOX;
+           } else {
+               mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
+           }
+           bool ok = SDL_SetGPUSwapchainParameters(dev.SDLDevice(), dev.Window(),
                SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
+           SDL_Log("[vsync] SetGPUSwapchainParameters mode=%d ok=%d err=%s",
+                   (int)mode, ok, ok ? "none" : SDL_GetError());
        }
 #else
        SDL_GL_SetSwapInterval(fps > 0 ? 1 : 0);

@@ -86,6 +86,25 @@ public:
     // Drops silently if all WS_MAX_RAIDS slots are occupied.
     void QueueRaid(uint8_t attacker, uint8_t defender, uint8_t strength) noexcept;
 
+    // ── WageSystem ────────────────────────────────────────────────────────────
+    // Kenshi RE: wages, wages2, wagesd fields in gamedata.base settlement records.
+    // BASE_WAGE_PER_DAY = 50 cats; guard = ×2; tech = ×1.5.
+    // Called internally once per game-day from Tick(); exposed for testing.
+    void PayDailyWages() noexcept;
+
+    // Override NPC wage multiplier per faction (default = BASE_WAGE_MULT).
+    // wage_class: 0=civilian(1.0×), 1=guard(2.0×), 2=tech(1.5×).
+    void SetFactionWageClass(uint8_t faction_id, uint8_t wage_class) noexcept {
+        for (int i = 0; i < faction_count_; ++i)
+            if (factions_[i].faction_id == faction_id)
+                { wage_class_[i] = wage_class; return; }
+    }
+
+    static constexpr float BASE_WAGE_PER_DAY = 50.f;   // cats/NPC/day
+    static constexpr float WAGE_CLASS_MULT[3] = { 1.f, 2.f, 1.5f };
+    // 1 game-day = 1440 sim-seconds (Tick fires at 1 Hz; 60s real = 1h game time)
+    static constexpr uint32_t TICKS_PER_GAME_DAY = 1440;
+
     // Reset all state — use in tests between test cases.
     void Reset() noexcept {
         faction_count_ = route_count_ = 0;
@@ -103,7 +122,8 @@ public:
     int              route_count_   = 0;
 
 private:
-    WorldSimulation() = default;
+    WorldSimulation() { memset(wage_class_, 0, sizeof(wage_class_)); }
     float    accum_s_    = 0.f;
     uint32_t tick_count_ = 0;
+    uint8_t  wage_class_[WS_MAX_FACTIONS] = {};  // 0=civilian,1=guard,2=tech
 };

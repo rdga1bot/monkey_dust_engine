@@ -206,6 +206,7 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
     if (map) { memcpy(map, data, size); SDL_UnmapGPUTransferBuffer(dev, transfer); }
 
     SDL_GPUCommandBuffer* cmd  = SDL_AcquireGPUCommandBuffer(dev);
+    if (!cmd) { MD_LOG(MD_LOG_WARNING, "[GpuStaticBuffer] AcquireCmd failed: %s", SDL_GetError()); return; }
     SDL_GPUCopyPass*      pass = SDL_BeginGPUCopyPass(cmd);
     SDL_GPUTransferBufferLocation src = {};
     src.transfer_buffer = transfer;
@@ -216,7 +217,8 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
     dst.size   = size;
     SDL_UploadToGPUBuffer(pass, &src, &dst, false /*no cycle — one shot*/);
     SDL_EndGPUCopyPass(pass);
-    SDL_SubmitGPUCommandBuffer(cmd);
+    if (!SDL_SubmitGPUCommandBuffer(cmd))
+        MD_LOG(MD_LOG_WARNING, "[GpuStaticBuffer] submit failed: %s", SDL_GetError());
 
     SDL_ReleaseGPUTransferBuffer(dev, transfer); // staging no longer needed
 #endif
@@ -312,6 +314,7 @@ bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSam
         if (map) { memcpy(map, rgba8, upload_size); SDL_UnmapGPUTransferBuffer(dev, transfer); }
 
         SDL_GPUCommandBuffer* cmd  = SDL_AcquireGPUCommandBuffer(dev);
+        if (!cmd) { MD_LOG(MD_LOG_WARNING, "[GpuTexture] AcquireCmd failed: %s", SDL_GetError()); SDL_ReleaseGPUTransferBuffer(dev, transfer); return false; }
         SDL_GPUCopyPass*      pass = SDL_BeginGPUCopyPass(cmd);
         SDL_GPUTextureTransferInfo src_info = {};
         src_info.transfer_buffer = transfer;
@@ -325,7 +328,8 @@ bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSam
         SDL_UploadToGPUTexture(pass, &src_info, &dst_region, false);
         SDL_EndGPUCopyPass(pass);
         if (s.gen_mipmap) SDL_GenerateMipmapsForGPUTexture(cmd, sdl_tex_);
-        SDL_SubmitGPUCommandBuffer(cmd);
+        if (!SDL_SubmitGPUCommandBuffer(cmd))
+            MD_LOG(MD_LOG_WARNING, "[GpuTexture] submit failed: %s", SDL_GetError());
         SDL_ReleaseGPUTransferBuffer(dev, transfer);
 
         sdl_sampler_ = CreateSDLSampler(dev, s);

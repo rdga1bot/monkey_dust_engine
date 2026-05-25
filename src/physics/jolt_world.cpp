@@ -12,6 +12,7 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
@@ -182,7 +183,10 @@ void JoltWorld::Step(float dt) {
                                    body_filter, shape_filter, *temp_alloc_);
     }
 
-    // Advance physics world (terrain, ragdolls, etc.)
+    // Jolt deadlocks on physics_system_.Update() when called with zero active bodies
+    // (static-only world with JobSystemThreadPool). CharacterVirtual handles its own
+    // collision queries via ExtendedUpdate() and does not need this call.
+    if (physics_system_.GetNumActiveBodies(JPH::EBodyType::RigidBody) == 0) return;
     physics_system_.Update(dt, 1, temp_alloc_, job_system_);
 }
 
@@ -224,6 +228,52 @@ void JoltWorld::RemoveBody(JPH::BodyID id)
     auto& bi = physics_system_.GetBodyInterface();
     bi.RemoveBody(id);
     bi.DestroyBody(id);
+}
+
+// P-NG-6.3: Replace PCG terrain body with HeightFieldShape (more efficient than trimesh).
+// Downsamples hmap from samples×samples → 129×129 (HeightFieldShape requires (N-1)%2==0).
+void JoltWorld::ReplaceTerrainBody(const float* hmap, int samples,
+                                    float scale_xz, float off_x, float off_z)
+{
+    if (!ready_) return;
+
+    // Remove previous terrain body
+    if (!terrain_body_.IsInvalid()) {
+        auto& bi = physics_system_.GetBodyInterface();
+        bi.RemoveBody(terrain_body_);
+        bi.DestroyBody(terrain_body_);
+        terrain_body_ = JPH::BodyID();
+    }
+
+    // HeightFieldShape requires (N-1) divisible by block_size (default 2) → use N=129.
+    static constexpr int HF_RES = 129;
+    static float s_hf[HF_RES * HF_RES];
+    float inv = (float)(samples - 1) / (float)(HF_RES - 1);
+    for (int z = 0; z < HF_RES; ++z)
+        for (int x = 0; x < HF_RES; ++x) {
+            int sx = (int)(x * inv + 0.5f); if (sx >= samples) sx = samples - 1;
+            int sz = (int)(z * inv + 0.5f); if (sz >= samples) sz = samples - 1;
+            s_hf[z * HF_RES + x] = hmap[sz * samples + sx];
+        }
+
+    float hf_cell = scale_xz * (float)(samples - 1) / (float)(HF_RES - 1);
+    JPH::HeightFieldShapeSettings hfs(
+        s_hf,
+        JPH::Vec3(off_x, 0.f, off_z),
+        JPH::Vec3(hf_cell, 1.f, hf_cell),
+        (JPH::uint32)HF_RES);
+
+    auto result = hfs.Create();
+    if (result.HasError()) {
+        fprintf(stderr, "[Jolt] HeightField: %s\n", result.GetError().c_str());
+        return;
+    }
+
+    JPH::BodyCreationSettings bcs(result.Get(),
+        JPH::RVec3::sZero(), JPH::Quat::sIdentity(),
+        JPH::EMotionType::Static, Layers::NON_MOVING);
+    terrain_body_ = physics_system_.GetBodyInterface().CreateAndAddBody(
+        bcs, JPH::EActivation::DontActivate);
 }
 
 float JoltWorld::CastRay(float fx, float fy, float fz,

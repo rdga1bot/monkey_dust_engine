@@ -126,6 +126,7 @@ void GpuRenderPass::BeginDepthOnly(SDL_GPUCommandBuffer* cmd, const DepthDesc& d
     depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
     depth_info.cycle            = false;
     sdl_pass_  = SDL_BeginGPURenderPass(cmd, nullptr, 0, &depth_info);
+    if (!sdl_pass_) fprintf(stderr, "[GPU] BeginDepthOnly FAILED: %s\n", SDL_GetError());
     cull_front_ = desc.cull_front; // stored for symmetry; SDL_GPU cull is pipeline-configured
 }
 
@@ -161,6 +162,7 @@ void GpuRenderPass::BeginColor(const ColorDesc& desc) {
             } else {
                 sdl_pass_ = SDL_BeginGPURenderPass(desc.cmd, &color_info, 1, nullptr);
             }
+            if (!sdl_pass_) fprintf(stderr, "[GPU] BeginColor FAILED: %s\n", SDL_GetError());
         }
     }
 #endif

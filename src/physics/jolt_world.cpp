@@ -6,7 +6,7 @@
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/TempAllocator.h>
-#include <Jolt/Core/JobSystemThreadPool.h>
+#include <Jolt/Core/JobSystemSingleThreaded.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -77,8 +77,9 @@ void JoltWorld::Init(int max_bodies) {
     JPH::RegisterTypes();
 
     temp_alloc_    = new JPH::TempAllocatorImpl(8 * 1024 * 1024); // 8 MB
-    job_system_    = new JPH::JobSystemThreadPool(
-                         JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, 1);
+    // JobSystemThreadPool deadlocks on Intel Gen9/ANV with static-only or low-activity worlds.
+    // Single-threaded job system runs all jobs on the calling thread — no deadlock possible.
+    job_system_    = new JPH::JobSystemSingleThreaded(JPH::cMaxPhysicsJobs);
     bp_layer_iface_ = new BPLayerInterface();
     ovbp_layer_pair_= new OVBPLayerPair();
     ovbp_filter_    = new OVBroadPhase();
@@ -183,11 +184,12 @@ void JoltWorld::Step(float dt) {
                                    body_filter, shape_filter, *temp_alloc_);
     }
 
-    // Jolt deadlocks on physics_system_.Update() when called with zero active bodies
-    // (static-only world with JobSystemThreadPool). CharacterVirtual handles its own
-    // collision queries via ExtendedUpdate() and does not need this call.
-    if (physics_system_.GetNumActiveBodies(JPH::EBodyType::RigidBody) == 0) return;
-    physics_system_.Update(dt, 1, temp_alloc_, job_system_);
+    // physics_system_.Update() hangs on Intel Gen9/ANV (Vulkan) regardless of
+    // job system type when rigid bodies are active (ragdolls with constraints).
+    // CharacterVirtual uses read-only collision queries and does not need this call.
+    // Ragdolls will remain in their initial pose — no simulation, no hang.
+    // TODO: re-enable once Jolt constraint solver issue on ANV is understood.
+    (void)job_system_; (void)temp_alloc_; (void)dt;
 }
 
 // ── Terrain chunk as static MeshShape ────────────────────────────────────────

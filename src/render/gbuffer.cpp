@@ -24,12 +24,9 @@ void GBuffer::Init(SDL_GPUDevice* dev, int w, int h) {
     ti.usage  = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
     rt1_ = SDL_CreateGPUTexture(dev, &ti);
 
-    // Depth: D24_UNORM_S8_UINT — check support first; fallback to D32_FLOAT
-    bool d24_ok = SDL_GPUTextureSupportsFormat(
-        dev, SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT,
-        SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
-    ti.format = d24_ok ? SDL_GPU_TEXTUREFORMAT_D24_UNORM_S8_UINT
-                       : SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
+    // D32_FLOAT_S8_UINT: Intel Gen9 cannot sample D24_UNORM_S8_UINT (support check was
+    // only for DEPTH_STENCIL_TARGET, missing SAMPLER — always use D32 for sampler safety).
+    ti.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
     ti.usage  = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
     depth_ = SDL_CreateGPUTexture(dev, &ti);
 

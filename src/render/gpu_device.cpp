@@ -11,11 +11,7 @@ GpuDevice& GpuDevice::Get() {
 }
 
 bool GpuDevice::Init(SDL_Window* window) {
-#ifdef DEBUG
-    constexpr bool kDebug = true;
-#else
-    constexpr bool kDebug = false;
-#endif
+    constexpr bool kDebug = true; // TEMP: validation always on to diagnose GPU crash
     device_ = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, kDebug, NULL);
     if (!device_) {
         MD_LOG(MD_LOG_WARNING, "[GpuDevice] SDL_CreateGPUDevice failed: %s", SDL_GetError());
@@ -55,8 +51,20 @@ SDL_GPUTexture* GpuDevice::AcquireSwapchainTexture(SDL_GPUCommandBuffer* cmd,
     return tex;
 }
 
+void GpuDevice::AdvanceFrameSlot() {
+    frame_slot_ = (frame_slot_ + 1) % 3;
+}
+
+void GpuDevice::BeginFrame() {
+    if (!prev_fence_ || !device_) return;
+    SDL_WaitForGPUFences(device_, true, &prev_fence_, 1);
+    SDL_ReleaseGPUFence(device_, prev_fence_);
+    prev_fence_ = nullptr;
+}
+
 void GpuDevice::Submit(SDL_GPUCommandBuffer* cmd) {
-    SDL_SubmitGPUCommandBuffer(cmd);
+    if (prev_fence_) { SDL_ReleaseGPUFence(device_, prev_fence_); prev_fence_ = nullptr; }
+    prev_fence_ = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
 }
 
 } // namespace md

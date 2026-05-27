@@ -23,8 +23,8 @@ void CasPass::CreateTextures(int w, int h) {
                               SDL_GPU_TEXTUREUSAGE_SAMPLER;
     scene_tex_ = SDL_CreateGPUTexture(dev, &ti);
 
-    // Depth texture for scene render.
-    ti.format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+    // Depth texture for scene render. D32_FLOAT: Intel Gen9 cannot sample D24_UNORM.
+    ti.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
     ti.usage   = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
     depth_tex_ = SDL_CreateGPUTexture(dev, &ti);
 

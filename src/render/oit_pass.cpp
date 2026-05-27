@@ -186,7 +186,7 @@ void OitPass::CreatePipelines() {
         target_info.color_target_descriptions = targets;
         target_info.num_color_targets         = 2;
         target_info.has_depth_stencil_target  = true;
-        target_info.depth_stencil_format      = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+        target_info.depth_stencil_format      = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 
         SDL_GPURasterizerState raster{};
         raster.cull_mode       = SDL_GPU_CULLMODE_NONE;

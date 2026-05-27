@@ -13,6 +13,8 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
+#include <Jolt/Physics/Constraints/PointConstraint.h>
+#include <Jolt/Physics/Constraints/ConeConstraint.h>
 #include <Jolt/Skeleton/Skeleton.h>
 #include <Jolt/Skeleton/SkeletonPose.h>
 #include <Jolt/Physics/EActivation.h>
@@ -81,16 +83,17 @@ bool RagdollSystem::Init(const char* /*glb_path*/) {
         part.mMotionType = (i == 0)
             ? JPH::EMotionType::Dynamic
             : JPH::EMotionType::Dynamic;
-        part.mObjectLayer = 1;  // moving objects layer
+        part.mObjectLayer = 2;  // RAGDOLL layer — no terrain collision, only RAGDOLL vs RAGDOLL
 
-        // Swing-twist constraint to parent (skip root)
+        // ConeConstraint: angular limit without twist axis — simpler than SwingTwist.
         if (k_parent[i] >= 0) {
-            auto* st = new JPH::SwingTwistConstraintSettings;
-            st->mNormalHalfConeAngle = 0.5f;   // ~30° swing
-            st->mPlaneHalfConeAngle  = 0.5f;
-            st->mTwistMinAngle       = -0.3f;
-            st->mTwistMaxAngle       =  0.3f;
-            part.mToParent = st;
+            auto* cc = new JPH::ConeConstraintSettings;
+            cc->mPoint1       = JPH::RVec3(k_offset_x[i], k_offset_y[i], 0.f);
+            cc->mPoint2       = JPH::RVec3(0.f, 0.f, 0.f);
+            cc->mTwistAxis1   = JPH::Vec3(0.f, 1.f, 0.f);
+            cc->mTwistAxis2   = JPH::Vec3(0.f, 1.f, 0.f);
+            cc->mHalfConeAngle = 0.5f; // ~30°
+            part.mToParent = cc;
         }
     }
 
@@ -177,6 +180,55 @@ void RagdollSystem::Tick(float dt, float player_x, float player_z) {
     }
 }
 
+// ── Segment / bone readback ──────────────────────────────────────────────────
+
+static void jolt_to_mat4(JPH::RVec3 pos, JPH::Quat rot, float* m) {
+    float qx=rot.GetX(), qy=rot.GetY(), qz=rot.GetZ(), qw=rot.GetW();
+    float x2=qx+qx, y2=qy+qy, z2=qz+qz;
+    float xx=qx*x2, xy=qx*y2, xz=qx*z2;
+    float yy=qy*y2, yz=qy*z2, zz=qz*z2;
+    float wx=qw*x2, wy=qw*y2, wz=qw*z2;
+    m[ 0]=1.f-(yy+zz); m[ 1]=xy+wz;        m[ 2]=xz-wy;        m[ 3]=0.f;
+    m[ 4]=xy-wz;       m[ 5]=1.f-(xx+zz);  m[ 6]=yz+wx;        m[ 7]=0.f;
+    m[ 8]=xz+wy;       m[ 9]=yz-wx;        m[10]=1.f-(xx+yy);  m[11]=0.f;
+    m[12]=(float)pos.GetX(); m[13]=(float)pos.GetY(); m[14]=(float)pos.GetZ(); m[15]=1.f;
+}
+
+bool RagdollSystem::GetSegmentWorlds(entt::entity e, float out_seg[6][16]) const {
+    auto& reg = Registry::Get();
+    const auto* rc = reg.try_get<RagdollComponent>(e);
+    if (!rc || !rc->active || !rc->ragdoll) return false;
+
+    const auto& ids = rc->ragdoll->GetBodyIDs();
+    auto& bi = JoltWorld::Get().System().GetBodyInterface();
+    for (int s = 0; s < 6; ++s) {
+        if (s >= (int)ids.size() || ids[s].IsInvalid()) {
+            float* m = out_seg[s];
+            memset(m, 0, 64);
+            m[0]=m[5]=m[10]=m[15]=1.f;
+            continue;
+        }
+        jolt_to_mat4(bi.GetPosition(ids[s]), bi.GetRotation(ids[s]), out_seg[s]);
+    }
+    return true;
+}
+
+// bone_count bones, each mapped to one of 6 segments.
+// Torso=0: bones 0,1,12,13,14  Head=1: 20-24  LArm=2: 15-19
+// RArm=3: 25-29  LLeg=4: 2-6  RLeg=5: 7-11
+static const uint8_t k_bone_seg[30] = {
+    0,0, 4,4,4,4,4, 5,5,5,5,5, 0,0,0, 2,2,2,2,2, 1,1,1,1,1, 3,3,3,3,3
+};
+
+bool RagdollSystem::GetBoneMatrices(entt::entity e, float* out, int bone_count) const {
+    float seg[6][16];
+    if (!GetSegmentWorlds(e, seg)) return false;
+    const int n = bone_count < 30 ? bone_count : 30;
+    for (int b = 0; b < n; ++b)
+        memcpy(out + b * 16, seg[k_bone_seg[b]], 64);
+    return true;
+}
+
 void RagdollSystem::DeactivateChunk(float min_x, float min_z,
                                     float max_x, float max_z) {
     auto& reg = Registry::Get();
@@ -188,22 +240,3 @@ void RagdollSystem::DeactivateChunk(float min_x, float min_z,
     }
 }
 
-bool RagdollSystem::GetBoneMatrices(entt::entity e, float* out_matrices,
-                                     int bone_count) const {
-    auto& reg = Registry::Get();
-    const auto* rc = reg.try_get<RagdollComponent>(e);
-    if (!rc || !rc->active || !rc->ragdoll) return false;
-
-    int n = bone_count < 6 ? bone_count : 6;
-    JPH::SkeletonPose pose;
-    pose.SetSkeleton(skeleton_);
-    rc->ragdoll->GetPose(pose);
-
-    for (int i = 0; i < n; ++i) {
-        const auto& jt  = pose.GetJoint(i);
-        JPH::Mat44  mat = JPH::Mat44::sRotationTranslation(jt.mRotation,
-                                                            jt.mTranslation);
-        memcpy(out_matrices + i * 16, &mat, sizeof(float) * 16);
-    }
-    return true;
-}

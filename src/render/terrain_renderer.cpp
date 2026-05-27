@@ -190,6 +190,8 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
         return;
     }
 #ifdef MD_SDL_GPU
+    if (!chunk.vbo.SDLBuffer() || !chunk.ibo.SDLBuffer()) return;
+
     SDL_BindGPUGraphicsPipeline(rp, pom_pipeline_.SDLPipeline());
 
     SDL_GPUBufferBinding vb { chunk.vbo.SDLBuffer(), 0u };
@@ -230,6 +232,8 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
 
     SDL_GPUTextureSamplerBinding bindings[2];
     FillPomSamplerBindings(bindings);
+    if (!bindings[0].texture || !bindings[0].sampler ||
+        !bindings[1].texture || !bindings[1].sampler) return;
     SDL_BindGPUFragmentSamplers(rp, 0, bindings, 2);
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
@@ -308,7 +312,7 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                               float world_origin_z,
                               float world_to_uv)
 {
-    if (!IsReady() || !chunk.loaded) return;
+    if (!IsReady() || !chunk.loaded || !chunk.vbo.SDLBuffer() || !chunk.ibo.SDLBuffer()) return;
 #ifdef MD_SDL_GPU
     SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
     SDL_GPUBufferBinding vb { chunk.vbo.SDLBuffer(), 0u };
@@ -335,6 +339,7 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
 
     SDL_GPUTextureSamplerBinding bindings[1];
     FillSamplerBindings(bindings);
+    if (!bindings[0].texture || !bindings[0].sampler) return;
     SDL_BindGPUFragmentSamplers(rp, 0, bindings, 1);
 
     SDL_DrawGPUIndexedPrimitives(rp, TERRAIN_IDX, 1, 0, 0, 0);
@@ -349,7 +354,7 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
                            float world_origin_z,
                            float world_to_uv)
 {
-    if (!IsReady() || !chunk.loaded) return;
+    if (!IsReady() || !chunk.loaded || !chunk.vbo.SDLBuffer() || !chunk.ibo.SDLBuffer()) return;
 
 #ifdef MD_SDL_GPU
     cb.BindPipeline(&pipeline_);
@@ -379,6 +384,7 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
 
     SDL_GPUTextureSamplerBinding bindings[1];
     FillSamplerBindings(bindings);
+    if (!bindings[0].texture || !bindings[0].sampler) return;
     cb.BindFragmentSamplers(0, bindings, 1);
 
     SDL_DrawGPUIndexedPrimitives(cb.SDLPass(), TERRAIN_IDX, 1, 0, 0, 0);

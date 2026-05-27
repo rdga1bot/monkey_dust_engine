@@ -75,6 +75,31 @@ float SkinMesh::slerp_t(const SkinTrack& tr, float time_s,
     return f;
 }
 
+// ── Morph target helpers ─────────────────────────────────────────────────────
+
+// Extract targetNames array from glTF mesh extras JSON:
+//   {"targetNames":["wide_cheekbones","narrow_cheekbones",...]}
+static void s_parse_morph_names(const char* extras_json,
+                                 char names[][48], int max_n, int* out_count) {
+    *out_count = 0;
+    if (!extras_json) return;
+    const char* p = strstr(extras_json, "\"targetNames\"");
+    if (!p) return;
+    p = strchr(p, '['); if (!p) return; ++p;
+    int idx = 0;
+    while (*p && idx < max_n) {
+        while (*p && *p != '"' && *p != ']') ++p;
+        if (!*p || *p == ']') break;
+        ++p; // skip opening quote
+        int len = 0;
+        while (*p && *p != '"' && len < 47) names[idx][len++] = *p++;
+        names[idx][len] = '\0';
+        if (*p == '"') ++p; // skip closing quote
+        ++idx;
+    }
+    *out_count = idx;
+}
+
 // ── GLB loading ──────────────────────────────────────────────────────────────
 
 bool SkinMesh::LoadGLB(const char* path) {
@@ -143,6 +168,49 @@ bool SkinMesh::LoadGLB(const char* path) {
     vbo.Init(0x8892u, s_verts, (uint32_t)(nv * sizeof(SkinVertex)));
     cpu_verts_  = s_verts;
     vert_count_ = (uint32_t)nv;
+
+    // ── Morph targets ─────────────────────────────────────────────────────────
+    free(morph_deltas_); morph_deltas_ = nullptr;
+    morph_count_ = 0;
+    memset(morph_weights, 0, sizeof(morph_weights));
+    memset(morph_names_,  0, sizeof(morph_names_));
+
+    int n_targets = (int)prim->targets_count;
+    if (n_targets > MAX_MORPH_TARGETS) n_targets = MAX_MORPH_TARGETS;
+    if (n_targets > 0) {
+        // Parse targetNames from mesh extras JSON
+        const char* extras_json = nullptr;
+        for (cgltf_size mi2 = 0; mi2 < data->meshes_count; ++mi2)
+            for (cgltf_size pi2 = 0; pi2 < data->meshes[mi2].primitives_count; ++pi2)
+                if (&data->meshes[mi2].primitives[pi2] == prim) {
+                    extras_json = data->meshes[mi2].extras.data; goto found_mesh;
+                }
+        found_mesh:
+        int names_found = 0;
+        s_parse_morph_names(extras_json, morph_names_, n_targets, &names_found);
+
+        size_t delta_floats = (size_t)n_targets * nv * 3;
+        morph_deltas_ = (float*)calloc(delta_floats, sizeof(float));
+        if (morph_deltas_) {
+            for (int mt = 0; mt < n_targets; ++mt) {
+                cgltf_morph_target& tgt = prim->targets[mt];
+                for (cgltf_size ai = 0; ai < tgt.attributes_count; ++ai) {
+                    if (tgt.attributes[ai].type != cgltf_attribute_type_position) continue;
+                    cgltf_accessor* dacc = tgt.attributes[ai].data;
+                    float* base = morph_deltas_ + (size_t)mt * nv * 3;
+                    cgltf_size read_n = dacc->count < nv ? dacc->count : nv;
+                    for (cgltf_size vi = 0; vi < read_n; ++vi)
+                        cgltf_accessor_read_float(dacc, vi, base + vi * 3, 3);
+                    break;
+                }
+                // Fill name from fallback index if not found in extras
+                if (mt >= names_found || morph_names_[mt][0] == '\0')
+                    snprintf(morph_names_[mt], 48, "morph_%d", mt);
+            }
+            morph_count_ = n_targets;
+        }
+        fprintf(stdout,"[SkinMesh] %d morph targets loaded\n", morph_count_);
+    }
 
     cgltf_size ni = prim->indices->count;
     indices_u16 = (nv <= 65535);
@@ -276,7 +344,22 @@ bool SkinMesh::LoadGLB(const char* path) {
 
 void SkinMesh::Shutdown() {
     vbo.Shutdown(); ibo.Shutdown();
-    index_count=0; loaded=false; bone_count=0; clip_count_=0;
+    free(morph_deltas_); morph_deltas_ = nullptr;
+    index_count=0; loaded=false; bone_count=0; clip_count_=0; morph_count_=0;
+}
+
+void SkinMesh::WriteMorphedVerts(SkinVertex* out) const {
+    memcpy(out, cpu_verts_, vert_count_ * sizeof(SkinVertex));
+    for (int m = 0; m < morph_count_; ++m) {
+        float w = morph_weights[m];
+        if (w == 0.f) continue;
+        const float* deltas = morph_deltas_ + (size_t)m * vert_count_ * 3;
+        for (uint32_t v = 0; v < vert_count_; ++v) {
+            out[v].x  += w * deltas[v*3+0];
+            out[v].y  += w * deltas[v*3+1];
+            out[v].z  += w * deltas[v*3+2];
+        }
+    }
 }
 
 int SkinMesh::ClipIndexByName(const char* name) const {

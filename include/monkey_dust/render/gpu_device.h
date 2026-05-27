@@ -41,13 +41,24 @@ public:
     SDL_GPUTexture* AcquireSwapchainTexture(SDL_GPUCommandBuffer* cmd,
                                              uint32_t* out_w, uint32_t* out_h);
 
-    // Submit the command buffer and present the swapchain.
+    // Advance the frame slot (0→1→2→0). Call once per frame before any uploads.
+    void AdvanceFrameSlot();
+    // Current triple-buffer slot (0..2). Per-frame SSBOs/RingBuffers use this.
+    int  FrameSlot() const { return frame_slot_; }
+
+    // Wait for previous frame's fence, then release it.
+    // Call once at the top of each frame BEFORE AdvanceFrameSlot.
+    void BeginFrame();
+
+    // Submit the command buffer and acquire a fence for next-frame sync.
     void Submit(SDL_GPUCommandBuffer* cmd);
 
 private:
     GpuDevice() = default;
-    SDL_GPUDevice* device_ = nullptr;
-    SDL_Window*    window_ = nullptr;
+    SDL_GPUDevice* device_     = nullptr;
+    SDL_Window*    window_     = nullptr;
+    int            frame_slot_ = 0;
+    SDL_GPUFence*  prev_fence_ = nullptr;
 };
 
 } // namespace md

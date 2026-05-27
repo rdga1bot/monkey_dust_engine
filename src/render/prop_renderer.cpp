@@ -81,6 +81,7 @@ void PropRenderer::DrawRaw(
 
 #ifdef MD_SDL_GPU
     if (!pipeline_.SDLPipeline()) return;
+    if (!mesh_.vbo.SDLBuffer() || !mesh_.ibo.SDLBuffer()) return;
 
     // Bind pipeline + mesh buffers once.
     SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());

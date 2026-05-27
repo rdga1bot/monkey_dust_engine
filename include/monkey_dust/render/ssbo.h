@@ -31,16 +31,16 @@ public:
     void Shutdown();
 
 #ifdef MD_SDL_GPU
-    SDL_GPUBuffer* SDLBuffer() const { return sdl_buf_; }
-    // Upload within an existing frame command buffer's copy pass.
-    // Preferred over Upload() when a frame cmd is available (avoids extra submissions).
+    // Returns the current frame's GPU buffer (slot = GpuDevice::FrameSlot()).
+    SDL_GPUBuffer* SDLBuffer() const;
+    // Upload within an existing frame command buffer's copy pass (writes to current slot).
     void UploadInCmd(SDL_GPUCommandBuffer* cmd, const void* data, int size_bytes, int offset = 0);
 #endif
 
 private:
 #ifdef MD_SDL_GPU
-    SDL_GPUBuffer*         sdl_buf_      = nullptr;
-    SDL_GPUTransferBuffer* sdl_transfer_ = nullptr;
-    uint32_t               sdl_cap_      = 0;
+    SDL_GPUBuffer*         sdl_buf_[3]      = {};
+    SDL_GPUTransferBuffer* sdl_transfer_[3] = {};
+    uint32_t               sdl_cap_         = 0;
 #endif
 };

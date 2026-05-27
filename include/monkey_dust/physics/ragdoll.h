@@ -52,6 +52,11 @@ public:
     // chunk_min_x/z, chunk_max_x/z define the chunk bounds.
     void DeactivateChunk(float min_x, float min_z, float max_x, float max_z);
 
+    // World transforms (column-major mat4) for each of the 6 ragdoll segments.
+    // out_seg[0]=Torso [1]=Head [2]=LArm [3]=RArm [4]=LLeg [5]=RLeg
+    // Returns false if entity has no active ragdoll.
+    bool GetSegmentWorlds(entt::entity e, float out_seg[6][16]) const;
+
     // Retrieve bone world matrices for GPU skinning upload (30 bones × Mat4).
     // out_matrices: caller-allocated float[bone_count * 16].
     // Returns false if entity has no active ragdoll.

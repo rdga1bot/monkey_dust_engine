@@ -41,24 +41,26 @@ void TransformSoA::Init() {
         bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
                    SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ;
 
-        bi.size  = XZYR_SIZE;
-        sdl_xzyr_buf_ = SDL_CreateGPUBuffer(dev, &bi);
-        if (!sdl_xzyr_buf_)
-            MD_LOG(MD_LOG_WARNING, "[TransformSoA] SDL xzyr buffer failed: %s", SDL_GetError());
-
-        bi.size  = FACI_SIZE;
-        sdl_faction_buf_ = SDL_CreateGPUBuffer(dev, &bi);
-        if (!sdl_faction_buf_)
-            MD_LOG(MD_LOG_WARNING, "[TransformSoA] SDL faction buffer failed: %s", SDL_GetError());
-
         SDL_GPUTransferBufferCreateInfo ti = {};
         ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
 
-        ti.size  = XZYR_SIZE;
-        sdl_xzyr_stg_ = SDL_CreateGPUTransferBuffer(dev, &ti);
+        for (int s = 0; s < 3; ++s) {
+            bi.size = XZYR_SIZE;
+            sdl_xzyr_buf_[s] = SDL_CreateGPUBuffer(dev, &bi);
+            if (!sdl_xzyr_buf_[s])
+                MD_LOG(MD_LOG_WARNING, "[TransformSoA] SDL xzyr buf[%d] failed: %s", s, SDL_GetError());
 
-        ti.size  = FACI_SIZE;
-        sdl_faction_stg_ = SDL_CreateGPUTransferBuffer(dev, &ti);
+            bi.size = FACI_SIZE;
+            sdl_faction_buf_[s] = SDL_CreateGPUBuffer(dev, &bi);
+            if (!sdl_faction_buf_[s])
+                MD_LOG(MD_LOG_WARNING, "[TransformSoA] SDL faction buf[%d] failed: %s", s, SDL_GetError());
+
+            ti.size = XZYR_SIZE;
+            sdl_xzyr_stg_[s] = SDL_CreateGPUTransferBuffer(dev, &ti);
+
+            ti.size = FACI_SIZE;
+            sdl_faction_stg_[s] = SDL_CreateGPUTransferBuffer(dev, &ti);
+        }
     }
 #endif
 }
@@ -272,58 +274,58 @@ void TransformSoA::AssignSlot(entt::entity e, uint32_t slot,
 }
 
 #ifdef MD_SDL_GPU
+SDL_GPUBuffer* TransformSoA::SDLTransformBuffer() const {
+    return sdl_xzyr_buf_[md::GpuDevice::Get().FrameSlot()];
+}
+SDL_GPUBuffer* TransformSoA::SDLFactionBuffer() const {
+    return sdl_faction_buf_[md::GpuDevice::Get().FrameSlot()];
+}
+
 void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
     if (!cmd || active_count <= 0) return;
+    int s = md::GpuDevice::Get().FrameSlot();
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
 
-    // Upload xzyr — only if dirty, and only the changed slot range.
-    if (xzyr_dirty_ && sdl_xzyr_stg_ && sdl_xzyr_buf_) {
-        uint32_t lo = xzyr_dirty_min_;
-        uint32_t hi = xzyr_dirty_max_;
-        if (hi >= (uint32_t)active_count) hi = (uint32_t)active_count - 1;
-        if (lo > hi) lo = hi;
-        uint32_t cnt     = hi - lo + 1;
-        uint32_t byte_off = lo * 4 * (uint32_t)sizeof(float);
-        uint32_t byte_sz  = cnt * 4 * (uint32_t)sizeof(float);
-
-        float* dst = (float*)SDL_MapGPUTransferBuffer(dev, sdl_xzyr_stg_, true);
+    // Upload all active xzyr every frame (full upload to current slot — no dirty-range
+    // since triple-buffering means cycle=false is safe: GPU never reads this slot).
+    if (sdl_xzyr_stg_[s] && sdl_xzyr_buf_[s]) {
+        uint32_t byte_sz = (uint32_t)active_count * 4 * sizeof(float);
+        float* dst = (float*)SDL_MapGPUTransferBuffer(dev, sdl_xzyr_stg_[s], false);
         if (dst) {
-            for (uint32_t i = lo; i <= hi; ++i) {
+            for (int i = 0; i < active_count; ++i) {
                 dst[i*4+0] = px[i];
                 dst[i*4+1] = pz[i];
                 dst[i*4+2] = py[i];
                 dst[i*4+3] = rot_y[i];
             }
-            SDL_UnmapGPUTransferBuffer(dev, sdl_xzyr_stg_);
+            SDL_UnmapGPUTransferBuffer(dev, sdl_xzyr_stg_[s]);
         }
         SDL_GPUCopyPass* cpass = SDL_BeginGPUCopyPass(cmd);
         SDL_GPUTransferBufferLocation src = {};
-        src.transfer_buffer = sdl_xzyr_stg_;
-        src.offset           = byte_off;
+        src.transfer_buffer = sdl_xzyr_stg_[s];
         SDL_GPUBufferRegion dst_r = {};
-        dst_r.buffer = sdl_xzyr_buf_;
-        dst_r.offset = byte_off;
+        dst_r.buffer = sdl_xzyr_buf_[s];
         dst_r.size   = byte_sz;
         SDL_UploadToGPUBuffer(cpass, &src, &dst_r, false);
         SDL_EndGPUCopyPass(cpass);
         xzyr_dirty_ = false;
     }
 
-    // Upload faction data
-    if (sdl_faction_stg_ && sdl_faction_buf_) {
-        uint32_t* dst = (uint32_t*)SDL_MapGPUTransferBuffer(dev, sdl_faction_stg_, true);
+    // Upload faction data to current slot.
+    if (sdl_faction_stg_[s] && sdl_faction_buf_[s]) {
+        uint32_t* dst = (uint32_t*)SDL_MapGPUTransferBuffer(dev, sdl_faction_stg_[s], false);
         if (dst) {
             for (int i = 0; i < active_count; ++i)
                 dst[i] = (uint32_t)faction[i];
-            SDL_UnmapGPUTransferBuffer(dev, sdl_faction_stg_);
+            SDL_UnmapGPUTransferBuffer(dev, sdl_faction_stg_[s]);
         }
         SDL_GPUCopyPass* cpass = SDL_BeginGPUCopyPass(cmd);
         SDL_GPUTransferBufferLocation src = {};
-        src.transfer_buffer = sdl_faction_stg_;
+        src.transfer_buffer = sdl_faction_stg_[s];
         SDL_GPUBufferRegion dst_r = {};
-        dst_r.buffer = sdl_faction_buf_;
+        dst_r.buffer = sdl_faction_buf_[s];
         dst_r.size   = (Uint32)(active_count * sizeof(uint32_t));
-        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, true);
+        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, false);
         SDL_EndGPUCopyPass(cpass);
     }
 }

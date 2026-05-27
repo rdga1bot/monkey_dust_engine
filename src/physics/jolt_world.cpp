@@ -6,7 +6,7 @@
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/TempAllocator.h>
-#include <Jolt/Core/JobSystemSingleThreaded.h>
+#include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -27,10 +27,13 @@
 #include <cstdlib>
 
 // ── Jolt boilerplate: object layers ─────────────────────────────────────────
+// RAGDOLL layer: collides only with other RAGDOLL — skips all 49 terrain MeshShapes.
+// Ragdolls fall under gravity + ConeConstraints without expensive terrain narrowphase.
 namespace Layers {
     static constexpr JPH::ObjectLayer NON_MOVING = 0;
     static constexpr JPH::ObjectLayer MOVING     = 1;
-    static constexpr JPH::ObjectLayer NUM_LAYERS = 2;
+    static constexpr JPH::ObjectLayer RAGDOLL    = 2;
+    static constexpr JPH::ObjectLayer NUM_LAYERS = 3;
 }
 namespace BroadPhaseLayers {
     static constexpr JPH::BroadPhaseLayer NON_MOVING(0);
@@ -43,6 +46,7 @@ struct JoltWorld::BPLayerInterface final : public JPH::BroadPhaseLayerInterface 
     BPLayerInterface() {
         obj_to_bp[Layers::NON_MOVING] = BroadPhaseLayers::NON_MOVING;
         obj_to_bp[Layers::MOVING]     = BroadPhaseLayers::MOVING;
+        obj_to_bp[Layers::RAGDOLL]    = BroadPhaseLayers::MOVING;
     }
     uint GetNumBroadPhaseLayers() const override { return BroadPhaseLayers::NUM_LAYERS; }
     JPH::BroadPhaseLayer GetBroadPhaseLayer(JPH::ObjectLayer l) const override {
@@ -58,6 +62,7 @@ struct JoltWorld::BPLayerInterface final : public JPH::BroadPhaseLayerInterface 
 struct JoltWorld::OVBPLayerPair final : public JPH::ObjectVsBroadPhaseLayerFilter {
     bool ShouldCollide(JPH::ObjectLayer ol, JPH::BroadPhaseLayer bl) const override {
         if (ol == Layers::NON_MOVING) return bl == BroadPhaseLayers::MOVING;
+        if (ol == Layers::RAGDOLL)    return bl == BroadPhaseLayers::MOVING;
         return true;
     }
 };
@@ -65,7 +70,8 @@ struct JoltWorld::OVBPLayerPair final : public JPH::ObjectVsBroadPhaseLayerFilte
 struct JoltWorld::OVBroadPhase final : public JPH::ObjectLayerPairFilter {
     bool ShouldCollide(JPH::ObjectLayer a, JPH::ObjectLayer b) const override {
         if (a == Layers::NON_MOVING) return b == Layers::MOVING;
-        if (a == Layers::MOVING)     return true;
+        if (a == Layers::MOVING)     return b != Layers::RAGDOLL;
+        if (a == Layers::RAGDOLL)    return b == Layers::RAGDOLL;
         return false;
     }
 };
@@ -77,9 +83,10 @@ void JoltWorld::Init(int max_bodies) {
     JPH::RegisterTypes();
 
     temp_alloc_    = new JPH::TempAllocatorImpl(8 * 1024 * 1024); // 8 MB
-    // JobSystemThreadPool deadlocks on Intel Gen9/ANV with static-only or low-activity worlds.
-    // Single-threaded job system runs all jobs on the calling thread — no deadlock possible.
-    job_system_    = new JPH::JobSystemSingleThreaded(JPH::cMaxPhysicsJobs);
+    // 2 worker threads: avoids the 1-thread pool deadlock (main waits for worker,
+    // worker creates job that needs a second worker to signal the barrier).
+    job_system_    = new JPH::JobSystemThreadPool(JPH::cMaxPhysicsJobs,
+                                                  JPH::cMaxPhysicsBarriers, 2);
     bp_layer_iface_ = new BPLayerInterface();
     ovbp_layer_pair_= new OVBPLayerPair();
     ovbp_filter_    = new OVBroadPhase();
@@ -184,12 +191,7 @@ void JoltWorld::Step(float dt) {
                                    body_filter, shape_filter, *temp_alloc_);
     }
 
-    // physics_system_.Update() hangs on Intel Gen9/ANV (Vulkan) regardless of
-    // job system type when rigid bodies are active (ragdolls with constraints).
-    // CharacterVirtual uses read-only collision queries and does not need this call.
-    // Ragdolls will remain in their initial pose — no simulation, no hang.
-    // TODO: re-enable once Jolt constraint solver issue on ANV is understood.
-    (void)job_system_; (void)temp_alloc_; (void)dt;
+    physics_system_.Update(dt, 1, temp_alloc_, job_system_);
 }
 
 // ── Terrain chunk as static MeshShape ────────────────────────────────────────

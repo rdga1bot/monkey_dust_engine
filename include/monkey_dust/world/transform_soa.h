@@ -59,8 +59,8 @@ public:
     // Upload xzyr + faction to SDL_GPU device buffers via copy passes in cmd.
     // Call before any SDL_GPU compute pass that reads transform or faction data.
     void UploadSDLGPU(SDL_GPUCommandBuffer* cmd);
-    SDL_GPUBuffer* SDLTransformBuffer() const { return sdl_xzyr_buf_; }
-    SDL_GPUBuffer* SDLFactionBuffer()   const { return sdl_faction_buf_; }
+    SDL_GPUBuffer* SDLTransformBuffer() const;
+    SDL_GPUBuffer* SDLFactionBuffer()   const;
 #endif
     MD_HOT void BulkComputeDistSq(float cam_x, float cam_z);
     MD_HOT void BulkComputeLOD(float near_sq, float far_sq, uint8_t* out_lod) const;
@@ -109,9 +109,9 @@ private:
     uint32_t xzyr_dirty_min_ = 0;
     uint32_t xzyr_dirty_max_ = 0;
 #ifdef MD_SDL_GPU
-    SDL_GPUBuffer*         sdl_xzyr_buf_    = nullptr;
-    SDL_GPUTransferBuffer* sdl_xzyr_stg_    = nullptr;
-    SDL_GPUBuffer*         sdl_faction_buf_ = nullptr;
-    SDL_GPUTransferBuffer* sdl_faction_stg_ = nullptr;
+    SDL_GPUBuffer*         sdl_xzyr_buf_[3]    = {};
+    SDL_GPUTransferBuffer* sdl_xzyr_stg_[3]    = {};
+    SDL_GPUBuffer*         sdl_faction_buf_[3] = {};
+    SDL_GPUTransferBuffer* sdl_faction_stg_[3] = {};
 #endif
 };

@@ -8,9 +8,10 @@
 #include <cstring>
 #include <cmath>
 
-static constexpr int MAX_SKIN_BONES = 64;  // must match animation_soa MAX_BONES (SSBO stride)
-static constexpr int MAX_SKIN_CLIPS = 16;
-static constexpr int MAX_SKIN_KF    = 512; // keyframes per track
+static constexpr int MAX_SKIN_BONES   = 64;  // must match animation_soa MAX_BONES (SSBO stride)
+static constexpr int MAX_SKIN_CLIPS   = 16;
+static constexpr int MAX_SKIN_KF      = 512; // keyframes per track
+static constexpr int MAX_MORPH_TARGETS = 32; // blend shapes per mesh
 
 struct SkinVertex {
     float    x, y, z;      // position  (offset  0, 12 B)
@@ -114,6 +115,16 @@ public:
     const SkinVertex* CpuVerts()  const { return cpu_verts_; }
     uint32_t          VertCount() const { return vert_count_; }
 
+    // Blend shape (morph target) interface.
+    // morph_weights[i] is public — set by caller in [0..1].
+    // WriteMorphedVerts() copies cpu_verts_ and applies weighted deltas into out[].
+    // out must hold at least vert_count_ SkinVertex structs.
+    int         MorphCount()           const { return morph_count_; }
+    const char* MorphName(int i)       const { return (i>=0&&i<morph_count_)?morph_names_[i]:""; }
+    void        WriteMorphedVerts(SkinVertex* out) const;
+
+    float morph_weights[MAX_MORPH_TARGETS] = {};  // set by caller; used by WriteMorphedVerts
+
     GpuStaticBuffer vbo;
     GpuStaticBuffer ibo;
     uint32_t        index_count  = 0;
@@ -138,6 +149,13 @@ private:
 
     SkinClip clips_[MAX_SKIN_CLIPS];
     int      clip_count_ = 0;
+
+    // Morph target data (loaded from GLB prim->targets)
+    int   morph_count_  = 0;
+    char  morph_names_[MAX_MORPH_TARGETS][48] = {};
+    // Heap-allocated: morph_count_ × vert_count_ × 3 floats (pos deltas)
+    // Layout: delta[m][v] at index (m * vert_count_ + v) * 3
+    float* morph_deltas_ = nullptr;
 
     // Helpers
     static void mat4_identity(float* m);

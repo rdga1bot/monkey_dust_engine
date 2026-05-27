@@ -11,7 +11,7 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
 #include <Jolt/Core/TempAllocator.h>
-#include <Jolt/Core/JobSystemSingleThreaded.h>
+#include <Jolt/Core/JobSystemThreadPool.h>
 
 class JoltWorld {
 public:
@@ -64,7 +64,7 @@ private:
     bool                          ready_ = false;
     JPH::PhysicsSystem            physics_system_;
     JPH::TempAllocatorImpl*       temp_alloc_  = nullptr;
-    JPH::JobSystemSingleThreaded* job_system_  = nullptr;
+    JPH::JobSystemThreadPool*     job_system_  = nullptr;
 
     // Broad-phase layers
     struct BPLayerInterface;

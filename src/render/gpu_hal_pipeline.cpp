@@ -278,7 +278,9 @@ bool GpuPipeline::Create(const Desc& desc) {
     target_info.color_target_descriptions = desc.depth_only ? nullptr : &color_target;
     target_info.num_color_targets         = desc.depth_only ? 0u : 1u;
     if (desc.has_depth_target || desc.depth_only) {
-        target_info.depth_stencil_format       = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+        // D32_FLOAT: must match GpuDepthTexture::Init which uses D32_FLOAT.
+        // Intel Gen9 (HD 520) cannot sample D24_UNORM — pipeline must match texture.
+        target_info.depth_stencil_format       = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
         target_info.has_depth_stencil_target   = true;
     }
 

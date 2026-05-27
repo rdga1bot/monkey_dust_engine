@@ -40,20 +40,21 @@ public:
 
 
 #ifdef MD_SDL_GPU
-    // Map SDL_GPU transfer staging buffer for CPU writing (cycle=true).
+    // Map the current frame's staging buffer for CPU writing.
     // Follow with UnmapSDL() then Upload(cmd) before any compute pass reads this buffer.
     void*          MapWriteSDL();
     void           UnmapSDL();
-    // Record a copy pass in cmd: staging → device buffer.
+    // Record a copy pass in cmd: current staging → current device buffer.
     void           Upload(SDL_GPUCommandBuffer* cmd);
-    SDL_GPUBuffer* SDLBuffer() const { return sdl_device_; }
+    // Returns the current frame's device buffer (slot = GpuDevice::FrameSlot()).
+    SDL_GPUBuffer* SDLBuffer() const;
 #endif
 
 private:
 #ifdef MD_SDL_GPU
-    SDL_GPUBuffer*         sdl_device_  = nullptr;
-    SDL_GPUTransferBuffer* sdl_staging_ = nullptr;
-    uint32_t               sdl_size_    = 0;
+    SDL_GPUBuffer*         sdl_device_[3]  = {};
+    SDL_GPUTransferBuffer* sdl_staging_[3] = {};
+    uint32_t               sdl_size_       = 0;
 #endif
     uint32_t size_ = 0;
     int      cur_  = 0;

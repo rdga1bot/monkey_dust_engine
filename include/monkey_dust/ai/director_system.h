@@ -30,8 +30,11 @@ struct DirectorProfile {
 // One instance is active at runtime; loaded from data/ai/director_config.json.
 struct DirectorConfig {
     // ── Menace / stage thresholds ─────────────────────────────────────────────
-    float menace_fill_rate        = 0.05f;  // menace/s while threat active
-    float menace_drain_rate       = 0.02f;  // menace/s while safe
+    // RE-calibrated from AI.exe.c (VBfA): fill_s=8, decay_s=12, cooldown_s=5
+    float menace_fill_rate        = 0.125f; // menace/s while threat active (1/8)
+    float menace_drain_rate       = 0.083f; // menace/s while safe (1/12)
+    float menace_cooldown_s       = 5.0f;   // pause between escalations (RE: 5s)
+    int   max_menaces             = 3;      // max simultaneous threat sources (RE: 3)
     float stage_suspicious_thresh = 0.25f;  // menace ≥ this → Suspicious
     float stage_hunting_thresh    = 0.50f;  // menace ≥ this → Hunting
     float stage_intense_thresh    = 0.75f;  // menace ≥ this → Intense
@@ -44,7 +47,11 @@ struct DirectorConfig {
     float spawn_cooldown_s        = 30.0f;  // seconds between waves
     int   max_active_threats      = 16;     // hard cap on active director-spawned entities
 
-    // ── Search / patrol ───────────────────────────────────────────────────────
+    // ── Search / stalk ────────────────────────────────────────────────────────
+    // RE-calibrated: near_target_min=5m, stalk_radius=20m, stalk_timeout=30s
+    float near_target_min_m       = 5.0f;   // stalk exclusion radius (RE: 5m)
+    float stalk_radius_m          = 20.0f;  // stalk movement radius (RE: 20m)
+    float stalk_timeout_s         = 30.0f;  // abandon stalk after this (RE: 30s)
     float chase_break_time_s      = 15.0f;  // give up chase after this duration
     float search_timeout_s        = 45.0f;  // total search budget before de-escalate
     float search_grid_size_m      = 10.0f;  // grid cell size for systematic search

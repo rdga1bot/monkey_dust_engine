@@ -12,14 +12,20 @@
 // Стан зон зберігається у CombatComponent (не тут).
 // ─────────────────────────────────────────────────────────
 
+// VBfA RE: 19 bone zones (viking.exe.c case 0-18).
+// Logical grouping into 6 damage zones (Head/Torso/Arms/Legs) matches Kenshi LimbHealth.
+// Shoulder/WeaponBone map to Torso for damage, but retain separate enum for ragdoll routing.
 enum class HitZone : uint8_t {
-    Head   = 0,  // 1.5× damage, 10% chance, cripple = instant KO
-    Torso  = 1,  // 1.0× damage, 55% chance, cripple = death
-    LeftArm  = 2,  // 0.8× damage, 10% chance, cripple = -1 hand
-    RightArm = 3,  // 0.8× damage, 10% chance, cripple = -weapon
-    LeftLeg  = 4,  // 0.9× damage, 7% chance,  cripple = limp
-    RightLeg = 5,  // 0.9× damage, 8% chance,  cripple = crawl
-    COUNT    = 6
+    Head       = 0,  // 1.5× damage, 10% chance
+    Torso      = 1,  // 1.0× damage, 45% chance
+    LeftArm    = 2,  // 0.8× damage, 10% chance
+    RightArm   = 3,  // 0.8× damage, 10% chance
+    LeftLeg    = 4,  // 0.9× damage,  8% chance
+    RightLeg   = 5,  // 0.9× damage,  8% chance
+    LeftShoulder  = 6,  // 0.85× damage, 4% — VBfA: leftshoulder (Bip01 L Clavicle)
+    RightShoulder = 7,  // 0.85× damage, 4% — VBfA: rightshoulder (Bip01 R Clavicle)
+    WeaponBone    = 8,  // 0.5×  damage, 1% — VBfA: weapon attachment bones
+    COUNT      = 9
 };
 
 struct HitZoneInfo {
@@ -28,46 +34,51 @@ struct HitZoneInfo {
     float    cripple_hp;    // HP зони при якому вона виходить з ладу
 };
 
-// Таблиця зон (індекс = HitZone enum)
+// Таблиця зон (індекс = HitZone enum) — hit_chance сума = 1.0
 constexpr HitZoneInfo ZONE_TABLE[(int)HitZone::COUNT] = {
-    { 1.5f, 0.10f, 15.0f },  // Head
-    { 1.0f, 0.55f, 40.0f },  // Torso
-    { 0.8f, 0.10f, 20.0f },  // LeftArm
-    { 0.8f, 0.10f, 20.0f },  // RightArm
-    { 0.9f, 0.07f, 25.0f },  // LeftLeg
-    { 0.9f, 0.08f, 25.0f },  // RightLeg
+    { 1.50f, 0.10f, 15.0f },  // Head
+    { 1.00f, 0.45f, 40.0f },  // Torso
+    { 0.80f, 0.10f, 20.0f },  // LeftArm
+    { 0.80f, 0.10f, 20.0f },  // RightArm
+    { 0.90f, 0.08f, 25.0f },  // LeftLeg
+    { 0.90f, 0.08f, 25.0f },  // RightLeg
+    { 0.85f, 0.04f, 18.0f },  // LeftShoulder
+    { 0.85f, 0.04f, 18.0f },  // RightShoulder
+    { 0.50f, 0.01f, 10.0f },  // WeaponBone
 };
 
-// ── AI-5: Bone → HitZone map (19 bones from md_human.glb skeleton) ───────────
-// bone_idx matches the joint order produced by tools/md_convert.py (cgltf order).
-// Unmapped bones (IK poles, toes, root helper) resolve to Torso as fallback.
+// ── Bone → HitZone map (md_human_t.glb joint order, RE-verified) ─────────────
+// bone_idx = skin joint index from md_human_t.glb (python GLB probe 2026-05-28).
+// VBfA RE bone names → Bip01 mapping confirmed: head=Head, hips=Pelvis, spine*=Spine*,
+// leftupleg=L Thigh, leftweaponbone=Prop1, leftshoulder=L Clavicle, etc.
+// Unmapped bones (root Bip01, toes, nubs, jaw) resolve to Torso as fallback.
 struct BoneZoneEntry {
     uint8_t  bone_idx;
     HitZone  zone;
-    char     bone_name[22]; // debug / JSON override key
+    char     bone_name[24]; // Bip01 name for debug / JSON override
 };
 
 static constexpr int BONE_ZONE_COUNT = 19;
 constexpr BoneZoneEntry BONE_ZONE_MAP[BONE_ZONE_COUNT] = {
-    {  0, HitZone::Torso,    "Hips"             },
-    {  1, HitZone::Torso,    "Spine"            },
-    {  2, HitZone::Torso,    "Spine1"           },
-    {  3, HitZone::Torso,    "Spine2"           },
-    {  4, HitZone::Head,     "Neck"             },
-    {  5, HitZone::Head,     "Head"             },
-    {  6, HitZone::LeftArm,  "LeftShoulder"     },
-    {  7, HitZone::LeftArm,  "LeftArm"          },
-    {  8, HitZone::LeftArm,  "LeftForeArm"      },
-    {  9, HitZone::LeftArm,  "LeftHand"         },
-    { 10, HitZone::RightArm, "RightShoulder"    },
-    { 11, HitZone::RightArm, "RightArm"         },
-    { 12, HitZone::RightArm, "RightForeArm"     },
-    { 13, HitZone::RightArm, "RightHand"        },
-    { 14, HitZone::LeftLeg,  "LeftUpLeg"        },
-    { 15, HitZone::LeftLeg,  "LeftLeg"          },
-    { 16, HitZone::LeftLeg,  "LeftFoot"         },
-    { 17, HitZone::RightLeg, "RightUpLeg"       },
-    { 18, HitZone::RightLeg, "RightLeg"         },
+    {  1, HitZone::Torso,         "Bip01 Pelvis"      },  // VBfA: hips
+    {  2, HitZone::LeftLeg,       "Bip01 L Thigh"     },  // VBfA: leftupleg
+    {  3, HitZone::LeftLeg,       "Bip01 L Calf"      },
+    {  4, HitZone::LeftLeg,       "Bip01 L Foot"      },  // VBfA: leftfoot
+    {  7, HitZone::RightLeg,      "Bip01 R Thigh"     },  // VBfA: rightupleg
+    {  8, HitZone::RightLeg,      "Bip01 R Calf"      },
+    {  9, HitZone::RightLeg,      "Bip01 R Foot"      },  // VBfA: rightfoot
+    { 12, HitZone::Torso,         "Bip01 Spine"       },  // VBfA: spine
+    { 13, HitZone::Torso,         "Bip01 Spine1"      },  // VBfA: spine1/spine2
+    { 14, HitZone::Torso,         "Bip01 Spine2"      },  // VBfA: spine3
+    { 15, HitZone::LeftShoulder,  "Bip01 L Clavicle"  },  // VBfA: leftshoulder
+    { 16, HitZone::LeftArm,       "Bip01 L UpperArm"  },  // VBfA: leftarm
+    { 17, HitZone::LeftArm,       "Bip01 L Forearm"   },
+    { 18, HitZone::LeftArm,       "Bip01 L Hand"      },  // VBfA: lefthand
+    { 19, HitZone::WeaponBone,    "Bip01 Prop1"       },  // VBfA: leftweaponbone
+    { 20, HitZone::Head,          "Bip01 Neck"        },
+    { 21, HitZone::Head,          "Bip01 Head"        },  // VBfA: head
+    { 25, HitZone::RightShoulder, "Bip01 R Clavicle"  },  // VBfA: rightshoulder
+    { 26, HitZone::RightArm,      "Bip01 R UpperArm"  },  // VBfA: rightarm
 };
 
 // Map a bone index to its HitZone; returns Torso for unmapped bones.

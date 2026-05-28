@@ -213,9 +213,11 @@ enum class NpcMood : uint8_t {
 // Prevents attack continuation after cinematic/script hand-off.
 // Invariant: actionMeleeAttack must call SetWithdraw(NotWithdrawing) before attacking.
 enum class WithdrawState : uint8_t {
-    NotWithdrawing  = 0,  // NOT_WITHDRAWING:0
-    NeedsToWithdraw = 1,  // NEEDS_TO_WITHDRAW:1 — intent set, not yet moving
-    Withdrawing     = 2,  // WITHDRAWING:2 — actively retreating
+    NotWithdrawing     = 0,  // NOT_WITHDRAWING:0
+    NeedsToWithdraw    = 1,  // NEEDS_TO_WITHDRAW:1 — intent set, not yet moving
+    Withdrawing        = 2,  // WITHDRAWING:2 — actively retreating
+    WithdrawnLocally   = 3,  // RE: WithdrawnLocally — left combat zone, still in level
+    WithdrawnFromLevel = 4,  // RE: WithdrawnFromLevel — fully despawned / exited
 };
 
 // ── C: LocomotionState ────────────────────────────────────────────────────────

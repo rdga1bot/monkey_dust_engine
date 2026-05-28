@@ -59,6 +59,16 @@ namespace AnimFlags {
     constexpr uint32_t ATTACK_SWING  = 1u << 21;  // weapon swing arc
     constexpr uint32_t ATTACK_THRUST = 1u << 22;  // weapon thrust
     constexpr uint32_t BLOCK         = 1u << 23;  // blocking pose
+    // VBfA RE-confirmed (viking.exe.c Level 1 analysis):
+    constexpr uint32_t BLEND_OUT     = 1u << 24;  // explicit blend-out phase
+    constexpr uint32_t KNOCKDOWN     = 1u << 25;  // ragdoll entry / stun drop
+    constexpr uint32_t GETUP         = 1u << 26;  // recover from knockdown
+    constexpr uint32_t PAIN          = 1u << 27;  // pain flinch reaction
+    constexpr uint32_t LEDGE_GRAB    = 1u << 28;  // ledge/climb grab animation
+    constexpr uint32_t THROW         = 1u << 29;  // throw/toss action
+    constexpr uint32_t COUNTER       = 1u << 30;  // parry counter-attack
+    constexpr uint32_t TWEEN         = 1u << 31;  // transition tween (N blend frames)
+    // Extended flags (64-bit if needed later): BOSS, NO_CHECKS map to bits 0-1 of high word
 }
 
 struct SkinClip {

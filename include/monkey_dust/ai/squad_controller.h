@@ -74,9 +74,25 @@ enum class SquadActivity : uint8_t {
     Working                 = 26, // VBfA-R: labour / crafting task
     Alerted                 = 27, // VBfA-R: suspicious, weapon half-drawn
     Dead                    = 28, // VBfA-R: squad wiped out
-    COUNT                   = 29
+    // ── RE-confirmed from AI.exe.c (2026-05-28) ──────────────────────────────
+    // AT_SQUAD_* string constants found in serialization function FUN_009343b0.
+    IdleMain                = 29, // AT_SQUAD_ACT_IDLE_MAIN
+    IdlePatrolToPos         = 30, // AT_SQUAD_ACT_IDLE_PATROL_TO_POS
+    GuardStartup            = 31, // AT_SQUAD_ACTIVITY_GUARD_STARTUP
+    GuardGuarding           = 32, // AT_SQUAD_ACTIVITY_GUARD_GUARDING
+    SheathWeapon            = 33, // AT_SQUAD_ACT_SHEATH_WEAPON
+    ShootTarget             = 34, // AT_SQUAD_SHOOT_TARGET
+    Animate                 = 35, // AT_SQUAD_ACT_ANIMATE
+    Summoned                = 36, // AT_SQUAD_ACT_SUMMONED
+    Murder                  = 37, // AT_SQUAD_MURDER
+    FormationActive         = 38, // ACTIVE_AT_SQUAD_FORMATION
+    RecoverMembers          = 39, // AT_SQUAD_ACT_RECOVER_MEMBERS_FROM_SUB_VILLAGE
+    NoActivity              = 40, // SQUAD_HAS_NO_ACTIVITY
+    StartingUpPatrolToPos   = 41, // SQUAD_STARTING_UP_PATROL_TO_POS
+    Deactivated             = 42, // SQUAD_DEACTIVATED
+    COUNT                   = 43
 };
-static constexpr uint8_t SQUAD_ACTIVITY_COUNT = 29;
+static constexpr uint8_t SQUAD_ACTIVITY_COUNT = 43;
 
 // ── SquadController component (lives on squad entity, not on member NPCs) ─────
 struct SquadController {

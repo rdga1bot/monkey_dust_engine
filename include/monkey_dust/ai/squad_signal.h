@@ -18,6 +18,10 @@
 //   - SquadSignal::None = 0 is the default/empty state (no pending signal)
 //   - sender stored as raw uint32_t (entity id) — no entt dependency in header
 
+// SquadActivity is defined in squad_controller.h (29 states, RE-verified).
+// squad_signal.h stays dependency-free — activity stored as uint8_t.
+// Cast: static_cast<SquadActivity>(channel.activity) at callsites with squad_controller.h.
+
 enum class SquadSignal : uint8_t {
     None            = 0,
     Warning         = 1,
@@ -39,7 +43,7 @@ static_assert(sizeof(SquadMemberComponent) == 8, "SquadMemberComponent must be 8
 
 struct SquadChannel {
     SquadSignal signal    = SquadSignal::None;
-    uint8_t     activity  = 0;     // VBfA-R: SquadActivity cast to uint8 (avoids cross-include)
+    uint8_t     activity  = 0;     // SquadActivity (squad_controller.h) cast to uint8_t
     uint8_t     _pad1[2];
     uint32_t    sender    = 0;     // raw entity id of last notifier
     uint32_t    timestamp = 0;     // nowMs when signal was written
@@ -63,9 +67,20 @@ public:
         channels_[squad_id].timestamp = now_ms;
     }
 
-    SquadSignal GetSignal(uint8_t squad_id) const noexcept {
+    // activity: pass static_cast<uint8_t>(SquadActivity::...) from squad_controller.h
+    void SetActivity(uint8_t squad_id, uint8_t act) noexcept {
+        if (squad_id >= MAX_SQUADS) return;
+        channels_[squad_id].activity = act;
+    }
+
+    SquadSignal GetSignal  (uint8_t squad_id) const noexcept {
         if (squad_id >= MAX_SQUADS) return SquadSignal::None;
         return channels_[squad_id].signal;
+    }
+
+    uint8_t GetActivity(uint8_t squad_id) const noexcept {
+        if (squad_id >= MAX_SQUADS) return 0;
+        return channels_[squad_id].activity;
     }
 
     const SquadChannel& GetChannel(uint8_t squad_id) const noexcept {

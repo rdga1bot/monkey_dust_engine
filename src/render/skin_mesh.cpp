@@ -1,5 +1,6 @@
 // SkinMesh — GLB loader with skinning data + CPU animation playback.
 #include <monkey_dust/render/skin_mesh.h>
+#include <monkey_dust/render/char_customization.h>
 #include "cgltf.h"
 #include <cstdio>
 #include <cstdlib>
@@ -416,6 +417,69 @@ void SkinMesh::GetFinalBones(int clip_idx, float time_s, float* out) const {
     for (int i = bone_count; i < MAX_SKIN_BONES; ++i)
         mat4_identity(out + i*16);
 
+}
+
+void SkinMesh::GetFinalBonesScaled(int clip_idx, float time_s,
+                                    const CharScales& scales, float* out) const
+{
+    // Same loop as GetFinalBones, but:
+    //   - bind translation is pre-scaled by scales.pos[i]  (setBonePositionalSize)
+    //   - skinning matrix = world * diag(bone[i]) * inv_bind  (setBoneSize)
+
+    float t = time_s;
+    if (clip_idx >= 0 && clip_idx < clip_count_) {
+        float dur = clips_[clip_idx].duration;
+        if (dur > 0.05f) t = fmodf(t, dur); else t = 0.f;
+    }
+
+    float world[MAX_SKIN_BONES][16];
+    float local[16];
+
+    for (int oi = 0; oi < bone_count; ++oi) {
+        int i = process_order_[oi];
+        float lt[3], lq[4];
+
+        if (clip_idx >= 0 && clip_idx < clip_count_) {
+            const SkinClip& cl = clips_[clip_idx];
+            const SkinTrack& tr = cl.tracks[i];
+            if (tr.count > 0) {
+                slerp_t(tr, t, lt, lq);
+            } else {
+                lt[0]=bind_t_[i][0]; lt[1]=bind_t_[i][1]; lt[2]=bind_t_[i][2];
+                lq[0]=bind_q_[i][0]; lq[1]=bind_q_[i][1]; lq[2]=bind_q_[i][2]; lq[3]=bind_q_[i][3];
+            }
+        } else {
+            lt[0]=bind_t_[i][0]; lt[1]=bind_t_[i][1]; lt[2]=bind_t_[i][2];
+            lq[0]=bind_q_[i][0]; lq[1]=bind_q_[i][1]; lq[2]=bind_q_[i][2]; lq[3]=bind_q_[i][3];
+        }
+
+        // Apply positional scale (setBonePositionalSize)
+        lt[0] *= scales.pos[i][0];
+        lt[1] *= scales.pos[i][1];
+        lt[2] *= scales.pos[i][2];
+
+        mat4_from_trs(local, lt, lq, bind_s_[i]);
+
+        int pi = parent_[i];
+        if (pi < 0) memcpy(world[i], local, 64);
+        else        mat4_mul(world[i], world[pi], local);
+
+        // Apply vertex scale (setBoneSize): world * diag(sx,sy,sz,1) * inv_bind
+        // world * diag = scale columns 0,1,2 of world by sx,sy,sz.
+        float sw[16];
+        memcpy(sw, world[i], 64);
+        const float* bs = scales.bone[i];
+        for (int r = 0; r < 4; ++r) {
+            sw[r    ] *= bs[0];
+            sw[4 + r] *= bs[1];
+            sw[8 + r] *= bs[2];
+        }
+        mat4_mul(out + i*16, sw, inv_bind_[i]);
+    }
+
+    // Identity for unused bone slots
+    for (int i = bone_count; i < MAX_SKIN_BONES; ++i)
+        mat4_identity(out + i*16);
 }
 
 void SkinMesh::GetFinalBonesFull(int clip_idx, float time_s,

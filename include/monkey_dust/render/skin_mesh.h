@@ -80,6 +80,10 @@ struct SkinClip {
     int       bone_count = 0;
 };
 
+// Forward declaration so GetFinalBonesScaled can be declared without
+// creating a circular include with char_customization.h.
+struct CharScales;
+
 class SkinMesh {
 public:
     bool LoadGLB(const char* path);
@@ -88,6 +92,12 @@ public:
     // Compute mat4[MAX_SKIN_BONES] for given clip + time.
     // out_bones must point to at least MAX_SKIN_BONES * 16 floats.
     void GetFinalBones(int clip_idx, float time_s, float* out_bones) const;
+
+    // Like GetFinalBones but applies Kenshi-style bone+pos scales per-bone.
+    // scales.bone[i] = vertex scale (setBoneSize), scales.pos[i] = translation scale.
+    // Requires #include <monkey_dust/render/char_customization.h> for CharScales definition.
+    void GetFinalBonesScaled(int clip_idx, float time_s,
+                              const CharScales& scales, float* out) const;
 
     // Same loop, but also outputs model-space bone positions (xyz, 3 floats per bone)
     // and optionally the pre-invbind world matrices (float[MAX_SKIN_BONES * 16]).

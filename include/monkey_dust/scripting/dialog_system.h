@@ -10,6 +10,7 @@
 
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/world/faction_system.h>
+#include <monkey_dust/components/stat_sheet.h>
 #include <cstdint>
 #include <cstring>
 
@@ -66,12 +67,19 @@ static_assert(sizeof(DialogCondition) == 8, "DialogCondition must be 8 bytes");
 // ── Effect ────────────────────────────────────────────────────────────────────
 
 enum class DialogEffType : uint8_t {
-    None          = 0,
-    GiveItem      = 1,   // give target item_def_id=param_a, qty=param_b
-    ChangeRelation= 2,   // change relation(speaker_faction, target_faction) by param_a
-    StartQuest    = 3,   // emit quest_start event id=param_a to LuaEventBus
-    SpawnSquad    = 4,   // push Raid WorldEvent with strength=param_a
-    PlayAnimation = 5,   // set anim clip param_a on speaker entity
+    None            = 0,
+    GiveItem        = 1,   // give target item_def_id=param_a, qty=param_b
+    ChangeRelation  = 2,   // change relation(speaker_faction, target_faction) by param_a
+    StartQuest      = 3,   // emit quest_start event id=param_a to LuaEventBus
+    SpawnSquad      = 4,   // push Raid WorldEvent with strength=param_a
+    PlayAnimation   = 5,   // set anim clip param_a on speaker entity
+    // D-1: Kenshi RE — campaign triggers + unlock system (kenshi_x64.exe.c §486311-536906)
+    TriggerCampaign = 6,   // start campaign id=param_a; emit to LuaEventBus("campaign_start",id)
+    VictoryTrigger  = 7,   // mark campaign param_a as victorious (condition satisfied)
+    LossTrigger     = 8,   // mark campaign param_a as failed
+    RemoveItem      = 9,   // remove item_def_id=param_a (qty=param_b) from target inventory
+    SetFlag         = 10,  // set world/entity flag bit=param_a to value=param_b (0/1)
+    Unlock          = 11,  // unlock item/building/tech id=param_a (push to LuaEventBus)
 };
 
 struct DialogEffect {
@@ -137,11 +145,45 @@ public:
                 // Would check Inventory — skipped if no Inventory component
                 break;
             case DialogCondType::SkillAbove:
-                // Would check StatSheet — skipped if no StatSheet component
+                if (reg.valid(target)) {
+                    const auto* ss = reg.try_get<StatSheet>(target);
+                    if (ss && (int)(*ss)[static_cast<Skill>(c.param_a)] <= (int)c.param_b)
+                        return false;
+                }
+                break;
+            // D-2: CompareOp-based conditions (Kenshi RE: "compare by" operator)
+            case DialogCondType::SkillCompare: {
+                if (!reg.valid(target)) return false;
+                const auto* ss = reg.try_get<StatSheet>(target);
+                int val = ss ? (int)(*ss)[static_cast<Skill>(c.param_a)] : 0;
+                if (!ApplyCompareOp(c.compare_op, val, (int)c.param_b)) return false;
+            } break;
+            case DialogCondType::RelationCompare: {
+                int8_t rel = FactionSystem::Get().GetRelation(speaker_faction_id, (uint32_t)c.param_a);
+                if (!ApplyCompareOp(c.compare_op, (int)rel, (int)c.param_b)) return false;
+            } break;
+            case DialogCondType::FlagCheck:
+                // World/entity flag check via bitmask (param_a=flag_index, param_b=expected)
+                // Currently passes — full implementation requires a WorldFlagSystem
                 break;
             }
         }
         return true;
+    }
+
+    // Apply a CompareOp to two ints. Used by SkillCompare/RelationCompare.
+    static bool ApplyCompareOp(CompareOp op, int lhs, int rhs) noexcept {
+        switch (op) {
+        case CompareOp::Equal:        return lhs == rhs;
+        case CompareOp::NotEqual:     return lhs != rhs;
+        case CompareOp::Greater:      return lhs >  rhs;
+        case CompareOp::GreaterEqual: return lhs >= rhs;
+        case CompareOp::Less:         return lhs <  rhs;
+        case CompareOp::LessEqual:    return lhs <= rhs;
+        case CompareOp::Contains:     return (lhs & rhs) != 0;
+        case CompareOp::NotContains:  return (lhs & rhs) == 0;
+        default: return true;
+        }
     }
 };
 

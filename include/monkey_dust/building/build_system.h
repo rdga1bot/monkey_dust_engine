@@ -22,8 +22,13 @@ struct BuildingDef {
     bool            loaded;
     uint8_t         _pad[3];
     // Kenshi RE: min_dismantle_materials_percentage (+0x4d, config×0.01)
-    // returned_materials = build_cost * dismantle_pct
     float           dismantle_pct = 0.4f;  // fraction of materials returned on demolish
+    // B-1: Kenshi RE: fuel/resource consumption per game-hour (CLAUDE_KEN_MECH_BUILDINGS §4)
+    // fuel_item_id=0 means no fuel required. Consumed from building's linked storage.
+    uint32_t        fuel_item_id      = 0;   // ItemDef id of required fuel (0=none)
+    float           fuel_per_hour     = 0.f; // units of fuel consumed per game-hour (1Hz×3600)
+    uint32_t        power_item_id     = 0;   // ItemDef id of power source (0=grid/passive)
+    float           power_consumption = 0.f; // kW draw (used by PowerGrid)
 };
 
 class BuildSystem {

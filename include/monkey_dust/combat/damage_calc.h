@@ -2,6 +2,19 @@
 #include <cstdint>
 #include <monkey_dust/ecs/registry.h>
 
+// ── Kenshi combat constants (KEN_MIGRATION RE, CLAUDE_KEN_MECH_COMBAT.md) ────
+// CM-1: STUN_HP_THRESHOLD — limb HP fraction that fills GaugeType::StunDamage.
+//   Kenshi RE: "stumble_damage_max" @CombatConfig+0x0b; GaugeStun fills when
+//   limb HP drops below threshold × max HP per hit. Stun fires at gauge==1.0.
+static constexpr float STUN_HP_THRESHOLD   = 0.40f;  // limb HP < 40% → stun gauge fills
+static constexpr float STUN_GAUGE_PER_HIT  = 0.25f;  // stun gauge increment per qualifying hit
+
+// CM-2: BLEED_SEVERITY_MULT — Kenshi formula: bleed_rate = cut_dmg × mult × 0.1
+//   Kenshi RE: bleed_rate@+0x01 = config×0.1; severity proportional to cut damage.
+//   Higher cut damage → faster bleed (instead of fixed 0.05 multiplier).
+static constexpr float BLEED_SEVERITY_MULT = 0.05f;  // cut_dmg × this → bleed_rate (HP/s)
+// BLEED_CONFIG_SCALE = 0.10f defined in injury_state.h (Kenshi stores bleed ×10)
+
 // ─────────────────────────────────────────────────────────
 // DamageCalc — розрахунок пошкоджень.
 //

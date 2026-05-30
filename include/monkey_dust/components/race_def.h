@@ -20,6 +20,15 @@ namespace RaceFlag {
     constexpr uint8_t NeedRepair = 1u << 2;  // heals via repair not medic (Skeleton)
 }
 
+// Hairstyle entry — one mesh path + display name.
+// Kenshi RE: "hairstyles" list loaded at char creation (716540-716600);
+// "hair style" = selected index (hashed string for fast lookup).
+static constexpr int MAX_HAIRSTYLES = 16;  // per race hairstyle count
+struct HairstyleDef {
+    char mesh_path[48];  // relative path to GLB/mesh file, e.g. "hair/shek_braids.glb"
+    char label[16];      // UI display name
+};
+
 struct RaceDef {
     RaceType type;
     char     name[24];
@@ -31,6 +40,9 @@ struct RaceDef {
     float    stealth_mult       = 1.f;
     float    athletics_mult     = 1.f;
     float    combat_speed_mult  = 1.f;
+    // CH-1: hairstyles list (Kenshi RE: "hairstyles" list + "hair style" index key)
+    HairstyleDef hairstyles[MAX_HAIRSTYLES];
+    int          hairstyle_count = 0;   // actual entries populated
 };
 
 // Build race table once at first call; returns pointer to static array.
@@ -80,6 +92,34 @@ inline const RaceDef* GetRaceDefs() noexcept {
     defs[(int)RaceType::Skeleton].flags = RaceFlag::NoHunger | RaceFlag::NoFatigue | RaceFlag::NeedRepair;
 
     return defs;
+}
+
+// HairComponent — per-entity selected hairstyle + color.
+// Attach to visible NPCs; swap hair mesh when hair_style_idx changes.
+// Kenshi RE: "hair style" (hashed string index), "hair bright/contrast/saturation".
+struct HairComponent {
+    uint8_t  hair_style_idx  = 0;     // index into RaceDef::hairstyles[]
+    uint8_t  _pad[3]         = {};
+    float    brightness      = 1.f;   // Kenshi: "hair bright"
+    float    contrast        = 1.f;   // Kenshi: "hair contrast"
+    float    saturation      = 1.f;   // Kenshi: "hair saturation"
+    float    color_r         = 0.15f; // RGB tint (default dark brown)
+    float    color_g         = 0.08f;
+    float    color_b         = 0.04f;
+    bool     hide_hair       = false; // Kenshi: "hide hair" — helmet covers hair
+    uint8_t  _pad2[3]        = {};
+};
+static_assert(sizeof(HairComponent) == sizeof(uint8_t)*4 + sizeof(float)*6 + sizeof(bool) + 3, "HairComponent layout");
+
+// Returns the mesh path for a given entity's currently selected hairstyle.
+// Returns nullptr if no HairComponent or race has no hairstyles.
+inline const char* GetHairMeshPath(uint8_t race_id, const HairComponent& hc) noexcept {
+    const RaceDef* def = GetRaceDefs();
+    if (race_id >= (uint8_t)RaceType::COUNT) return nullptr;
+    const RaceDef& rd = def[race_id];
+    if (hc.hair_style_idx >= (uint8_t)rd.hairstyle_count) return nullptr;
+    const char* path = rd.hairstyles[hc.hair_style_idx].mesh_path;
+    return (path[0] != '\0') ? path : nullptr;
 }
 
 inline const RaceDef* GetRaceDef(uint8_t race_id) noexcept {

@@ -43,3 +43,27 @@ struct InteriorPortal {
     }
 };
 static_assert(sizeof(InteriorPortal) == 32, "InteriorPortal size");
+
+// W-2: SharedInteriorsComponent — cross-building interior linking.
+// Kenshi RE: "shares interiors with" — vector<ref> stride=0x40 per entry.
+// Multiple buildings sharing one interior chunk (e.g. warehouse complex).
+// Attach to building entities that share interior space.
+static constexpr int MAX_SHARED_INTERIORS = 8;
+
+struct SharedInteriorsComponent {
+    uint16_t  zone_ids[MAX_SHARED_INTERIORS] = {};  // dest_zone_id of each linked interior
+    uint8_t   count = 0;
+    uint8_t   _pad[7];
+};
+static_assert(sizeof(SharedInteriorsComponent) == 24, "SharedInteriorsComponent size");
+
+// W-3: InteriorLoadState — progressive interior chunk load depth tracker.
+// Kenshi RE: "interiors.level" depth counter; *(param_1+0x180) = done flag.
+// When load_depth increases, ChunkManager loads the next level of interior zones.
+struct InteriorLoadState {
+    uint8_t  load_depth  = 0;   // current load depth (0=not loaded, 1=surface, 2+=deep)
+    uint8_t  load_done   = 0;   // 1 = all levels at current depth loaded
+    uint8_t  target_depth= 1;   // requested depth (set by portal trigger)
+    uint8_t  _pad        = 0;
+};
+static_assert(sizeof(InteriorLoadState) == 4, "InteriorLoadState size");

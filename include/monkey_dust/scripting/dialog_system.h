@@ -23,25 +23,43 @@ static constexpr int MAX_DIALOG_CONDITIONS=   8;
 static constexpr int MAX_DIALOG_EFFECTS   =   4;
 static constexpr int MAX_DIALOGUE_CHOICES =   8;
 
+// ── CompareOp — generic comparison operator for conditions (F-2) ──────────────
+// Kenshi RE: "compare by" operator in condition evaluator (kenshi_x64.exe.c).
+// Used by ConditionEvaluator to compare numeric values (skills, relations, etc).
+enum class CompareOp : uint8_t {
+    Equal        = 0,  // value == param
+    NotEqual     = 1,  // value != param
+    Greater      = 2,  // value > param
+    GreaterEqual = 3,  // value >= param
+    Less         = 4,  // value < param
+    LessEqual    = 5,  // value <= param
+    Contains     = 6,  // (bitmask) value & param != 0
+    NotContains  = 7,  // (bitmask) value & param == 0
+};
+
 // ── Condition ─────────────────────────────────────────────────────────────────
 
 enum class DialogCondType : uint8_t {
     None           = 0,
-    FactionRelGT   = 1,  // param_a=faction_id; param_b=threshold. rel(speaker,faction) > threshold
+    FactionRelGT   = 1,  // rel(speaker,faction) > threshold
     FactionRelLT   = 2,  // rel < threshold
-    HasItem        = 3,  // target (player) has item_def_id=param_a in inventory
+    HasItem        = 3,  // target has item_def_id=param_a in inventory
     SkillAbove     = 4,  // target skill[param_a] > param_b
     IsHostile      = 5,  // speaker faction is hostile to target faction
-    IsPlayer       = 6,  // target is the player entity (param_a unused)
-    HasBounty      = 7,  // target has bounty in faction param_a (any amount)
+    IsPlayer       = 6,  // target is the player entity
+    HasBounty      = 7,  // target has bounty in faction param_a
+    // F-2: generic compare using CompareOp (Kenshi RE: "compare by" operator)
+    SkillCompare   = 8,  // CompareOp applied to target skill[param_a] vs param_b
+    RelationCompare= 9,  // CompareOp applied to relation(speaker,faction=param_a) vs param_b
+    FlagCheck      = 10, // CompareOp=Contains/NotContains on entity flags bitmask
 };
 
 struct DialogCondition {
-    DialogCondType type    = DialogCondType::None;
-    uint8_t        _pad    = 0;
-    int16_t        param_a = 0;
-    int16_t        param_b = 0;
-    uint8_t        _pad2[2]= {};
+    DialogCondType type       = DialogCondType::None;
+    CompareOp      compare_op = CompareOp::Greater;  // F-2: used for *Compare types
+    int16_t        param_a    = 0;
+    int16_t        param_b    = 0;
+    uint8_t        _pad2[2]   = {};
 };
 static_assert(sizeof(DialogCondition) == 8, "DialogCondition must be 8 bytes");
 

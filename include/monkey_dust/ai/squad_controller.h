@@ -94,14 +94,29 @@ enum class SquadActivity : uint8_t {
 };
 static constexpr uint8_t SQUAD_ACTIVITY_COUNT = 43;
 
+// ── SquadMemType — member role within a squad (A-2, Kenshi RE: "squad mem type") ──
+// Controls formation position, AI priority, and response behaviour.
+// Stored per-member in SquadController::member_roles[] indexed by member slot.
+enum class SquadMemType : uint8_t {
+    Generic  = 0,  // default — no specialisation
+    Melee    = 1,  // front-line fighter, closes distance first
+    Ranged   = 2,  // stays back, shoots before closing
+    Medic    = 3,  // hangs back, prioritises healing downed allies
+    Leader   = 4,  // squad leader — SquadController entity itself
+    Scout    = 5,  // forward recon, higher detection range
+    Heavy    = 6,  // slow, tanky; holds position under fire
+    COUNT    = 7
+};
+
 // ── SquadController component (lives on squad entity, not on member NPCs) ─────
 struct SquadController {
     static constexpr int   MAX_MEMBERS       = 30;  // F3: 16 → 30 (Kenshi patrol squads up to 20+)
     static constexpr float THINK_INTERVAL_MS = 2000.f;
     static constexpr float WANDER_INTERVAL_MS = 4000.f; // PatrolRagged retarget
 
-    entt::entity  members[MAX_MEMBERS] = {};
-    int           member_count         = 0;
+    entt::entity  members[MAX_MEMBERS]      = {};
+    SquadMemType  member_roles[MAX_MEMBERS] = {};  // A-2: per-member role enum
+    int           member_count              = 0;
 
     SquadActivity activity             = SquadActivity::PatrolRagged;
     SquadActivity prev_activity        = SquadActivity::Idle; // for transition detection

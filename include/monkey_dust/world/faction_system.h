@@ -26,7 +26,9 @@ struct BountyRecord {
     entt::entity    target      = entt::null;
     uint32_t        amount      = 0;    // cats (Kenshi currency)
     uint8_t         crime_flags = 0;    // bitmask of CrimeFlags
-    uint8_t         _pad[3]     = {};
+    // F-1: Kenshi RE — notorious flag + expire_hours (Kenshi RE: §factions)
+    uint8_t         notorious   = 0;    // 1 = bounty is "notorious" (wanted poster level)
+    uint16_t        expire_hours= 0;    // game-hours until bounty auto-expires (0=permanent)
 };
 static_assert(sizeof(BountyRecord) == 16, "BountyRecord must be 16 bytes");
 

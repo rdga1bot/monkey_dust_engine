@@ -53,7 +53,7 @@ inline void SenseSystemUpdate(float now_ms) {
     auto uint32_now = static_cast<uint32_t>(now_ms);
 
     reg.view<SenseComponent, WorldTransform, AgentState>().each([&](
-        entt::entity /*e*/, SenseComponent& sc,
+        entt::entity e, SenseComponent& sc,
         const WorldTransform& wt, AgentState& as)
     {
         if (as.lcflags.test(lcf::IS_PLAYER)) return;
@@ -67,15 +67,33 @@ inline void SenseSystemUpdate(float now_ms) {
         float angle_to   = atan2f(dx, dz);
         float angle_diff = fabsf(sense_wrap_angle(angle_to - wt.rot_y)) * SENSE_RAD2DEG;
 
+        // AI-4: read optional SenseModifiers (CATHODE RE §6.4 config-driven ranges).
+        // If no SenseModifiers component, defaults (1.0) apply — same as before.
+        const SenseModifiers* sm = reg.try_get<SenseModifiers>(e);
+        float vis_range_mult    = sm ? sm->visual_range_mult    : 1.f;
+        float audio_range_mult  = sm ? sm->audio_range_mult     : 1.f;
+        float fill_mult         = sm ? sm->activation_fill_mult : 1.f;
+        float darkness_mult     = sm ? sm->darkness_mult        : 1.f;
+        float crouch_mult       = sm ? sm->crouch_mult          : 1.f;
+        float noise_mult        = sm ? sm->noise_mult           : 1.f;
+
         // ── Visual (index 0) ─────────────────────────────────────────────────
-        // VBfA-AI2: hard range cap — skip cone computation beyond MAX_VISION_RANGE.
-        // This is an O(n) perf win: NPCs beyond 22m skip the cone loop entirely.
+        // VBfA-AI2: hard range cap. AI-4: apply visual_range_mult from SenseModifiers.
         float visual_act = 0.f;
-        if (dist <= AwarenessLimits::MAX_VISION_RANGE) {
+        float eff_vis_range = AwarenessLimits::MAX_VISION_RANGE * vis_range_mult;
+        if (dist <= eff_vis_range) {
             const ViewConeSet* vcs = SenseRegistry::Get().At(sc.cone_set_idx);
             if (vcs) {
+                // AI-4: target crouching → apply crouch_mult; darkness → darkness_mult.
+                // LocomotionState not directly accessible here; use stance from AgentState flags.
+                float stance_factor = as.locomotion_state == LocomotionState::Crouching
+                                      ? crouch_mult : 1.f;
                 for (int c = 0; c < vcs->cone_count; ++c) {
-                    float contrib = sense_cone_activation(vcs->cones[c], dist, angle_diff);
+                    // Scale cone length by vis_range_mult; apply fill_mult + darkness + stance.
+                    ViewCone scaled = vcs->cones[c];
+                    scaled.length_m *= vis_range_mult;
+                    float contrib = sense_cone_activation(scaled, dist, angle_diff);
+                    contrib *= fill_mult * darkness_mult * stance_factor;
                     if (contrib > visual_act) visual_act = contrib;
                 }
             }
@@ -85,21 +103,25 @@ inline void SenseSystemUpdate(float now_ms) {
         sc.activation[0] = visual_act;
         if (!vis_was_hi && visual_act >= sc.threshold_hi) {
             // VBfA-AI2: cap at MAX_REACT_TO_PLAYER per tick.
-            // Beyond cap: NPC perceives player (activation=high) but doesn't react
-            // (last_activated_ms unchanged → BT SenseTimeCheck sees no recent event).
             if (AwarenessLimits::g_frame.reacted_to_player
                     < AwarenessLimits::MAX_REACT_TO_PLAYER) {
                 sc.last_activated_ms[0] = uint32_now;
                 sc.last_known_x = pwt->x;
                 sc.last_known_z = pwt->z;
                 ++AwarenessLimits::g_frame.reacted_to_player;
+
+                // CATHODE RE §7.8: raise awareness watermark when NPC fully detects player.
+                AgentBlackboard* bb = reg.try_get<AgentBlackboard>(e);
+                if (bb && bb->awareness_watermark < AwarenessState::Aware) {
+                    bb->awareness_watermark = AwarenessState::Aware;
+                    bb->watermark_ms = uint32_now;
+                }
             }
         }
 
-        // ── Audio (index 1): linear falloff within SENSE_AUDIO_RADIUS_M ─────
-        // Audio range already acts as combat-noise distance (15m ≈ VBfA MAX_OBSCURED_HEARING).
-        // Rising-edge cap limits how many NPCs "hear" combat per tick (VBfA MAX_REACT_TO_COMBAT=7).
-        float audio_act = fmaxf(0.f, 1.f - dist / SENSE_AUDIO_RADIUS_M);
+        // ── Audio (index 1): linear falloff. AI-4: audio_range_mult + noise_mult.
+        float eff_audio_range = SENSE_AUDIO_RADIUS_M * audio_range_mult;
+        float audio_act = fmaxf(0.f, (1.f - dist / eff_audio_range) * fill_mult * noise_mult);
         bool  aud_was_hi = sc.activation[1] >= sc.threshold_hi;
         sc.activation[1] = audio_act;
         if (!aud_was_hi && audio_act >= sc.threshold_hi) {

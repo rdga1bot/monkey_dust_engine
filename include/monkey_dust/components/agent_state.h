@@ -428,6 +428,11 @@ static constexpr int MAX_BB_ENTRIES = 24;
 struct AgentBlackboard {
     int             bb_count = 0;
     BlackboardEntry bb[MAX_BB_ENTRIES];
+    // CATHODE RE §7.8: NPC_Squad_GetAwarenessWatermark — peak awareness level seen
+    // within a rolling time window; avoids re-querying if awareness hasn't changed.
+    // Written by SenseSystem/Director when awareness rises; read by BT AwarenessCheck.
+    AwarenessState  awareness_watermark = AwarenessState::Unaware;
+    uint32_t        watermark_ms        = 0;  // game-ms when watermark was last raised
 };
 
 // ── Batch 18: BehaviourMoodSet ───────────────────────────────────────────────

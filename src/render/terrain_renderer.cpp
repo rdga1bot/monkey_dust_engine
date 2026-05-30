@@ -183,10 +183,11 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
                                   float cam_x, float cam_y, float cam_z,
                                   float world_origin_x,
                                   float world_origin_z,
-                                  float world_to_uv)
+                                  float world_to_uv,
+                                  int   lod)
 {
     if (!IsPomReady() || !chunk.loaded) {
-        DrawRaw(rp, cmd, chunk, vp16, sun, world_origin_x, world_origin_z, world_to_uv);
+        DrawRaw(rp, cmd, chunk, vp16, sun, world_origin_x, world_origin_z, world_to_uv, lod);
         return;
     }
 #ifdef MD_SDL_GPU
@@ -197,11 +198,18 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
     SDL_GPUBufferBinding vb { chunk.vbo.SDLBuffer(), 0u };
     SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
 
-    // LOD IBO disabled: adjacent chunks at different LOD levels produce T-junctions
-    // (mismatched edge vertex counts → steep triangular faces with NdotL≈0 → dark seams).
-    // 49 chunks × 8192 tris ≈ 401K tris — within Intel HD 520 60fps budget.
-    const SDL_GPUBuffer* ibo_buf  = chunk.ibo.SDLBuffer();
-    uint32_t             idx_count = (uint32_t)TERRAIN_IDX;
+    // LOD: use uniform lod across all chunks to avoid T-junctions at seams.
+    // lod=0: full 64×64 (TERRAIN_IDX); lod=1..3: ibo_lod[lod-1].
+    int lod_clamped = (lod < 0) ? 0 : (lod > TERRAIN_LOD_LEVELS) ? TERRAIN_LOD_LEVELS : lod;
+    const SDL_GPUBuffer* ibo_buf;
+    uint32_t             idx_count;
+    if (lod_clamped == 0 || !chunk.ibo_lod[0].SDLBuffer()) {
+        ibo_buf   = chunk.ibo.SDLBuffer();
+        idx_count = (uint32_t)TERRAIN_IDX;
+    } else {
+        ibo_buf   = chunk.ibo_lod[lod_clamped - 1].SDLBuffer();
+        idx_count = (uint32_t)TERRAIN_LOD_IDX[lod_clamped - 1];
+    }
     SDL_GPUBufferBinding ib { const_cast<SDL_GPUBuffer*>(ibo_buf), 0u };
     SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
@@ -310,14 +318,25 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                               const SunParams& sun,
                               float world_origin_x,
                               float world_origin_z,
-                              float world_to_uv)
+                              float world_to_uv,
+                              int   lod)
 {
     if (!IsReady() || !chunk.loaded || !chunk.vbo.SDLBuffer() || !chunk.ibo.SDLBuffer()) return;
 #ifdef MD_SDL_GPU
     SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
     SDL_GPUBufferBinding vb { chunk.vbo.SDLBuffer(), 0u };
     SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
-    SDL_GPUBufferBinding ib { chunk.ibo.SDLBuffer(), 0u };
+    int lod_clamped = (lod < 0) ? 0 : (lod > TERRAIN_LOD_LEVELS) ? TERRAIN_LOD_LEVELS : lod;
+    const SDL_GPUBuffer* ibo_buf;
+    uint32_t             idx_count;
+    if (lod_clamped == 0 || !chunk.ibo_lod[0].SDLBuffer()) {
+        ibo_buf   = chunk.ibo.SDLBuffer();
+        idx_count = (uint32_t)TERRAIN_IDX;
+    } else {
+        ibo_buf   = chunk.ibo_lod[lod_clamped - 1].SDLBuffer();
+        idx_count = (uint32_t)TERRAIN_LOD_IDX[lod_clamped - 1];
+    }
+    SDL_GPUBufferBinding ib { const_cast<SDL_GPUBuffer*>(ibo_buf), 0u };
     SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
     TerrainVertUBO vubo;
@@ -342,7 +361,7 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     if (!bindings[0].texture || !bindings[0].sampler) return;
     SDL_BindGPUFragmentSamplers(rp, 0, bindings, 1);
 
-    SDL_DrawGPUIndexedPrimitives(rp, TERRAIN_IDX, 1, 0, 0, 0);
+    SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
 #endif
 }
 

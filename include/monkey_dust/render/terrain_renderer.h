@@ -99,13 +99,16 @@ public:
               float world_origin_z = 0.f,
               float world_to_uv    = 1.f / 8000.f);
 
+    // lod: 0=full 64×64, 1=32×32, 2=16×16, 3=8×8.
+    // Use uniform lod for all chunks to avoid T-junctions.
     void DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                  const TerrainChunk& chunk,
                  const float* vp16,
                  const SunParams& sun,
                  float world_origin_x = 0.f,
                  float world_origin_z = 0.f,
-                 float world_to_uv    = 1.f / 8000.f);
+                 float world_to_uv    = 1.f / 8000.f,
+                 int   lod            = 0);
 
     // POM variant — call once after Init(). Then replace DrawRaw calls with DrawRawPOM.
     // detail_path: RGBA PNG where A=height [0,1]. Pass nullptr to use neutral fallback.
@@ -114,6 +117,7 @@ public:
 
     // Drop-in replacement for DrawRaw. Passes camera world position for tangent-space
     // view vector used in POM ray marching. Falls back to DrawRaw if POM not ready.
+    // lod: 0=full 64×64, 1=32×32, 2=16×16, 3=8×8 (uniform across all chunks).
     void DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                     const TerrainChunk& chunk,
                     const float* vp16,
@@ -121,7 +125,8 @@ public:
                     float cam_x, float cam_y, float cam_z,
                     float world_origin_x = 0.f,
                     float world_origin_z = 0.f,
-                    float world_to_uv    = 1.f / 8000.f);
+                    float world_to_uv    = 1.f / 8000.f,
+                    int   lod            = 0);
 
     bool IsReady()    const;
     bool IsPomReady() const;

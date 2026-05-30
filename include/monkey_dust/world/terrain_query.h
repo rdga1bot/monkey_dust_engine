@@ -85,6 +85,14 @@ public:
         else             { nx = 0.f; ny = 1.f; nz = 0.f; }
     }
 
+    // G-3: water level constant and query.
+    // Returns true if terrain height at (wx,wz) is below the water plane.
+    // NavMesh excludes water cells; water.frag renders the flat plane.
+    static constexpr float WATER_LEVEL = -2.0f;  // metres — terrain below this = underwater
+    bool IsWater(float wx, float wz) const {
+        return GetHeight(wx, wz) < WATER_LEVEL;
+    }
+
     // Slope angle in radians (0 = flat, π/2 = vertical cliff).
     float GetSlope(float wx, float wz) const {
         float nx, ny, nz;

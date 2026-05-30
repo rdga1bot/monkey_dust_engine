@@ -38,6 +38,57 @@ public:
         brdf_lut = MdLoadTextureFromMemory(pixels, BRDF_LUT_SIZE, BRDF_LUT_SIZE);
     }
 
+    // W-1: Day/night cycle — animate sun_dir, sun_color, ambient_color from game time.
+    // game_time_hours ∈ [0, 24). Roadmap: morning=warm yellow, noon=white, night=dark blue.
+    //   6h  = sunrise  (sun on E horizon)
+    //  12h  = noon     (sun at peak)
+    //  18h  = sunset   (sun on W horizon)
+    //   0h  = midnight (sun fully below horizon)
+    void Tick(float game_time_hours) noexcept {
+        // Sun elevation: sin curve peaking at noon (12h), zero at 6h and 18h
+        const float pi    = 3.14159265f;
+        float day_frac    = game_time_hours / 24.f;             // [0,1)
+        float elev_angle  = (day_frac - 0.25f) * 2.f * pi;     // 6h=0, 12h=π/2, 18h=π
+        float elevation   = sinf(elev_angle);                   // -1..+1 (+ = above horizon)
+        float azimuth     = cosf(elev_angle);                   // east→west component
+
+        // sun_dir = direction from sun to surface (light direction)
+        sun_dir.x = azimuth * 0.6f;
+        sun_dir.y = -elevation;   // negative because y points up, sun_dir points down
+        sun_dir.z = 0.5f;         // slight south bias (N hemisphere)
+        // normalize
+        float len = sqrtf(sun_dir.x*sun_dir.x + sun_dir.y*sun_dir.y + sun_dir.z*sun_dir.z);
+        if (len > 0.001f) { sun_dir.x/=len; sun_dir.y/=len; sun_dir.z/=len; }
+
+        // t_day: 0=night, 1=full day (smooth step from elevation)
+        float t_day = elevation < 0.f ? 0.f : elevation;
+        if (t_day > 1.f) t_day = 1.f;
+
+        // dawn/dusk blend: warm orange tint near horizon (elevation ∈ [-0.2, 0.2])
+        float t_horiz = 1.f - fabsf(elevation) / 0.35f;
+        if (t_horiz < 0.f) t_horiz = 0.f;
+        if (t_horiz > 1.f) t_horiz = 1.f;
+        t_horiz *= t_day > 0.f ? 1.f : 0.f; // only during daylight side
+
+        // --- Sun color ---
+        // night=black, dawn/dusk=warm orange, day=white
+        const Vec3 c_day   = { 1.00f, 0.97f, 0.88f };   // warm white noon
+        const Vec3 c_horiz = { 1.00f, 0.62f, 0.20f };   // orange horizon
+        const Vec3 c_night = { 0.00f, 0.00f, 0.00f };   // no direct sun at night
+        Vec3 sc = lerpV(c_night, c_day, t_day);
+        sc = lerpV(sc, c_horiz, t_horiz * 0.65f);
+        sun_color = sc;
+
+        // --- Ambient color ---
+        // night=very dark blue, dawn=purple, day=soft blue, dusk=orange-purple
+        const Vec3 a_day   = { 0.18f, 0.22f, 0.30f };
+        const Vec3 a_night = { 0.02f, 0.02f, 0.06f };   // near-black, slight blue (stars)
+        const Vec3 a_horiz = { 0.22f, 0.14f, 0.20f };   // purple horizon glow
+        Vec3 ac = lerpV(a_night, a_day, t_day);
+        ac = lerpV(ac, a_horiz, t_horiz * 0.5f);
+        ambient_color = ac;
+    }
+
     // VBfA-R3: compute 6-sample directional light probe for NPC ambient.
     // probe_out: float[24] — 6 groups of (R, G, B, pad), one per ±XYZ direction.
     // Order: [0]=+X [1]=-X [2]=+Y [3]=-Y [4]=+Z [5]=-Z
@@ -78,6 +129,9 @@ public:
 
 private:
     LightSystem() = default;
+    static Vec3 lerpV(Vec3 a, Vec3 b, float t) noexcept {
+        return { a.x + (b.x-a.x)*t, a.y + (b.y-a.y)*t, a.z + (b.z-a.z)*t };
+    }
 
     // Split-sum BRDF LUT via GGX importance sampling (Hammersley, 128 samples).
     static void GenerateBRDFLUT(uint8_t* out, int size) {

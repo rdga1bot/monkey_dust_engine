@@ -20,6 +20,10 @@ struct BuildingDef {
     int             build_cost_count;
     ProductionChain chain;
     bool            loaded;
+    uint8_t         _pad[3];
+    // Kenshi RE: min_dismantle_materials_percentage (+0x4d, config×0.01)
+    // returned_materials = build_cost * dismantle_pct
+    float           dismantle_pct = 0.4f;  // fraction of materials returned on demolish
 };
 
 class BuildSystem {

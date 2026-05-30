@@ -20,6 +20,28 @@ struct NpcNeeds {
 };
 static_assert(sizeof(NpcNeeds) == 16, "NpcNeeds must be 16 bytes");
 
+// SurvivalConfig — global balance constants for the survival simulation.
+// Loaded from config once; not per-entity. Kenshi RE: thunk_FUN_14086b2b0 offsets.
+struct SurvivalConfig {
+    // Hunger / starvation
+    float starvation_time_s        = 86400.f; // seconds until death from starvation (~24 h)
+    float fed_recovery_rate_mult   = 1.5f;    // recovery speed multiplier when fed
+    float bed_hunger_rate          = 0.5f;    // hunger rate modifier when sleeping in bed
+    float encumbrance_hunger_rate  = 0.003f;  // extra hunger per kg over carry limit per tick
+    float food_quality_mult        = 1.0f;    // quality scaling for food effects
+
+    // Death / respawn
+    float death_time_s             = 300.f;   // seconds until permanently dead if not revived
+    float death_threshold_frac     = 0.05f;   // blood fraction below which char enters "dying"
+    float min_respawn_time_s       = 600.f;   // minimum seconds before faction respawns NPC
+    float max_respawn_time_s       = 86400.f; // maximum seconds (1 day)
+};
+
+static inline SurvivalConfig& GetSurvivalConfig() noexcept {
+    static SurvivalConfig cfg;
+    return cfg;
+}
+
 // Personality archetype — drives idle behavior preferences (Kenshi RE: character personality).
 enum class NpcPersonality : uint8_t {
     Neutral    = 0,

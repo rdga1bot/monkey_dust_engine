@@ -111,13 +111,43 @@ struct ShopInventory {
     }
 };
 
+// ── PriceConfig ───────────────────────────────────────────────────────────────
+// Kenshi RE: 14 per-category price multipliers (kenshi_x64.exe.c offsets [0x28, 0x32..0x3e]).
+// global_price_mult is the base; all others are multiplied by it at load.
+// Load from game config; access via GetPriceConfig().
+struct PriceConfig {
+    float global_price_mult         = 1.00f; // [0x37] base multiplier (applied to all below)
+    float food_price_mult           = 1.00f; // [0x28]
+    float crossbow_price_mult       = 1.00f; // [0x32]
+    float robotics_price_mult       = 1.20f; // [0x33]
+    float armor_price_mult          = 1.00f; // [0x34]
+    float sword_price_mult          = 1.00f; // [0x35]
+    float trade_price_mult          = 1.00f; // [0x36]
+    float clothing_price_mult       = 0.80f; // [0x38]
+    float trade_profit_margins      = 0.30f; // [0x39]
+    float loot_price_mult_gear      = 0.60f; // [0x3a]
+    float loot_price_mult           = 0.50f; // [0x3b]
+    float loot_price_mult_pl_armour = 0.55f; // [0x3c]
+    float loot_price_mult_pl_weapon = 0.55f; // [0x3d]
+    float blueprint_price_mult      = 2.00f; // [0x3e]
+};
+static_assert(sizeof(PriceConfig) == 56, "PriceConfig layout");
+
+static inline PriceConfig& GetPriceConfig() noexcept {
+    static PriceConfig cfg;
+    return cfg;
+}
+
 // ── PriceCalc ─────────────────────────────────────────────────────────────────
-// Kenshi formula: final_price = base_value × grade_mult × relation_mult × supply_mult
+// Kenshi formula: final_price = base_value × category_mult × grade_mult × relation_mult × supply_mult
 // relation: int8_t [-100..100] from FactionSystem::GetRelation
+// buy_value clamped to [1000, 20000] (Kenshi RE: aiStack constants).
 
 namespace PriceCalc {
 
-static constexpr float BUY_BACK_MULT  = 0.40f;  // player sells to shop at 40% of sell price
+static constexpr float BUY_VALUE_MIN  = 1000.f;  // absolute sell floor (cats)
+static constexpr float BUY_VALUE_MAX  = 20000.f; // sell ceiling
+static constexpr float BUY_BACK_MULT  = 0.40f;   // player sells to shop at 40% of sell price
 static constexpr float SUPPLY_LOW_MULT  = 1.30f;
 static constexpr float SUPPLY_HIGH_MULT = 0.80f;
 static constexpr int   SUPPLY_LOW_THRESHOLD  = 5;   // qty < 5 → low supply
@@ -143,21 +173,32 @@ inline float SupplyMult(int qty) noexcept {
     return 1.f;
 }
 
+// Clamp a computed sell value to Kenshi [1000, 20000] range.
+inline float BuyValueClamp(float v) noexcept {
+    if (v < BUY_VALUE_MIN) return BUY_VALUE_MIN;
+    if (v > BUY_VALUE_MAX) return BUY_VALUE_MAX;
+    return v;
+}
+
 // Price player pays when buying from shop.
+// category_mult: pass GetPriceConfig().armor_price_mult (or similar) for item type.
 inline float SellPrice(float base_value, ItemGrade grade,
-                       int8_t relation, int qty_in_stock) noexcept {
+                       int8_t relation, int qty_in_stock,
+                       float category_mult = 1.f) noexcept {
     int gi = (int)grade;
     if (gi < 0 || gi > 6) gi = (int)ItemGrade::Standard;
     float p = base_value
+            * category_mult
+            * GetPriceConfig().global_price_mult
             * ITEM_GRADE_MULT[gi]
             * RelationMult(relation, /*player_is_buying=*/true)
             * SupplyMult(qty_in_stock);
     return (p < 1.f) ? 1.f : p;
 }
 
-// Price shop pays when player sells to it.
+// Price shop pays when player sells to it (clamped to Kenshi range).
 inline float BuyPrice(float sell_price) noexcept {
-    float p = sell_price * BUY_BACK_MULT;
+    float p = BuyValueClamp(sell_price) * BUY_BACK_MULT;
     return (p < 1.f) ? 1.f : p;
 }
 

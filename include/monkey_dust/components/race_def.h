@@ -23,9 +23,14 @@ namespace RaceFlag {
 struct RaceDef {
     RaceType type;
     char     name[24];
-    int8_t   skill_bonus[(int)Skill::COUNT];
+    int8_t   skill_bonus[(int)Skill::COUNT]; // per-skill bonus/penalty
     uint8_t  flags;
-    uint8_t  _pad[2];
+    int8_t   combat_skill_bonus = 0;  // flat bonus to all combat skills (Kenshi RE: +0x244/4)
+    uint8_t  _pad[1];
+    // Kenshi RE: race mults loaded at +0x47, +0x48, +0x49; stealth guard: <=0 && !=0 → 1.0f
+    float    stealth_mult       = 1.f;
+    float    athletics_mult     = 1.f;
+    float    combat_speed_mult  = 1.f;
 };
 
 // Build race table once at first call; returns pointer to static array.
@@ -93,6 +98,14 @@ inline void ApplyRaceModifiers(StatSheet& ss) noexcept {
         if (v > 99) v = 99;
         ss.skills[i] = (uint8_t)v;
     }
+}
+
+// Validate a RaceDef after loading from config.
+// Kenshi RE: stealth_mult <= 0 && != 0.0 → forced to 1.0f (no negative stealth penalty).
+inline void ValidateRaceDef(RaceDef& def) noexcept {
+    if (def.stealth_mult <= 0.f && def.stealth_mult != 0.f) def.stealth_mult = 1.f;
+    if (def.athletics_mult  <= 0.f) def.athletics_mult  = 1.f;
+    if (def.combat_speed_mult <= 0.f) def.combat_speed_mult = 1.f;
 }
 
 inline bool RaceHasFlag(uint8_t race_id, uint8_t flag) noexcept {

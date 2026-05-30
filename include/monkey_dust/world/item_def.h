@@ -55,8 +55,14 @@ struct ItemDef {
     float prosthetic_grade;
     bool  loaded;
     uint8_t _pad2[3];
+    // Kenshi RE: stackable bonus (kenshi_x64.exe.c +0x88/+0x8c)
+    // bonus = max(stackable_bonus_min, stack_count * stackable_bonus_mult)
+    int16_t stackable_bonus_min  = 0;    // minimum bonus regardless of stack size
+    uint8_t blueprint_only       = 0;    // 1 = only craftable if blueprint discovered
+    uint8_t _pad3                = 0;
+    float   stackable_bonus_mult = 0.f;  // per-unit bonus multiplier
 };
-static_assert(sizeof(ItemDef) == 92, "ItemDef layout changed");
+static_assert(sizeof(ItemDef) == 100, "ItemDef layout changed");
 
 // ── ItemDatabase singleton ────────────────────────────────────────────────────
 class ItemDatabase {
@@ -108,7 +114,11 @@ public:
             it.blunt_resist  = rf("\"blunt_resist\":");
             it.armour_grade  = rf("\"armour_grade\":");
             it.nutrition     = rf("\"nutrition\":");
-            it.prosthetic_hp = rf("\"prosthetic_hp\":");
+            it.prosthetic_hp        = rf("\"prosthetic_hp\":");
+            it.prosthetic_grade     = rf("\"prosthetic_grade\":");
+            it.stackable_bonus_min  = (int16_t)ri("\"stackable_bonus_min\":");
+            it.stackable_bonus_mult = rf("\"stackable_bonus_mult\":");
+            it.blueprint_only       = (uint8_t)ri("\"blueprint_only\":");
             it.loaded = true;
             count_++;
             p = ve + 1;

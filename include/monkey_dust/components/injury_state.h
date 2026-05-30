@@ -12,7 +12,7 @@
 #include <monkey_dust/components/health.h>  // LIMB_COUNT
 #include <cstdint>
 
-static constexpr float BLEED_CLOT_RATE        = 0.003f;  // HP/s natural clot
+static constexpr float BLEED_CLOT_RATE        = 0.003f;  // HP/s natural clot (Kenshi: config×0.1)
 static constexpr float BLOOD_RECOVERY_RATE     = 0.02f;   // HP/s with active treatment
 static constexpr float RESTING_HEAL_FLOOR      = 0.5f;    // HP/s on floor
 static constexpr float RESTING_HEAL_BED        = 2.0f;    // HP/s in bed
@@ -20,6 +20,8 @@ static constexpr float RESTING_HEAL_DOCTOR_BED = 5.0f;    // HP/s in bed + docto
 static constexpr float DOCTOR_HEAL_MULT_PER_LV = 0.02f;  // +2% per field_medic level
 static constexpr float KO_RECOVERY_S           = 60.f;    // seconds until KO ends unaided
 static constexpr float KO_RECOVERY_DOCTOR_S    = 20.f;    // seconds with a doctor
+// Kenshi RE: bleed_rate and bleeding_clot_rate are stored ×10 in config (×0.1 applied at load).
+static constexpr float BLEED_CONFIG_SCALE      = 0.1f;    // multiply config value by this
 
 struct InjuryState {
     float   bleed_rate[LIMB_COUNT];   // HP/s per limb (0=no bleed)   24B
@@ -31,6 +33,18 @@ struct InjuryState {
     uint8_t _pad[2];                  //                                 2B
 };                                    //                         total  42B → padded to 44B
 static_assert(sizeof(InjuryState) == 44, "InjuryState size");
+
+// DeathState — tracks dying → dead → respawn cycle.
+// Attach when InjuryState blood fraction drops below SurvivalConfig::death_threshold_frac.
+// Kenshi RE: death_time@+0x544, death_threshold@+0x54c, min/max_respawn_time@+0x164/+0x2d.
+struct DeathState {
+    float death_countdown_s   = 300.f;  // seconds remaining before permanent death; ≤0 = dead
+    float respawn_countdown_s = 0.f;    // if >0: faction respawn pending
+    uint8_t is_dying          = 0;      // 1 = in dying state (can be revived)
+    uint8_t is_dead           = 0;      // 1 = permanently dead
+    uint8_t _pad[2];
+};
+static_assert(sizeof(DeathState) == 12, "DeathState layout");
 
 // Effective heal multiplier from doctor presence + skill.
 inline float InjuryDoctorMult(const InjuryState& inj) noexcept {

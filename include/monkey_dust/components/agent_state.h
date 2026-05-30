@@ -24,6 +24,7 @@ enum class MotivationType : uint8_t {
     Rest           = 15,  // Kenshi: sleeping/resting
     Trade          = 16,  // Kenshi: trading at shop
     Medic          = 17,  // Kenshi: healing self or ally
+    Dormant        = 18,  // CATHODE RE: NPC_Sleeping_Android; skip full AI, minimal update
     COUNT
 };
 
@@ -532,6 +533,8 @@ struct AgentState {
     uint8_t                move_direction    = 0;    // 0=toward 1=away 2=strafe_left 3=strafe_right
     uint8_t                sched_priority    = 0;    // priority of current schedule-driven motivation
     uint8_t                _pad_b33[1]       = {};
+    // Kenshi RE: prison_time @+0x5b — jail sentence countdown (seconds); 0 = free
+    float                  prison_timer      = 0.f;
 };
 
 // ── AgentStateSnapshot ────────────────────────────────────────────────────────

@@ -65,9 +65,15 @@ static_assert(sizeof(VisualSenseEffects) == 16, "VisualSenseEffects must be 16 b
 // M19 component. References a ViewConeSet (loaded into SenseRegistry by index).
 // activation[i] ∈ [0..1] per SenseType; threshold_lo/hi shared across all senses.
 // last_activated_ms[i]: timestamp (ms) when activation[i] last crossed threshold_hi.
+//
+// CATHODE RE §7: NPC_AllSensesLimiter + NPC_SenseLimiter — two-tier budget.
+// sense_cooldown_frames: per-NPC throttle set by SenseSystem when global budget
+// is exceeded. While > 0, sense queries are skipped and decremented each tick.
+// 0 = no throttle (normal operation). Max ~30 = 3s at 10 TPS.
 struct SenseComponent {
     uint8_t  cone_set_idx;                  // index into SenseRegistry::sets[]
-    uint8_t  _pad[3];
+    uint8_t  sense_cooldown_frames;         // CATHODE: per-NPC sense budget throttle
+    uint8_t  _pad[2];
     float    activation[MAX_SENSES];        // [0]=Visual … [8]=Background
     float    threshold_lo;                  // activation below → Unaware
     float    threshold_hi;                  // activation above → Full alert

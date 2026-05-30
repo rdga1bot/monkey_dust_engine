@@ -19,6 +19,8 @@ static constexpr float BT_LOD_TIER1_SQ = 30.0f * 30.0f;   //  900 m²
 static constexpr float BT_LOD_TIER2_SQ = 80.0f * 80.0f;   // 6400 m²
 
 void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs) {
+    ++frame_idx_;
+
     // Phase 1: clear frame_flags + expire stale DirectorHints
     auto hint_view = reg.view<AgentState, DirectorHintComponent>();
     hint_view.each([&](entt::entity, AgentState& as, DirectorHintComponent& hint) {
@@ -41,8 +43,10 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
 
     // Phase 3: tick active behavior trees with distance-based LOD.
     // Frame_flags already cleared in phases 1+2 for ALL entities regardless of LOD.
-    const auto& tsoa  = TransformSoA::Get();
-    const uint32_t fi = ctx.frame_index;
+    // VBfA RE §8: tiered modulo rates — 5f / 10f / 20f (logarithmic load scaling).
+    // CATHODE RE §7: Dormant state = NPC_Sleeping_Android, minimal update tier.
+    const auto& tsoa = TransformSoA::Get();
+    const uint32_t fi = frame_idx_;
     auto bt_view = reg.view<AgentState, BehaviorTreeComponent>();
     bt_view.each([&](entt::entity e, AgentState& as, BehaviorTreeComponent& btc) {
         if (!btc.enabled || !btc.tree || !btc.tree->isValid()) return;
@@ -53,16 +57,19 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
         if (wt && wt->slot < (uint32_t)tsoa.active_count) {
             float dsq = tsoa.dist_sq[wt->slot];
             if (dsq > BT_LOD_TIER2_SQ) {
-                // Tier 3 (>80m): skip BT entirely — CrowdSystem/NavAgent still run.
-                // This is the critical VBfA insight: zero BT cost for distant NPCs.
-                return;
-            }
-            if (dsq > BT_LOD_TIER1_SQ) {
-                // Tier 2 (30–80m): tick every 4th frame (400ms at 10 TPS).
-                // Entity-id spread keeps load even — no per-entity accumulator needed.
-                if ((entt::to_integral(e) % 4u) != (fi % 4u)) return;
+                // Tier 3 (>80m) OR Dormant: every 20 ticks (~2 s at 10 TPS).
+                // VBfA §8: modulo 20 (not complete skip) — distant NPCs still wake if
+                // player approaches. CATHODE NPC_Sleeping_Android uses same rate.
+                if (fi % 20u != entt::to_integral(e) % 20u) return;
+            } else if (dsq > BT_LOD_TIER1_SQ) {
+                // Tier 2 (30–80m): every 10 ticks (~1 s) with entity-id spread.
+                if (fi % 10u != entt::to_integral(e) % 10u) return;
             }
             // Tier 1 (<30m): always tick — falls through here.
+        }
+        // CATHODE RE: Dormant motivation → far-tier modulo regardless of distance
+        if (as.motivation == MotivationType::Dormant) {
+            if (fi % 20u != entt::to_integral(e) % 20u) return;
         }
 
         // VBfA-AI3: budget check (after LOD, before expensive BT tick).

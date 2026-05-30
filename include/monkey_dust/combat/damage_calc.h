@@ -19,7 +19,9 @@
 enum class DamageType : uint8_t {
     Blunt  = 0,
     Cut    = 1,
-    Pierce = 2
+    Pierce = 2,
+    Ranged = 3,  // bow/crossbow — Kenshi RE: bow_damage_1/bow_damage_99
+    COUNT  = 4
 };
 
 // Kenshi: armour_grade scales resist values (0=poor quality, 1=masterwork).
@@ -74,8 +76,10 @@ inline float CalcDamage(const WeaponStats& wpn, const ArmorStats& armor,
         effective = raw * (1.0f - armor.cut_resist * 0.5f * armor.armour_grade * pen_factor);
         break;
     case DamageType::Pierce:
+    case DamageType::Ranged:
         effective = raw * (1.0f - armor.pierce_resist * 0.8f * armor.armour_grade * pen_factor);
         break;
+    default: break;
     }
 
     effective *= hit_zone_mult;
@@ -83,14 +87,62 @@ inline float CalcDamage(const WeaponStats& wpn, const ArmorStats& armor,
 }
 
 // VBfA-R: combo and stagger timing per weapon speed class (fast/medium/slow).
+// Kenshi RE (kenshi_x64.exe.c, thunk_FUN_14086b2b0): damage_1/99 lerp by skill,
+// ko thresholds by toughness, bleed/clot rates stored 10× in config (×0.1 at load).
 struct CombatConfig {
-    float combo_window_fast   = 1.000f;  // seconds: combo window for fast weapons
-    float combo_window_medium = 1.250f;  // seconds: medium weapons
-    float combo_window_slow   = 1.500f;  // seconds: slow/heavy weapons
-    float stagger_fast        = 0.333f;  // stagger duration (s) hit by fast weapon
+    // Combo / stagger timing
+    float combo_window_fast   = 1.000f;
+    float combo_window_medium = 1.250f;
+    float combo_window_slow   = 1.500f;
+    float stagger_fast        = 0.333f;
     float stagger_medium      = 0.500f;
     float stagger_slow        = 0.667f;
+
+    // Kenshi damage lerp: actual = lerp(damage_1[type], damage_99[type], skill/99.f)
+    // Indexed by DamageType (Blunt=0, Cut=1, Pierce=2, Ranged=3)
+    float damage_1 [4] = { 8.f, 12.f, 6.f, 10.f };   // damage at skill 1
+    float damage_99[4] = { 35.f, 55.f, 30.f, 45.f };  // damage at skill 99
+    float pierce_damage_mult = 1.0f; // extra multiplier for stab/pierce hits
+
+    // KO threshold lerp: ko_hp = lerp(ko_min, ko_max, toughness/100.f)
+    float ko_threshold_min = 0.10f;  // KO at 10% HP when toughness=0
+    float ko_threshold_max = 0.02f;  // KO at 2% HP when toughness=100
+
+    // Defense
+    float damage_resistance_min = 0.0f;  // armour minimum resist
+    float damage_resistance_max = 0.9f;  // armour maximum resist
+    float base_block_chance     = 0.15f; // base parry %
+    float block_per_10_levels   = 0.02f; // +2% per 10 skill levels (×0.1 from config)
+
+    // Recovery
+    float stun_recovery_rate    = 60.f;  // seconds to recover from stun unaided
+    float attack_chance_factor  = 1.0f;  // global hit/miss modifier
+    float medic_speed_mult      = 1.0f;  // surgery/bandaging speed multiplier
+    float heal_rate_mult        = 1.0f;  // base healing per tick
+    float resting_heal_rate_mult= 2.0f;  // healing when sleeping
 };
+
+// KO HP threshold for given toughness [0..100].
+inline float KoThreshold(const CombatConfig& cfg, int toughness) noexcept {
+    float t = (float)toughness * 0.01f;
+    if (t < 0.f) t = 0.f;
+    if (t > 1.f) t = 1.f;
+    return cfg.ko_threshold_min + (cfg.ko_threshold_max - cfg.ko_threshold_min) * t;
+}
+
+// Kenshi-style damage lerp by skill level (0..99).
+// type indexed as (int)DamageType.
+inline float CalcDamageLerped(const CombatConfig& cfg, DamageType type,
+                               int skill_level) noexcept {
+    int ti = (int)type;
+    if (ti < 0 || ti >= 4) ti = 0;
+    float t = (float)skill_level / 99.f;
+    if (t < 0.f) t = 0.f;
+    if (t > 1.f) t = 1.f;
+    float d = cfg.damage_1[ti] + (cfg.damage_99[ti] - cfg.damage_1[ti]) * t;
+    if (type == DamageType::Pierce) d *= cfg.pierce_damage_mult;
+    return d;
+}
 
 // VBfA-R: AoE damage hit (explosion, heavy slam, grenade).
 // Radii from VBfA: SMALL=1.5m, MEDIUM=3m, LARGE=6m.

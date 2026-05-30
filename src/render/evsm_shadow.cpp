@@ -40,25 +40,31 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
     if (!dev) return false;
 
-    // ── Moment textures: RG32F, one per cascade ───────────────────────────────
-    // R32G32_FLOAT: full precision; fallback R16G16_FLOAT for drivers that lack it.
+    // ── Moment textures: pick format via SDL_GPUTextureSupportsFormat ────────────
+    // Intel ANV (HD 520) may crash in SDL_CreateGPUGraphicsPipeline if the pipeline
+    // color target format is not supported as a color attachment (R32G32_FLOAT).
+    // Probe support BEFORE any texture/pipeline creation to get the actual format.
+    const SDL_GPUTextureUsageFlags ct_usage =
+        SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    if (SDL_GPUTextureSupportsFormat(dev, SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT,
+                                     SDL_GPU_TEXTURETYPE_2D, ct_usage))
+        moment_fmt_ = SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT;
+    else
+        moment_fmt_ = SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT;
+
     for (int k = 0; k < num_cascades_; ++k) {
         SDL_GPUTextureCreateInfo ti{};
         ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT;
+        ti.format               = moment_fmt_;
         ti.width                = (uint32_t)map_size;
         ti.height               = (uint32_t)map_size;
         ti.layer_count_or_depth = 1;
         ti.num_levels           = 1;
-        ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
-                                  SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        ti.usage                = ct_usage;
         moment_tex_[k] = SDL_CreateGPUTexture(dev, &ti);
         if (!moment_tex_[k]) {
-            ti.format      = SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT;
-            moment_tex_[k] = SDL_CreateGPUTexture(dev, &ti);
-        }
-        if (!moment_tex_[k]) {
-            fprintf(stderr, "[EvsmShadow] moment texture[%d] creation failed\n", k);
+            fprintf(stderr, "[EvsmShadow] moment texture[%d] creation failed: %s\n",
+                    k, SDL_GetError());
             return false;
         }
     }
@@ -107,7 +113,7 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
             vis.num_vertex_attributes      = 1;
 
             SDL_GPUColorTargetDescription ct{};
-            ct.format = SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT;
+            ct.format = moment_fmt_; // probed above via SDL_GPUTextureSupportsFormat
 
             SDL_GPUGraphicsPipelineTargetInfo tgt{};
             tgt.color_target_descriptions = &ct;

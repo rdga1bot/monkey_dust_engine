@@ -78,7 +78,8 @@ public:
     float WarpC()       const { return warp_c_; }
 
 private:
-    SDL_GPUTexture*          moment_tex_[NUM_CASCADES] = {};  // RG32F per cascade
+    SDL_GPUTexture*          moment_tex_[NUM_CASCADES] = {};  // RG32F (or RG16F fallback) per cascade
+    SDL_GPUTextureFormat     moment_fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;  // actual format used
     SDL_GPUSampler*          sampler_         = nullptr;      // bilinear, clamp
     SDL_GPURenderPass*       moment_pass_     = nullptr;
     SDL_GPUGraphicsPipeline* moment_pipeline_ = nullptr;

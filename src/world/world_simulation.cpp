@@ -1,5 +1,7 @@
 #include <monkey_dust/world/world_simulation.h>
 #include <monkey_dust/world/world_events.h>
+#include <monkey_dust/world/shop_inventory.h>
+#include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/platform/md_log.h>
 
 // 1 Hz world-state tick. Call with LOGIC_TICK_S (0.1f) each logic tick.
@@ -92,6 +94,16 @@ void WorldSimulation::Tick(float delta_s) noexcept {
     // WageSystem: pay NPC wages once per game-day (every TICKS_PER_GAME_DAY ticks).
     if ((tick_count_ % TICKS_PER_GAME_DAY) == 0u)
         PayDailyWages();
+
+    // E-1: ShopInventory restock — advance restock_timer_s for all shops each logic second.
+    // ShopInventory::TickRestock(delta_s) returns true when shop restocks; we call once/s.
+    // Kenshi RE: restock_deadline@+0x1f8 (base 24000.0s ≈ 6.67 game-hours at 1Hz).
+    {
+        auto& reg = Registry::Get();
+        reg.view<ShopInventory>().each([](ShopInventory& shop) {
+            shop.TickRestock(1.0f);  // 1s per WorldSimulation tick
+        });
+    }
 
     // F4: World event generation — every 30 sim ticks (~30s real-time).
     // Raids when aggression high, caravans when prosperity high.

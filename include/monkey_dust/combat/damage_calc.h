@@ -163,3 +163,21 @@ namespace AoeRadius {
 // Damage falls off linearly from epicentre to edge. Hits torso limb.
 void AoeApply(entt::registry& reg, const AoeHit& h);
 
+// ── Global CombatConfig accessor ──────────────────────────────────────────────
+// Single mutable instance; loaded from config at startup, used by CalcDamageLerped/KoThreshold.
+inline CombatConfig& GlobalCombatConfig() noexcept {
+    static CombatConfig cfg;
+    return cfg;
+}
+
+// ── CombatModifiers — optional per-entity combat multipliers ──────────────────
+// Kenshi RE (kenshi_x64.exe.c): dodge_mult@NPC+0x26c, fist_injury_mult@+0x274,
+// ranged_skill_mult@+0x27c. Attach to NPCs that differ from race defaults.
+// All fields are multiplicative (1.0 = no change from base formula).
+struct CombatModifiers {
+    float dodge_mult       = 1.f;  // scales base melee-dodge chance before roll
+    float fist_injury_mult = 1.f;  // unarmed punch injury severity multiplier
+    float ranged_skill_mult= 1.f;  // ranged accuracy bonus per skill point
+};
+static_assert(sizeof(CombatModifiers) == 12, "CombatModifiers must be 12 bytes");
+

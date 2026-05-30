@@ -7,6 +7,11 @@
 #include <cstring>
 #include <cmath>
 
+// VBfA RE §8.8 — pre-allocated bone scratch buffer (eliminates 4 KB stack push/pop
+// per NPC per frame). Single-threaded render path; reused across all GetFinalBones calls.
+// VBfA: "Allocated %s for skeleton base pose memory pool." (line 244975)
+static float g_bone_world_scratch[MAX_SKIN_BONES][16];
+
 // ── Math helpers ─────────────────────────────────────────────────────────────
 
 void SkinMesh::mat4_identity(float* m) {
@@ -383,7 +388,7 @@ void SkinMesh::GetFinalBones(int clip_idx, float time_s, float* out) const {
         if (dur > 0.05f) t = fmodf(t, dur); else t = 0.f;
     }
 
-    float world[MAX_SKIN_BONES][16];
+    float (&world)[MAX_SKIN_BONES][16] = g_bone_world_scratch;
     float local[16];
 
     // Process in topological order (parent always before child)
@@ -432,7 +437,7 @@ void SkinMesh::GetFinalBonesScaled(int clip_idx, float time_s,
         if (dur > 0.05f) t = fmodf(t, dur); else t = 0.f;
     }
 
-    float world[MAX_SKIN_BONES][16];
+    float (&world)[MAX_SKIN_BONES][16] = g_bone_world_scratch;
     float local[16];
 
     for (int oi = 0; oi < bone_count; ++oi) {
@@ -492,7 +497,7 @@ void SkinMesh::GetFinalBonesFull(int clip_idx, float time_s,
         if (dur > 0.05f) t = fmodf(t, dur); else t = 0.f;
     }
 
-    float world[MAX_SKIN_BONES][16];
+    float (&world)[MAX_SKIN_BONES][16] = g_bone_world_scratch;
     float local[16];
 
     for (int oi = 0; oi < bone_count; ++oi) {
@@ -561,7 +566,7 @@ void SkinMesh::GetFinalBonesBlend(int base_clip, float base_t,
     { float d = clips_[override_clip].duration;
       if (d > 0.05f) ot = fmodf(ot, d); else ot = 0.f; }
 
-    float world[MAX_SKIN_BONES][16];
+    float (&world)[MAX_SKIN_BONES][16] = g_bone_world_scratch;
     float local[16];
     for (int oi = 0; oi < bone_count; ++oi) {
         int i = process_order_[oi];

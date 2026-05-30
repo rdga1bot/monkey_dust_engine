@@ -32,16 +32,46 @@ public:
     // Register a building's power contribution (call on build complete or load).
     // power_output > 0 = generator; < 0 = consumer.
     void Register(int building_id, float power_output) noexcept {
+        RegisterWithFuel(building_id, power_output, 0.f, 0.f);
+    }
+
+    // B-1: Register generator with fuel consumption (fuel_rate > 0 = fuel-consuming).
+    // fuel_rate: units per hour. initial_fuel: starting fuel amount (same units).
+    void RegisterWithFuel(int building_id, float power_output,
+                          float fuel_rate, float initial_fuel) noexcept {
         for (int i = 0; i < count_; ++i) {
-            if (ids_[i] == building_id) { outputs_[i] = power_output; Recalc(); return; }
+            if (ids_[i] == building_id) {
+                outputs_   [i] = power_output;
+                fuel_rates_[i] = fuel_rate;
+                if (fuel_rate > 0.f && fuel_amounts_[i] <= 0.f)
+                    fuel_amounts_[i] = initial_fuel;
+                Recalc(); return;
+            }
         }
         if (count_ >= MAX_POWER_CONSUMERS) return;
-        ids_    [count_] = building_id;
-        outputs_[count_] = power_output;
-        // battery banks add to battery_max_
+        ids_         [count_] = building_id;
+        outputs_     [count_] = power_output;
+        fuel_rates_  [count_] = fuel_rate;
+        fuel_amounts_[count_] = initial_fuel;
         if (power_output == 0.f) battery_max_ += BATTERY_BANK_CAPACITY;
         ++count_;
         Recalc();
+    }
+
+    // B-1: Add fuel to a registered building. Returns false if building not found.
+    bool AddFuel(int building_id, float amount) noexcept {
+        for (int i = 0; i < count_; ++i) {
+            if (ids_[i] != building_id) continue;
+            fuel_amounts_[i] += amount;
+            return true;
+        }
+        return false;
+    }
+
+    float GetFuel(int building_id) const noexcept {
+        for (int i = 0; i < count_; ++i)
+            if (ids_[i] == building_id) return fuel_amounts_[i];
+        return 0.f;
     }
 
     // Unregister a building (demolished or destroyed).
@@ -59,6 +89,15 @@ public:
     // Call from WorldSimulation or logic tick with delta_s.
     // Returns true if settlement is powered (false = deficit).
     bool Tick(float delta_s) noexcept {
+        // B-1: consume fuel for generators; drop output to 0 if empty
+        const float dt_hours = delta_s / 3600.f;
+        for (int i = 0; i < count_; ++i) {
+            if (fuel_rates_[i] <= 0.f) continue;
+            fuel_amounts_[i] -= fuel_rates_[i] * dt_hours;
+            if (fuel_amounts_[i] <= 0.f) { fuel_amounts_[i] = 0.f; outputs_[i] = 0.f; }
+        }
+        Recalc();
+
         if (total_power_ >= 0.f) {
             // Surplus: charge battery
             float charge = total_power_ * delta_s;
@@ -93,8 +132,10 @@ private:
         for (int i = 0; i < count_; ++i) total_power_ += outputs_[i];
     }
 
-    int   ids_    [MAX_POWER_CONSUMERS] = {};
-    float outputs_[MAX_POWER_CONSUMERS] = {};
+    int   ids_         [MAX_POWER_CONSUMERS] = {};
+    float outputs_     [MAX_POWER_CONSUMERS] = {};
+    float fuel_rates_  [MAX_POWER_CONSUMERS] = {};  // B-1: units/hour; 0=no fuel needed
+    float fuel_amounts_[MAX_POWER_CONSUMERS] = {};  // B-1: current fuel
     int   count_          = 0;
     float total_power_    = 0.f;
     float deficit_timer_s_= 0.f;

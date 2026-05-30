@@ -5,10 +5,11 @@
 // ── GBuffer ───────────────────────────────────────────────────────────────────
 // Compact 2-RT deferred G-Buffer (8 bytes/pixel at 720p = 7.4 MB).
 //
-// RT0 RGBA8: albedo(RGB) + roughness(A)
-// RT1 RGBA8: oct-normal(RG) + metallic(B) + flags(A)
+// RT0 RGBA8:              albedo(RGB) + roughness(A)
+// RT1 R16G16B16A16_SNORM: oct-normal(RG) + metallic(B) + flags(A)  [VBfA packssdw]
 //   flags: bit0=receive_shadow  bit1=emissive  bit2=vegetation
-// Depth: D24_UNORM_S8_UINT (shared with forward pass depth test)
+//   SNORM normals: 2× precision vs RGBA8, no UNORM remap in shader needed.
+// Depth: D32_FLOAT_S8_UINT
 //
 // Usage:
 //   Init(dev, w, h)         — once after window creation

@@ -19,8 +19,10 @@ void GBuffer::Init(SDL_GPUDevice* dev, int w, int h) {
     ti.usage  = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
     rt0_ = SDL_CreateGPUTexture(dev, &ti);
 
-    // RT1: oct-normal(RG) + metallic(B) + flags(A) — RGBA8 unorm
-    ti.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    // RT1: oct-normal(RG) + metallic(B) + flags(A) — R16G16B16A16 SNORM (VBfA packssdw).
+    // SNORM stores normals in [-1,1] directly — no UNORM remap needed.
+    // 2× precision vs RGBA8 UNORM for oct-normals; metallic/flags [0,1] map to positive half.
+    ti.format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_SNORM;
     ti.usage  = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
     rt1_ = SDL_CreateGPUTexture(dev, &ti);
 
@@ -44,8 +46,9 @@ void GBuffer::Init(SDL_GPUDevice* dev, int w, int h) {
         MD_LOG(MD_LOG_WARNING, "GBuffer: texture creation failed (%dx%d)", w, h);
         return;
     }
-    MD_LOG(MD_LOG_INFO, "GBuffer: %dx%d RT0+RT1+Depth — 8 bytes/pixel = %.1f MB",
-           w, h, static_cast<float>(w * h * 8) / (1024.f * 1024.f));
+    // RT0=4B + RT1=8B (R16G16B16A16_SNORM) + Depth=4B = 16 bytes/pixel
+    MD_LOG(MD_LOG_INFO, "GBuffer: %dx%d RT0(RGBA8)+RT1(SNORM16)+Depth — 16 bytes/pixel = %.1f MB",
+           w, h, static_cast<float>(w * h * 16) / (1024.f * 1024.f));
 }
 
 SDL_GPURenderPass* GBuffer::Begin(SDL_GPUCommandBuffer* cmd) {
@@ -57,11 +60,12 @@ SDL_GPURenderPass* GBuffer::Begin(SDL_GPUCommandBuffer* cmd) {
     col[0].store_op     = SDL_GPU_STOREOP_STORE;
     col[0].clear_color  = { 0.f, 0.f, 0.f, 1.f };  // clear roughness=1 (fully rough)
 
-    // RT1 — oct-normal + metallic + flags
+    // RT1 — oct-normal(SNORM) + metallic + flags
+    // SNORM: OctEncode(0,0,1)=(0,0) stored directly — clear {0,0,0,0} = "up" normal.
     col[1].texture      = rt1_;
     col[1].load_op      = SDL_GPU_LOADOP_CLEAR;
     col[1].store_op     = SDL_GPU_STOREOP_STORE;
-    col[1].clear_color  = { 0.5f, 0.5f, 0.f, 0.f }; // oct-normal=(0.5,0.5)=up
+    col[1].clear_color  = { 0.f, 0.f, 0.f, 0.f };
 
     SDL_GPUDepthStencilTargetInfo ds = {};
     ds.texture           = depth_;

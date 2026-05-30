@@ -1,27 +1,28 @@
 #pragma once
 // EvsmShadow — Exponential Variance Shadow Maps for soft shadows.
 //
-// Drop-in upgrade over standard PCF CSM:
-//   PCF:  samples depth texture + comparison → binary result
-//   EVSM: samples RG32F moment texture → probabilistic soft edge
+// Replaces CSM depth textures with RG32F moment textures.
+// Cascade structure is preserved — only the storage/sampling format changes:
+//   CSM:  3 × depth_only pass → GpuDepthTexture → PCF depth compare
+//   EVSM: 3 × moment pass    → RG32F texture   → Chebyshev inequality
 //
-// Advantages over PCSS (Percentage Closer Soft Shadows):
+// Advantages over PCF:
 //   - Single texture sample per shadow query (no multi-sample loop)
-//   - ~2x faster than 3×3 PCF, much faster than PCSS
+//   - ~2x faster than 3×3 PCF on Intel HD 520
 //   - Naturally soft edges proportional to local depth variance
+//   - Hardware bilinear filtering on moment maps is safe (unlike depth)
 //
-// Integration with existing ShadowSystem:
-//   1. Init()         — creates moment texture + moment-write pipeline
-//   2. BeginPass(cmd) — opens colour render pass targeting moment_tex_
-//   3. Draw shadow casters (same vertex shader as CSM depth pass)
-//   4. EndPass()
-//   5. BindForSampling(pass, slot) — binds moment_tex_ as sampler
-//
-// Shader side: include "evsm_sample.glsl" and call SampleEVSM().
+// Integration — replaces ShadowSystem depth passes completely:
+//   1. Init(NUM_CASCADES)
+//   2. for k in 0..NUM_CASCADES:
+//        BeginMomentPass(cmd, k) → draw casters → EndMomentPass()
+//   3. BindArrayForSampling(pass, slot) — binds 2D array sampler
+//   Shader: include "evsm_sample.glsl", call SampleEVSMCascade()
 //
 // Parameters:
-//   map_size: resolution of the moment map (default 1024, matches CSM)
-//   warp_c:   exponential warp factor (default 40.0 — good for world scale)
+//   num_cascades: matches ShadowSystem::NUM_CASCADES (default 3)
+//   map_size:     resolution per cascade (default 1024)
+//   warp_c:       exponential warp factor (default 40.0)
 
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
@@ -33,48 +34,65 @@ class EvsmShadow {
 public:
     static EvsmShadow& Get() { static EvsmShadow inst; return inst; }
 
+    static constexpr int   NUM_CASCADES    = 3;
     static constexpr int   DEFAULT_MAP_SIZE = 1024;
     static constexpr float DEFAULT_WARP_C   = 40.f;
 
-    bool Init(int map_size = DEFAULT_MAP_SIZE, float warp_c = DEFAULT_WARP_C);
+    // num_cascades must match ShadowSystem::NUM_CASCADES.
+    bool Init(int num_cascades = NUM_CASCADES,
+              int map_size     = DEFAULT_MAP_SIZE,
+              float warp_c     = DEFAULT_WARP_C);
     void Shutdown();
     bool IsReady() const { return ready_; }
 
-    // ── Shadow pass ───────────────────────────────────────────────────────────
+    // ── Shadow pass (one call per cascade) ───────────────────────────────────
 
-    // Open the moment-write render pass. Draw shadow casters between Begin/End.
-    // The vertex shader is the same as the standard CSM depth pass.
-    // depth_tex: optional read-only depth for early-Z culling (may be null).
-    SDL_GPURenderPass* BeginMomentPass(SDL_GPUCommandBuffer* cmd,
-                                        SDL_GPUTexture* depth_tex = nullptr);
-    void EndMomentPass();
+    // Open moment-write pass for cascade k. Draw shadow casters, then EndMomentPass().
+    // Vertex shader: shadow_csm.vert (same light-space transform as depth pass).
+    SDL_GPURenderPass* BeginMomentPass(SDL_GPUCommandBuffer* cmd, int cascade);
+    void               EndMomentPass();
 
-    // The graphics pipeline for writing moments.
-    // Bind with SDL_BindGPUGraphicsPipeline before drawing shadow casters.
     SDL_GPUGraphicsPipeline* MomentPipeline() const { return moment_pipeline_; }
+
+    // ── VBfA R-3: Gaussian blur on moment maps ────────────────────────────────
+    // 2-pass separable 5×5 Gaussian (shadow_blur_h/v.comp) run after all moment passes.
+    // Ping-pong: moment_tex_[k] → blur_tmp_[k] → moment_tex_[k].
+    // Call once per frame AFTER all EndMomentPass() calls, before sampling.
+    void ApplyBlur(SDL_GPUCommandBuffer* cmd);
+    bool BlurReady() const { return blur_ready_; }
 
     // ── Sampling ──────────────────────────────────────────────────────────────
 
-    // Bind the moment texture as a fragment sampler for the main render pass.
-    // slot: the sampler binding index used by your main shader.
-    void BindForSampling(SDL_GPURenderPass* pass, uint32_t slot);
+    // Bind the 2D array moment texture (all cascades) as a fragment sampler.
+    // Shader uses SampleEVSMCascade(evsm_array, cascade_idx, uv, depth, warp_c).
+    void BindArrayForSampling(SDL_GPURenderPass* pass, uint32_t slot);
 
-    // Raw moment texture — for manual binding or blit.
-    SDL_GPUTexture* MomentTex()  const { return moment_tex_; }
+    // Per-cascade texture (for direct access or debug blit).
+    SDL_GPUTexture* MomentTex(int k) const {
+        return (k >= 0 && k < num_cascades_) ? moment_tex_[k] : nullptr;
+    }
     SDL_GPUSampler* MomentSampler() const { return sampler_; }
 
-    int   MapSize() const { return map_size_; }
-    float WarpC()   const { return warp_c_; }
+    int   NumCascades() const { return num_cascades_; }
+    int   MapSize()     const { return map_size_; }
+    float WarpC()       const { return warp_c_; }
 
 private:
-    SDL_GPUTexture*           moment_tex_      = nullptr;  // RG32F moments
-    SDL_GPUSampler*           sampler_         = nullptr;  // bilinear, clamp
-    SDL_GPURenderPass*        moment_pass_     = nullptr;
-    SDL_GPUGraphicsPipeline*  moment_pipeline_ = nullptr;
+    SDL_GPUTexture*          moment_tex_[NUM_CASCADES] = {};  // RG32F per cascade
+    SDL_GPUSampler*          sampler_         = nullptr;      // bilinear, clamp
+    SDL_GPURenderPass*       moment_pass_     = nullptr;
+    SDL_GPUGraphicsPipeline* moment_pipeline_ = nullptr;
 
-    int   map_size_ = DEFAULT_MAP_SIZE;
-    float warp_c_   = DEFAULT_WARP_C;
-    bool  ready_    = false;
+    // ── VBfA R-3: blur resources ──────────────────────────────────────────────
+    SDL_GPUTexture*   blur_tmp_[NUM_CASCADES] = {};  // intermediate for H→V ping-pong
+    GpuComputePipeline blur_h_cs_;  // shadow_blur_h.comp
+    GpuComputePipeline blur_v_cs_;  // shadow_blur_v.comp
+    bool blur_ready_ = false;
+
+    int   num_cascades_ = NUM_CASCADES;
+    int   map_size_     = DEFAULT_MAP_SIZE;
+    float warp_c_       = DEFAULT_WARP_C;
+    bool  ready_        = false;
 };
 
 } // namespace md

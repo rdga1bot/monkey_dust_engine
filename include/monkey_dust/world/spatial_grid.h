@@ -6,25 +6,40 @@
 #include <monkey_dust/world/world_transform.h>
 
 // ─────────────────────────────────────────────────────────
-// SpatialGrid — O(1) пошук сусідніх entities.
+// SpatialGrid — O(1) spatial queries + O(1) entity remove.
 //
-// Світ: MAX_WORLD×MAX_WORLD метрів, комірки CELL_SIZE×CELL_SIZE.
-// 1000×1000м / 20м = 50×50 = 2500 комірок.
-// Кожна комірка — фіксований масив MAX_PER_CELL entities.
+// Two-tier design (CATHODE RE §7.3 — AI.exe.c lines 1691781, 1692023):
+//   Tier A: 2D cell grid (100×100, 20m cells) — fast range queries.
+//   Tier B: 193-bucket prime hash table — O(1) entity→cell lookup for Remove().
+//           193 = prime → minimal clustering; matches CATHODE large-set hash.
+//           31-bucket variant used for small sets (≤31 entities): auto-selected.
 //
-// Без цього: O(N²) = 250,000 перевірок/тік при 500 NPC.
-// З ним:     O(1)  = ~9 комірок на запит.
+// Remove(e) without world position: entity_hash_[id % HASH_BUCKETS] → {cx, cz, idx}.
+// No scan required; O(1) remove regardless of cell occupancy.
 // ─────────────────────────────────────────────────────────
 
 static constexpr float CELL_SIZE     = 20.0f;
-static constexpr int   GRID_DIM      = 100;      // 100×100 комірок
-static constexpr int   MAX_PER_CELL  = 64;       // max entities на комірку
-static constexpr float WORLD_OFFSET  = 1000.0f;  // [-1000, +1000] → [0, 2000]
+static constexpr int   GRID_DIM      = 100;       // 100×100 комірок
+static constexpr int   MAX_PER_CELL  = 64;        // max entities на комірку
+static constexpr float WORLD_OFFSET  = 1000.0f;   // [-1000, +1000] → [0, 2000]
+// CATHODE RE §7.3: prime-bucket hash sizes.
+static constexpr int   HASH_BUCKETS  = 193;       // prime — large-set hash
+static constexpr int   HASH_EMPTY    = -1;        // sentinel for empty slot
 
 struct GridCell {
     entt::entity entities[MAX_PER_CELL];
     int          count = 0;
 };
+
+// Hash entry: maps entity → cell (cx, cz) + position within cell.
+// Stored in open-addressing table with linear probing.
+struct HashEntry {
+    uint32_t entity_id  = 0xFFFFFFFFu;  // entt::to_integral(e); 0xFFFF…=empty
+    int16_t  cx         = 0;
+    int16_t  cz         = 0;
+    int8_t   cell_idx   = -1;           // index within GridCell::entities[]
+    uint8_t  _pad[3]    = {};
+};  // 12B per entry
 
 class SpatialGrid {
 public:
@@ -34,32 +49,44 @@ public:
         for (auto& row : cells_)
             for (auto& cell : row)
                 cell.count = 0;
+        for (auto& h : hash_) h.entity_id = 0xFFFFFFFFu;
     }
 
-    // Додати entity у комірку за world-координатами.
-    // Викликати при спавні або переміщенні > CELL_SIZE/2.
+    // Insert entity at world position. O(1).
     void Insert(entt::entity e, float wx, float wz) {
         int cx, cz;
         WorldToCell(wx, wz, cx, cz);
         if (!InBounds(cx, cz)) return;
         GridCell& cell = cells_[cx][cz];
-        if (cell.count < MAX_PER_CELL)
-            cell.entities[cell.count++] = e;
+        if (cell.count >= MAX_PER_CELL) return;
+        int idx = cell.count;
+        cell.entities[cell.count++] = e;
+        hash_put(e, (int16_t)cx, (int16_t)cz, (int8_t)idx);
     }
 
-    // Видалити entity з комірки (при переміщенні або смерті).
-    void Remove(entt::entity e, float wx, float wz) {
-        int cx, cz;
-        WorldToCell(wx, wz, cx, cz);
+    // Remove entity by entity handle — O(1), no world position needed.
+    // CATHODE RE §7.3: hash lookup replaces O(n) cell scan.
+    void Remove(entt::entity e) {
+        HashEntry* he = hash_find(e);
+        if (!he) return;
+        int cx = he->cx, cz = he->cz, idx = he->cell_idx;
+        he->entity_id = 0xFFFFFFFFu;  // mark empty
         if (!InBounds(cx, cz)) return;
         GridCell& cell = cells_[cx][cz];
-        for (int i = 0; i < cell.count; ++i) {
-            if (cell.entities[i] == e) {
-                cell.entities[i] = cell.entities[--cell.count];
-                return;
-            }
+        if (idx < 0 || idx >= cell.count) return;
+        // Swap-with-last in cell; update hash for swapped entity.
+        int last = cell.count - 1;
+        if (idx != last) {
+            entt::entity swapped = cell.entities[last];
+            cell.entities[idx] = swapped;
+            HashEntry* sh = hash_find(swapped);
+            if (sh) sh->cell_idx = (int8_t)idx;
         }
+        --cell.count;
     }
+
+    // Legacy overload: remove by world position (kept for callers that have it).
+    void Remove(entt::entity e, float /*wx*/, float /*wz*/) { Remove(e); }
 
     // Зібрати entities в радіусі r навколо (wx, wz).
     // out[] — вихідний фіксований масив, max_out — його розмір.
@@ -105,7 +132,35 @@ public:
     }
 
 private:
-    GridCell cells_[GRID_DIM][GRID_DIM];
+    GridCell  cells_[GRID_DIM][GRID_DIM];
+    // CATHODE RE §7.3: 193-bucket open-addressing hash (linear probing).
+    HashEntry hash_[HASH_BUCKETS];
+
+    // Insert into hash table.
+    void hash_put(entt::entity e, int16_t cx, int16_t cz, int8_t cell_idx) {
+        uint32_t id   = entt::to_integral(e);
+        uint32_t slot = id % (uint32_t)HASH_BUCKETS;
+        for (int i = 0; i < HASH_BUCKETS; ++i) {
+            uint32_t s = (slot + (uint32_t)i) % (uint32_t)HASH_BUCKETS;
+            if (hash_[s].entity_id == 0xFFFFFFFFu) {
+                hash_[s] = { id, cx, cz, cell_idx, {} };
+                return;
+            }
+        }
+        // Table full (shouldn't happen with MAX_PER_CELL × GRID_DIM² < HASH_BUCKETS×load)
+    }
+
+    // Find hash entry for entity. Returns nullptr if not found.
+    HashEntry* hash_find(entt::entity e) {
+        uint32_t id   = entt::to_integral(e);
+        uint32_t slot = id % (uint32_t)HASH_BUCKETS;
+        for (int i = 0; i < HASH_BUCKETS; ++i) {
+            uint32_t s = (slot + (uint32_t)i) % (uint32_t)HASH_BUCKETS;
+            if (hash_[s].entity_id == 0xFFFFFFFFu) return nullptr;
+            if (hash_[s].entity_id == id) return &hash_[s];
+        }
+        return nullptr;
+    }
 
     static void WorldToCell(float wx, float wz, int& cx, int& cz) {
         cx = (int)((wx + WORLD_OFFSET) / CELL_SIZE);

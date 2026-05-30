@@ -213,6 +213,11 @@ void ChunkManager::LoadChunkFromStaging(ChunkLoadStaging& stg) {
 }
 
 void ChunkManager::ApplyStagedChunks() {
+    // CATHODE RE §7.9: streaming budget — limit bytes applied per Update() call.
+    // Prevents single-frame stall when many chunks arrive simultaneously.
+    // Deferred chunks are processed next Update(); gameplay continues unblocked.
+    bytes_last_update_ = 0;
+
     for (int i = 0; i < MAX_STAGING; ++i) {
         if (!staging_[i].ready.load(std::memory_order_acquire)) continue;
         if (staging_[i].consumed.load(std::memory_order_relaxed)) continue;
@@ -226,6 +231,17 @@ void ChunkManager::ApplyStagedChunks() {
             staging_[i].ready.store(false, std::memory_order_release);
             continue;
         }
+
+        // Budget check: estimate chunk size as (trees×64B + npcs×32B + overhead 4KB).
+        int estimated = staging_[i].tree_count * 64 + staging_[i].npc_count * 32 + 4096;
+        if (bytes_last_update_ + estimated > stream_budget_) {
+            // Budget exceeded — defer to next Update(). Do NOT mark consumed.
+            // CATHODE: "Not enough streaming budget... opening anyway!" only for doors;
+            // for terrain chunks we always defer (no urgency override needed).
+            continue;
+        }
+        bytes_last_update_ += estimated;
+
         LoadChunkFromStaging(staging_[i]);
         staging_[i].consumed.store(true, std::memory_order_relaxed);
         staging_[i].ready.store(false, std::memory_order_release);

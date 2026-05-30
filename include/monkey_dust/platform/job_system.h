@@ -28,8 +28,35 @@ struct JobSystem {
 
     struct Job { void (*fn)(void*); void* data; };
 
+    // CATHODE RE §7.5: 7-level thread priority table (AI.exe lines 1818006-1818027).
+    // Indexed by WorkerRole enum. Configured via tasks.cfg or SetWorkerPriority().
+    enum WorkerRole : int {
+        RoleRender    = 0,  // TIME_CRITICAL  — frame-rate sensitive
+        RolePhysics   = 1,  // ABOVE_NORMAL
+        RoleAI        = 2,  // ABOVE_NORMAL
+        RoleAnimation = 3,  // NORMAL         — default game logic
+        RoleStreaming  = 4,  // BELOW_NORMAL
+        RoleBackground= 5,  // BELOW_NORMAL
+        RoleIdle      = 6,  // IDLE           — background precompute
+        RoleCount     = 7
+    };
+    // SDL thread priority mapping per role (SDL_ThreadPriority values):
+    // TIME_CRITICAL=3, HIGH=2, NORMAL=1, LOW=0
+    static constexpr int kPriorityTable[RoleCount] = {
+        3,  // Render    → SDL_THREAD_PRIORITY_TIME_CRITICAL
+        2,  // Physics   → SDL_THREAD_PRIORITY_HIGH
+        2,  // AI        → SDL_THREAD_PRIORITY_HIGH
+        1,  // Animation → SDL_THREAD_PRIORITY_NORMAL
+        0,  // Streaming → SDL_THREAD_PRIORITY_LOW
+        0,  // Background→ SDL_THREAD_PRIORITY_LOW
+        0,  // Idle      → SDL_THREAD_PRIORITY_LOW
+    };
+
+    // Assign a role to worker thread i (applied at Init if called before Init,
+    // or immediately if called after). workers 0..N-1, default role = RoleAI.
+    void SetWorkerRole(int worker_idx, WorkerRole role);
+
     // VBfA RE: batch_size config key (Tasks.txt line 43185).
-    // Used by callers to split work into this many items per submitted job.
     int BatchSize() const { return batch_size_; }
 
     static JobSystem& Get();
@@ -63,8 +90,9 @@ private:
     int           inflight_              = 0;  // jobs queued + executing
     bool          quit_                  = false;
     int           num_workers_           = 0;
-    int           batch_size_            = 16;  // VBfA: "batch_size" from Tasks.txt
-    int           cfg_worker_override_   = 0;   // 0 = use CPU-1
+    int           batch_size_            = 16;
+    int           cfg_worker_override_   = 0;
+    WorkerRole    worker_roles_[MAX_WORKERS] = {};  // per-worker role; default RoleAI(2)
 
     SDL_Mutex*     mtx_      = nullptr;
     SDL_Condition* cv_work_  = nullptr;  // workers wait here

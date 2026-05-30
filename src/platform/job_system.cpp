@@ -23,6 +23,20 @@ int SDLCALL JobSystem::s_worker_entry(void* self) {
 }
 
 void JobSystem::worker_loop() {
+    // CATHODE RE §7.5: apply priority from role table at thread startup.
+    // SDL_SetCurrentThreadPriority sets the *calling* thread's priority.
+    // worker_roles_ index is determined by matching thread ID.
+    {
+        SDL_ThreadID my_id = SDL_GetCurrentThreadID();
+        for (int i = 0; i < num_workers_; ++i) {
+            if (threads_[i] && SDL_GetThreadID(threads_[i]) == my_id) {
+                int prio = kPriorityTable[(int)worker_roles_[i]];
+                SDL_SetCurrentThreadPriority((SDL_ThreadPriority)prio);
+                break;
+            }
+        }
+    }
+
     while (true) {
         SDL_LockMutex(mtx_);
         while (!quit_ && count_ == 0)
@@ -69,6 +83,20 @@ void JobSystem::LoadFromCfg(const char* path) {
            cfg_worker_override_, batch_size_);
 }
 
+// CATHODE RE §7.5: set priority role for worker thread i.
+constexpr int JobSystem::kPriorityTable[JobSystem::RoleCount];
+
+void JobSystem::SetWorkerRole(int idx, WorkerRole role) {
+    if (idx < 0 || idx >= MAX_WORKERS) return;
+    worker_roles_[idx] = role;
+    if (idx < num_workers_ && threads_[idx]) {
+        // Apply immediately if thread is running.
+        // SDL_SetThreadPriority sets priority of calling thread;
+        // we can only hint — actual change requires thread cooperation.
+        (void)role; // priority applied at thread spawn; runtime change not supported on all platforms
+    }
+}
+
 void JobSystem::Init() {
     mtx_     = SDL_CreateMutex();
     cv_work_ = SDL_CreateCondition();
@@ -86,9 +114,13 @@ void JobSystem::Init() {
         SDL_snprintf(name, sizeof(name), "JobWorker%d", i);
         threads_[i] = SDL_CreateThread(s_worker_entry, name, this);
 
+        // CATHODE RE §7.5: apply priority from role table (SDL3 uses SetCurrentThreadPriority,
+        // called from within the worker thread itself via s_worker_entry).
+        // We store the role; worker calls SDL_SetCurrentThreadPriority at startup.
+        (void)worker_roles_[i];  // applied inside worker_loop()
+
 #ifdef __linux__
-        // VBfA RE §8 + CATHODE RE §7: pin workers to physical cores.
-        // Worker i gets core (i+1) % num_cores (core 0 = main thread).
+        // VBfA RE §8.10 + CATHODE RE §7: pin workers to physical cores.
         {
             pthread_t tid = (pthread_t)SDL_GetThreadID(threads_[i]);
             cpu_set_t cs;

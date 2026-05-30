@@ -20,6 +20,15 @@ public:
     void Update(float player_x, float player_z);
     void UnloadAll();
 
+    // CATHODE RE §7.9: streaming budget cap.
+    // Sets max bytes that may be applied from staging per Update() call.
+    // When budget exceeded, remaining staged chunks are deferred to next Update().
+    // Default: 2MB/frame (safe on Intel HD 520 with 4-8GB shared RAM).
+    // "Not enough streaming budget to load other side of door, opening anyway!" (AI.exe line 178065)
+    void SetStreamingBudgetBytes(int bytes_per_update) { stream_budget_ = bytes_per_update; }
+    int  StreamingBudgetBytes() const { return stream_budget_; }
+    int  BytesStreamedLastUpdate() const { return bytes_last_update_; }
+
     void StartIOWorker();
     void StopIOWorker();
     bool IsIOWorkerRunning() const { return io_running_.load(); }
@@ -63,6 +72,10 @@ private:
     ChunkSpawnNpcFn      spawn_npc_fn_      = nullptr;
     ChunkDestroyEntityFn destroy_entity_fn_ = nullptr;
     ChunkSaveEntityFn    save_entity_fn_    = nullptr;
+
+    // CATHODE RE §7.9: streaming budget
+    int stream_budget_     = 2 * 1024 * 1024;  // 2 MB default
+    int bytes_last_update_ = 0;
 
     bool TryEnqueuePending(ChunkCoord c);
     bool TryDequeuePending(ChunkCoord& out);

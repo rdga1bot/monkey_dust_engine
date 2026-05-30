@@ -23,7 +23,8 @@ static constexpr float KO_RECOVERY_DOCTOR_S    = 20.f;    // seconds with a doct
 // Kenshi RE: bleed_rate and bleeding_clot_rate are stored ×10 in config (×0.1 applied at load).
 static constexpr float BLEED_CONFIG_SCALE      = 0.1f;    // multiply config value by this
 
-struct InjuryState {
+// alignas(16): bleed_rate[] array starts at offset 0 → _mm_load_ps(bleed_rate) valid.
+struct alignas(16) InjuryState {
     float   bleed_rate[LIMB_COUNT];   // HP/s per limb (0=no bleed)   24B
     float   resting_heal_rate;        // HP/s current heal rate         4B
     float   ko_recovery_timer;        // seconds until KO ends; ≤0=ok   4B
@@ -32,7 +33,7 @@ struct InjuryState {
     uint8_t doctor_skill;             // field_medic skill 0..99         1B
     uint8_t _pad[2];                  //                                 2B
 };                                    //                         total  42B → padded to 44B
-static_assert(sizeof(InjuryState) == 44, "InjuryState size");
+static_assert(sizeof(InjuryState) == 48, "InjuryState size (alignas(16) pads 44→48)");
 
 // DeathState — tracks dying → dead → respawn cycle.
 // Attach when InjuryState blood fraction drops below SurvivalConfig::death_threshold_frac.

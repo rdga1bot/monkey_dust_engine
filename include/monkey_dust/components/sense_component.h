@@ -70,7 +70,8 @@ static_assert(sizeof(VisualSenseEffects) == 16, "VisualSenseEffects must be 16 b
 // sense_cooldown_frames: per-NPC throttle set by SenseSystem when global budget
 // is exceeded. While > 0, sense queries are skipped and decremented each tick.
 // 0 = no throttle (normal operation). Max ~30 = 3s at 10 TPS.
-struct SenseComponent {
+// alignas(16): activation[9] array starts at offset 4 — load 4 activations via _mm_load_ps.
+struct alignas(16) SenseComponent {
     uint8_t  cone_set_idx;                  // index into SenseRegistry::sets[]
     uint8_t  sense_cooldown_frames;         // CATHODE: per-NPC sense budget throttle
     uint8_t  _pad[2];
@@ -81,4 +82,4 @@ struct SenseComponent {
     float    last_known_z;
     uint32_t last_activated_ms[MAX_SENSES]; // timestamp when activation[i] last crossed threshold_hi
 };
-static_assert(sizeof(SenseComponent) == 92, "SenseComponent must be 92 bytes");
+static_assert(sizeof(SenseComponent) == 96, "SenseComponent must be 96 bytes (alignas(16) pads 92→96)");

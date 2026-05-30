@@ -4,22 +4,64 @@
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/world/transform_soa.h>
 
-// VBfA-AI1: 3-tier BT LOD (Viking Battle for Asgard 2008 AI architecture).
-// Source: tasks.bin AI_CHARACTER_LOCO[16] + character_build_pass[u] analysis.
+// VBfA RE §8: 9-tier LOD with logarithmic update frequencies.
+// Source: viking.exe.c Lines 402375-402630 — iVar4 = (bias/10) % 9, per-tier modulo.
 //
-// Tier 1  dist < 30m  → full 10 TPS tick every frame          (100ms)
-// Tier 2  30–80m      → tick every 4th frame, entity-id spread (400ms ≈ 2.5 TPS)
-// Tier 3  dist > 80m  → SKIP entirely; only CrowdSystem/NavAgent locomotion runs
+// VBfA ran at 60 fps; monkey_dust logic at 10 TPS → scale modulos by /6.
+// Result: update intervals grow logarithmically with distance (not linearly).
 //
-// Entity-id spreading (% N) distributes Tier2 load evenly across frames instead
-// of clustering all mid-range entities in the same tick (better than an accumulator).
-// Tier3 complete skip is the critical VBfA insight: 500 NPC scenario → only ~50
-// entities in Tier1, ~100 in Tier2 (25/tick) — rest = zero BT cost.
-static constexpr float BT_LOD_TIER1_SQ = 30.0f * 30.0f;   //  900 m²
-static constexpr float BT_LOD_TIER2_SQ = 80.0f * 80.0f;   // 6400 m²
+// Tier │ dist (m) │ modulo │ update interval │ VBfA orig modulo
+// ─────┼──────────┼────────┼─────────────────┼─────────────────
+//   0  │    < 15  │    1   │  100ms (full)   │    1
+//   1  │  15–30   │    5   │  500ms           │   ~30
+//   2  │  30–50   │   10   │    1 s           │   63
+//   3  │  50–80   │   20   │    2 s           │  106
+//   4  │  80–120  │   42   │  ~4.2 s          │  255 (VBfA tier 1)
+//   5  │ 120–160  │   63   │  ~6.3 s          │  382
+//   6  │ 160–220  │  106   │  ~10.6 s         │  636
+//   7  │ 220–300  │  127   │  ~12.7 s         │  763
+//   8  │   > 300  │  190   │  ~19 s           │ 1144 (VBfA tier 6, "nearly dormant")
+//
+// Dormant motivation → forced tier 8 regardless of distance.
+// Entity-id spread: (fi + entity_id) % modulo == 0  → evenly distributes load.
+
+struct BtLodTier { float dist_sq; uint32_t modulo; };
+static constexpr BtLodTier BT_LOD_TIERS[] = {
+    {  15.f *  15.f,   1u },   // tier 0 — full rate
+    {  30.f *  30.f,   5u },   // tier 1
+    {  50.f *  50.f,  10u },   // tier 2
+    {  80.f *  80.f,  20u },   // tier 3
+    { 120.f * 120.f,  42u },   // tier 4
+    { 160.f * 160.f,  63u },   // tier 5
+    { 220.f * 220.f, 106u },   // tier 6
+    { 300.f * 300.f, 127u },   // tier 7
+};
+static constexpr uint32_t BT_LOD_FAR_MODULO = 190u;  // tier 8: > 300m
+
+// Legacy constants kept for other systems that reference them.
+static constexpr float BT_LOD_TIER1_SQ = 30.0f * 30.0f;
+static constexpr float BT_LOD_TIER2_SQ = 80.0f * 80.0f;
 
 void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs) {
     ++frame_idx_;
+
+    // VBfA RE §8.7: qsort by distance once every 190 frames (~19 s) for cache locality.
+    // Ensures Tier-1 (near) entities are processed first — hot cache path.
+    // EnTT reg.sort<T>() reorders the component pool; subsequent view iteration
+    // visits entities in sorted order (nearest first → best cache utilisation).
+    if (frame_idx_ % 190u == 1u) {
+        const auto& tsoa_sort = TransformSoA::Get();
+        reg.sort<BehaviorTreeComponent>(
+            [&](const entt::entity lhs, const entt::entity rhs) {
+                const auto* wl = reg.try_get<WorldTransform>(lhs);
+                const auto* wr = reg.try_get<WorldTransform>(rhs);
+                float dl = wl && wl->slot < (uint32_t)tsoa_sort.active_count
+                           ? tsoa_sort.dist_sq[wl->slot] : 1e9f;
+                float dr = wr && wr->slot < (uint32_t)tsoa_sort.active_count
+                           ? tsoa_sort.dist_sq[wr->slot] : 1e9f;
+                return dl < dr;  // nearest first
+            });
+    }
 
     // Phase 1: clear frame_flags + expire stale DirectorHints
     auto hint_view = reg.view<AgentState, DirectorHintComponent>();
@@ -52,24 +94,20 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
         if (!btc.enabled || !btc.tree || !btc.tree->isValid()) return;
         if (as.lcflags.test(lcf::IS_SUSPENDED)) return;  // Batch 11 P8: suspension gate
 
-        // VBfA-AI1: 3-tier LOD via TransformSoA::dist_sq (camera/player distance).
-        const auto* wt = reg.try_get<WorldTransform>(e);
-        if (wt && wt->slot < (uint32_t)tsoa.active_count) {
-            float dsq = tsoa.dist_sq[wt->slot];
-            if (dsq > BT_LOD_TIER2_SQ) {
-                // Tier 3 (>80m) OR Dormant: every 20 ticks (~2 s at 10 TPS).
-                // VBfA §8: modulo 20 (not complete skip) — distant NPCs still wake if
-                // player approaches. CATHODE NPC_Sleeping_Android uses same rate.
-                if (fi % 20u != entt::to_integral(e) % 20u) return;
-            } else if (dsq > BT_LOD_TIER1_SQ) {
-                // Tier 2 (30–80m): every 10 ticks (~1 s) with entity-id spread.
-                if (fi % 10u != entt::to_integral(e) % 10u) return;
-            }
-            // Tier 1 (<30m): always tick — falls through here.
-        }
-        // CATHODE RE: Dormant motivation → far-tier modulo regardless of distance
+        // VBfA RE §8: 9-tier LOD — logarithmic modulo by distance.
+        // CATHODE RE §7: Dormant → forced tier 8 regardless of distance.
         if (as.motivation == MotivationType::Dormant) {
-            if (fi % 20u != entt::to_integral(e) % 20u) return;
+            if ((fi + entt::to_integral(e)) % BT_LOD_FAR_MODULO != 0u) return;
+        } else {
+            const auto* wt = reg.try_get<WorldTransform>(e);
+            if (wt && wt->slot < (uint32_t)tsoa.active_count) {
+                float dsq = tsoa.dist_sq[wt->slot];
+                uint32_t modulo = BT_LOD_FAR_MODULO;  // default: tier 8
+                for (const auto& t : BT_LOD_TIERS) {
+                    if (dsq <= t.dist_sq) { modulo = t.modulo; break; }
+                }
+                if (modulo > 1u && (fi + entt::to_integral(e)) % modulo != 0u) return;
+            }
         }
 
         // VBfA-AI3: budget check (after LOD, before expensive BT tick).

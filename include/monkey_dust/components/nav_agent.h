@@ -1,7 +1,8 @@
 #pragma once
 #include <monkey_dust/nav/path_cache.h>
 
-struct NavAgent {
+// alignas(16): VBfA RE §8 — hot path, SSE loads on target_x/z and desired_vel_x/z.
+struct alignas(16) NavAgent {
     float    target_x, target_z;
     float    path[MAX_PATH_LEN * 3];
     int      path_len;

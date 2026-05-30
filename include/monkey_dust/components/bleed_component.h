@@ -13,7 +13,8 @@
 
 #include <cstdint>
 
-struct BleedComponent {
+// alignas(16): 16 bytes exactly — zero waste, SSE-friendly in BleedSystem tight loop.
+struct alignas(16) BleedComponent {
     float    bleed_rate  = 2.0f;  // HP/s while bleeding (Kenshi default: ~2 HP/s)
     float    clot_rate   = 0.5f;  // HP/s clot recovery when not actively bleeding
     float    accum       = 0.0f;  // fractional accumulator; apply floor each tick

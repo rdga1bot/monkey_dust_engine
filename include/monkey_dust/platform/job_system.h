@@ -28,7 +28,18 @@ struct JobSystem {
 
     struct Job { void (*fn)(void*); void* data; };
 
+    // VBfA RE: batch_size config key (Tasks.txt line 43185).
+    // Used by callers to split work into this many items per submitted job.
+    int BatchSize() const { return batch_size_; }
+
     static JobSystem& Get();
+
+    // Load worker_threads and batch_size from a simple key=value config file.
+    // Format (VBfA Tasks.txt compatible):
+    //   worker_threads 4
+    //   batch_size 16
+    // Call before Init(). Missing keys keep defaults (CPU-1, 16).
+    void LoadFromCfg(const char* path);
 
     void Init();
     void Shutdown();
@@ -52,6 +63,8 @@ private:
     int           inflight_              = 0;  // jobs queued + executing
     bool          quit_                  = false;
     int           num_workers_           = 0;
+    int           batch_size_            = 16;  // VBfA: "batch_size" from Tasks.txt
+    int           cfg_worker_override_   = 0;   // 0 = use CPU-1
 
     SDL_Mutex*     mtx_      = nullptr;
     SDL_Condition* cv_work_  = nullptr;  // workers wait here

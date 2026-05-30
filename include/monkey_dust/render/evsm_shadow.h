@@ -84,7 +84,11 @@ private:
     SDL_GPUGraphicsPipeline* moment_pipeline_ = nullptr;
 
     // ── VBfA R-3: blur resources ──────────────────────────────────────────────
-    SDL_GPUTexture*   blur_tmp_[NUM_CASCADES] = {};  // intermediate for H→V ping-pong
+    // blur_tmp_: H-pass output (moment_tex → blur_tmp)
+    // blur_out_: V-pass output (blur_tmp → blur_out); sampled instead of moment_tex_.
+    // Neither moment_tex_ nor its format needs COMPUTE_STORAGE_WRITE.
+    SDL_GPUTexture*   blur_tmp_[NUM_CASCADES] = {};  // H-pass ping-pong intermediate
+    SDL_GPUTexture*   blur_out_[NUM_CASCADES] = {};  // V-pass final output (sampled)
     GpuComputePipeline blur_h_cs_;  // shadow_blur_h.comp
     GpuComputePipeline blur_v_cs_;  // shadow_blur_v.comp
     bool blur_ready_ = false;

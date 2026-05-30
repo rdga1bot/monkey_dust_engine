@@ -144,43 +144,65 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
 
     ready_ = (moment_tex_[0] && sampler_);
 
-    // ── VBfA R-3: blur temp textures + compute pipelines ─────────────────────
-    // blur_tmp_: ping-pong target for H pass; must be COMPUTE_STORAGE_WRITE + SAMPLER.
-    // moment_tex_ also needs COMPUTE_STORAGE_WRITE so V pass can write back to it.
-    // NOTE: moment_tex_ was already created with COLOR_TARGET|SAMPLER above.
-    //       SDL3 GPU allows mixing usage flags — just add COMPUTE_STORAGE_WRITE.
-    for (int k = 0; k < num_cascades_; ++k) {
-        SDL_GPUTextureCreateInfo ti{};
-        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT;
-        ti.width                = (uint32_t)map_size;
-        ti.height               = (uint32_t)map_size;
-        ti.layer_count_or_depth = 1;
-        ti.num_levels           = 1;
-        ti.usage                = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE
-                                | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        blur_tmp_[k] = SDL_CreateGPUTexture(dev, &ti);
-        if (!blur_tmp_[k]) {
-            fprintf(stderr, "[EvsmShadow] blur_tmp[%d] create failed: %s\n",
-                    k, SDL_GetError());
+    // ── VBfA R-3: blur temp + output textures + compute pipelines ────────────
+    // Design: moment_tex_ keeps COLOR_TARGET|SAMPLER only (no COMPUTE_STORAGE_WRITE).
+    //   H-pass: moment_tex_[k] (sampler) → blur_tmp_[k] (COMPUTE_STORAGE_WRITE)
+    //   V-pass: blur_tmp_[k]  (sampler) → blur_out_[k] (COMPUTE_STORAGE_WRITE)
+    //   BindArrayForSampling() binds blur_out_[k] when blur_ready_.
+    // Guard: Intel ANV crashes on SDL_CreateGPUTexture with R32G32_FLOAT + COMPUTE_STORAGE_WRITE.
+    // Use SDL_GPUTextureSupportsFormat() before ANY creation with that usage.
+    {
+        const SDL_GPUTextureUsageFlags cs_usage =
+            SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+
+        // Find a format that supports compute storage write (R32G32F preferred, R16G16F fallback).
+        SDL_GPUTextureFormat blur_fmt = SDL_GPU_TEXTUREFORMAT_INVALID;
+        if (SDL_GPUTextureSupportsFormat(dev, SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT,
+                                         SDL_GPU_TEXTURETYPE_2D, cs_usage))
+            blur_fmt = SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT;
+        else if (SDL_GPUTextureSupportsFormat(dev, SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT,
+                                              SDL_GPU_TEXTURETYPE_2D, cs_usage))
+            blur_fmt = SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT;
+
+        if (blur_fmt == SDL_GPU_TEXTUREFORMAT_INVALID) {
+            fprintf(stdout, "[EvsmShadow] compute storage write not supported — blur disabled\n");
+        } else {
+            bool all_ok = true;
+            for (int k = 0; k < num_cascades_; ++k) {
+                SDL_GPUTextureCreateInfo ti{};
+                ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+                ti.format               = blur_fmt;
+                ti.width                = (uint32_t)map_size;
+                ti.height               = (uint32_t)map_size;
+                ti.layer_count_or_depth = 1;
+                ti.num_levels           = 1;
+                ti.usage                = cs_usage;
+                blur_tmp_[k] = SDL_CreateGPUTexture(dev, &ti);
+                blur_out_[k] = SDL_CreateGPUTexture(dev, &ti);
+                if (!blur_tmp_[k] || !blur_out_[k]) {
+                    fprintf(stderr, "[EvsmShadow] blur texture[%d] failed: %s\n",
+                            k, SDL_GetError());
+                    all_ok = false;
+                }
+            }
+            if (all_ok) {
+                GpuComputePipeline::Desc bd{};
+                bd.glsl_path                      = "shaders/shadow_blur_h.comp";
+                bd.num_samplers                   = 1;   // src_moments set=0 binding=0
+                bd.num_readwrite_storage_textures = 1;   // dst_moments set=1 binding=0
+                bd.threadcount_x                  = 16;
+                bd.threadcount_y                  = 16;
+                bd.threadcount_z                  = 1;
+                blur_h_cs_.Create(bd);
+
+                bd.glsl_path = "shaders/shadow_blur_v.comp";
+                blur_v_cs_.Create(bd);
+
+                blur_ready_ = blur_h_cs_.SDLComputePipeline() &&
+                              blur_v_cs_.SDLComputePipeline();
+            }
         }
     }
-    {
-        GpuComputePipeline::Desc bd{};
-        bd.glsl_path                      = "shaders/shadow_blur_h.comp";
-        bd.num_samplers                   = 1;   // src_moments (set=0, binding=0)
-        bd.num_readwrite_storage_textures = 1;   // dst_moments (set=1, binding=0)
-        bd.threadcount_x                  = 16;
-        bd.threadcount_y                  = 16;
-        bd.threadcount_z                  = 1;
-        blur_h_cs_.Create(bd);
-
-        bd.glsl_path = "shaders/shadow_blur_v.comp";
-        blur_v_cs_.Create(bd);
-    }
-    blur_ready_ = blur_tmp_[0] &&
-                  blur_h_cs_.SDLComputePipeline() &&
-                  blur_v_cs_.SDLComputePipeline();
 
     fprintf(stdout, "[EvsmShadow] %d cascades, %dx%d, c=%.1f, pipeline=%s, blur=%s\n",
             num_cascades_, map_size, map_size, (double)warp_c,
@@ -205,6 +227,10 @@ void EvsmShadow::Shutdown() {
             SDL_ReleaseGPUTexture(dev, blur_tmp_[k]);
             blur_tmp_[k] = nullptr;
         }
+        if (blur_out_[k]) {
+            SDL_ReleaseGPUTexture(dev, blur_out_[k]);
+            blur_out_[k] = nullptr;
+        }
     }
     blur_h_cs_.Destroy();
     blur_v_cs_.Destroy();
@@ -213,21 +239,21 @@ void EvsmShadow::Shutdown() {
     blur_ready_ = false;
 }
 
-// ── VBfA R-3: Gaussian blur ────────────────���──────────────────────────────────
-// 2-pass separable 5×5: H(moment_tex → blur_tmp) then V(blur_tmp → moment_tex).
-// Dispatch 1 thread per pixel; local_size = 16×16 → groups = map_size/16.
+// ── VBfA R-3: Gaussian blur ────────────────────────────────────────────────────
+// H: moment_tex_[k] (sampler) → blur_tmp_[k] (COMPUTE_STORAGE_WRITE)
+// V: blur_tmp_[k]  (sampler) → blur_out_[k] (COMPUTE_STORAGE_WRITE)
+// moment_tex_ is read-only here — no COMPUTE_STORAGE_WRITE needed on it.
+// BindArrayForSampling() serves blur_out_[k] instead of moment_tex_[k].
 void EvsmShadow::ApplyBlur(SDL_GPUCommandBuffer* cmd) {
     if (!cmd || !blur_ready_) return;
     const uint32_t groups = (uint32_t)map_size_ / 16u;
 
     for (int k = 0; k < num_cascades_; ++k) {
-        if (!moment_tex_[k] || !blur_tmp_[k]) continue;
+        if (!moment_tex_[k] || !blur_tmp_[k] || !blur_out_[k]) continue;
 
-        // ── H pass: sample moment_tex_[k], write blur_tmp_[k] ────────────────
+        // ── H pass: moment_tex_[k] → blur_tmp_[k] ────────────────────────────
         {
-            SDL_GPUStorageTextureReadWriteBinding rw{};
-            rw.texture = blur_tmp_[k];
-            rw.cycle   = false;
+            SDL_GPUStorageTextureReadWriteBinding rw{ blur_tmp_[k], 0, 0, false };
             SDL_GPUComputePass* cp =
                 SDL_BeginGPUComputePass(cmd, &rw, 1, nullptr, 0);
             if (cp) {
@@ -238,11 +264,9 @@ void EvsmShadow::ApplyBlur(SDL_GPUCommandBuffer* cmd) {
                 SDL_EndGPUComputePass(cp);
             }
         }
-        // ── V pass: sample blur_tmp_[k], write moment_tex_[k] ────��───────────
+        // ── V pass: blur_tmp_[k] → blur_out_[k] ──────────────────────────────
         {
-            SDL_GPUStorageTextureReadWriteBinding rw{};
-            rw.texture = moment_tex_[k];
-            rw.cycle   = false;
+            SDL_GPUStorageTextureReadWriteBinding rw{ blur_out_[k], 0, 0, false };
             SDL_GPUComputePass* cp =
                 SDL_BeginGPUComputePass(cmd, &rw, 1, nullptr, 0);
             if (cp) {
@@ -282,12 +306,13 @@ void EvsmShadow::EndMomentPass() {
 
 void EvsmShadow::BindArrayForSampling(SDL_GPURenderPass* pass, uint32_t slot) {
     if (!ready_ || !pass) return;
-    // Bind all cascades at consecutive slots: slot+0, slot+1, slot+2.
-    // Shader declares: layout(set=2, binding=slot+k) uniform sampler2D evsm_k;
-    // NOTE: Intel HD 520 has frag sampler limits — keep total frag samplers ≤ 4.
+    // When blur is ready, serve blur_out_ (Gaussian-blurred moments).
+    // Otherwise, fall back to unblurred moment_tex_ (blur disabled or not supported).
     SDL_GPUTextureSamplerBinding tsb[NUM_CASCADES];
-    for (int k = 0; k < num_cascades_; ++k)
-        tsb[k] = { moment_tex_[k], sampler_ };
+    for (int k = 0; k < num_cascades_; ++k) {
+        SDL_GPUTexture* tex = (blur_ready_ && blur_out_[k]) ? blur_out_[k] : moment_tex_[k];
+        tsb[k] = { tex, sampler_ };
+    }
     SDL_BindGPUFragmentSamplers(pass, slot, tsb, (uint32_t)num_cascades_);
 }
 

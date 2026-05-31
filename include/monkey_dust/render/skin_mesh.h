@@ -121,6 +121,23 @@ public:
     void PatchBoneIK(int bone_idx, const float* new_world_16,
                      float* out_bones) const;
 
+    // ── GPU data accessors — used by AnimationSoA to upload clip+skel data ────
+    // Keyframe data for GPU skinning.comp.
+    // Returns pointer to track keyframes; *out_count = number of keyframes (0 if no track).
+    const SkinKeyframe* GpuTrackKF(int clip_idx, int bone_idx, int* out_count) const {
+        if (clip_idx<0||clip_idx>=clip_count_||bone_idx<0||bone_idx>=bone_count) { *out_count=0; return nullptr; }
+        const SkinTrack& tr = clips_[clip_idx].tracks[bone_idx];
+        *out_count = tr.count;
+        return tr.count > 0 ? tr.kf : nullptr;
+    }
+    float ClipDuration2(int i) const { return (i>=0&&i<clip_count_)?clips_[i].duration:0.f; }
+    const float* GpuInvBind(int b)      const { return (b>=0&&b<bone_count)?inv_bind_[b]:nullptr; }
+    int          GpuParent(int b)        const { return (b>=0&&b<bone_count)?parent_[b]:-1; }
+    int          GpuProcessOrder(int i) const { return (i>=0&&i<bone_count)?process_order_[i]:-1; }
+    const float* GpuBindT(int b)        const { return (b>=0&&b<bone_count)?bind_t_[b]:nullptr; }
+    const float* GpuBindQ(int b)        const { return (b>=0&&b<bone_count)?bind_q_[b]:nullptr; }
+    const float* GpuBindS(int b)        const { return (b>=0&&b<bone_count)?bind_s_[b]:nullptr; }
+
     int ClipCount()            const { return clip_count_; }
     int ClipIndexByName(const char* name) const;
     const char* ClipName(int i) const { return (i>=0&&i<clip_count_)?clips_[i].name:""; }

@@ -8,6 +8,33 @@
 #include <cstdlib>
 #include <cstring>
 
+// ── GPU skinning data structs (Step 3) ──────────────────────────────────────
+// Max keyframes packed into GpuClipBuf (compact layout, not MAX_SKIN_KF flat).
+static constexpr int MAX_GPU_KF = 16384;  // 16384 × 32 bytes = 512 KB
+
+// Per-keyframe data for skinning.comp (8 floats, 32 bytes).
+struct GpuKeyframe { float t, tx, ty, tz, qx, qy, qz, qw; };
+
+// Per-track header: offset + count in flat GpuKeyframe array.
+struct GpuTrackHeader { int kf_start, kf_count; };
+
+// Per-clip header.
+struct GpuClipHeader { float duration; int bone_count, track_start, _pad; };
+
+// Per-NPC animation state uploaded each frame from AnimatorComponent.
+// Sized to 32 bytes (std430 aligned).
+struct NpcGpuAnim {
+    int   clip_hi;      // upper/full walk clip (-1 = use idle)
+    int   clip_lo;      // lower body override clip (-1 = no override)
+    int   clip_idle;    // idle clip (0 = fallback)
+    int   lod_tier;     // 0-4
+    float blend_t;      // 0.0=idle … 1.0=walk
+    float phase;        // walk/jog phase (accumulated while moving)
+    float phase_idle;   // idle phase (absolute time-based)
+    float _pad;
+};
+static_assert(sizeof(NpcGpuAnim) == 32, "NpcGpuAnim must be 32 bytes");
+
 static constexpr int MAX_BONES        = 64;  // SSBO stride fixed at 64 for SDL_GPU transfer alignment; Kenshi uses 30 of 64
 static constexpr int MAX_ANIMATED_NPC = 500;
 static constexpr int MAX_ANIM_CLIPS   = 8;
@@ -72,8 +99,8 @@ public:
         // SDL_GPU: rw[0]=FinalBones(write), ro[0]=AnimState(read); no UBO (time in state).
         GpuComputePipeline::Desc skin_desc;
         skin_desc.glsl_path                     = "shaders/skinning.comp";
-        skin_desc.num_readwrite_storage_buffers = 1; // FinalBones (set=1 binding=0)
-        skin_desc.num_readonly_storage_buffers  = 1; // AnimState  (set=1 binding=1)
+        skin_desc.num_readwrite_storage_buffers = 1;  // FinalBones
+        skin_desc.num_readonly_storage_buffers  = 3;  // NpcGpuAnim + ClipBuf + SkelBuf
         skin_pipeline_.Create(skin_desc);
         LoadDefaults();
     }
@@ -186,12 +213,68 @@ public:
     void UploadBonesInCmd(SDL_GPUCommandBuffer* cmd, const void* data, int bytes, int byte_offset = 0) {
         if (bones_ssbo_.SDLBuffer()) bones_ssbo_.UploadInCmd(cmd, data, bytes, byte_offset);
     }
+
+    // ── Step 3: GPU skinning data ─────────────────────────────────────────────
+    SDL_GPUBuffer* SDLClipBuf()     const { return clip_buf_.SDLBuffer(); }
+    SDL_GPUBuffer* SDLSkelBuf()     const { return skel_buf_.SDLBuffer(); }
+    SDL_GPUBuffer* SDLNpcAnimBuf()  const { return npc_anim_ring_.SDLBuffer(); }
+
+    // Upload clip + skeleton data once at startup (called from NpcRender after GLB loaded).
+    // Uses SkinMesh GPU accessors (GpuTrackKF, GpuInvBind, etc.).
+    bool UploadClipDataSDLGPU(SDL_GPUCommandBuffer* cmd,
+                              const void* clip_headers, int ch_bytes,
+                              const void* track_headers, int th_bytes,
+                              const void* keyframes,    int kf_bytes,
+                              const void* skel_data,    int sk_bytes) {
+        if (!clip_headers || !skel_data) return false;
+        const int total = ch_bytes + th_bytes + kf_bytes;
+        if (!clip_buf_.SDLBuffer())
+            clip_buf_.Init(total > 0 ? total : 4,
+                           SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ);
+        if (!skel_buf_.SDLBuffer())
+            skel_buf_.Init(sk_bytes > 0 ? sk_bytes : 4,
+                           SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ);
+        // Upload as a single blob with headers at the front.
+        static uint8_t s_tmp[4 * 1024 * 1024];  // 4 MB staging scratch
+        int offset = 0;
+        auto append = [&](const void* src, int n) {
+            if (src && n > 0 && (offset + n) <= (int)sizeof(s_tmp)) {
+                memcpy(s_tmp + offset, src, n);
+                offset += n;
+            }
+        };
+        append(clip_headers, ch_bytes);
+        append(track_headers, th_bytes);
+        append(keyframes, kf_bytes);
+        if (offset > 0) clip_buf_.UploadInCmd(cmd, s_tmp, offset);
+        if (skel_data && sk_bytes > 0) skel_buf_.UploadInCmd(cmd, skel_data, sk_bytes);
+        clip_data_ready_ = true;
+        return true;
+    }
+
+    // Upload per-NPC anim state from AnimatorComponent data (replaces UploadBonesInCmd).
+    void UploadNpcAnimSDLGPU(SDL_GPUCommandBuffer* cmd,
+                             const NpcGpuAnim* data, int count) {
+        if (!npc_anim_ring_.SDLBuffer())
+            npc_anim_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(NpcGpuAnim)), 5);
+        void* dst = npc_anim_ring_.MapWriteSDL();
+        if (dst) {
+            memcpy(dst, data, count * (int)sizeof(NpcGpuAnim));
+            npc_anim_ring_.UnmapSDL();
+        }
+        npc_anim_ring_.Upload(cmd);
+    }
+
+    bool ClipDataReady() const { return clip_data_ready_; }
 #endif
 
     void Shutdown() {
         skin_pipeline_.Destroy();
         bones_ssbo_.Shutdown();
         anim_state_ring_.Shutdown();
+        clip_buf_.Shutdown();
+        skel_buf_.Shutdown();
+        npc_anim_ring_.Shutdown();
     }
 
     // Accessors for editor panels (replaces direct field access — БОРГ-7/8).
@@ -211,6 +294,12 @@ private:
     GpuRingBuffer      anim_state_ring_; // CPU per-frame — ring-buffered
     GpuComputePipeline skin_pipeline_;   // skinning compute shader
     uint32_t           frame_counter_ = 0; // PERF-16: stagger index
+
+    // Step 3: GPU skinning data buffers (static clip/skel + per-frame NPC state).
+    SSBO          clip_buf_;           // clip headers + track headers + keyframes
+    SSBO          skel_buf_;           // inv_bind + bind_pose + parent + process_order
+    GpuRingBuffer npc_anim_ring_;      // per-NPC NpcGpuAnim (ring-buffered, per frame)
+    bool          clip_data_ready_ = false;
 
     void LoadDefaults() {
         clips_count_ = 3;

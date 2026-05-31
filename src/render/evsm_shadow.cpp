@@ -40,17 +40,13 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
     if (!dev) return false;
 
-    // ── Moment textures: pick format via SDL_GPUTextureSupportsFormat ────────────
-    // Intel ANV (HD 520) may crash in SDL_CreateGPUGraphicsPipeline if the pipeline
-    // color target format is not supported as a color attachment (R32G32_FLOAT).
-    // Probe support BEFORE any texture/pipeline creation to get the actual format.
+    // ── Moment textures: R16G16_FLOAT (universally supported as color target) ───
+    // R32G32_FLOAT crashes SDL_CreateGPUGraphicsPipeline on Intel ANV (Gen9/HD 520)
+    // even when SDL_GPUTextureSupportsFormat reports it as supported (ANV driver bug).
+    // R16G16_FLOAT is sufficient for EVSM moments and safe on all hardware.
     const SDL_GPUTextureUsageFlags ct_usage =
         SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    if (SDL_GPUTextureSupportsFormat(dev, SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT,
-                                     SDL_GPU_TEXTURETYPE_2D, ct_usage))
-        moment_fmt_ = SDL_GPU_TEXTUREFORMAT_R32G32_FLOAT;
-    else
-        moment_fmt_ = SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT;
+    moment_fmt_ = SDL_GPU_TEXTUREFORMAT_R16G16_FLOAT;
 
     for (int k = 0; k < num_cascades_; ++k) {
         SDL_GPUTextureCreateInfo ti{};

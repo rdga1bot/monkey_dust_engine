@@ -437,7 +437,7 @@ void OzzAnimator::Blend(int base_clip, float base_t,
 
 void OzzAnimator::SampleWorldMats(int clip_idx, float time_s,
                                    float (*out_world)[16]) const {
-    for (int b = 0; b < OZZ_ANIM_MAX_BONES; ++b) mat4_identity(out_world[b]);
+    for (int b = 0; b < bone_count_; ++b) mat4_identity(out_world[b]);
     if (!loaded_ || clip_idx < 0 || clip_idx >= (int)anims_.size()
                  || !anims_[clip_idx]) return;
 

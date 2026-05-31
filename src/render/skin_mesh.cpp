@@ -8,9 +8,10 @@
 #include <cmath>
 
 // VBfA RE §8.8 — pre-allocated bone scratch buffer (eliminates 4 KB stack push/pop
-// per NPC per frame). Single-threaded render path; reused across all GetFinalBones calls.
-// VBfA: "Allocated %s for skeleton base pose memory pool." (line 244975)
-static float g_bone_world_scratch[MAX_SKIN_BONES][16];
+// per NPC per frame). Thread-local: T2 async jobs run on worker threads concurrently
+// with main-thread T0/T1 eval — a global would race. thread_local gives each thread
+// its own copy with zero overhead after the first access.
+static thread_local float g_bone_world_scratch[MAX_SKIN_BONES][16];
 
 // ── Math helpers ─────────────────────────────────────────────────────────────
 

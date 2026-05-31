@@ -61,6 +61,7 @@ add_library(monkey_dust::engine ALIAS monkey_dust_engine)
 
 target_include_directories(monkey_dust_engine
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PUBLIC  ${CMAKE_SOURCE_DIR}/third_party/ozz-animation/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
     # Third-party (PUBLIC so consumers also see them)
     PUBLIC  ${CMAKE_SOURCE_DIR}/third_party/entt/single_include
@@ -99,6 +100,9 @@ target_link_libraries(monkey_dust_engine PRIVATE
     Recast Detour DetourCrowd
     Jolt
     ${LUA_LIBRARIES}
+    ozz_animation
+    ozz_animation_offline
+    ozz_base
 )
 
 if(USE_GLM AND NOT USE_SDL3)

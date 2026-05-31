@@ -203,7 +203,8 @@ static thread_local OzzScratch g_scratch;
 void OzzAnimator::ModelsToOutBones(
     const ozz::span<const ozz::math::Float4x4> models,
     float* out_bones,
-    float* out_model_xyz) const
+    float* out_model_xyz,
+    const float (*bone_scales)[3]) const
 {
     const int num_joints = (int)models.size();
     using namespace ozz::math;
@@ -217,14 +218,34 @@ void OzzAnimator::ModelsToOutBones(
             continue;
         }
 
-        // Skinning = world[ozz_j] * inv_bind[b]  (SIMD column-major multiply)
         const Float4x4& world = models[ozz_j];
+
+        // Build inv_bind (optionally with per-bone scale: diag(sx,sy,sz) * inv_bind)
         Float4x4 inv;
         const float* ib = inv_bind_[b];
         inv.cols[0] = simd_float4::LoadPtrU(ib +  0);
         inv.cols[1] = simd_float4::LoadPtrU(ib +  4);
         inv.cols[2] = simd_float4::LoadPtrU(ib +  8);
         inv.cols[3] = simd_float4::LoadPtrU(ib + 12);
+
+        if (bone_scales) {
+            // Scale columns of inv_bind: diag(sx,sy,sz,1) * inv_bind
+            // Column-major: scaling row i by bone_scales[b][i]
+            const SimdFloat4 sx = simd_float4::Load1(bone_scales[b][0]);
+            const SimdFloat4 sy = simd_float4::Load1(bone_scales[b][1]);
+            const SimdFloat4 sz = simd_float4::Load1(bone_scales[b][2]);
+            // Each column of inv: col_j = (inv[0,j]*sx, inv[1,j]*sy, inv[2,j]*sz, inv[3,j])
+            // We scale individual float rows — extract row components then reassemble.
+            // Simpler: scale each column's xyz components in place.
+            for (int col = 0; col < 4; ++col) {
+                float c[4];
+                StorePtrU(inv.cols[col], c);
+                c[0] *= bone_scales[b][0];
+                c[1] *= bone_scales[b][1];
+                c[2] *= bone_scales[b][2];
+                inv.cols[col] = simd_float4::LoadPtrU(c);
+            }
+        }
 
         const Float4x4 skin = world * inv;
         StorePtrU(skin.cols[0], dst +  0);
@@ -233,8 +254,7 @@ void OzzAnimator::ModelsToOutBones(
         StorePtrU(skin.cols[3], dst + 12);
 
         if (out_model_xyz) {
-            // Extract world translation for foot IK
-            float w[16];
+            float w[4];
             StorePtrU(world.cols[3], w);
             out_model_xyz[b*3+0] = w[0];
             out_model_xyz[b*3+1] = w[1];
@@ -248,7 +268,9 @@ void OzzAnimator::ModelsToOutBones(
 // ── OzzAnimator::Sample ───────────────────────────────────────────────────────
 
 void OzzAnimator::Sample(int clip_idx, float time_s,
-                         float* out_bones, float* out_model_xyz) const {
+                         float* out_bones,
+                         float* out_model_xyz,
+                         const float (*bone_scales)[3]) const {
     if (!loaded_ || clip_idx < 0 || clip_idx >= (int)anims_.size()
                  || !anims_[clip_idx]) {
         for (int b = 0; b < OZZ_ANIM_MAX_BONES; ++b) mat4_identity(out_bones + b*16);
@@ -287,7 +309,7 @@ void OzzAnimator::Sample(int clip_idx, float time_s,
         return;
     }
 
-    ModelsToOutBones(ozz::make_span(sc.models), out_bones, out_model_xyz);
+    ModelsToOutBones(ozz::make_span(sc.models), out_bones, out_model_xyz, bone_scales);
 }
 
 // ── OzzAnimator::Blend ────────────────────────────────────────────────────────
@@ -365,6 +387,50 @@ void OzzAnimator::Blend(int base_clip, float base_t,
     if (!l2m.Run()) { Sample(base_clip, base_t, out_bones); return; }
 
     ModelsToOutBones(ozz::make_span(sc.models), out_bones, nullptr);
+}
+
+// ── OzzAnimator::SampleWorldMats ─────────────────────────────────────────────
+
+void OzzAnimator::SampleWorldMats(int clip_idx, float time_s,
+                                   float (*out_world)[16]) const {
+    for (int b = 0; b < OZZ_ANIM_MAX_BONES; ++b) mat4_identity(out_world[b]);
+    if (!loaded_ || clip_idx < 0 || clip_idx >= (int)anims_.size()
+                 || !anims_[clip_idx]) return;
+
+    const ozz::animation::Animation* anim = anims_[clip_idx].get();
+    const float dur   = anim->duration();
+    const float ratio = (dur > 0.05f) ? fmodf(time_s, dur) / dur : 0.f;
+
+    OzzScratch& sc = g_scratch;
+    sc.locals_a.resize(skel_->num_soa_joints());
+    sc.models.resize(skel_->num_joints());
+
+    if (sc.ctx_a.max_tracks() < anim->num_tracks())
+        sc.ctx_a.Resize(anim->num_tracks());
+
+    ozz::animation::SamplingJob sj;
+    sj.animation = anim;
+    sj.context   = &sc.ctx_a;
+    sj.ratio     = ratio;
+    sj.output    = ozz::make_span(sc.locals_a);
+    if (!sj.Run()) return;
+
+    ozz::animation::LocalToModelJob l2m;
+    l2m.skeleton = skel_.get();
+    l2m.input    = ozz::make_span(sc.locals_a);
+    l2m.output   = ozz::make_span(sc.models);
+    if (!l2m.Run()) return;
+
+    using namespace ozz::math;
+    const int num_joints = skel_->num_joints();
+    for (int b = 0; b < bone_count_; ++b) {
+        const int ozz_j = bone_to_ozz_[b];
+        if (ozz_j < 0 || ozz_j >= num_joints) continue;
+        StorePtrU(sc.models[ozz_j].cols[0], out_world[b] +  0);
+        StorePtrU(sc.models[ozz_j].cols[1], out_world[b] +  4);
+        StorePtrU(sc.models[ozz_j].cols[2], out_world[b] +  8);
+        StorePtrU(sc.models[ozz_j].cols[3], out_world[b] + 12);
+    }
 }
 
 // ── OzzAnimator::BlendAdditive ────────────────────────────────────────────────

@@ -30,3 +30,10 @@ struct CharBodyState {
         }
     }
 };
+
+// Immutable snapshot of CharBodyState::bone_scales as set by CharBodyState_InitFromDef.
+// Used by BodyDevelopSystem: reset CharBodyState to baseline each tick, then
+// multiply skill/hunger modifiers on top — avoids drift from accumulated deltas.
+struct BodyBaseline {
+    float bone_scales[BODY_MAX_BONES][3];
+};

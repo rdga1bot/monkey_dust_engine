@@ -198,6 +198,39 @@ struct OzzScratch {
 };
 static thread_local OzzScratch g_scratch;
 
+// ── ScaleSoATranslations ──────────────────────────────────────────────────────
+// Scales per-bone local translations in SoaTransform before LocalToModel.
+// Implements setBonePositionalSize (stretches limb chain without moving vertices).
+// SoA layout: each SoaTransform holds 4 joints; bone ozz_j lives in lane ozz_j%4.
+
+static void ScaleSoATranslations(
+    ozz::vector<ozz::math::SoaTransform>& locals,
+    const int* bone_to_ozz, int bone_count, int num_joints,
+    const float (*pos_scales)[3])
+{
+    using namespace ozz::math;
+    const int num_soa = (int)locals.size();
+    for (int b = 0; b < bone_count; ++b) {
+        const float* ps = pos_scales[b];
+        if (ps[0] == 1.f && ps[1] == 1.f && ps[2] == 1.f) continue;
+        const int ozz_j = bone_to_ozz[b];
+        if (ozz_j < 0 || ozz_j >= num_joints) continue;
+        const int soa_i = ozz_j / 4;
+        const int lane  = ozz_j % 4;
+        if (soa_i >= num_soa) continue;
+        float x[4], y[4], z[4];
+        StorePtrU(locals[soa_i].translation.x, x);
+        StorePtrU(locals[soa_i].translation.y, y);
+        StorePtrU(locals[soa_i].translation.z, z);
+        x[lane] *= ps[0];
+        y[lane] *= ps[1];
+        z[lane] *= ps[2];
+        locals[soa_i].translation.x = simd_float4::LoadPtrU(x);
+        locals[soa_i].translation.y = simd_float4::LoadPtrU(y);
+        locals[soa_i].translation.z = simd_float4::LoadPtrU(z);
+    }
+}
+
 // ── ModelsToOutBones ──────────────────────────────────────────────────────────
 
 void OzzAnimator::ModelsToOutBones(
@@ -270,7 +303,8 @@ void OzzAnimator::ModelsToOutBones(
 void OzzAnimator::Sample(int clip_idx, float time_s,
                          float* out_bones,
                          float* out_model_xyz,
-                         const float (*bone_scales)[3]) const {
+                         const float (*bone_scales)[3],
+                         const float (*pos_scales)[3]) const {
     if (!loaded_ || clip_idx < 0 || clip_idx >= (int)anims_.size()
                  || !anims_[clip_idx]) {
         for (int b = 0; b < OZZ_ANIM_MAX_BONES; ++b) mat4_identity(out_bones + b*16);
@@ -300,6 +334,10 @@ void OzzAnimator::Sample(int clip_idx, float time_s,
         return;
     }
 
+    if (pos_scales)
+        ScaleSoATranslations(sc.locals_a, bone_to_ozz_, bone_count_,
+                             skel_->num_joints(), pos_scales);
+
     ozz::animation::LocalToModelJob l2m;
     l2m.skeleton = skel_.get();
     l2m.input    = ozz::make_span(sc.locals_a);
@@ -316,7 +354,9 @@ void OzzAnimator::Sample(int clip_idx, float time_s,
 
 void OzzAnimator::Blend(int base_clip, float base_t,
                         int over_clip,  float over_t,
-                        const bool* /*lower_mask*/, float* out_bones) const {
+                        const bool* /*lower_mask*/, float* out_bones,
+                        const float (*bone_scales)[3],
+                        const float (*pos_scales)[3]) const {
     if (!loaded_) {
         for (int b = 0; b < OZZ_ANIM_MAX_BONES; ++b) mat4_identity(out_bones + b*16);
         return;
@@ -380,13 +420,17 @@ void OzzAnimator::Blend(int base_clip, float base_t,
     bj.output     = ozz::make_span(sc.blended);
     if (!bj.Run()) { Sample(base_clip, base_t, out_bones); return; }
 
+    if (pos_scales)
+        ScaleSoATranslations(sc.blended, bone_to_ozz_, bone_count_,
+                             skel_->num_joints(), pos_scales);
+
     ozz::animation::LocalToModelJob l2m;
     l2m.skeleton = skel_.get();
     l2m.input    = ozz::make_span(sc.blended);
     l2m.output   = ozz::make_span(sc.models);
     if (!l2m.Run()) { Sample(base_clip, base_t, out_bones); return; }
 
-    ModelsToOutBones(ozz::make_span(sc.models), out_bones, nullptr);
+    ModelsToOutBones(ozz::make_span(sc.models), out_bones, nullptr, bone_scales);
 }
 
 // ── OzzAnimator::SampleWorldMats ─────────────────────────────────────────────

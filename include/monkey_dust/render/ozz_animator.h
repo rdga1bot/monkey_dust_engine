@@ -44,20 +44,25 @@ public:
 
     // Single clip → out_bones[OZZ_ANIM_MAX_BONES * 16]
     // out_model_xyz: optional float[OZZ_ANIM_MAX_BONES * 3] model-space positions (foot IK)
-    // bone_scales:   optional float[OZZ_ANIM_MAX_BONES][3] per-bone {sx,sy,sz}
+    // bone_scales:   optional float[OZZ_ANIM_MAX_BONES][3] per-bone vertex scale
     //   skinning_mat[b] = world[b] * diag(sx,sy,sz) * inv_bind[b]
-    //   Matches editor preview's UpdateBoneScales() formula for body development.
+    // pos_scales:    optional float[OZZ_ANIM_MAX_BONES][3] per-bone translation scale
+    //   Applied to SoaTransform::translation before LocalToModel (stretches limbs).
+    //   Matches editor's setBonePositionalSize / s_posScale formula.
     void Sample(int clip_idx, float time_s,
                 float* out_bones,
                 float* out_model_xyz = nullptr,
-                const float (*bone_scales)[3] = nullptr) const;
+                const float (*bone_scales)[3] = nullptr,
+                const float (*pos_scales)[3]  = nullptr) const;
 
     // Upper/lower body split:
     //   lower_mask[b]=true  → bone b driven by over_clip (lower body walk)
     //   lower_mask[b]=false → bone b driven by base_clip (upper body walk / full)
     void Blend(int base_clip, float base_t,
                int over_clip,  float over_t,
-               const bool* lower_mask, float* out_bones) const;
+               const bool* lower_mask, float* out_bones,
+               const float (*bone_scales)[3] = nullptr,
+               const float (*pos_scales)[3]  = nullptr) const;
 
     // Output raw world matrices per bone (before inv_bind multiply).
     // Used by editor preview: applies its own scale formula (s_posScale + s_boneScales).

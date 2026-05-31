@@ -257,7 +257,9 @@ void OzzAnimator::Sample(int clip_idx, float time_s,
 
     const ozz::animation::Animation* anim = anims_[clip_idx].get();
     const float dur   = anim->duration();
-    const float ratio = dur > 0.f ? fmodf(time_s, dur) / dur : 0.f;
+    // Clips < 50ms are single-frame reference poses — always sample frame 0.
+    // Matches old GetFinalBones() threshold to avoid 30 Hz oscillation on idle_stand_normal.
+    const float ratio = (dur > 0.05f) ? fmodf(time_s, dur) / dur : 0.f;
 
     OzzScratch& sc = g_scratch;
     sc.locals_a.resize(skel_->num_soa_joints());
@@ -308,7 +310,8 @@ void OzzAnimator::Blend(int base_clip, float base_t,
     const ozz::animation::Animation* anim_over = anims_[over_clip].get();
 
     auto to_ratio = [](const ozz::animation::Animation* a, float t) {
-        return a->duration() > 0.f ? fmodf(t, a->duration()) / a->duration() : 0.f;
+        const float d = a->duration();
+        return (d > 0.05f) ? fmodf(t, d) / d : 0.f;
     };
 
     OzzScratch& sc = g_scratch;
@@ -380,8 +383,8 @@ void OzzAnimator::BlendAdditive(float* out_bones,
     if (sc.ctx_a.max_tracks() < anim->num_tracks())
         sc.ctx_a.Resize(anim->num_tracks());
 
-    const float ratio = anim->duration() > 0.f
-        ? fmodf(add_t, anim->duration()) / anim->duration() : 0.f;
+    const float dur_add = anim->duration();
+    const float ratio = (dur_add > 0.05f) ? fmodf(add_t, dur_add) / dur_add : 0.f;
 
     ozz::animation::SamplingJob sj;
     sj.animation = anim;

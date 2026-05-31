@@ -181,7 +181,8 @@ public:
     // SDL_GPU: pass bindings with rw_buffers[0]=FinalBones, ro_buffers[0]=AnimState.
     //          bindings.cmd=nullptr is a safe no-op (Step 9 wires the SDL_GPUBuffer*).
     void DispatchSkinning(const GpuComputePass::StorageBindings& bindings = {}) {
-        static constexpr uint32_t SKIN_GROUPS = (MAX_ANIMATED_NPC + 63u) / 64u;
+        // skinning.comp uses local_size_x=1 (one NPC per invocation).
+        static constexpr uint32_t SKIN_GROUPS = MAX_ANIMATED_NPC;
 #ifdef MD_SDL_GPU
         if (bindings.cmd) {
             GpuComputePass pass;

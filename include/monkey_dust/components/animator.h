@@ -12,14 +12,15 @@
 
 struct AnimatorComponent {
     // ── Gameplay → Render (set by AnimatorSystem @ 10 TPS) ──────────────────
-    int8_t  clip_lo;         // lower-body walk/jog clip index (-1 = no walk)
-    int8_t  clip_hi;         // upper-body walk/jog clip index (-1 = no walk)
-    int8_t  clip_idle;       // idle clip (combat or normal)
-    int8_t  clip_breathing;  // breathing overlay (-1 = none)
-    int8_t  clip_overlay;    // additive overlay clip (-1 = none)  [Step 2]
-    float   tgt_blend;       // target blend: 0.0=idle … 1.0=walk/jog
-    float   anim_speed;      // phase advance multiplier (1.0=walk, 1.7=jog)
-    float   overlay_weight;  // additive blend weight [Step 2]
+    // All clip indices default to -1 (unset). Render falls back to sm_idle etc.
+    int8_t  clip_lo        = -1;  // lower-body walk/jog clip index (-1 = no walk)
+    int8_t  clip_hi        = -1;  // upper-body walk/jog clip index (-1 = no walk)
+    int8_t  clip_idle      = -1;  // idle clip — render falls back to sm_idle if -1
+    int8_t  clip_breathing = -1;  // breathing overlay (-1 = none)
+    int8_t  clip_overlay   = -1;  // additive overlay clip (-1 = none)  [Step 2]
+    float   tgt_blend      = 0.f; // target blend: 0.0=idle … 1.0=walk/jog
+    float   anim_speed     = 1.f; // phase advance multiplier (1.0=walk, 1.7=jog)
+    float   overlay_weight = 0.f; // additive blend weight [Step 2]
 
     // ── Render internal state (updated per render-frame @ 60 FPS) ────────────
     float   blend_t;         // current smooth blend (lerps toward tgt_blend)

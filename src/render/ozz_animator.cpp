@@ -63,7 +63,6 @@ static void BuildRawAnimation(
         if (ozz_j < 0 || ozz_j >= num_ozz_joints) continue;
 
         auto& track = raw.tracks[ozz_j];
-        const float inv_dur = 1.f / raw.duration;
 
         int kf_count = 0;
         const SkinKeyframe* kfs = mesh.GpuTrackKF(clip_idx, b, &kf_count);
@@ -75,10 +74,10 @@ static void BuildRawAnimation(
             const float* bs = mesh.GpuBindS(b);
             for (int k = 0; k < kf_count; ++k) {
                 const SkinKeyframe& kf = kfs[k];
-                float ratio = kf.t * inv_dur;
-                track.translations.push_back({ratio, {kf.tx, kf.ty, kf.tz}});
-                track.rotations.push_back   ({ratio, {kf.qx, kf.qy, kf.qz, kf.qw}});
-                if (bs) track.scales.push_back({ratio, {bs[0], bs[1], bs[2]}});
+                // RawAnimation uses SECONDS, not ratios.
+                track.translations.push_back({kf.t, {kf.tx, kf.ty, kf.tz}});
+                track.rotations.push_back   ({kf.t, {kf.qx, kf.qy, kf.qz, kf.qw}});
+                if (bs) track.scales.push_back({kf.t, {bs[0], bs[1], bs[2]}});
             }
         } else {
             // No keyframes for this bone in this clip → bind pose.

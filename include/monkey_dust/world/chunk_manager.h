@@ -25,6 +25,15 @@ public:
     // When budget exceeded, remaining staged chunks are deferred to next Update().
     // Default: 2MB/frame (safe on Intel HD 520 with 4-8GB shared RAM).
     // "Not enough streaming budget to load other side of door, opening anyway!" (AI.exe line 178065)
+    // VBfA line 12623: 2-sample terrain height query for multi-floor buildings/bridges.
+    // Primary: (x, z), Secondary: (x, z - 0.96) — returns higher of the two surfaces.
+    static float GetHeightAt(float world_x, float world_z);
+    static float GetHeightAtWithSecondary(float world_x, float world_z) {
+        float primary   = GetHeightAt(world_x, world_z);
+        float secondary = GetHeightAt(world_x, world_z - 0.96f);
+        return primary > secondary ? primary : secondary;
+    }
+
     void SetStreamingBudgetBytes(int bytes_per_update) { stream_budget_ = bytes_per_update; }
     int  StreamingBudgetBytes() const { return stream_budget_; }
     int  BytesStreamedLastUpdate() const { return bytes_last_update_; }

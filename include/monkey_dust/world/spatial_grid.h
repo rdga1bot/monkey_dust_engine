@@ -123,6 +123,45 @@ public:
         return found;
     }
 
+    // ── VBfA ELEMENTS_WITHIN_RADIUS pattern ──────────────────────────────────
+    // Source: viking.exe.c lines 131887-131913 (FUN_0060ec20, 46 callsites)
+    // Returns all entities whose cell overlaps the AABB [wx_min..wx_max] × [wz_min..wz_max].
+    // No per-entity distance filter — caller does secondary clip if needed.
+    // Matches VBfA: double loop over cell range, output entity list.
+    int QueryRange(float wx_min, float wz_min, float wx_max, float wz_max,
+                   entt::entity* out, int max_out) const {
+        int cx0, cz0, cx1, cz1;
+        WorldToCell(wx_min, wz_min, cx0, cz0);
+        WorldToCell(wx_max, wz_max, cx1, cz1);
+        cx0 = Clamp(cx0, 0, GRID_DIM-1); cz0 = Clamp(cz0, 0, GRID_DIM-1);
+        cx1 = Clamp(cx1, 0, GRID_DIM-1); cz1 = Clamp(cz1, 0, GRID_DIM-1);
+        int found = 0;
+        for (int cx = cx0; cx <= cx1 && found < max_out; ++cx)
+            for (int cz = cz0; cz <= cz1 && found < max_out; ++cz) {
+                const GridCell& cell = cells_[cx][cz];
+                for (int i = 0; i < cell.count && found < max_out; ++i)
+                    out[found++] = cell.entities[i];
+            }
+        return found;
+    }
+
+    // Convenience AoE: square AABB centered at (cx,cz) with half-extent radius.
+    // Faster than QueryRadius (no sqrt, no per-entity distance check).
+    int QueryAoE(float cx_world, float cz_world, float radius,
+                 entt::entity* out, int max_out) const {
+        return QueryRange(cx_world - radius, cz_world - radius,
+                          cx_world + radius, cz_world + radius,
+                          out, max_out);
+    }
+
+    // VBfA 5×5×5 spatial bucket — distribute entity updates across 125 frames.
+    // Use for: particle/effect update staggering, AoE check distribution.
+    // Returns bucket index [0..124]; entity processed only when frame%125 == bucket.
+    static int Bucket5x5x5(uint32_t entity_id) {
+        uint32_t v = entity_id;
+        return (int)((v % 5u) + (v / 5u % 5u) * 5u + (v / 25u % 5u) * 25u);
+    }
+
     // Debug: кількість entities у комірці що містить (wx, wz)
     int CellCount(float wx, float wz) const {
         int cx, cz;

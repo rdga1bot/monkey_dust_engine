@@ -20,6 +20,20 @@ static constexpr float SENSE_AUDIO_RADIUS_M = 15.0f;
 static constexpr float SENSE_PI             = 3.14159265f;
 static constexpr float SENSE_RAD2DEG        = 180.0f / SENSE_PI;
 
+// VBfA FUN_00468840: inverse 4th-power distance falloff.
+// (range/dist)^4 — double distance → 1/16th activation.
+// Used for audio/smell/vibration where ultra-local effect is desired.
+// Linear (old): 1 - dist/range   → gentle slope
+// r⁴   (VBfA): (range/dist)^4   → steep cliff, very local
+static inline float sense_falloff_r4(float dist, float range) {
+    if (dist <= 0.f)    return 1.f;
+    if (dist >= range)  return 0.f;
+    float ratio = range / dist;
+    float r2    = ratio * ratio;
+    float r4    = r2 * r2;
+    return r4 > 1.f ? 1.f : r4;  // clamp: at dist≈0 r4→∞, cap at 1.0
+}
+
 static inline float sense_wrap_angle(float a) {
     while (a >  SENSE_PI) a -= 2.0f * SENSE_PI;
     while (a < -SENSE_PI) a += 2.0f * SENSE_PI;
@@ -119,9 +133,11 @@ inline void SenseSystemUpdate(float now_ms) {
             }
         }
 
-        // ── Audio (index 1): linear falloff. AI-4: audio_range_mult + noise_mult.
+        // ── Audio (index 1): VBfA r⁴ falloff. AI-4: audio_range_mult + noise_mult.
+        // VBfA FUN_00468840: (range/dist)^4 — 2× farther → 1/16 activation.
+        // Replaces linear (1 - dist/range) which was too generous at long range.
         float eff_audio_range = SENSE_AUDIO_RADIUS_M * audio_range_mult;
-        float audio_act = fmaxf(0.f, (1.f - dist / eff_audio_range) * fill_mult * noise_mult);
+        float audio_act = sense_falloff_r4(dist, eff_audio_range) * fill_mult * noise_mult;
         bool  aud_was_hi = sc.activation[1] >= sc.threshold_hi;
         sc.activation[1] = audio_act;
         if (!aud_was_hi && audio_act >= sc.threshold_hi) {

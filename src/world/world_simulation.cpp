@@ -20,6 +20,15 @@ void WorldSimulation::Tick(float delta_s) noexcept {
 
     ++tick_count_;
 
+    // VBfA §4.1 %958/%1024 ultra-rare tier: global state recheck every ~960s (16 min).
+    // Used for: faction territory recalculation, long-range spawn decisions.
+    // BT_LOD_ULTRA_MODULO=960 at 10TPS → 96s; at 1Hz (WorldSim) → 960 ticks = 16 min.
+    static constexpr uint32_t WS_ULTRA_RARE_TICKS = 960u;
+    if (tick_count_ % WS_ULTRA_RARE_TICKS == 0u) {
+        // Ultra-rare: rebuild faction territory maps, reset offscreen spawn cooldowns.
+        // (Stub: full implementation in faction territory system.)
+    }
+
     // P12: Process pending raid events
     for (int r = 0; r < WS_MAX_RAIDS; ++r) {
         FactionRaidEvent& raid = pending_raids_[r];

@@ -279,3 +279,32 @@ void DirectorSystem::Tick(float dt) {
         last_bc_stage_  = stage_;
     }
 }
+
+// ── VBfA Alliance Group Priority Scheduling ───────────────────────────────────
+void DirectorSystem::RebuildGroupBudgets(const uint32_t* faction_ids, int count) {
+    group_count_ = (count > MAX_FACTION_GROUPS) ? MAX_FACTION_GROUPS : count;
+    int prio = GROUP_PRIORITY_START;
+    for (int i = 0; i < group_count_; ++i, prio -= GROUP_PRIORITY_STEP) {
+        group_budgets_[i].faction_id   = faction_ids[i];
+        group_budgets_[i].priority     = prio;
+        group_budgets_[i].unit_cap     = GROUP_UNIT_CAP;
+        group_budgets_[i].units_active = 0;
+    }
+}
+
+bool DirectorSystem::TryActivateUnit(uint32_t faction_id) {
+    for (int i = 0; i < group_count_; ++i) {
+        if (group_budgets_[i].faction_id == faction_id) {
+            if (group_budgets_[i].units_active >= group_budgets_[i].unit_cap)
+                return false;
+            ++group_budgets_[i].units_active;
+            return true;
+        }
+    }
+    return true;  // faction not in table → no cap
+}
+
+void DirectorSystem::ResetGroupCounts() {
+    for (int i = 0; i < group_count_; ++i)
+        group_budgets_[i].units_active = 0;
+}

@@ -29,6 +29,8 @@ public:
     // vp16:   column-major mat4 (64 bytes).
     // sun32:  TerrainRenderer::SunParams (32 bytes: vec4 sun_dir_str + vec4 ambient).
     // anim_mode: 0=static, 1=wind sway (vegetation), 2=character bob
+    // normals_xyz: parallel array [count*3] of terrain surface normals (G-2 tilt).
+    // nullptr = no tilt (props stay upright, e.g. vegetation).
     void DrawRaw(
 #ifdef MD_SDL_GPU
         SDL_GPURenderPass*    rp,
@@ -38,9 +40,10 @@ public:
         int          count,
         const float* vp16,
         const float* sun32,
-        float        scale      = SCALE,
-        float        anim_mode  = 0.0f,
-        float        anim_time  = 0.0f);
+        float        scale       = SCALE,
+        float        anim_mode   = 0.0f,
+        float        anim_time   = 0.0f,
+        const float* normals_xyz = nullptr);
 
 private:
     PropMesh    mesh_;

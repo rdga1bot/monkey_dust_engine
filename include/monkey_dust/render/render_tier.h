@@ -40,6 +40,26 @@ public:
     bool HasSSAO()     const { return tier_ >= RenderTier::Deferred_Med; }
     bool HaseDRAM()    const { return tier_ == RenderTier::Deferred_High; }
 
+    // VBfA frame_buffer_postprocess_basic: simplified post-pass for low tiers.
+    // Forward + Deferred_Low → skip bloom/SSAO/DOF; only CAS sharpening.
+    bool UseBasicPostprocess() const { return tier_ <= RenderTier::Deferred_Low; }
+
+    // VBfA 32-tier LOD config with O(1) bitmask presence check.
+    // LODConfig[N] = {param_a, param_b}; N ≤ 31; presence_mask bit N = tier active.
+    struct LodConfig {
+        static constexpr int MAX_TIERS = 32;
+        struct Tier { uint8_t param_a, param_b; };
+        Tier     tiers[MAX_TIERS]  = {};
+        uint32_t presence_mask     = 0;
+
+        bool HasTier(int n) const { return n >= 0 && n < MAX_TIERS && ((presence_mask >> n) & 1u); }
+        void SetTier(int n, uint8_t a, uint8_t b) {
+            if (n < 0 || n >= MAX_TIERS) return;
+            tiers[n] = {a, b};
+            presence_mask |= 1u << n;
+        }
+    };
+
     const char* TierName() const;
 
 private:

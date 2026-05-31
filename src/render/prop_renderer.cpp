@@ -52,16 +52,18 @@ void PropRenderer::Shutdown() {
     mesh_.Shutdown();
 }
 
-// Vertex UBO layout (std140, 96 bytes):
+// Vertex UBO layout (std140, 112 bytes):
 //   mat4 vp              — 64 bytes
 //   vec4 model_pos_scale — 16 bytes (xyz=world pos, w=scale)
 //   vec4 anim_params     — 16 bytes (x=time, y=mode, z=mesh_height, w=phase)
+//   vec4 model_normal    — 16 bytes (xyz=terrain normal; (0,1,0) = no tilt, G-2)
 struct alignas(16) PropVertUBO {
     float vp[16];              // 64 bytes
     float model_pos_scale[4];  // 16 bytes
     float anim_params[4];      // 16 bytes
+    float model_normal[4];     // 16 bytes
 };
-static_assert(sizeof(PropVertUBO) == 96, "PropVertUBO size mismatch");
+static_assert(sizeof(PropVertUBO) == 112, "PropVertUBO size mismatch");
 
 void PropRenderer::DrawRaw(
 #ifdef MD_SDL_GPU
@@ -74,7 +76,8 @@ void PropRenderer::DrawRaw(
     const float* sun32,
     float        scale,
     float        anim_mode,
-    float        anim_time)
+    float        anim_time,
+    const float* normals_xyz)
 {
     if (!mesh_.loaded || count <= 0) return;
     if (count > MAX_PROPS) count = MAX_PROPS;
@@ -115,8 +118,18 @@ void PropRenderer::DrawRaw(
         v_ubo.model_pos_scale[1] = p[1];
         v_ubo.model_pos_scale[2] = p[2];
         v_ubo.model_pos_scale[3] = scale;
-        // per-instance phase: hash of XZ position so each instance is offset
         v_ubo.anim_params[3] = (p[0] * 0.31f + p[2] * 0.17f);
+        if (normals_xyz) {
+            const float* n = normals_xyz + i * 3;
+            v_ubo.model_normal[0] = n[0];
+            v_ubo.model_normal[1] = n[1];
+            v_ubo.model_normal[2] = n[2];
+        } else {
+            v_ubo.model_normal[0] = 0.f;
+            v_ubo.model_normal[1] = 1.f;
+            v_ubo.model_normal[2] = 0.f;
+        }
+        v_ubo.model_normal[3] = 0.f;
 
         SDL_PushGPUVertexUniformData(cmd, 0, &v_ubo, sizeof(v_ubo));
         SDL_DrawGPUIndexedPrimitives(rp, mesh_.index_count, 1, 0, 0, 0);

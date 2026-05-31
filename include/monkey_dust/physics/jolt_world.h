@@ -44,6 +44,10 @@ public:
                                float origin_x, float origin_z);
     void RemoveBody(JPH::BodyID id);
 
+    // Add a static AABB box (G-1 prop collision). Centre cx/cy/cz, half-extents hx/hy/hz.
+    JPH::BodyID AddStaticBox(float cx, float cy, float cz,
+                              float hx, float hy, float hz);
+
     // P-NG-6.3: Replace the single PCG terrain body with a HeightFieldShape.
     // hmap: samples×samples row-major floats (metres). scale_xz: metres per cell.
     // Internally downsamples to 129×129 (HeightFieldShape constraint).

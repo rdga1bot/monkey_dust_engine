@@ -29,14 +29,16 @@ struct BtLodTier { float dist_sq; uint32_t modulo; };
 static constexpr BtLodTier BT_LOD_TIERS[] = {
     {  15.f *  15.f,   1u },   // tier 0 — full rate
     {  30.f *  30.f,   5u },   // tier 1
-    {  50.f *  50.f,  10u },   // tier 2
-    {  80.f *  80.f,  20u },   // tier 3
-    { 120.f * 120.f,  42u },   // tier 4
-    { 160.f * 160.f,  63u },   // tier 5
-    { 220.f * 220.f, 106u },   // tier 6
-    { 300.f * 300.f, 127u },   // tier 7
+    {  50.f *  50.f,  10u },   // tier 2  ← VBfA %10 (6Hz at 60fps → 1Hz at 10TPS)
+    {  80.f *  80.f,  15u },   // tier 3  ← VBfA %15 (2 occurrences)
+    { 120.f * 120.f,  20u },   // tier 4  ← VBfA %20 (2 occurrences)
+    { 160.f * 160.f,  42u },   // tier 5
+    { 220.f * 220.f,  63u },   // tier 6
+    { 300.f * 300.f, 106u },   // tier 7
+    { 400.f * 400.f, 127u },   // tier 8
 };
-static constexpr uint32_t BT_LOD_FAR_MODULO = 190u;  // tier 8: > 300m
+static constexpr uint32_t BT_LOD_FAR_MODULO   = 190u;   // tier 9: > 400m (~19s at 10TPS)
+static constexpr uint32_t BT_LOD_ULTRA_MODULO = 960u;   // VBfA %958/%1024 ≈ 96s — OffscreenNpcDB
 
 // Legacy constants kept for other systems that reference them.
 static constexpr float BT_LOD_TIER1_SQ = 30.0f * 30.0f;
@@ -95,18 +97,29 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
         if (as.lcflags.test(lcf::IS_SUSPENDED)) return;  // Batch 11 P8: suspension gate
 
         // VBfA RE §8: 9-tier LOD — logarithmic modulo by distance.
-        // CATHODE RE §7: Dormant → forced tier 8 regardless of distance.
+        // VBfA §4.2 %7 round-robin: stagger entity ticks across 7 frames.
+        // CATHODE RE §7: Dormant → forced far tier regardless of distance.
+        const uint32_t eid = entt::to_integral(e);
+
         if (as.motivation == MotivationType::Dormant) {
-            if ((fi + entt::to_integral(e)) % BT_LOD_FAR_MODULO != 0u) return;
+            // Ultra-rare tier: OffscreenNpcDatabase handles 0.1Hz; BT near-dormant @ 19s.
+            if ((fi + eid) % BT_LOD_FAR_MODULO != 0u) return;
         } else {
             const auto* wt = reg.try_get<WorldTransform>(e);
             if (wt && wt->slot < (uint32_t)tsoa.active_count) {
                 float dsq = tsoa.dist_sq[wt->slot];
-                uint32_t modulo = BT_LOD_FAR_MODULO;  // default: tier 8
+                uint32_t modulo = BT_LOD_FAR_MODULO;  // default: far tier
                 for (const auto& t : BT_LOD_TIERS) {
                     if (dsq <= t.dist_sq) { modulo = t.modulo; break; }
                 }
-                if (modulo > 1u && (fi + entt::to_integral(e)) % modulo != 0u) return;
+                // VBfA %7 round-robin: entity slot within 7-frame window.
+                // Applied on top of distance modulo for better load spreading.
+                if (modulo > 1u) {
+                    if ((fi + eid) % modulo != 0u) return;
+                } else {
+                    // Full-rate (tier 0, < 15m): still stagger by %7 to avoid frame spike.
+                    if (eid % 7u != fi % 7u) return;
+                }
             }
         }
 

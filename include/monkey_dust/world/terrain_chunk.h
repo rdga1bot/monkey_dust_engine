@@ -58,11 +58,12 @@ enum ChunkPropType : uint8_t {
 };
 
 struct ChunkPropInstance {
-    float   x, y, z;   // world-space position (y already accounts for embed)
-    uint8_t type;       // ChunkPropType
+    float   x, y, z;    // world-space position (y already accounts for embed)
+    float   nx, ny, nz; // terrain surface normal (sampled by PropGen_Build, G-2)
+    uint8_t type;        // ChunkPropType
     uint8_t _pad[3];
 };
-static_assert(sizeof(ChunkPropInstance) == 16, "ChunkPropInstance size");
+static_assert(sizeof(ChunkPropInstance) == 28, "ChunkPropInstance size");
 static constexpr int CHUNK_MAX_PROPS = 64;
 
 struct TerrainChunk {

@@ -114,6 +114,31 @@ public:
     AlienConfigurationType GetActiveConfig() const { return active_config_; }
     void SetActiveConfig(AlienConfigurationType c) { active_config_ = c; }
 
+    // ── VBfA Alliance Group Priority Scheduling ───────────────────────────────
+    // VBfA lines 188388-188427: 18 groups, priority 250→10 (−16/group), cap 200 units.
+    // Higher priority factions processed first — foreground battle always wins CPU time.
+    static constexpr int   MAX_FACTION_GROUPS   = 18;
+    static constexpr int   GROUP_PRIORITY_START = 250;
+    static constexpr int   GROUP_PRIORITY_STEP  = 16;
+    static constexpr int   GROUP_UNIT_CAP       = 200;
+
+    struct FactionGroupBudget {
+        uint32_t faction_id   = 0;
+        int      priority     = 0;   // 250 → 10, decrements by 16 per group
+        int      unit_cap     = GROUP_UNIT_CAP;
+        int      units_active = 0;   // reset each frame
+    };
+
+    // Call each frame to assign priorities. faction_ids[] sorted by importance (index=priority rank).
+    void RebuildGroupBudgets(const uint32_t* faction_ids, int count);
+    // Returns true if this faction is under its per-group unit cap.
+    bool TryActivateUnit(uint32_t faction_id);
+    // Reset active counts at frame start (call before Tick).
+    void ResetGroupCounts();
+    // Get budget table for external read (e.g. editor overlay).
+    const FactionGroupBudget* GroupBudgets() const { return group_budgets_; }
+    int GroupCount() const { return group_count_; }
+
 private:
     DirectorSystem() = default;
 
@@ -130,4 +155,8 @@ private:
     // Last-broadcast values: skip AgentState iteration when nothing changed.
     float         last_bc_menace_ = -1.f;
     DirectorStage last_bc_stage_  = DirectorStage::Unaware;
+
+    // VBfA alliance group priority scheduling data
+    FactionGroupBudget group_budgets_[MAX_FACTION_GROUPS] = {};
+    int                group_count_ = 0;
 };

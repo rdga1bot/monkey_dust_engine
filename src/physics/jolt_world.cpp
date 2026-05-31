@@ -13,6 +13,7 @@
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
@@ -232,6 +233,21 @@ void JoltWorld::RemoveBody(JPH::BodyID id)
     auto& bi = physics_system_.GetBodyInterface();
     bi.RemoveBody(id);
     bi.DestroyBody(id);
+}
+
+JPH::BodyID JoltWorld::AddStaticBox(float cx, float cy, float cz,
+                                     float hx, float hy, float hz)
+{
+    if (!ready_) return JPH::BodyID();
+    JPH::BoxShapeSettings bss(JPH::Vec3(hx, hy, hz));
+    auto result = bss.Create();
+    if (result.HasError()) return JPH::BodyID();
+    JPH::BodyCreationSettings bcs(result.Get(),
+        JPH::RVec3((JPH::Real)cx, (JPH::Real)cy, (JPH::Real)cz),
+        JPH::Quat::sIdentity(),
+        JPH::EMotionType::Static, Layers::NON_MOVING);
+    return physics_system_.GetBodyInterface().CreateAndAddBody(
+        bcs, JPH::EActivation::DontActivate);
 }
 
 // P-NG-6.3: Replace PCG terrain body with HeightFieldShape (more efficient than trimesh).

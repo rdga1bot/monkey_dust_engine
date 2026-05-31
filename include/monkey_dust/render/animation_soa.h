@@ -12,6 +12,12 @@ static constexpr int MAX_BONES        = 64;  // SSBO stride fixed at 64 for SDL_
 static constexpr int MAX_ANIMATED_NPC = 500;
 static constexpr int MAX_ANIM_CLIPS   = 8;
 
+// VBfA lines 9042-9043: hard cap on draw calls per renderer stream.
+// 2 streams × 200 objects = 400 max draw calls/frame.
+static constexpr int MAX_DRAW_CALLS_PER_STREAM = 200;
+static constexpr int MAX_DRAW_STREAMS          = 2;
+static constexpr int MAX_DRAW_CALLS_TOTAL      = MAX_DRAW_CALLS_PER_STREAM * MAX_DRAW_STREAMS;
+
 // Per-NPC animation state — 16 bytes, matches std430 AnimState in skinning.comp
 struct AnimNpcState {
     uint32_t slot;

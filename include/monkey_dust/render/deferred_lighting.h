@@ -33,25 +33,34 @@ public:
     void Shutdown();
 
     // Draws ambient + directional pass from gbuf into HdrColorTex().
+    // depth_tex: scene depth (D32_FLOAT) for EVSM world-pos reconstruction.
+    //   Pass nullptr to skip shadow sampling (shadows render unshadowed).
     // cmd must not be inside an active render pass.
-    void DrawAmbientPass(SDL_GPUCommandBuffer* cmd, const GBuffer& gbuf);
+    void DrawAmbientPass(SDL_GPUCommandBuffer* cmd, const GBuffer& gbuf,
+                         SDL_GPUTexture* depth_tex = nullptr);
 
     SDL_GPUTexture* HdrColorTex() const { return hdr_color_; }
     bool IsReady() const { return hdr_color_ != nullptr; }
 
     // ── Lighting parameters (set before DrawAmbientPass each frame) ────────────
-    float sun_dir[3]       = {  0.577f, -0.577f,  0.577f }; // sun→surface, normalized
+    float sun_dir[3]       = {  0.577f, -0.577f,  0.577f };
     float sun_color[3]     = {  1.00f,   0.95f,   0.80f  };
     float ambient_color[3] = {  0.15f,   0.18f,   0.22f  };
-    float emissive_scale   = 1.4875f;  // RADIOSITY_SETTINGS MD value
+    float emissive_scale   = 1.4875f;
+
+    // Call once per frame with the inverse camera view-projection matrix.
+    // Required for EVSM world-position reconstruction from depth buffer.
+    void SetInvViewProj(const float m[16]) { memcpy(inv_view_proj_, m, 64); }
 
 private:
     DeferredLightingSystem() = default;
 
-    SDL_GPUDevice*  dev_      = nullptr;
-    SDL_GPUTexture* hdr_color_= nullptr;
-    SDL_GPUSampler* sampler_  = nullptr;
+    SDL_GPUDevice*  dev_           = nullptr;
+    SDL_GPUTexture* hdr_color_     = nullptr;
+    SDL_GPUSampler* sampler_nearest_ = nullptr;  // for GBuffer + depth
+    SDL_GPUSampler* sampler_linear_  = nullptr;  // for EVSM moment maps
     GpuPipeline     pipeline_;
+    float           inv_view_proj_[16] = {};
     int w_ = 0, h_ = 0;
 };
 

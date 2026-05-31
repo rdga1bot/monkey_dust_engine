@@ -116,7 +116,16 @@ public:
     }
 
     void Advance(float dt) {
+        // PERF-16: stagger animation time advancement by lod_tier.
+        // Kenshi RE: entity_id % 500 / % 252 spreads blend-eval cost across frames.
+        // T0/T1 (lod 0-1): advance every frame.
+        // T2    (lod 2):   advance every 2 frames (slot % 2 == frame_counter_ % 2).
+        // T3+   (lod 3-4): skip entirely (static pose / offscreen).
+        const uint32_t fc = frame_counter_;
         for (int i = 0; i < MAX_ANIMATED_NPC; ++i) {
+            const uint32_t tier = states_[i].lod_tier;
+            if (tier >= 3) continue;                           // T3+: no update
+            if (tier == 2 && ((uint32_t)i % 2u != fc % 2u)) continue; // T2: every 2nd frame
             uint32_t cid = states_[i].clip_id;
             float dur = (cid < (uint32_t)clips_count_) ? clips_[cid].duration_s : 1.0f;
             states_[i].time_s += dt;
@@ -157,7 +166,7 @@ public:
     }
 
     // Call once per frame AFTER all draw/compute that read anim_state_ring_.
-    void AdvanceFrame() { anim_state_ring_.Advance(); }
+    void AdvanceFrame() { anim_state_ring_.Advance(); ++frame_counter_; }
 
 #ifdef MD_SDL_GPU
     // Upload anim state to SDL_GPU device buffer via a copy pass in cmd.
@@ -201,6 +210,7 @@ private:
     SSBO               bones_ssbo_;      // compute output — regular SSBO
     GpuRingBuffer      anim_state_ring_; // CPU per-frame — ring-buffered
     GpuComputePipeline skin_pipeline_;   // skinning compute shader
+    uint32_t           frame_counter_ = 0; // PERF-16: stagger index
 
     void LoadDefaults() {
         clips_count_ = 3;

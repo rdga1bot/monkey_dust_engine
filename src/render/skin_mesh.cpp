@@ -601,3 +601,52 @@ void SkinMesh::ApplyInvBind(float* bones) const {
         memcpy(bones + i*16, tmp, 64);
     }
 }
+
+// ── PERF-18: LOD-simplified bone eval ────────────────────────────────────────
+// Evaluates only bones with index < max_bones (default 12).
+// Parent-child chain is still computed (world[i] needed for children's transforms).
+// Bones >= max_bones: identity skinning matrix → vertices stay at bind pose.
+// T2 agents (80-150m): saves ~60% of bone eval vs full 30-bone pass.
+void SkinMesh::GetFinalBonesLOD(int clip_idx, float time_s,
+                                  float* out, int max_bones) const {
+    float t = time_s;
+    if (clip_idx >= 0 && clip_idx < clip_count_) {
+        float dur = clips_[clip_idx].duration;
+        if (dur > 0.05f) t = fmodf(t, dur); else t = 0.f;
+    }
+
+    float (&world)[MAX_SKIN_BONES][16] = g_bone_world_scratch;
+    float local[16];
+
+    for (int oi = 0; oi < bone_count; ++oi) {
+        int i = process_order_[oi];
+        float lt[3], lq[4];
+
+        // Animate only the active LOD bones; upper bones fall back to bind pose.
+        // This skips slerp_t() for i >= max_bones — the main CPU saving.
+        if (i < max_bones && clip_idx >= 0 && clip_idx < clip_count_) {
+            const SkinClip& cl = clips_[clip_idx];
+            const SkinTrack& tr = cl.tracks[i];
+            if (tr.count > 0) {
+                slerp_t(tr, t, lt, lq);
+            } else {
+                lt[0]=bind_t_[i][0]; lt[1]=bind_t_[i][1]; lt[2]=bind_t_[i][2];
+                lq[0]=bind_q_[i][0]; lq[1]=bind_q_[i][1]; lq[2]=bind_q_[i][2]; lq[3]=bind_q_[i][3];
+            }
+        } else {
+            lt[0]=bind_t_[i][0]; lt[1]=bind_t_[i][1]; lt[2]=bind_t_[i][2];
+            lq[0]=bind_q_[i][0]; lq[1]=bind_q_[i][1]; lq[2]=bind_q_[i][2]; lq[3]=bind_q_[i][3];
+        }
+
+        mat4_from_trs(local, lt, lq, bind_s_[i]);
+        int pi = parent_[i];
+        if (pi < 0) memcpy(world[i], local, 64);
+        else        mat4_mul(world[i], world[pi], local);
+
+        // Only write final skinning matrix for active LOD range
+        if (i < max_bones) mat4_mul(out + i*16, world[i], inv_bind_[i]);
+        else                mat4_identity(out + i*16);
+    }
+    for (int i = bone_count; i < MAX_SKIN_BONES; ++i)
+        mat4_identity(out + i*16);
+}

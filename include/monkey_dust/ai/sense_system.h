@@ -1,10 +1,12 @@
 #pragma once
 // M55 perception tick — moved to engine/ (all deps are engine types).
+// PERF-14: md_rsqrtf/md_dist2d used instead of sqrtf for sense distance queries.
 // SenseSystemUpdate(now_ms): call once per logic tick, after frame_flags dispatch.
 // Visual cone: max contribution from ViewConeSet; Audio: linear falloff 15m.
 // Rising edge on threshold_hi → writes last_activated_ms + last_known_x/z (Visual).
 // VBfA-AI2: AwarenessLimits caps applied — prevents O(n²) reaction cascades.
 // CATHODE RE §7: sense_cooldown_frames — per-NPC throttle when global budget exceeded.
+#include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/world/world_transform.h>
@@ -77,7 +79,7 @@ inline void SenseSystemUpdate(float now_ms) {
         if (sc.sense_cooldown_frames > 0) { --sc.sense_cooldown_frames; return; }
 
         float dx   = pwt->x - wt.x, dz = pwt->z - wt.z;
-        float dist = sqrtf(dx * dx + dz * dz);
+        float dist = md_dist2d(dx, dz);  // PERF-14: rsqrtps instead of sqrtf
         float angle_to   = atan2f(dx, dz);
         float angle_diff = fabsf(sense_wrap_angle(angle_to - wt.rot_y)) * SENSE_RAD2DEG;
 

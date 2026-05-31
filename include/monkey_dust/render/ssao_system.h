@@ -124,18 +124,24 @@ struct SSAOPrepUBO {
 };
 static_assert(sizeof(SSAOPrepUBO) == 16);
 
-// ── SSAOMainUBO (std140, 32B — must match ssao_main.frag) ──────────────────────
+// ── SSAOMainUBO (std140, 40B — must match ssao_main.frag) ──────────────────────
+// PERF-17: AI.exe (Alien Isolation) RE found 4 SSAO params vs our 2.
+//   occlusion_ao_infl    → ao_influence:       how much AO darkens final colour
+//   specular_occlusion   → specular_occlusion: reduce specular in occluded areas
 struct SSAOMainUBO {
-    float inv_proj_x;   // 1/proj[0][0] = tan(fovy/2)*aspect
-    float inv_proj_y;   // 1/proj[1][1] = tan(fovy/2)
-    float pixel_w;      // 1.0/half_w
-    float pixel_h;      // 1.0/half_h
-    float kernel_scale; // 0.5
-    float bias;         // 0.03
-    float intensity;    // 1.2
-    float fade_scale;   // 1.0/80.0
+    float inv_proj_x;        // 1/proj[0][0] = tan(fovy/2)*aspect
+    float inv_proj_y;        // 1/proj[1][1] = tan(fovy/2)
+    float pixel_w;           // 1.0/half_w
+    float pixel_h;           // 1.0/half_h
+    float kernel_scale;      // 0.5
+    float bias;              // 0.03
+    float intensity;         // 1.2
+    float fade_scale;        // 1.0/80.0
+    float ao_influence;      // 1.0  — global AO→colour weight (AI.exe: occlusion_ao_infl)
+    float specular_occlusion;// 0.3  — AO reduces specular (AI.exe: specular_occlusion)
+    float _pad[2];
 };
-static_assert(sizeof(SSAOMainUBO) == 32);
+static_assert(sizeof(SSAOMainUBO) == 48);
 
 // ── SSAOBlurUBO (std140, 16B — matches ssao_blur_h.frag / ssao_blur_v.frag) ────
 struct SSAOBlurUBO {

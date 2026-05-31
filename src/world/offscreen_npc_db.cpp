@@ -4,6 +4,10 @@
 #include <monkey_dust/platform/md_log.h>
 #include <cmath>
 #include <cstring>
+#include <cstdio>
+#ifndef _WIN32
+#  include <dirent.h>
+#endif
 
 // LCG for patrol drift — no malloc, no std::rand.
 static uint32_t s_rng = 0xDEADBEEFu;
@@ -12,27 +16,114 @@ static float s_randf() {
     return (float)((s_rng >> 8) & 0xFFFFFF) / (float)0xFFFFFF;
 }
 
-void OffscreenNpcDatabase::Tick(float /*dt*/) noexcept {
+void OffscreenNpcDatabase::Tick(float /*dt*/, float game_hours) noexcept {
+    // Night window: 18:00 → 06:00 (Kenshi sleep schedule RE)
+    const bool is_night = (game_hours >= 18.f || game_hours < 6.f);
+
     for (int i = 0; i < count_; ++i) {
         OffscreenNpcState& e = entries_[i];
 
-        // Hunger / fatigue accumulation (clamped to 255)
-        uint32_t h = (uint32_t)e.hunger  + (uint32_t)HUNGER_RATE;
-        uint32_t f = (uint32_t)e.fatigue + (uint32_t)FATIGUE_RATE;
-        e.hunger  = (uint8_t)(h  < 255u ? h  : 255u);
-        e.fatigue = (uint8_t)(f  < 255u ? f  : 255u);
+        if (is_night) {
+            // Night: fatigue recovery + slower hunger (sleeping burns less energy)
+            e.fatigue = (uint8_t)(e.fatigue > 2u ? e.fatigue - 2u : 0u);
+            uint32_t h = (uint32_t)e.hunger + 1u;  // half rate at night
+            e.hunger  = (uint8_t)(h < 255u ? h : 255u);
+            e.task_type = OffscreenTask::Rest;
+        } else {
+            // Day: normal accumulation
+            uint32_t h = (uint32_t)e.hunger  + (uint32_t)HUNGER_RATE;
+            uint32_t f = (uint32_t)e.fatigue + (uint32_t)FATIGUE_RATE;
+            e.hunger  = (uint8_t)(h < 255u ? h : 255u);
+            e.fatigue = (uint8_t)(f < 255u ? f : 255u);
 
-        // Patrol: drift position randomly within PATROL_DRIFT_M per tick
+            // Patrol: drift position randomly within PATROL_DRIFT_M per tick
+            if (e.task_type == OffscreenTask::Patrol || e.task_type == OffscreenTask::Rest)
+                e.task_type = OffscreenTask::Patrol;
+        }
+
         if (e.task_type == OffscreenTask::Patrol) {
             e.position[0] += (s_randf() - 0.5f) * PATROL_DRIFT_M;
             e.position[2] += (s_randf() - 0.5f) * PATROL_DRIFT_M;
         }
-
-        // Rest: reduce fatigue
-        if (e.task_type == OffscreenTask::Rest && e.fatigue > 0) {
-            e.fatigue = (uint8_t)(e.fatigue > 4u ? e.fatigue - 4u : 0u);
-        }
     }
+}
+
+// ── Zone NPC persistence ──────────────────────────────────────────────────────
+// File format: 4-byte magic "ONPC" + uint32 count + OffscreenNpcState[count]
+static constexpr uint32_t ONPC_MAGIC = 0x43504E4Fu;  // "ONPC"
+
+static void zone_path(char* buf, size_t sz, const char* dir, uint16_t zone_id) {
+    snprintf(buf, sz, "%s/zone_%04u.onpc", dir, (unsigned)zone_id);
+}
+
+bool OffscreenNpcDatabase::SaveZone(uint16_t zone_id, const char* saves_dir) noexcept {
+    // Collect entries for this zone
+    OffscreenNpcState tmp[512];
+    int n = 0;
+    for (int i = 0; i < count_ && n < 512; ++i)
+        if (entries_[i].zone_id == zone_id) tmp[n++] = entries_[i];
+
+    if (n == 0) return true;  // nothing to save
+
+    char path[256];
+    zone_path(path, sizeof(path), saves_dir, zone_id);
+    FILE* f = fopen(path, "wb");
+    if (!f) { MD_LOG(MD_LOG_WARNING, "OffscreenNpcDb: cannot write %s", path); return false; }
+
+    uint32_t magic = ONPC_MAGIC, cnt = (uint32_t)n;
+    fwrite(&magic, 4, 1, f);
+    fwrite(&cnt,   4, 1, f);
+    fwrite(tmp, sizeof(OffscreenNpcState), (size_t)n, f);
+    fclose(f);
+    MD_LOG(MD_LOG_INFO, "OffscreenNpcDb: saved %d NPCs for zone %u", n, (unsigned)zone_id);
+    return true;
+}
+
+int OffscreenNpcDatabase::LoadZone(uint16_t zone_id, const char* saves_dir) noexcept {
+    char path[256];
+    zone_path(path, sizeof(path), saves_dir, zone_id);
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+
+    uint32_t magic = 0, cnt = 0;
+    if (fread(&magic, 4, 1, f) != 1 || magic != ONPC_MAGIC ||
+        fread(&cnt,   4, 1, f) != 1 || cnt == 0 || cnt > 512) {
+        fclose(f); return 0;
+    }
+
+    int loaded = 0;
+    for (uint32_t i = 0; i < cnt; ++i) {
+        OffscreenNpcState s{};
+        if (fread(&s, sizeof(s), 1, f) != 1) break;
+        if (count_ >= MAX_OFFSCREEN_NPCS) break;
+        // Skip duplicates: if entity_uid already present, discard
+        bool dup = false;
+        for (int j = 0; j < count_ && !dup; ++j)
+            dup = (entries_[j].entity_uid == s.entity_uid && s.entity_uid != 0);
+        if (!dup) { entries_[count_++] = s; ++loaded; }
+    }
+    fclose(f);
+    if (loaded > 0)
+        MD_LOG(MD_LOG_INFO, "OffscreenNpcDb: restored %d NPCs for zone %u", loaded, (unsigned)zone_id);
+    return loaded;
+}
+
+int OffscreenNpcDatabase::LoadAllZones(const char* saves_dir) noexcept {
+    int total = 0;
+#ifndef _WIN32
+    DIR* d = opendir(saves_dir);
+    if (!d) return 0;
+    struct dirent* ent;
+    while ((ent = readdir(d))) {
+        unsigned zone_id = 0;
+        if (sscanf(ent->d_name, "zone_%u.onpc", &zone_id) == 1)
+            total += LoadZone((uint16_t)zone_id, saves_dir);
+    }
+    closedir(d);
+#endif
+    if (total > 0)
+        MD_LOG(MD_LOG_INFO, "OffscreenNpcDb: LoadAllZones restored %d total NPCs", total);
+    return total;
 }
 
 bool OffscreenNpcDatabase::Capture(entt::entity e, entt::registry& reg,

@@ -40,8 +40,9 @@ public:
         return inst;
     }
 
-    // 1 Hz bulk tick: advance hunger/fatigue, drift patrol positions.
-    void Tick(float dt) noexcept;
+    // 1 Hz bulk tick: schedule-aware hunger/fatigue + patrol drift.
+    // game_hours ∈ [0, 24): night (18..6) → rest mode (fatigue recovery).
+    void Tick(float dt, float game_hours = 12.f) noexcept;
 
     // Materialise offscreen NPCs whose zone is being loaded near (px, pz).
     // Re-creates ECS entities; removes them from the offscreen pool.
@@ -55,6 +56,17 @@ public:
 
     // Remove all offscreen NPCs belonging to a given zone.
     void PurgeZone(uint16_t zone_id) noexcept;
+
+    // Zone NPC persistence — saves/zone_NNNN.onpc binary files.
+    // SaveZone: write entries for zone_id → saves_dir/zone_NNNN.onpc.
+    //   Call BEFORE PurgeZone so data is not lost on zone shift.
+    // LoadZone: read file and append entries (skip duplicates by entity_uid).
+    //   Returns number of entries loaded; 0 if file not found.
+    // LoadAllZones: scan saves_dir for zone_*.onpc and call LoadZone for each.
+    //   Call once at startup to restore world NPC state from last session.
+    bool SaveZone(uint16_t zone_id, const char* saves_dir) noexcept;
+    int  LoadZone(uint16_t zone_id, const char* saves_dir) noexcept;
+    int  LoadAllZones(const char* saves_dir) noexcept;
 
     int  Count()        const noexcept { return count_; }
     bool IsFull()       const noexcept { return count_ >= MAX_OFFSCREEN_NPCS; }

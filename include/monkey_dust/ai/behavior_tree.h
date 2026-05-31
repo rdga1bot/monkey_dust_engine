@@ -395,6 +395,13 @@ enum class BTNodeType : uint8_t {
     //   DecoratorTimer: run child for AT MOST duration_ms; timer expires → Success
     //     data=(timer_id<<24)|duration_ms; starts timer once on first entry; clear on exit
     DecoratorTimer,
+    //   DecoratorThrottle: rate-limit subtree execution — child runs at most once per interval_ms.
+    //     BehaviorTree.CPP: setTickFrequency(interval_ms). Useful for expensive checks (sense,
+    //     path queries) at reduced frequency without a full LOD tier change.
+    //     data=(timer_id<<24)|interval_ms; on entry: if timer not expired → return last result;
+    //     else run child, store result, reset timer. Default: returns Running while throttled.
+    //     RE source: AI.exe "AI_CHARACTER_LOCO[16]" pattern — per-node update budgets.
+    DecoratorThrottle,
     //   ActionIdle: always returns BTStatus::Running (blocks forever); data=0
     ActionIdle,
     //   ConditionTargetIsWithinDistance: Euclidean dist(self,last_known_x/z) <= max_dist

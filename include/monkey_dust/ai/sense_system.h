@@ -14,7 +14,9 @@
 #include <monkey_dust/ai/awareness_limits.h>
 #include <monkey_dust/ecs/registry.h>
 #include <cmath>
-#ifdef __SSE__
+#ifdef __AVX2__
+#  include <immintrin.h>
+#elif defined(__SSE__)
 #  include <xmmintrin.h>
 #endif
 
@@ -150,17 +152,25 @@ inline void SenseSystemUpdate(float now_ms) {
             }
         }
 
-        // VBfA RE §8.5: clamp all 9 activations to [0, 1] using SSE maxps/minps.
-        // Processes 8 at once (2×__m128), then 1 scalar remainder.
-#ifdef __SSE__
+        // VBfA RE §8.5: clamp all 9 activations to [0, 1] using SIMD.
+        // EVE library pattern (#4): AVX2 processes 8 floats in 1 instruction vs 2 SSE ops.
+        // Processes 8 at once, then 1 scalar remainder.
+#ifdef __AVX2__
+        {
+            __m256 zero8 = _mm256_setzero_ps();
+            __m256 one8  = _mm256_set1_ps(1.f);
+            float* a = sc.activation;
+            _mm256_storeu_ps(a, _mm256_min_ps(_mm256_max_ps(_mm256_loadu_ps(a), zero8), one8));
+            if (a[8] < 0.f) a[8] = 0.f;
+            if (a[8] > 1.f) a[8] = 1.f;
+        }
+#elif defined(__SSE__)
         {
             __m128 zero4 = _mm_setzero_ps();
             __m128 one4  = _mm_set1_ps(1.f);
             float* a = sc.activation;
-            // first 8: two 4-float ops
             _mm_storeu_ps(a + 0, _mm_min_ps(_mm_max_ps(_mm_loadu_ps(a + 0), zero4), one4));
             _mm_storeu_ps(a + 4, _mm_min_ps(_mm_max_ps(_mm_loadu_ps(a + 4), zero4), one4));
-            // last element
             if (a[8] < 0.f) a[8] = 0.f;
             if (a[8] > 1.f) a[8] = 1.f;
         }

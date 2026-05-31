@@ -50,6 +50,8 @@ void JobSystem::worker_loop() {
         SDL_UnlockMutex(mtx_);
 
         job.fn(job.data);
+        // Naughty Dog fiber pattern: decrement dependency counter if set.
+        if (job.counter) SDL_AtomicDecRef(job.counter);
 
         SDL_LockMutex(mtx_);
         if (--inflight_ == 0)
@@ -165,5 +167,21 @@ void JobSystem::Flush() {
     SDL_LockMutex(mtx_);
     while (inflight_ > 0)
         SDL_WaitCondition(cv_done_, mtx_);
+    SDL_UnlockMutex(mtx_);
+}
+
+// Naughty Dog fiber pattern: submit with dependency counter.
+// Counter is incremented here, decremented atomically when job completes.
+// Caller can spin-wait on counter instead of blocking Flush().
+void JobSystem::Submit(void (*fn)(void*), void* data, SDL_AtomicInt* counter) {
+    SDL_LockMutex(mtx_);
+    while (count_ >= MAX_JOBS)
+        SDL_WaitCondition(cv_cap_, mtx_);
+    SDL_AtomicIncRef(counter);
+    buf_[head_] = {fn, data, counter};
+    head_ = (head_ + 1) % MAX_JOBS;
+    ++count_;
+    ++inflight_;
+    SDL_BroadcastCondition(cv_work_);
     SDL_UnlockMutex(mtx_);
 }

@@ -26,7 +26,11 @@ struct JobSystem {
     static constexpr int MAX_JOBS    = 100;
     static constexpr int MAX_WORKERS = 15;  // hard cap; actual = min(CPU-1, MAX_WORKERS)
 
-    struct Job { void (*fn)(void*); void* data; };
+    struct Job {
+        void (*fn)(void*);
+        void* data;
+        SDL_AtomicInt* counter = nullptr;  // optional; decremented on completion
+    };
 
     // CATHODE RE §7.5: 7-level thread priority table (AI.exe lines 1818006-1818027).
     // Indexed by WorkerRole enum. Configured via tasks.cfg or SetWorkerPriority().
@@ -73,6 +77,14 @@ struct JobSystem {
 
     // Submit a job. Blocks briefly if queue is full (back-pressure, rare in practice).
     void Submit(void (*fn)(void*), void* data);
+
+    // Submit with dependency counter — decrements counter atomically on completion.
+    // Naughty Dog fiber pattern: instead of blocking Flush(), caller spins on counter.
+    // Usage:
+    //   SDL_atomic_t ctr = {0};
+    //   for (...) { SDL_AtomicAdd(&ctr, 1); Submit(fn, data, &ctr); }
+    //   while (SDL_AtomicGet(&ctr) > 0) _mm_pause();  // or SDL_Delay(0) if sleeping
+    void Submit(void (*fn)(void*), void* data, SDL_AtomicInt* counter);
 
     // Wait until every submitted job has completed.
     void Flush();

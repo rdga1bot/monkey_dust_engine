@@ -17,35 +17,55 @@ static float s_randf() {
 }
 
 void OffscreenNpcDatabase::Tick(float /*dt*/, float game_hours) noexcept {
-    // Night window: 18:00 → 06:00 (Kenshi sleep schedule RE)
     const bool is_night = (game_hours >= 18.f || game_hours < 6.f);
 
     for (int i = 0; i < count_; ++i) {
         OffscreenNpcState& e = entries_[i];
 
+        // pikkoserver SimFidelity: skip or reduce simulation based on zone distance.
+        const SimFidelity fid = GetZoneFidelity(e.zone_id);
+        if (fid == SimFidelity::Dormant) continue;  // frozen — no simulation
+
         if (is_night) {
-            // Night: fatigue recovery + slower hunger (sleeping burns less energy)
             e.fatigue = (uint8_t)(e.fatigue > 2u ? e.fatigue - 2u : 0u);
-            uint32_t h = (uint32_t)e.hunger + 1u;  // half rate at night
+            uint32_t h = (uint32_t)e.hunger + 1u;
             e.hunger  = (uint8_t)(h < 255u ? h : 255u);
             e.task_type = OffscreenTask::Rest;
         } else {
-            // Day: normal accumulation
             uint32_t h = (uint32_t)e.hunger  + (uint32_t)HUNGER_RATE;
             uint32_t f = (uint32_t)e.fatigue + (uint32_t)FATIGUE_RATE;
             e.hunger  = (uint8_t)(h < 255u ? h : 255u);
             e.fatigue = (uint8_t)(f < 255u ? f : 255u);
-
-            // Patrol: drift position randomly within PATROL_DRIFT_M per tick
-            if (e.task_type == OffscreenTask::Patrol || e.task_type == OffscreenTask::Rest)
+            if (e.task_type == OffscreenTask::Rest)
                 e.task_type = OffscreenTask::Patrol;
         }
+
+        // Low fidelity: no positional simulation
+        if (fid == SimFidelity::Low) continue;
 
         if (e.task_type == OffscreenTask::Patrol) {
             e.position[0] += (s_randf() - 0.5f) * PATROL_DRIFT_M;
             e.position[2] += (s_randf() - 0.5f) * PATROL_DRIFT_M;
         }
     }
+}
+
+void OffscreenNpcDatabase::SetZoneFidelity(uint16_t zone_id,
+                                            SimFidelity fidelity) noexcept {
+    for (int i = 0; i < fidelity_count_; ++i) {
+        if (fidelity_[i].zone_id == zone_id) {
+            fidelity_[i].fidelity = fidelity;
+            return;
+        }
+    }
+    if (fidelity_count_ < MAX_FIDELITY_ZONES)
+        fidelity_[fidelity_count_++] = { zone_id, fidelity };
+}
+
+SimFidelity OffscreenNpcDatabase::GetZoneFidelity(uint16_t zone_id) const noexcept {
+    for (int i = 0; i < fidelity_count_; ++i)
+        if (fidelity_[i].zone_id == zone_id) return fidelity_[i].fidelity;
+    return SimFidelity::High;  // default
 }
 
 // ── Zone NPC persistence ──────────────────────────────────────────────────────

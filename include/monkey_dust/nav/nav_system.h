@@ -68,6 +68,22 @@ public:
         return rebuild_queue_.head_.load() != rebuild_queue_.tail_.load();
     }
 
+    // ── DetourTileCache stub (Recast DetourTileCache API — future sprint) ────────
+    // Source: github.com/recastnavigation/recastnavigation → DetourTileCache
+    // Enables streaming navmesh: tiles added/removed as player explores world.
+    // Full impl requires dtTileCache + dtTileCacheMeshProcess + obstacle baking.
+    // Current status: monolithic navmesh (Init loads entire map once).
+    //
+    // Planned API (wire when upgrading to tile streaming):
+    //   bool InitTileCache(float tile_size, float world_r);
+    //   bool AddTile(int tile_x, int tile_z, const float* verts, int nv,
+    //                const int* tris, int nt);           // on chunk load
+    //   void RemoveTile(int tile_x, int tile_z);         // on chunk unload
+    //   void UpdateObstacles();                          // bake dynamic obstacles
+    //
+    // Benefit: per-zone navmesh streaming matches chunk streaming (PERF-9 range query).
+    // Prerequisite: chunk_manager.h needs tile_x/z lookup for each chunk.
+
 private:
     NavSystem() = default;
 

@@ -17,6 +17,17 @@ enum class OffscreenTask : uint8_t {
     Trade  = 3,
 };
 
+// pikkoserver SimFidelity pattern — zone-based simulation detail level.
+// High: full hunger/fatigue/schedule + patrol drift (current default, <600m).
+// Low:  hunger-only tick, no position update (600m–2000m, less important zones).
+// Dormant: no simulation at all (>2000m, unvisited far zones).
+// Set per zone_id via SetZoneFidelity(). Resets to High when zone enters view range.
+enum class SimFidelity : uint8_t {
+    High    = 0,  // full tick: needs + schedule + patrol drift
+    Low     = 1,  // hunger only: no movement, no schedule
+    Dormant = 2,  // no tick: state frozen until zone re-enters range
+};
+
 struct OffscreenNpcState {
     float    position[3];                    // world-space XYZ           12B
     uint32_t entity_uid;                     // for respawn continuity     4B
@@ -57,6 +68,12 @@ public:
     // Remove all offscreen NPCs belonging to a given zone.
     void PurgeZone(uint16_t zone_id) noexcept;
 
+    // pikkoserver pattern: set simulation fidelity for a zone.
+    // Call when player moves away from / toward a zone.
+    // Default is High for all zones until explicitly downgraded.
+    void SetZoneFidelity(uint16_t zone_id, SimFidelity fidelity) noexcept;
+    SimFidelity GetZoneFidelity(uint16_t zone_id) const noexcept;
+
     // Zone NPC persistence — saves/zone_NNNN.onpc binary files.
     // SaveZone: write entries for zone_id → saves_dir/zone_NNNN.onpc.
     //   Call BEFORE PurgeZone so data is not lost on zone shift.
@@ -88,4 +105,11 @@ private:
     OffscreenNpcState entries_[MAX_OFFSCREEN_NPCS];
     int               count_ = 0;
     uint32_t          uid_counter_ = 1;     // monotonic; 0 = invalid
+
+    // pikkoserver fidelity map: zone_id → SimFidelity.
+    // Fixed-size to avoid allocation; zones beyond MAX_FIDELITY_ZONES use High.
+    static constexpr int MAX_FIDELITY_ZONES = 512;
+    struct FidelityEntry { uint16_t zone_id; SimFidelity fidelity; };
+    FidelityEntry fidelity_[MAX_FIDELITY_ZONES] = {};
+    int           fidelity_count_ = 0;
 };

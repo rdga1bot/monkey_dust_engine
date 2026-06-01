@@ -136,6 +136,8 @@ public:
 
     bool Create(const Desc& desc);
     void Destroy();
+    // Re-read SPV from disk and recreate pipeline. Safe to call mid-frame on next frame boundary.
+    bool Reload();
 
     // OpenGL: glGetUniformLocation. SDL_GPU: always returns -1 (use PushUniforms instead).
     int UniformLoc(const char* name) const;
@@ -149,6 +151,7 @@ private:
     SDL_GPUGraphicsPipeline* sdl_pipeline_ = nullptr;
 #endif
     GpuRasterState raster_ = {};
+    Desc           desc_   = {};  // stored at Create() for Reload()
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -566,5 +569,7 @@ private:
 // MdSpvCache_Shutdown(): frees all cached bytecode buffers. Call at app exit.
 // MdSpvCache_Stats(out): returns total cached count; fills *out if non-null.
 void MdSpvCache_Shutdown();
+// Evict one SPIR-V entry so the next Create/Reload re-reads it from disk.
+void MdSpvCache_Invalidate(const char* glsl_path);
 int  MdSpvCache_Stats(int* out_count = nullptr);
 

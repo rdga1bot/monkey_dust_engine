@@ -142,6 +142,21 @@ bool SkinMesh::LoadGLB(const char* path) {
         }
     if (!prim) { fprintf(stderr,"[SkinMesh] no valid prim: %s\n",path); cgltf_free(data); return false; }
 
+    // Validate expected attributes — missing normals → vN = (0,0,0) → normalize = NaN → white.
+    {
+        bool hp=false,hn=false,hj=false,hw=false;
+        for (cgltf_size ai=0;ai<prim->attributes_count;++ai) {
+            auto t=prim->attributes[ai].type;
+            if(t==cgltf_attribute_type_position) hp=true;
+            if(t==cgltf_attribute_type_normal)   hn=true;
+            if(t==cgltf_attribute_type_joints)   hj=true;
+            if(t==cgltf_attribute_type_weights)  hw=true;
+        }
+        if(!hn) fprintf(stderr,"[SkinMesh] WARN %s: no NORMAL — shader will produce NaN normals\n",path);
+        if(!hj) fprintf(stderr,"[SkinMesh] WARN %s: no JOINTS — bone skinning disabled\n",path);
+        if(!hw) fprintf(stderr,"[SkinMesh] WARN %s: no WEIGHTS — bone skinning disabled\n",path);
+    }
+
     cgltf_accessor *pos_acc=nullptr,*nor_acc=nullptr,*uv_acc=nullptr,*jnt_acc=nullptr,*wgt_acc=nullptr;
     for (cgltf_size ai = 0; ai < prim->attributes_count; ++ai) {
         auto& a = prim->attributes[ai];
@@ -196,8 +211,11 @@ bool SkinMesh::LoadGLB(const char* path) {
         int names_found = 0;
         s_parse_morph_names(extras_json, morph_names_, n_targets, &names_found);
 
+        // VBfA RE §9.2 — 16-byte aligned alloc for SIMD-ready morph delta storage.
         size_t delta_floats = (size_t)n_targets * nv * 3;
-        morph_deltas_ = (float*)calloc(delta_floats, sizeof(float));
+        size_t delta_bytes  = delta_floats * sizeof(float);
+        morph_deltas_ = (float*)aligned_alloc(16, (delta_bytes + 15) & ~(size_t)15);
+        if (morph_deltas_) memset(morph_deltas_, 0, delta_bytes);
         if (morph_deltas_) {
             for (int mt = 0; mt < n_targets; ++mt) {
                 cgltf_morph_target& tgt = prim->targets[mt];

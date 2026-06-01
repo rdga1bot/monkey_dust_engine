@@ -115,6 +115,18 @@ static void MakeSpvPath(char* out, size_t out_sz, const char* glsl_path) {
     snprintf(out, out_sz, "shaders/spirv/%s.spv", name);
 }
 
+void MdSpvCache_Invalidate(const char* glsl_path) {
+    char spv[256]; MakeSpvPath(spv, sizeof(spv), glsl_path);
+    uint32_t h = SpvHash(spv);
+    for (int i = 0; i < SPV_CACHE_MAX; ++i) {
+        if (s_spv_cache[i].used && s_spv_cache[i].hash == h) {
+            free(s_spv_cache[i].data);
+            s_spv_cache[i] = {};
+            return;
+        }
+    }
+}
+
 static SDL_GPUVertexElementFormat ToSDLFmt(GpuAttribFmt f) {
     switch (f) {
     case GpuAttribFmt::F1:        return SDL_GPU_VERTEXELEMENTFORMAT_FLOAT;
@@ -188,6 +200,7 @@ bool GpuPipeline::Create(const Desc& desc) {
         MD_LOG(MD_LOG_WARNING, "[GpuPipeline] Create: null shader paths");
         return false;
     }
+    desc_   = desc;
     raster_ = desc.raster;
 
 #ifdef MD_SDL_GPU
@@ -326,6 +339,19 @@ void GpuPipeline::Destroy() {
         sdl_pipeline_ = nullptr;
     }
 #endif
+}
+
+bool GpuPipeline::Reload() {
+    if (!desc_.vert_path || !desc_.frag_path) return false;
+    MdSpvCache_Invalidate(desc_.vert_path);
+    MdSpvCache_Invalidate(desc_.frag_path);
+    Destroy();
+    bool ok = Create(desc_);
+    if (ok)
+        fprintf(stdout, "[GpuPipeline] Reloaded: %s + %s\n", desc_.vert_path, desc_.frag_path);
+    else
+        fprintf(stderr, "[GpuPipeline] Reload FAILED: %s + %s\n", desc_.vert_path, desc_.frag_path);
+    return ok;
 }
 
 int GpuPipeline::UniformLoc(const char* name) const {

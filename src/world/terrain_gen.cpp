@@ -112,36 +112,79 @@ void TerrainAtlas_SmoothBoundaries() {
     // N=15: worst 71° cliff (22.9m/7.8m step) → ≤10° per step, NdotL≥0.65 → indistinguishable from flat.
     constexpr int N = 15;
 
-    // X-direction seams: right edge of zone (zx) = left edge of zone (zx+1)
+    // X-direction seams: average col=64 of zone(zx) with col=0 of zone(zx+1),
+    // then smooth N interior verts on each side toward that shared average.
+    // This ensures the shared boundary vertex is identical in both chunks.
     for (int zy = 0; zy < ATLAS_ZONES; ++zy) {
         for (int zx = 0; zx < ATLAS_ZONES - 1; ++zx) {
             for (int row = 0; row < ATLAS_VERTS; ++row) {
-                float h_bnd = s_atlas_h[s_atlas_hi(zx, zy, ATLAS_VERTS-1, row)];
+                float& h_left  = s_atlas_h[s_atlas_hi(zx,   zy, ATLAS_VERTS-1, row)]; // col=64 of A
+                float& h_right = s_atlas_h[s_atlas_hi(zx+1, zy, 0,             row)]; // col=0  of B
+                float h_bnd = (h_left + h_right) * 0.5f;  // average → shared vertex
+                h_left  = h_bnd;
+                h_right = h_bnd;
                 for (int k = 1; k <= N; ++k) {
                     float t = (float)k / (N + 1);
-                    // Smooth interior of right zone toward boundary
-                    float& hr = s_atlas_h[s_atlas_hi(zx+1, zy, k, row)];
+                    float& hr = s_atlas_h[s_atlas_hi(zx+1, zy, k,             row)];
                     hr = (1.f-t)*h_bnd + t*hr;
-                    // Smooth interior of left zone toward boundary
-                    float& hl = s_atlas_h[s_atlas_hi(zx, zy, ATLAS_VERTS-1-k, row)];
+                    float& hl = s_atlas_h[s_atlas_hi(zx,   zy, ATLAS_VERTS-1-k, row)];
                     hl = (1.f-t)*h_bnd + t*hl;
                 }
             }
         }
     }
 
-    // Z-direction seams: top edge of zone (zy) = bottom edge of zone (zy+1)
+    // Z-direction seams: average row=64 of zone(zy) with row=0 of zone(zy+1).
     for (int zy = 0; zy < ATLAS_ZONES - 1; ++zy) {
         for (int zx = 0; zx < ATLAS_ZONES; ++zx) {
             for (int col = 0; col < ATLAS_VERTS; ++col) {
-                float h_bnd = s_atlas_h[s_atlas_hi(zx, zy, col, ATLAS_VERTS-1)];
+                float& h_bot = s_atlas_h[s_atlas_hi(zx, zy,   col, ATLAS_VERTS-1)]; // row=64 of A
+                float& h_top = s_atlas_h[s_atlas_hi(zx, zy+1, col, 0            )]; // row=0  of B
+                float h_bnd = (h_bot + h_top) * 0.5f;
+                h_bot = h_bnd;
+                h_top = h_bnd;
                 for (int k = 1; k <= N; ++k) {
                     float t = (float)k / (N + 1);
-                    float& ht = s_atlas_h[s_atlas_hi(zx, zy+1, col, k)];
+                    float& ht = s_atlas_h[s_atlas_hi(zx, zy+1, col, k            )];
                     ht = (1.f-t)*h_bnd + t*ht;
-                    float& hb = s_atlas_h[s_atlas_hi(zx, zy, col, ATLAS_VERTS-1-k)];
+                    float& hb = s_atlas_h[s_atlas_hi(zx, zy,   col, ATLAS_VERTS-1-k)];
                     hb = (1.f-t)*h_bnd + t*hb;
                 }
+            }
+        }
+    }
+}
+
+void TerrainAtlas_StitchEdge(int zx, int zy, int dir) {
+    if (!s_atlas_loaded) return;
+    if (zx < 0 || zy < 0 || zx >= ATLAS_ZONES || zy >= ATLAS_ZONES) return;
+    constexpr int N = 15;
+    if (dir == 0 && zx < ATLAS_ZONES - 1) {
+        for (int row = 0; row < ATLAS_VERTS; ++row) {
+            float& h_left  = s_atlas_h[s_atlas_hi(zx,   zy, ATLAS_VERTS-1, row)];
+            float& h_right = s_atlas_h[s_atlas_hi(zx+1, zy, 0,             row)];
+            float h_bnd = (h_left + h_right) * 0.5f;
+            h_left = h_bnd; h_right = h_bnd;
+            for (int k = 1; k <= N; ++k) {
+                float t = (float)k / (N + 1);
+                float& hr = s_atlas_h[s_atlas_hi(zx+1, zy, k,             row)];
+                hr = (1.f - t) * h_bnd + t * hr;
+                float& hl = s_atlas_h[s_atlas_hi(zx,   zy, ATLAS_VERTS-1-k, row)];
+                hl = (1.f - t) * h_bnd + t * hl;
+            }
+        }
+    } else if (dir == 1 && zy < ATLAS_ZONES - 1) {
+        for (int col = 0; col < ATLAS_VERTS; ++col) {
+            float& h_bot = s_atlas_h[s_atlas_hi(zx, zy,   col, ATLAS_VERTS-1)];
+            float& h_top = s_atlas_h[s_atlas_hi(zx, zy+1, col, 0            )];
+            float h_bnd = (h_bot + h_top) * 0.5f;
+            h_bot = h_bnd; h_top = h_bnd;
+            for (int k = 1; k <= N; ++k) {
+                float t = (float)k / (N + 1);
+                float& ht = s_atlas_h[s_atlas_hi(zx, zy+1, col, k)];
+                ht = (1.f - t) * h_bnd + t * ht;
+                float& hb = s_atlas_h[s_atlas_hi(zx, zy,   col, ATLAS_VERTS-1-k)];
+                hb = (1.f - t) * h_bnd + t * hb;
             }
         }
     }
@@ -430,6 +473,9 @@ static uint16_t      s_idx_buf  [TERRAIN_IDX];
 // separate float[] nav positions (x,y,z per vert)
 static float         s_nav_pos  [TERRAIN_VERTS * 3];
 static int           s_nav_tri  [TERRAIN_IDX];   // same indices, cast to int
+// Item 7: skirt staging buffers (4 edges × 65 × 2 verts, 4 × 64 × 6 indices)
+static TerrainVertex s_skirt_v  [TERRAIN_SKIRT_VERTS];  // 520 verts
+static uint16_t      s_skirt_i  [TERRAIN_SKIRT_IDX];    // 1536 indices
 
 // Load r32 heightmap file into a flat buffer (width*height floats).
 // Returns false on error. Caller owns buffer (use delete[]).
@@ -501,12 +547,30 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             }
         }
         if (!loaded) {
-            fprintf(stdout, "[TerrainGen] zone %d/%d missing — noise fallback\n", zx, zy);
-            TerrainGenParams fp = p;
-            fp.zone_origin_x = -1;
-            for (int row = 0; row <= TERRAIN_GRID; ++row)
-                for (int col = 0; col <= TERRAIN_GRID; ++col)
-                    out.heightmap.h[s_idx(col, row)] = s_gen_height(col, row, coord, fp);
+            // Item 3: atlas height fallback — copy border row/col from nearest loaded neighbor
+            // instead of dropping to h=0 (which creates a visible void/cliff at atlas edge).
+            bool neighbor_found = false;
+            const int try_dx[] = { 1, -1, 0,  0 };
+            const int try_dz[] = { 0,  0, 1, -1 };
+            for (int d = 0; d < 4 && !neighbor_found; ++d) {
+                int nx = zx + try_dx[d], nz = zy + try_dz[d];
+                if (nx < 0 || nx >= ATLAS_ZONES || nz < 0 || nz >= ATLAS_ZONES) continue;
+                if (s_atlas_hmax[s_atlas_zi(nx, nz)] - s_atlas_hmin[s_atlas_zi(nx, nz)] < 0.1f) continue;
+                // Clone neighbor heights into this zone
+                for (int row = 0; row <= TERRAIN_GRID; ++row)
+                    for (int col = 0; col <= TERRAIN_GRID; ++col)
+                        out.heightmap.h[s_idx(col, row)] =
+                            s_atlas_h[s_atlas_hi(nx, nz, col, row)];
+                neighbor_found = true;
+            }
+            if (!neighbor_found) {
+                fprintf(stdout, "[TerrainGen] zone %d/%d missing — noise fallback\n", zx, zy);
+                TerrainGenParams fp = p;
+                fp.zone_origin_x = -1;
+                for (int row = 0; row <= TERRAIN_GRID; ++row)
+                    for (int col = 0; col <= TERRAIN_GRID; ++col)
+                        out.heightmap.h[s_idx(col, row)] = s_gen_height(col, row, coord, fp);
+            }
         }
     } else if (!p.force_noise && p.heightmap_r32) {
         // Load Kenshi heightmap and sample heights for this chunk
@@ -827,6 +891,37 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     }
 #endif
 
+    // ── Item 7: Geometry skirt ────────────────────────────────────────────────────
+    // Hang 2m-deep quads from each edge to close gaps between adjacent chunks.
+    // 4 edges × (TERRAIN_GRID+1) × 2 verts; indices are skirt-local (0-based).
+    {
+        const float SKIRT_DROP = 2.0f;
+        int sv = 0, si = 0;
+
+        auto add_strip = [&](int col0, int row0, int dc, int dr) {
+            uint16_t base = (uint16_t)sv;
+            for (int k = 0; k <= TERRAIN_GRID; ++k) {
+                int col = col0 + dc * k, row = row0 + dr * k;
+                int vi = s_idx(col, row);
+                s_skirt_v[sv]   = s_verts_buf[vi];                   // top
+                s_skirt_v[sv+1] = s_verts_buf[vi];                   // bottom
+                s_skirt_v[sv+1].y      -= SKIRT_DROP;
+                s_skirt_v[sv+1].morph_y -= SKIRT_DROP;
+                sv += 2;
+                if (k < TERRAIN_GRID) {
+                    uint16_t t = base + (uint16_t)(k * 2);
+                    s_skirt_i[si++] = t;     s_skirt_i[si++] = t+1; s_skirt_i[si++] = t+2;
+                    s_skirt_i[si++] = t+2;   s_skirt_i[si++] = t+1; s_skirt_i[si++] = t+3;
+                }
+            }
+        };
+
+        add_strip(0,            0,            1, 0);  // South edge (row=0)
+        add_strip(0,            TERRAIN_GRID, 1, 0);  // North edge (row=GRID)
+        add_strip(0,            0,            0, 1);  // West  edge (col=0)
+        add_strip(TERRAIN_GRID, 0,            0, 1);  // East  edge (col=GRID)
+    }
+
     out.coord    = coord;
     out.center_x = p.world_offset_x + coord.x * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
     out.center_z = p.world_offset_z + coord.z * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
@@ -842,8 +937,10 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
 // Accessors for the staging buffers — used by terrain_upload.cpp (GPU side).
 // Kept here so GPU code does not share this translation unit (avoids pulling
 // glad symbols into test binaries that only call TerrainGen_Build).
-const TerrainVertex* TerrainGen_StagedVerts()   { return s_verts_buf; }
-const uint16_t*      TerrainGen_StagedIndices() { return s_idx_buf;   }
+const TerrainVertex* TerrainGen_StagedVerts()         { return s_verts_buf; }
+const uint16_t*      TerrainGen_StagedIndices()       { return s_idx_buf;   }
+const TerrainVertex* TerrainGen_StagedSkirtVerts()    { return s_skirt_v;   }
+const uint16_t*      TerrainGen_StagedSkirtIndices()  { return s_skirt_i;   }
 
 // ── TerrainChunk::SampleHeight ────────────────────────────────────────────────
 

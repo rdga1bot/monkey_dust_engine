@@ -77,6 +77,25 @@ public:
         // 64 bytes total
     };
 
+    // UBOs for GPU Synthesis pipeline (terrain_synth.vert/frag).
+    struct SynthVertUBO {
+        float vp[16];        // 64
+        float world_ox;      // world origin X (metres)
+        float world_oz;      // world origin Z (metres)
+        float world_size;    // world extent (metres)
+        float height_max;    // max height (metres)
+        float cam_pos[4];    // xyz=camera, w=unused
+        float grid_n;        // float(SYNTH_N)
+        float _pad[3];
+        // 112 bytes total
+    };
+    struct SynthFragUBO {
+        float sun_dir_str[4];  // 16
+        float ambient[4];      // 16
+        float world_params[4]; // xy=world_ox/oz, z=world_to_uv, w=unused
+        // 48 bytes total
+    };
+
     bool Init();
     void Shutdown();
 
@@ -130,6 +149,32 @@ public:
 
     bool IsReady()    const;
     bool IsPomReady() const;
+    bool IsSynthReady() const;
+
+    // GPU Synthesis: one draw call for the full world.
+    // heights: R8 pixel data (height/height_max * 255), tex_w x tex_h.
+    // Call once after terrain is loaded; uses existing kenshi colour overlay.
+    bool InitSynth(const uint8_t* heights, int tex_w, int tex_h,
+                   float world_ox, float world_oz,
+                   float world_size, float height_max,
+                   int grid_n = 512);
+    void ShutdownSynth();
+    void DrawSynth(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                   const float* vp16, const SunParams& sun,
+                   float cam_x, float cam_y, float cam_z,
+                   float world_origin_x, float world_origin_z,
+                   float world_to_uv);
+
+    // Batch API: hoists pipeline/UBO/sampler/IBO outside the per-chunk loop.
+    // Reduces API calls from 6/chunk to 2/chunk for large worlds.
+    // BeginRawBatch: bind pipeline, push vertex+frag UBO, bind sampler, bind shared IBO.
+    // DrawRawChunk:  bind VBO + draw (2 calls per chunk).
+    void BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                       const float* vp16, const SunParams& sun,
+                       float world_origin_x, float world_origin_z,
+                       float world_to_uv, int lod);
+    void DrawRawChunk(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                      const TerrainChunk& chunk);
 
 private:
     GpuPipeline pipeline_;
@@ -142,6 +187,20 @@ private:
     GpuTexture  tex_detail_;   // RGB=detail tint, A=height [0,1]; tiling detail texture
     PomParams   pom_params_;
     bool        pom_loaded_ = false;
+
+    // Shared LOD IBOs — one per LOD level, built in Init(), reused by all chunks.
+    GpuStaticBuffer lod_ibo_shared_[TERRAIN_LOD_LEVELS];
+    uint32_t        batch_idx_count_ = 0;  // set by BeginRawBatch
+
+    // GPU Synthesis pipeline data
+    GpuPipeline     synth_pipeline_;
+    GpuStaticBuffer synth_ibo_;         // uint32 IBO for SYNTH_N × SYNTH_N grid
+    GpuTexture      synth_hmap_;        // R8 heightmap texture
+    int             synth_grid_n_  = 0;
+    float           synth_world_ox_  = 0.f;
+    float           synth_world_oz_  = 0.f;
+    float           synth_world_size_= 0.f;
+    float           synth_height_max_= 280.f;
 
 #ifdef MD_SDL_GPU
     SDL_GPUTexture* fallback_tex_            = nullptr;

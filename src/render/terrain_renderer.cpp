@@ -53,7 +53,27 @@ bool TerrainRenderer::Init() {
     }
 #endif
 
-    return pipeline_.Create(pd);
+    if (!pipeline_.Create(pd)) return false;
+
+#ifdef MD_SDL_GPU
+    // Shared LOD IBOs — built once, reused by BeginRawBatch for all chunks.
+    static uint16_t s_tmp[6144];
+    for (int li = 0; li < TERRAIN_LOD_LEVELS; ++li) {
+        int step = TERRAIN_LOD_STEPS[li];
+        int G = TERRAIN_GRID / step, S = TERRAIN_GRID + 1, ii = 0;
+        for (int row = 0; row < G; ++row)
+            for (int col = 0; col < G; ++col) {
+                uint16_t bl=(uint16_t)(row*step*S+col*step);
+                uint16_t br=(uint16_t)(row*step*S+col*step+step);
+                uint16_t tl=(uint16_t)((row+1)*step*S+col*step);
+                uint16_t tr=(uint16_t)((row+1)*step*S+col*step+step);
+                s_tmp[ii++]=bl; s_tmp[ii++]=br; s_tmp[ii++]=tl;
+                s_tmp[ii++]=br; s_tmp[ii++]=tr; s_tmp[ii++]=tl;
+            }
+        lod_ibo_shared_[li].Init(0x8893u, s_tmp, sizeof(uint16_t)*TERRAIN_LOD_IDX[li]);
+    }
+#endif
+    return true;
 }
 
 void TerrainRenderer::Shutdown() {
@@ -362,6 +382,15 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     SDL_BindGPUFragmentSamplers(rp, 0, bindings, 1);
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
+
+    // Skirt only for LOD=0 (ground-level view). Distant chunks never need it.
+    if (lod_clamped == 0 && chunk.skirt_vbo.SDLBuffer() && chunk.skirt_ibo.SDLBuffer()) {
+        SDL_GPUBufferBinding skirt_vb { chunk.skirt_vbo.SDLBuffer(), 0u };
+        SDL_BindGPUVertexBuffers(rp, 0, &skirt_vb, 1);
+        SDL_GPUBufferBinding skirt_ib { chunk.skirt_ibo.SDLBuffer(), 0u };
+        SDL_BindGPUIndexBuffer(rp, &skirt_ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+        SDL_DrawGPUIndexedPrimitives(rp, (uint32_t)TERRAIN_SKIRT_IDX, 1, 0, 0, 0);
+    }
 #endif
 }
 
@@ -407,5 +436,196 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     cb.BindFragmentSamplers(0, bindings, 1);
 
     SDL_DrawGPUIndexedPrimitives(cb.SDLPass(), TERRAIN_IDX, 1, 0, 0, 0);
+#endif
+}
+
+void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                                     const float* vp16, const SunParams& sun,
+                                     float world_origin_x, float world_origin_z,
+                                     float world_to_uv, int lod)
+{
+#ifdef MD_SDL_GPU
+    if (!IsReady()) return;
+    int lod_clamped = (lod < 1) ? 1 : (lod > TERRAIN_LOD_LEVELS) ? TERRAIN_LOD_LEVELS : lod;
+
+    SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
+
+    TerrainVertUBO vubo;
+    memcpy(vubo.vp, vp16, 64);
+    vubo.world_origin_x = world_origin_x;
+    vubo.world_origin_z = world_origin_z;
+    vubo.world_to_uv    = world_to_uv;
+    vubo._pad           = 0.f;
+    SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
+
+    TerrainFragUBO fubo;
+    fubo.sun_dir_str[0]=sun.dir[0]; fubo.sun_dir_str[1]=sun.dir[1];
+    fubo.sun_dir_str[2]=sun.dir[2]; fubo.sun_dir_str[3]=sun.strength;
+    fubo.ambient[0]=sun.ambient[0]; fubo.ambient[1]=sun.ambient[1];
+    fubo.ambient[2]=sun.ambient[2]; fubo.ambient[3]=0.f;
+    fubo.world_params[0]=world_origin_x; fubo.world_params[1]=world_origin_z;
+    fubo.world_params[2]=world_to_uv;    fubo.world_params[3]=0.f;
+    SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
+
+    SDL_GPUTextureSamplerBinding bindings[1];
+    FillSamplerBindings(bindings);
+    if (bindings[0].texture && bindings[0].sampler)
+        SDL_BindGPUFragmentSamplers(rp, 0, bindings, 1);
+
+    if (lod_ibo_shared_[lod_clamped-1].SDLBuffer()) {
+        SDL_GPUBufferBinding ib { lod_ibo_shared_[lod_clamped-1].SDLBuffer(), 0u };
+        SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+    }
+    batch_idx_count_ = (uint32_t)TERRAIN_LOD_IDX[lod_clamped-1];
+#endif
+}
+
+void TerrainRenderer::DrawRawChunk(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                                    const TerrainChunk& chunk)
+{
+#ifdef MD_SDL_GPU
+    if (!chunk.loaded || !chunk.vbo.SDLBuffer()) return;
+    SDL_GPUBufferBinding vb { chunk.vbo.SDLBuffer(), 0u };
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_DrawGPUIndexedPrimitives(rp, batch_idx_count_, 1, 0, 0, 0);
+#endif
+}
+
+// ── GPU Synthesis ─────────────────────────────────────────────────────────────
+
+bool TerrainRenderer::IsSynthReady() const {
+#ifdef MD_SDL_GPU
+    return synth_grid_n_ > 0 && synth_pipeline_.SDLPipeline() && synth_ibo_.SDLBuffer();
+#else
+    return false;
+#endif
+}
+
+bool TerrainRenderer::InitSynth(const uint8_t* heights, int tex_w, int tex_h,
+                                 float world_ox, float world_oz,
+                                 float world_size, float height_max, int grid_n)
+{
+    ShutdownSynth();
+    synth_grid_n_   = grid_n;
+    synth_world_ox_ = world_ox;
+    synth_world_oz_ = world_oz;
+    synth_world_size_= world_size;
+    synth_height_max_= height_max;
+
+    GpuPipeline::Desc pd;
+    pd.vert_path = "shaders/terrain_synth.vert";
+    pd.frag_path = "shaders/terrain_synth.frag";
+    pd.layout.count  = 0;    // no vertex attributes — positions computed in shader
+    pd.layout.stride = 0;
+    pd.vert_samplers     = 1;  // set=0 b=0: heightmap
+    pd.vert_uniform_bufs = 1;  // set=1 b=0: SynthVertUBO
+    pd.frag_samplers     = 1;  // set=2 b=0: kenshi colour overlay
+    pd.frag_uniform_bufs = 1;  // set=3 b=0: SynthFragUBO
+    pd.raster.depth_test  = true;
+    pd.raster.depth_write = true;
+    pd.raster.cull_back   = false;
+    pd.has_depth_target   = true;
+    if (!synth_pipeline_.Create(pd)) {
+        fprintf(stderr, "[Terrain] synth pipeline failed\n");
+        return false;
+    }
+
+    // Build uint32 IBO for grid_n × grid_n quads
+    const int N1 = grid_n + 1;
+    const int idx_count = grid_n * grid_n * 6;
+    uint32_t* idx = new uint32_t[idx_count];
+    int ii = 0;
+    for (int row = 0; row < grid_n; ++row)
+        for (int col = 0; col < grid_n; ++col) {
+            uint32_t bl = (uint32_t)(row * N1 + col);
+            uint32_t br = bl + 1;
+            uint32_t tl = bl + (uint32_t)N1;
+            uint32_t tr = tl + 1;
+            idx[ii++]=bl; idx[ii++]=br; idx[ii++]=tl;
+            idx[ii++]=br; idx[ii++]=tr; idx[ii++]=tl;
+        }
+    synth_ibo_.Init(0x8893u, idx, sizeof(uint32_t) * idx_count);
+    delete[] idx;
+
+    // Upload heightmap texture (RGBA8, height in R channel)
+    GpuSamplerDesc sd;
+    sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP;
+    sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    sd.wrap_s = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    sd.wrap_t = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    sd.gen_mipmap = true;
+    sd.flip_v     = false;
+    if (!synth_hmap_.InitFromMemory(heights, tex_w, tex_h, sd)) {
+        fprintf(stderr, "[Terrain] synth heightmap texture failed\n");
+        return false;
+    }
+    fprintf(stdout, "[Terrain] GPU Synthesis ready: %dx%d grid, %dx%d hmap\n",
+            grid_n, grid_n, tex_w, tex_h);
+    return true;
+}
+
+void TerrainRenderer::ShutdownSynth() {
+    synth_pipeline_.Destroy();
+    synth_ibo_.Shutdown();
+    synth_hmap_.Shutdown();
+    synth_grid_n_ = 0;
+}
+
+void TerrainRenderer::DrawSynth(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                                 const float* vp16, const SunParams& sun,
+                                 float cam_x, float cam_y, float cam_z,
+                                 float world_origin_x, float world_origin_z,
+                                 float world_to_uv)
+{
+#ifdef MD_SDL_GPU
+    if (!IsSynthReady()) return;
+
+    SDL_BindGPUGraphicsPipeline(rp, synth_pipeline_.SDLPipeline());
+
+    // No VBO — bind dummy empty buffer to avoid driver warnings
+    SDL_GPUBufferBinding dummy_vb { nullptr, 0u };
+    SDL_BindGPUVertexBuffers(rp, 0, &dummy_vb, 0);
+
+    SDL_GPUBufferBinding ib { synth_ibo_.SDLBuffer(), 0u };
+    SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    // Vertex sampler: heightmap
+    SDL_GPUTextureSamplerBinding hmap_binding {
+        synth_hmap_.SDLTexture(), synth_hmap_.SDLSampler()
+    };
+    if (!hmap_binding.texture || !hmap_binding.sampler) return;
+    SDL_BindGPUVertexSamplers(rp, 0, &hmap_binding, 1);
+
+    // Vertex UBO
+    SynthVertUBO vubo;
+    memcpy(vubo.vp, vp16, 64);
+    vubo.world_ox    = synth_world_ox_;
+    vubo.world_oz    = synth_world_oz_;
+    vubo.world_size  = synth_world_size_;
+    vubo.height_max  = synth_height_max_;
+    vubo.cam_pos[0]  = cam_x; vubo.cam_pos[1] = cam_y;
+    vubo.cam_pos[2]  = cam_z; vubo.cam_pos[3] = 0.f;
+    vubo.grid_n      = (float)synth_grid_n_;
+    vubo._pad[0] = vubo._pad[1] = vubo._pad[2] = 0.f;
+    SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
+
+    // Fragment sampler: kenshi colour overlay
+    SDL_GPUTextureSamplerBinding colour_binding;
+    FillSamplerBindings(&colour_binding);
+    if (!colour_binding.texture || !colour_binding.sampler) return;
+    SDL_BindGPUFragmentSamplers(rp, 0, &colour_binding, 1);
+
+    // Fragment UBO
+    SynthFragUBO fubo;
+    fubo.sun_dir_str[0]=sun.dir[0]; fubo.sun_dir_str[1]=sun.dir[1];
+    fubo.sun_dir_str[2]=sun.dir[2]; fubo.sun_dir_str[3]=sun.strength;
+    fubo.ambient[0]=sun.ambient[0]; fubo.ambient[1]=sun.ambient[1];
+    fubo.ambient[2]=sun.ambient[2]; fubo.ambient[3]=0.f;
+    fubo.world_params[0]=world_origin_x; fubo.world_params[1]=world_origin_z;
+    fubo.world_params[2]=world_to_uv;    fubo.world_params[3]=0.f;
+    SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
+
+    uint32_t idx_count = (uint32_t)(synth_grid_n_ * synth_grid_n_ * 6);
+    SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
 #endif
 }

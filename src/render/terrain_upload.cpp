@@ -23,21 +23,43 @@ static void build_lod_ibo(uint16_t* out, int step)
     }
 }
 
-void TerrainGen_Upload(TerrainChunk& chunk)
+static void s_upload_core(TerrainChunk& chunk,
+                          const TerrainVertex* verts,
+                          const uint16_t*      idx,
+                          const TerrainVertex* skirt_v,
+                          const uint16_t*      skirt_i)
 {
-    chunk.vbo.Init(0x8892u /*GL_ARRAY_BUFFER*/,
-                   TerrainGen_StagedVerts(),
-                   sizeof(TerrainVertex) * TERRAIN_VERTS);
-    chunk.ibo.Init(0x8893u /*GL_ELEMENT_ARRAY_BUFFER*/,
-                   TerrainGen_StagedIndices(),
-                   sizeof(uint16_t) * TERRAIN_IDX);
+    chunk.vbo.Init(0x8892u, verts,   sizeof(TerrainVertex) * TERRAIN_VERTS);
+    chunk.ibo.Init(0x8893u, idx,     sizeof(uint16_t)      * TERRAIN_IDX);
 
     for (int li = 0; li < TERRAIN_LOD_LEVELS; ++li) {
         build_lod_ibo(s_lod_tmp, TERRAIN_LOD_STEPS[li]);
-        chunk.ibo_lod[li].Init(0x8893u,
-                               s_lod_tmp,
+        chunk.ibo_lod[li].Init(0x8893u, s_lod_tmp,
                                sizeof(uint16_t) * TERRAIN_LOD_IDX[li]);
     }
 
+    // Item 7: skirt geometry upload
+    chunk.skirt_vbo.Init(0x8892u, skirt_v, sizeof(TerrainVertex) * TERRAIN_SKIRT_VERTS);
+    chunk.skirt_ibo.Init(0x8893u, skirt_i, sizeof(uint16_t)      * TERRAIN_SKIRT_IDX);
+
     chunk.loaded = true;
+}
+
+void TerrainGen_Upload(TerrainChunk& chunk)
+{
+    s_upload_core(chunk,
+                  TerrainGen_StagedVerts(),
+                  TerrainGen_StagedIndices(),
+                  TerrainGen_StagedSkirtVerts(),
+                  TerrainGen_StagedSkirtIndices());
+}
+
+// Item 5: async upload — caller provides per-slot copies of staging data
+void TerrainGen_UploadFrom(TerrainChunk& chunk,
+                           const TerrainVertex* verts,
+                           const uint16_t*      idx,
+                           const TerrainVertex* skirt_v,
+                           const uint16_t*      skirt_i)
+{
+    s_upload_core(chunk, verts, idx, skirt_v, skirt_i);
 }

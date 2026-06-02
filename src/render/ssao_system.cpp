@@ -157,8 +157,9 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
         return out != nullptr;
     };
 
-    if (!make_rt(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, ssao_raw_)  ||
-        !make_rt(SDL_GPU_TEXTUREFORMAT_R8_UNORM,       blur_temp_) ||
+    if (!make_rt(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, view_normals_) ||
+        !make_rt(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, ssao_raw_)    ||
+        !make_rt(SDL_GPU_TEXTUREFORMAT_R8_UNORM,       blur_temp_)   ||
         !make_rt(SDL_GPU_TEXTUREFORMAT_R8_UNORM,       ssao_blurred_)) {
         MD_LOG(MD_LOG_WARNING, "SSAOSystem: R2 texture create failed: %s", SDL_GetError());
     }
@@ -184,8 +185,13 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
             MD_LOG(MD_LOG_WARNING, "SSAOSystem: pipeline create failed: %s", frag);
     };
 
+    // Prep1: linear_depth → view_normals (Sobel 3×3 normals pass)
+    if (view_normals_)
+        make_fs_pipe("shaders/ssao_prep1.frag",  1, 1,
+                     SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, prep1_pipeline_);
+    // Main: (linear_depth + view_normals) → ssao_raw  (2 samplers now)
     if (ssao_raw_)
-        make_fs_pipe("shaders/ssao_main.frag",   1, 1,
+        make_fs_pipe("shaders/ssao_main.frag",   2, 1,
                      SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, main_pipeline_);
     if (blur_temp_)
         make_fs_pipe("shaders/ssao_blur_h.frag", 1, 1,
@@ -284,6 +290,19 @@ static void FullscreenPass(SDL_GPUCommandBuffer* cmd, SDL_GPUGraphicsPipeline* p
     SDL_EndGPURenderPass(pass);
 }
 
+// ── VBfA 6-pass Prep1: Sobel 3×3 normals from linear_depth ──────────────────
+void SSAOSystem::Prep1Pass(SDL_GPUCommandBuffer* cmd,
+                            float inv_proj_x, float inv_proj_y) {
+    if (!enabled_ || !view_normals_ || !prep1_pipeline_.SDLPipeline()) return;
+    if (!linear_depth_) return;
+
+    SSAOPrep1UBO ubo = { inv_proj_x, inv_proj_y, 1.f/(float)half_w_, 1.f/(float)half_h_ };
+    SDL_GPUTextureSamplerBinding sb = { linear_depth_, linear_sampler_ };
+    FullscreenPass(cmd, prep1_pipeline_.SDLPipeline(),
+                   view_normals_, half_w_, half_h_,
+                   &sb, 1, &ubo, sizeof(ubo));
+}
+
 void SSAOSystem::MainPass(SDL_GPUCommandBuffer* cmd,
                           float inv_px, float inv_py) {
     if (!enabled_ || !ssao_raw_ || !main_pipeline_.SDLPipeline()) return;
@@ -299,10 +318,15 @@ void SSAOSystem::MainPass(SDL_GPUCommandBuffer* cmd,
     ubo.intensity    = 1.2f;
     ubo.fade_scale   = 1.f / 80.f;
 
-    SDL_GPUTextureSamplerBinding sb = { linear_depth_, linear_sampler_ };
+    // Two samplers: b=0 = linear_depth, b=1 = view_normals (from Prep1)
+    SDL_GPUTextureSamplerBinding sbs[2] = {
+        { linear_depth_, linear_sampler_ },
+        { view_normals_ ? view_normals_ : linear_depth_, linear_sampler_ }
+    };
+    int nsbs = view_normals_ ? 2 : 1;
     FullscreenPass(cmd, main_pipeline_.SDLPipeline(),
                    ssao_raw_, half_w_, half_h_,
-                   &sb, 1, &ubo, sizeof(ubo));
+                   sbs, nsbs, &ubo, sizeof(ubo));
 }
 
 void SSAOSystem::BlurPass(SDL_GPUCommandBuffer* cmd) {

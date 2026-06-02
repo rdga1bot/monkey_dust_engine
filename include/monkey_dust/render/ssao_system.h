@@ -36,16 +36,18 @@ public:
               float near_z = 0.1f, float far_z = 500.0f);
     void Shutdown();
 
-    // VBfA-R1: linearize HW depth → linear_depth R32F (half-res).
-    // hw_depth:   the scene depth texture after geometry pass (D24_UNORM_S8_UINT).
-    // hw_sampler: NEAREST+CLAMP sampler compatible with hw_depth.
-    // cmd must NOT be inside an active render pass.
+    // VBfA-R1 Prep0: linearize HW depth → linear_depth R32F (half-res).
     void PrepPass(SDL_GPUCommandBuffer* cmd,
                   SDL_GPUTexture*       hw_depth,
                   SDL_GPUSampler*       hw_sampler);
 
-    // VBfA-R2: full AO computation.
-    // MainPass: linear_depth → ssao_raw RGBA8 (R=AO, GB=packed edges).
+    // VBfA 6-pass Prep1: Sobel 3×3 normals from linear_depth → view_normals_ RGBA8.
+    // Call after PrepPass, before MainPass.
+    void Prep1Pass(SDL_GPUCommandBuffer* cmd,
+                   float inv_proj_x = 1.f, float inv_proj_y = 1.f);
+
+    // VBfA-R2: full AO computation. Now reads view_normals_ from Prep1.
+    // MainPass: (linear_depth + view_normals) → ssao_raw RGBA8.
     // BlurPass: ssao_raw → blur_temp_ (H) → ssao_blurred_ (V).
     // ApplyPass: draw fullscreen multiply-blend onto supplied swapchain texture.
     // inv_proj_x = 1/proj[0][0], inv_proj_y = 1/proj[1][1] from camera projection.
@@ -96,8 +98,12 @@ private:
     SDL_GPUSampler*   linear_sampler_= nullptr;  // BILINEAR for final reads
     SDL_GPUSampler*   point_sampler_ = nullptr;  // NEAREST for bilateral blur
 
+    // VBfA 6-pass: Prep1 — Sobel normals
+    GpuPipeline       prep1_pipeline_;           // linear_depth→view_normals (ssao_prep1.frag)
+    SDL_GPUTexture*   view_normals_  = nullptr;  // RGBA8 half-res (xyz=view normals packed)
+
     // VBfA-R2: AO textures + pipelines
-    GpuPipeline       main_pipeline_;            // depth→AO (ssao_main.frag)
+    GpuPipeline       main_pipeline_;            // (depth+normals)→AO (ssao_main.frag)
     GpuPipeline       blur_h_pipeline_;          // bilateral H (ssao_blur_h.frag)
     GpuPipeline       blur_v_pipeline_;          // bilateral V (ssao_blur_v.frag)
     GpuPipeline       apply_pipeline_;           // multiply onto swapchain (ssao_apply.frag)
@@ -123,6 +129,15 @@ struct SSAOPrepUBO {
     float _pad[2];
 };
 static_assert(sizeof(SSAOPrepUBO) == 16);
+
+// ── SSAOPrep1UBO (std140, 16B — matches ssao_prep1.frag) ──────────────────────
+struct SSAOPrep1UBO {
+    float inv_proj_x;
+    float inv_proj_y;
+    float pixel_w;
+    float pixel_h;
+};
+static_assert(sizeof(SSAOPrep1UBO) == 16);
 
 // ── SSAOMainUBO (std140, 40B — must match ssao_main.frag) ──────────────────────
 // PERF-17: AI.exe (Alien Isolation) RE found 4 SSAO params vs our 2.

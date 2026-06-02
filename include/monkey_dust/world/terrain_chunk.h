@@ -4,8 +4,9 @@
 #include <monkey_dust/nav/navmesh.h>
 #include <monkey_dust/world/chunk_def.h>
 
-// LOD IBO disabled in RD-4; always L0 64×64. Set to 1 to re-enable geomorphing.
-#define TERRAIN_GEOMORPH_ENABLED 0
+// Geomorphing: blends vertex Y toward coarser-LOD target beyond 420m (ramp 420–600m).
+// morph_y filled by TerrainGen_Build; consumed by terrain_pom.vert.
+#define TERRAIN_GEOMORPH_ENABLED 1
 
 // Terrain grid: 64×64 quads = 65×65 vertices per chunk (CHUNK_SIZE=500m → 7.8m/quad)
 static constexpr int   TERRAIN_GRID  = 64;
@@ -66,6 +67,10 @@ struct ChunkPropInstance {
 static_assert(sizeof(ChunkPropInstance) == 28, "ChunkPropInstance size");
 static constexpr int CHUNK_MAX_PROPS = 64;
 
+// Skirt geometry constants: 4 edges × (TERRAIN_GRID+1) × 2 verts (top+bottom)
+static constexpr int TERRAIN_SKIRT_VERTS = 4 * (TERRAIN_GRID + 1) * 2;  // 520
+static constexpr int TERRAIN_SKIRT_IDX   = 4 *  TERRAIN_GRID * 6;       // 1536
+
 struct TerrainChunk {
     ChunkCoord      coord;
     float           center_x = 0.f;    // world-space centre (set by TerrainGen_Build)
@@ -73,6 +78,8 @@ struct TerrainChunk {
     GpuStaticBuffer vbo;               // TerrainVertex * TERRAIN_VERTS
     GpuStaticBuffer ibo;               // uint16_t * TERRAIN_IDX  (L0: 64×64)
     GpuStaticBuffer ibo_lod[3];        // L1: 32×32, L2: 16×16, L3: 8×8
+    GpuStaticBuffer skirt_vbo;         // TerrainVertex * TERRAIN_SKIRT_VERTS (Item 7)
+    GpuStaticBuffer skirt_ibo;         // uint16_t * TERRAIN_SKIRT_IDX
     NavMesh         navmesh;
     TerrainHeightmap heightmap;        // CPU copy for height queries
     ChunkPropInstance props[CHUNK_MAX_PROPS];

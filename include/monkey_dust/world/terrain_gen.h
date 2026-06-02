@@ -15,6 +15,16 @@ void TerrainGen_Upload(TerrainChunk& chunk);
 // Valid only until the next TerrainGen_Build call.
 const TerrainVertex* TerrainGen_StagedVerts();
 const uint16_t*      TerrainGen_StagedIndices();
+const TerrainVertex* TerrainGen_StagedSkirtVerts();   // Item 7: skirt geometry
+const uint16_t*      TerrainGen_StagedSkirtIndices();
+
+// Async upload path (Item 5): upload from caller-provided buffers instead of
+// the shared static staging buffers (avoids race when worker thread reuses staging).
+void TerrainGen_UploadFrom(TerrainChunk& chunk,
+                           const TerrainVertex* verts,
+                           const uint16_t*      idx,
+                           const TerrainVertex* skirt_v,
+                           const uint16_t*      skirt_i);
 
 // Simplex noise — public domain (Stefan Gustavson / Ashima Arts).
 // grad4[] and permutation tables are file-internal; do not expose.
@@ -34,6 +44,10 @@ bool  TerrainAtlas_Loaded();                // true after successful Load
 // Kenshi fullmap zone-seam cliffs that create NdotL=0 faces at chunk edges.
 // Call once after Load, before any TerrainGen_Build.
 void  TerrainAtlas_SmoothBoundaries();
+// Stitch one boundary seam between adjacent zones after rolling-shift loads a new edge.
+// dir=0: X-seam between (zx,zy) and (zx+1,zy). dir=1: Z-seam (zx,zy) and (zx,zy+1).
+// No-op if already smoothed (idempotent — re-smoothing a smooth boundary is harmless).
+void  TerrainAtlas_StitchEdge(int zx, int zy, int dir);
 // Get/Set individual vertex height (zx,zy in 0..63; col,row in 0..64)
 float TerrainAtlas_GetHeight(int zx, int zy, int col, int row);
 void  TerrainAtlas_SetHeight(int zx, int zy, int col, int row, float h);

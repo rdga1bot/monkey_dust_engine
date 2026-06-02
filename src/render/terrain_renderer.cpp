@@ -325,6 +325,12 @@ bool TerrainRenderer::InitTextures(const char* grass, const char* rock,
 #ifdef MD_SDL_GPU
 void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[1]) const
 {
+    // UseColourOverride() swaps texture for a batch (VT local composite).
+    if (col_override_tex_ && col_override_smp_) {
+        out[0].texture = col_override_tex_;
+        out[0].sampler = col_override_smp_;
+        return;
+    }
     bool valid = tex_loaded_ && tex_colour_.Valid()
                  && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
     out[0].texture = valid ? tex_colour_.SDLTexture() : fallback_tex_;

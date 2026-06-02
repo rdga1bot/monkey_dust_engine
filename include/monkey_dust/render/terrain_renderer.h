@@ -151,6 +151,12 @@ public:
     bool IsPomReady() const;
     bool IsSynthReady() const;
 
+    // Temporarily override the kenshi colour overlay for one render batch.
+    // Pass nullptr to restore the original texture.
+    void UseColourOverride(SDL_GPUTexture* tex, SDL_GPUSampler* smp) {
+        col_override_tex_ = tex; col_override_smp_ = smp;
+    }
+
     // GPU Synthesis: one draw call for the full world.
     // heights: R8 pixel data (height/height_max * 255), tex_w x tex_h.
     // Call once after terrain is loaded; uses existing kenshi colour overlay.
@@ -190,6 +196,10 @@ private:
 
     // Shared LOD IBOs — one per LOD level, built in Init(), reused by all chunks.
     GpuStaticBuffer lod_ibo_shared_[TERRAIN_LOD_LEVELS];
+
+    // Optional colour override — UseColourOverride() swaps for one batch.
+    SDL_GPUTexture* col_override_tex_ = nullptr;
+    SDL_GPUSampler* col_override_smp_ = nullptr;
     uint32_t        batch_idx_count_ = 0;  // set by BeginRawBatch
 
     // GPU Synthesis pipeline data

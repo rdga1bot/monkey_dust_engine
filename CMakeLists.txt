@@ -33,6 +33,26 @@ list(FILTER ENGINE_SRC EXCLUDE REGEX "cgltf_impl\\.cpp$")
 list(FILTER ENGINE_SRC EXCLUDE REGEX "vendor/moc/.*\\.cpp$")
 add_library(monkey_dust_engine STATIC ${ENGINE_SRC})
 
+# ── Unity Build — 110 engine .cpp → ~14 batched TU ──────────────────────────
+# Clean build: 110 compiles → ~14. Incremental: файл потрапляє в один batch,
+# перебудовується тільки той batch (не всі 110).
+# BATCH_SIZE=8: збалансовано між compile parallelism та batch size.
+# Виключення: MaskedOcclusionCulling (різні ISA flags — вже виключено вище).
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
+    set_target_properties(monkey_dust_engine PROPERTIES
+        UNITY_BUILD ON
+        UNITY_BUILD_BATCH_SIZE 4
+    )
+    # Exclude files with ODR conflicts or duplicate static helpers.
+    # flare/: item_loader/enemy_loader/power_loader define static ChainOpen().
+    # combat/: engine + game both implement PowerManager — unity batch collides with game .o.
+    file(GLOB FLARE_SRC_FILES   "${CMAKE_CURRENT_SOURCE_DIR}/src/flare/*.cpp")
+    file(GLOB COMBAT_SRC_FILES  "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/*.cpp")
+    set_source_files_properties(${FLARE_SRC_FILES} ${COMBAT_SRC_FILES}
+        PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+    message(STATUS "[monkey_dust] engine Unity Build: ENABLED (batch=4, flare/+combat/ excluded)")
+endif()
+
 # ── MaskedOcclusionCulling (Intel, Apache 2.0) ────────────────────────────────
 # Main .cpp must be compiled WITHOUT AVX2/SSE4 — it's a dispatcher that
 # detects CPU features at runtime and creates the appropriate implementation.

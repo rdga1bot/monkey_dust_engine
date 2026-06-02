@@ -1,5 +1,6 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_frame_timeline.h>
 #include <monkey_dust/platform/md_log.h>
 #include <SDL3/SDL_gpu.h>
 
@@ -60,11 +61,15 @@ void GpuDevice::BeginFrame() {
     SDL_WaitForGPUFences(device_, true, &prev_fence_, 1);
     SDL_ReleaseGPUFence(device_, prev_fence_);
     prev_fence_ = nullptr;
+    // Timeline: fence signaled = GPU finished previous frame.
+    GpuFrameTimeline::Get().OnFenceSignaled();
 }
 
 void GpuDevice::Submit(SDL_GPUCommandBuffer* cmd) {
     if (prev_fence_) { SDL_ReleaseGPUFence(device_, prev_fence_); prev_fence_ = nullptr; }
     prev_fence_ = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    // Timeline: record submit timestamp for latency measurement.
+    GpuFrameTimeline::Get().OnSubmit();
 }
 
 } // namespace md

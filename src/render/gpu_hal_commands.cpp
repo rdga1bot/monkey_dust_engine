@@ -121,7 +121,12 @@ void GpuRenderPass::BeginDepthOnly(SDL_GPUCommandBuffer* cmd, const DepthDesc& d
     depth_info.texture          = desc.target->SDLTexture();
     depth_info.clear_depth      = desc.clear_depth;
     depth_info.load_op          = SDL_GPU_LOADOP_CLEAR;
-    depth_info.store_op         = SDL_GPU_STOREOP_STORE;
+    // DONT_CARE pattern: if caller signals depth is not read after this pass
+    // (e.g. shadow depth already resolved into EVSM moment map), skip the
+    // memory write → saves ~1MB/cascade × 3 cascades of DRAM bandwidth.
+    depth_info.store_op         = desc.discard_after
+                                ? SDL_GPU_STOREOP_DONT_CARE
+                                : SDL_GPU_STOREOP_STORE;
     depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
     depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
     depth_info.cycle            = false;

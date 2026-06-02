@@ -46,6 +46,10 @@ public:
     void           UnmapSDL();
     // Record a copy pass in cmd: current staging → current device buffer.
     void           Upload(SDL_GPUCommandBuffer* cmd);
+    // iGPU zero-copy adaptation: upload within a caller-owned copy pass.
+    // Use when batching multiple ring buffer uploads in a single copy pass
+    // to reduce driver overhead (N copy-pass begin/end → 1 per frame).
+    void           UploadInPass(SDL_GPUCopyPass* pass);
     // Returns the current frame's device buffer (slot = GpuDevice::FrameSlot()).
     SDL_GPUBuffer* SDLBuffer() const;
 #endif

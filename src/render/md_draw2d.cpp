@@ -75,9 +75,28 @@ static GLuint CompileShader(GLenum type, const char* src) {
     return s;
 }
 
+static bool BakeFont(const unsigned char* data, size_t data_size) {
+    static unsigned char bitmap[FONT_ATLAS * FONT_ATLAS];
+    int ret = stbtt_BakeFontBitmap(data, 0, FONT_BAKE_SZ,
+                                   bitmap, FONT_ATLAS, FONT_ATLAS,
+                                   FONT_FIRST, FONT_COUNT, s_cdata);
+    if (ret <= 0) { MD_LOG(MD_LOG_WARNING, "[MdDraw2D] font bake failed"); return false; }
+    s_ascent_px = 0.0f;
+    for (int i = 0; i < FONT_COUNT; ++i)
+        if (-s_cdata[i].yoff > s_ascent_px) s_ascent_px = -s_cdata[i].yoff;
+    glGenTextures(1, &s_font_tex);
+    glBindTexture(GL_TEXTURE_2D, s_font_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, FONT_ATLAS, FONT_ATLAS, 0,
+                 GL_RED, GL_UNSIGNED_BYTE, bitmap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return true;
+    (void)data_size;
+}
+
 static bool LoadFont(const char* path) {
     static unsigned char font_buf[1 << 20]; // 1 MB
-    static unsigned char bitmap[FONT_ATLAS * FONT_ATLAS];
 
     FILE* f = fopen(path, "rb");
     if (!f) {
@@ -90,30 +109,7 @@ static bool LoadFont(const char* path) {
     if (fsz > (long)sizeof(font_buf)) { fclose(f); return false; }
     fread(font_buf, 1, (size_t)fsz, f);
     fclose(f);
-
-    int ret = stbtt_BakeFontBitmap(font_buf, 0, FONT_BAKE_SZ,
-                                   bitmap, FONT_ATLAS, FONT_ATLAS,
-                                   FONT_FIRST, FONT_COUNT, s_cdata);
-    if (ret <= 0) {
-        MD_LOG(MD_LOG_WARNING, "[MdDraw2D] font bake failed: %s", path);
-        return false;
-    }
-
-    s_ascent_px = 0.0f;
-    for (int i = 0; i < FONT_COUNT; ++i)
-        if (-s_cdata[i].yoff > s_ascent_px) s_ascent_px = -s_cdata[i].yoff;
-
-    glGenTextures(1, &s_font_tex);
-    glBindTexture(GL_TEXTURE_2D, s_font_tex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED,
-                 FONT_ATLAS, FONT_ATLAS, 0,
-                 GL_RED, GL_UNSIGNED_BYTE, bitmap);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return true;
+    return BakeFont(font_buf, (size_t)fsz);
 }
 
 static void Flush() {
@@ -149,17 +145,15 @@ static void PushTextQuad(float x0, float y0, float x1, float y1,
 
 // --------------------------------------------------------------------------
 
-void MdDraw2DInit(const char* font_path) {
+static void InitGLState() {
     GLuint vs = CompileShader(GL_VERTEX_SHADER,   VERT_SRC);
     GLuint fs = CompileShader(GL_FRAGMENT_SHADER, FRAG_SRC);
     s_prog = glCreateProgram();
     glAttachShader(s_prog, vs); glAttachShader(s_prog, fs);
     glLinkProgram(s_prog);
     glDeleteShader(vs); glDeleteShader(fs);
-
     s_loc_proj = glGetUniformLocation(s_prog, "u_proj");
     s_loc_font = glGetUniformLocation(s_prog, "u_font");
-
     glGenVertexArrays(1, &s_vao);
     glGenBuffers(1, &s_vbo);
     glBindVertexArray(s_vao);
@@ -173,7 +167,16 @@ void MdDraw2DInit(const char* font_path) {
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
     glBindVertexArray(0);
+}
 
+// Init from embedded font data — no file system access needed.
+void MdDraw2DInitFromMemory(const uint8_t* ttf_data, uint32_t ttf_size) {
+    InitGLState();
+    s_font_loaded = BakeFont(ttf_data, (size_t)ttf_size);
+}
+
+void MdDraw2DInit(const char* font_path) {
+    InitGLState();
     if (font_path) s_font_loaded = LoadFont(font_path);
 }
 

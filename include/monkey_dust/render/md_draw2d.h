@@ -15,8 +15,10 @@ static constexpr MdColor MD_GOLD      = {255,203,  0,255};
 static constexpr MdColor MD_ORANGE    = {255,161,  0,255};
 static constexpr MdColor MD_LIGHTGRAY = {200,200,200,255};
 
-// Call once after GL context is created. font_path may be nullptr for rect/line-only mode.
+// Init from a file path (nullptr = rect/line-only mode).
 void MdDraw2DInit(const char* font_path);
+// Init from memory — use for embedded fonts (no file system dependency).
+void MdDraw2DInitFromMemory(const uint8_t* ttf_data, uint32_t ttf_size);
 void MdDraw2DShutdown();
 
 // Bracket all 2D draw calls with Begin/End.

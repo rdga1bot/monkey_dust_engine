@@ -13,7 +13,8 @@
 static constexpr int MAX_GPU_KF = 16384;  // 16384 × 32 bytes = 512 KB
 
 // Per-keyframe data for skinning.comp (8 floats, 32 bytes).
-struct GpuKeyframe { float t, tx, ty, tz, qx, qy, qz, qw; };
+// alignas(16): VBfA pattern — animation float arrays 16-byte aligned for SIMD batch ops.
+struct alignas(16) GpuKeyframe { float t, tx, ty, tz, qx, qy, qz, qw; };
 
 // Per-track header: offset + count in flat GpuKeyframe array.
 struct GpuTrackHeader { int kf_start, kf_count; };
@@ -22,8 +23,8 @@ struct GpuTrackHeader { int kf_start, kf_count; };
 struct GpuClipHeader { float duration; int bone_count, track_start, _pad; };
 
 // Per-NPC animation state uploaded each frame from AnimatorComponent.
-// Sized to 32 bytes (std430 aligned).
-struct NpcGpuAnim {
+// Sized to 32 bytes (std430 aligned). alignas(16) ensures SIMD-safe batch memcpy.
+struct alignas(16) NpcGpuAnim {
     int   clip_hi;      // upper/full walk clip (-1 = use idle)
     int   clip_lo;      // lower body override clip (-1 = no override)
     int   clip_idle;    // idle clip (0 = fallback)
@@ -236,7 +237,7 @@ public:
             skel_buf_.Init(sk_bytes > 0 ? sk_bytes : 4,
                            SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ);
         // Upload as a single blob with headers at the front.
-        static uint8_t s_tmp[4 * 1024 * 1024];  // 4 MB staging scratch
+        alignas(16) static uint8_t s_tmp[4 * 1024 * 1024]; // 4 MB staging scratch, 16-byte aligned
         int offset = 0;
         auto append = [&](const void* src, int n) {
             if (src && n > 0 && (offset + n) <= (int)sizeof(s_tmp)) {

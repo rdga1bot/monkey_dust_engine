@@ -87,11 +87,15 @@ struct GpuRasterState {
 };
 
 // ── ShaderFeature — SPIR-V variant selection ──────────────────────────────────
-// Set shader_features in GpuPipeline::Desc to select the pre-compiled .spv variant.
+// Vulkan adaptation: replaces VkSpecializationInfo with pre-compiled .spv variants.
+// Each bit selects compile-time constants via glslc -D, producing optimized SPIR-V
+// (dead code elimination, loop unrolling) equivalent to VkSpecializationInfo.
+//
 // Naming convention: basename + suffix per active flag, e.g.:
-//   SF_None                  → "mesh.spv"
-//   SF_Skinned               → "mesh_skinned.spv"
-//   SF_Skinned | SF_Shadows  → "mesh_skinned_shadow.spv"
+//   SF_None                      → "mesh.spv"
+//   SF_Skinned                   → "mesh_skinned.spv"
+//   SF_Skinned | SF_Shadows      → "mesh_skinned_shadow.spv"
+//   SF_Shadows | SF_PCF_HIGH     → "mesh_shadow_pcfhigh.spv"
 // Variants must be pre-compiled by scripts/compile_shaders.sh.
 enum ShaderFeature : uint32_t {
     SF_None      = 0,
@@ -102,6 +106,11 @@ enum ShaderFeature : uint32_t {
     SF_Emissive  = 1u << 3,  // animated_emissive.frag — glowing NPC (fire/magic)
     SF_Dissolve  = 1u << 4,  // animated_dissolve.frag — death/despawn noise clip
     SF_Ice       = 1u << 5,  // animated_ice.frag (future: frozen NPC effect)
+    // Specialization constant variants (glslc -DFLAG=1):
+    SF_PCF_HIGH  = 1u << 6,  // -DPCF_SAMPLES=16  (vs default 4) — higher shadow quality
+    SF_SSAO_INT  = 1u << 7,  // -DSSAO_INTEGRATION — forward pass reads SSAO buffer
+    SF_IBL       = 1u << 8,  // -DIBL_ENABLED — Image-Based Lighting for PBR materials
+    SF_DITHERED  = 1u << 9,  // -DDITHERED_TRANSPARENCY — ordered dithering alpha
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -406,8 +415,11 @@ class GpuRenderPass {
 public:
     struct DepthDesc {
         GpuDepthTexture* target;
-        float clear_depth = 1.0f;
-        bool  cull_front  = false; // GL_FRONT for shadow bias (Peter-Panning fix)
+        float clear_depth  = 1.0f;
+        bool  cull_front   = false; // GL_FRONT for shadow bias (Peter-Panning fix)
+        // Vulkan LOAD/STORE DONT_CARE pattern: set discard_after=true when depth is
+        // not needed after this pass (e.g. shadow depth → resolved into EVSM moments).
+        bool  discard_after = false;
     };
 
     // Shadow / depth-only pass.
@@ -572,4 +584,9 @@ void MdSpvCache_Shutdown();
 // Evict one SPIR-V entry so the next Create/Reload re-reads it from disk.
 void MdSpvCache_Invalidate(const char* glsl_path);
 int  MdSpvCache_Stats(int* out_count = nullptr);
+
+// Pipeline object cache (VkPipelineCache SDL_GPU adaptation).
+// Caches SDL_GPUGraphicsPipeline objects by (vert+frag+features+raster) hash.
+void MdPipeCache_Shutdown();
+void MdPipeCache_Invalidate(const char* vert_path, const char* frag_path);
 

@@ -102,9 +102,12 @@ public:
         sdl_init_ = true;
     }
 
+    // VBfA shadow LOD pattern: anim_state_buf added — shader skips lod_tier >= 3 NPCs,
+    // eliminating distance math for far/hidden NPCs (saves ~(r_ac - r_close)*1 ALU op each).
     void RenderShadowPassSDL(SDL_GPUCommandBuffer* cmd, int active_npc_count,
                               SDL_GPUBuffer* transform_buf, SDL_GPUBuffer* bones_buf,
                               SDL_GPUBuffer* npc_vbuf, SDL_GPUBuffer* npc_ibuf,
+                              SDL_GPUBuffer* anim_state_buf = nullptr,
                               bool npc_idx_u16 = true) {
         if (!sdl_init_ || active_npc_count <= 0 || !cmd) return;
         if (!shadow_pipeline_.SDLPipeline()) return;
@@ -113,7 +116,7 @@ public:
         uint32_t reset[5] = { npc_idx_count_, 0u, 0u, 0u, 0u };
         shadow_ind_buf_.UploadInCmd(cmd, reset, 20);
 
-        // Shadow cull compute — select NPCs within 60 m of camera.
+        // Shadow cull compute — select NPCs within 60 m + lod_tier < 3.
         struct alignas(16) SCullUBO {
             float camPos[3]; float _p;
             float maxDistSq; float _p2[3];
@@ -126,7 +129,8 @@ public:
         b.rw_buffers[1] = { shadow_ind_buf_.SDLBuffer(), false };
         b.num_rw_buffers = 2;
         b.ro_buffers[0]  = transform_buf;
-        b.num_ro_buffers = 1;
+        b.ro_buffers[1]  = anim_state_buf ? anim_state_buf : transform_buf; // fallback to transform if no anim state
+        b.num_ro_buffers = 2;
         GpuComputePass cull;
         cull.Begin(&shadow_cull_cs_, b);
         cull.PushUniforms(0, &ubo, sizeof(ubo));

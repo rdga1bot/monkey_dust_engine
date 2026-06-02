@@ -94,6 +94,15 @@ void GpuRingBuffer::Upload(SDL_GPUCommandBuffer* cmd) {
     int s = md::GpuDevice::Get().FrameSlot();
     if (!cmd || !sdl_device_[s] || !sdl_staging_[s]) return;
     SDL_GPUCopyPass* pass = SDL_BeginGPUCopyPass(cmd);
+    UploadInPass(pass);
+    SDL_EndGPUCopyPass(pass);
+}
+
+// iGPU pattern: caller opens a shared copy pass across multiple ring buffers.
+// Reduces copy-pass begin/end overhead from N calls to 1 per frame.
+void GpuRingBuffer::UploadInPass(SDL_GPUCopyPass* pass) {
+    int s = md::GpuDevice::Get().FrameSlot();
+    if (!pass || !sdl_device_[s] || !sdl_staging_[s]) return;
     SDL_GPUTransferBufferLocation src = {};
     src.transfer_buffer = sdl_staging_[s];
     src.offset          = 0;
@@ -102,6 +111,5 @@ void GpuRingBuffer::Upload(SDL_GPUCommandBuffer* cmd) {
     dst.offset = 0;
     dst.size   = sdl_size_;
     SDL_UploadToGPUBuffer(pass, &src, &dst, false);
-    SDL_EndGPUCopyPass(pass);
 }
 #endif

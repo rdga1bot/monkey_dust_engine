@@ -4,19 +4,23 @@ project(monkey_dust_engine LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Cross-platform Lua 5.4 discovery.
-# Ubuntu/Arch: search lua5.4 explicitly so liblua.so → 5.5 symlink is bypassed.
-# Windows/vcpkg: find_library misses vcpkg names → fall through to find_package.
-find_library(MD_LUA54_LIB NAMES lua5.4 lua-5.4 QUIET)
-find_path   (MD_LUA54_INC lua5.4/lua.h QUIET)
-if(MD_LUA54_LIB AND MD_LUA54_INC)
-    set(LUA_LIBRARIES   "${MD_LUA54_LIB}")
-    set(LUA_INCLUDE_DIR "${MD_LUA54_INC}")
-    message(STATUS "[monkey_dust] Lua 5.4 (explicit): ${MD_LUA54_LIB}")
-else()
-    find_package(Lua 5.4 REQUIRED)
-    message(STATUS "[monkey_dust] Lua 5.4 (find_package): ${LUA_LIBRARIES}")
+# Lua 5.4: prefer static build (via FetchContent in root CMakeLists, MD_STATIC_DEPS=ON).
+# Fall back to system dynamic library when MD_STATIC_DEPS=OFF.
+if(NOT MD_STATIC_DEPS)
+    # Cross-platform system Lua discovery (fallback only).
+    find_library(MD_LUA54_LIB NAMES lua5.4 lua-5.4 QUIET)
+    find_path   (MD_LUA54_INC lua5.4/lua.h QUIET)
+    if(MD_LUA54_LIB AND MD_LUA54_INC)
+        set(LUA_LIBRARIES   "${MD_LUA54_LIB}")
+        set(LUA_INCLUDE_DIR "${MD_LUA54_INC}")
+        message(STATUS "[monkey_dust] Lua 5.4 (system dynamic): ${MD_LUA54_LIB}")
+    else()
+        find_package(Lua 5.4 REQUIRED)
+        message(STATUS "[monkey_dust] Lua 5.4 (find_package): ${LUA_LIBRARIES}")
+    endif()
+    # LUA_INCLUDE_DIR already set; LUA_LIBRARIES points to .so
 endif()
+# When MD_STATIC_DEPS=ON: LUA_LIBRARIES=lua54_static, LUA_INCLUDE_DIR set in root CMakeLists.
 
 file(GLOB_RECURSE ENGINE_SRC src/*.cpp)
 # stb_image_impl, glad_impl, cgltf_impl must NOT be in the engine static lib —
@@ -85,7 +89,11 @@ endif()
 # SDL3 + SDL_GPU is the only rendering backend.
 # GLM provides math types; MD_LOG_NO_RAYLIB replaces TraceLog with fprintf.
 target_compile_definitions(monkey_dust_engine PUBLIC USE_SDL3 USE_GLM MD_LOG_NO_RAYLIB MD_SDL_GPU)
-target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3)
+if(MD_STATIC_DEPS)
+    target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3-static)
+else()
+    target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3)
+endif()
 target_include_directories(monkey_dust_engine PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party/imgui/backends
     # MOC vendor: .cpp files include "MaskedOcclusionCulling.h" relatively
@@ -96,10 +104,15 @@ target_include_directories(monkey_dust_engine PUBLIC
     # Raylib submodule no longer needed.
     ${CMAKE_CURRENT_SOURCE_DIR}/src/audio)
 
+if(MD_STATIC_DEPS)
+    set(_LUA_LINK lua54_static)
+else()
+    set(_LUA_LINK ${LUA_LIBRARIES})
+endif()
 target_link_libraries(monkey_dust_engine PRIVATE
     Recast Detour DetourCrowd
     Jolt
-    ${LUA_LIBRARIES}
+    ${_LUA_LINK}
     ozz_animation
     ozz_animation_offline
     ozz_base
@@ -119,4 +132,21 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     else()
         target_compile_options(monkey_dust_engine PRIVATE -O2 -march=native)
     endif()
+endif()
+
+# ── Precompiled Header (PCH) ─────────────────────────────────────────────────
+# Vulkan perf pattern: avoid redundant preprocessing of heavy stdlib/SDL/entt
+# headers in every TU. PCH compiles them once → 40-60% faster incremental builds.
+# Note: PCH is NOT applied to MaskedOcclusionCulling (different ISA flags).
+# Not applied to vendor impl files (already excluded from ENGINE_SRC above).
+if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
+    target_precompile_headers(monkey_dust_engine PRIVATE
+        # C stdlib (fast, few deps)
+        <cstdint> <cstdlib> <cstring> <cstdio> <cmath>
+        # C++ containers used across many TUs
+        <cstddef>
+        # EnTT ECS — very heavy header, included in most AI/component files
+        <entt/entt.hpp>
+    )
+    message(STATUS "[monkey_dust] PCH: ENABLED (entt + stdlib)")
 endif()

@@ -23,6 +23,7 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 
 #include <monkey_dust/physics/jolt_world.h>
+#include <monkey_dust/md_config.h>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -79,15 +80,24 @@ struct JoltWorld::OVBroadPhase final : public JPH::ObjectLayerPairFilter {
 
 // ── Init / Shutdown ──────────────────────────────────────────────────────────
 void JoltWorld::Init(int max_bodies) {
+    // max_bodies=0 → use value from md_config.txt
+    if (max_bodies <= 0) max_bodies = MdConfig::Get().max_bodies;
     JPH::RegisterDefaultAllocator();
     JPH::Factory::sInstance = new JPH::Factory();
     JPH::RegisterTypes();
 
-    temp_alloc_    = new JPH::TempAllocatorImpl(8 * 1024 * 1024); // 8 MB
-    // 2 worker threads: avoids the 1-thread pool deadlock (main waits for worker,
+    // Kenshi pattern: physics thread counts from config (internalThreadCount, threadMask).
+    // VBfA pattern: Tasks.txt-driven thread pool. MdConfig reads data/md_config.txt.
+    const MdConfig& cfg = MdConfig::Get();
+    const int temp_mb   = cfg.physics_temp_mb;   // default 8
+    const int workers   = cfg.physics_threads;   // default 2 (deadlock-safe minimum)
+    temp_alloc_  = new JPH::TempAllocatorImpl((uint32_t)(temp_mb * 1024 * 1024));
+    // workers ≥ 2: avoids 1-thread pool deadlock (main waits for worker,
     // worker creates job that needs a second worker to signal the barrier).
-    job_system_    = new JPH::JobSystemThreadPool(JPH::cMaxPhysicsJobs,
-                                                  JPH::cMaxPhysicsBarriers, 2);
+    job_system_  = new JPH::JobSystemThreadPool(JPH::cMaxPhysicsJobs,
+                                                JPH::cMaxPhysicsBarriers,
+                                                workers);
+    fprintf(stdout, "[Jolt] workers=%d  temp_alloc=%dMB\n", workers, temp_mb);
     bp_layer_iface_ = new BPLayerInterface();
     ovbp_layer_pair_= new OVBPLayerPair();
     ovbp_filter_    = new OVBroadPhase();

@@ -28,20 +28,105 @@ static char* ReadTextFile(const char* path) {
 
 #ifdef MD_SDL_GPU
 
-// ── SPIR-V bytecode cache ─────────────────────────────────────────────────────
-// Avoids disk reads when the same .spv file is loaded multiple times
-// (hot-reload, shared vertex shaders across pipeline variants).
+// ── SDL_GPUGraphicsPipeline object cache ─────────────────────────────────────
+// Vulkan pattern: VkPipelineCache reuses driver-compiled binaries.
+// SDL_GPU adaptation: cache compiled SDL_GPUGraphicsPipeline objects by
+// (vert_path, frag_path, shader_features, raster_hash) key. Hot-reload and
+// multiple systems requesting the same pipeline config avoid redundant
+// SDL_CreateGPUGraphicsPipeline calls (each compiles SPIR-V → driver binary).
 
-static constexpr int SPV_CACHE_MAX = 64;
+static constexpr int PIPE_CACHE_MAX = 64;
 
-struct SpvEntry {
-    uint32_t hash   = 0;
-    void*    data   = nullptr;
-    size_t   size   = 0;
-    bool     used   = false;
+struct PipeEntry {
+    uint32_t              hash     = 0;
+    SDL_GPUGraphicsPipeline* pipe  = nullptr;
+    bool                  used     = false;
 };
 
-static SpvEntry s_spv_cache[SPV_CACHE_MAX];
+static PipeEntry s_pipe_cache[PIPE_CACHE_MAX];
+
+static uint32_t PipeHash(const char* vert, const char* frag,
+                          uint32_t features, uint32_t raster_bits) {
+    uint32_t h = 2166136261u;
+    auto mix = [&](const char* s) {
+        for (; s && *s; ++s) h = (h ^ (uint8_t)*s) * 16777619u;
+        h = (h ^ 0xFF) * 16777619u; // separator
+    };
+    mix(vert); mix(frag);
+    h = (h ^ features)    * 16777619u;
+    h = (h ^ raster_bits) * 16777619u;
+    return h ? h : 1u;
+}
+
+static SDL_GPUGraphicsPipeline* PipeCache_Get(uint32_t hash) {
+    for (int i = 0; i < PIPE_CACHE_MAX; ++i)
+        if (s_pipe_cache[i].used && s_pipe_cache[i].hash == hash)
+            return s_pipe_cache[i].pipe;
+    return nullptr;
+}
+
+static void PipeCache_Put(uint32_t hash, SDL_GPUGraphicsPipeline* pipe) {
+    for (int i = 0; i < PIPE_CACHE_MAX; ++i) {
+        if (!s_pipe_cache[i].used) {
+            s_pipe_cache[i] = { hash, pipe, true };
+            return;
+        }
+    }
+    // Full: evict slot 0 (oldest, simple FIFO for this small table)
+    if (s_pipe_cache[0].pipe)
+        SDL_ReleaseGPUGraphicsPipeline(md::GpuDevice::Get().SDLDevice(),
+                                        s_pipe_cache[0].pipe);
+    // Shift left and insert at end
+    for (int i = 0; i < PIPE_CACHE_MAX - 1; ++i) s_pipe_cache[i] = s_pipe_cache[i+1];
+    s_pipe_cache[PIPE_CACHE_MAX-1] = { hash, pipe, true };
+}
+
+void MdPipeCache_Invalidate(const char* vert_path, const char* frag_path) {
+    // Called by hot-reload to evict stale pipelines for a given shader pair.
+    uint32_t h_base = PipeHash(vert_path, frag_path, 0, 0) & 0xFFFF0000u;
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    for (int i = 0; i < PIPE_CACHE_MAX; ++i) {
+        if (s_pipe_cache[i].used && (s_pipe_cache[i].hash & 0xFFFF0000u) == h_base) {
+            if (dev && s_pipe_cache[i].pipe)
+                SDL_ReleaseGPUGraphicsPipeline(dev, s_pipe_cache[i].pipe);
+            s_pipe_cache[i] = {};
+        }
+    }
+}
+
+void MdPipeCache_Shutdown() {
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    int freed = 0;
+    for (int i = 0; i < PIPE_CACHE_MAX; ++i) {
+        if (s_pipe_cache[i].used) {
+            if (dev && s_pipe_cache[i].pipe)
+                SDL_ReleaseGPUGraphicsPipeline(dev, s_pipe_cache[i].pipe);
+            s_pipe_cache[i] = {};
+            ++freed;
+        }
+    }
+    if (freed) fprintf(stdout, "[PipeCache] shutdown: released %d pipelines\n", freed);
+}
+
+// ── SPIR-V bytecode cache ─────────────────────────────────────────────────────
+// Port of VBfA pattern: binary shader blobs cached in memory to avoid repeated
+// disk reads (hot-reload path, shared vert shaders across pipeline variants).
+//
+// Capacity 128 (up from 64) — handles current ~60 .spv files with headroom.
+// Eviction: LRU via generation counter when full (no silent leak on overflow).
+
+static constexpr int SPV_CACHE_MAX = 128;
+
+struct SpvEntry {
+    uint32_t hash    = 0;
+    void*    data    = nullptr;
+    size_t   size    = 0;
+    uint32_t gen     = 0;   // LRU generation (incremented on each use)
+    bool     used    = false;
+};
+
+static SpvEntry  s_spv_cache[SPV_CACHE_MAX];
+static uint32_t  s_spv_gen = 0;
 
 static uint32_t SpvHash(const char* s) {
     uint32_t h = 2166136261u;
@@ -51,11 +136,12 @@ static uint32_t SpvHash(const char* s) {
 
 static void* ReadBinaryFile(const char* path, size_t* out_size) {
     uint32_t h = SpvHash(path);
-    // Check cache.
+    // Cache hit — update LRU generation, return cached pointer.
     for (int i = 0; i < SPV_CACHE_MAX; ++i) {
         if (s_spv_cache[i].used && s_spv_cache[i].hash == h) {
+            s_spv_cache[i].gen = ++s_spv_gen;
             *out_size = s_spv_cache[i].size;
-            return s_spv_cache[i].data;  // caller must NOT free this pointer
+            return s_spv_cache[i].data;
         }
     }
     // Cache miss: read from disk.
@@ -69,18 +155,28 @@ static void* ReadBinaryFile(const char* path, size_t* out_size) {
     fread(buf, 1, (size_t)len, f);
     fclose(f);
     *out_size = (size_t)len;
-    // Insert into cache (find empty slot).
+    // Find empty slot or evict LRU.
+    int slot = -1;
     for (int i = 0; i < SPV_CACHE_MAX; ++i) {
-        if (!s_spv_cache[i].used) {
-            s_spv_cache[i] = { h, buf, (size_t)len, true };
-            return buf;
-        }
+        if (!s_spv_cache[i].used) { slot = i; break; }
     }
-    // Cache full — return data without caching (caller must free).
+    if (slot < 0) {
+        // All slots used — evict least-recently-used entry.
+        uint32_t oldest_gen = s_spv_cache[0].gen;
+        slot = 0;
+        for (int i = 1; i < SPV_CACHE_MAX; ++i) {
+            if (s_spv_cache[i].gen < oldest_gen) {
+                oldest_gen = s_spv_cache[i].gen;
+                slot = i;
+            }
+        }
+        free(s_spv_cache[slot].data);
+    }
+    s_spv_cache[slot] = { h, buf, (size_t)len, ++s_spv_gen, true };
     return buf;
 }
 
-// Called by LoadSpvShader ONLY when data did NOT come from cache.
+// Returns true if ptr is owned by the cache (must not be freed by caller).
 static bool SpvIsCached(const void* ptr) {
     for (int i = 0; i < SPV_CACHE_MAX; ++i)
         if (s_spv_cache[i].used && s_spv_cache[i].data == ptr) return true;
@@ -96,6 +192,7 @@ void MdSpvCache_Shutdown() {
             ++freed;
         }
     }
+    s_spv_gen = 0;
     if (freed) fprintf(stdout, "[SpvCache] shutdown: freed %d SPIR-V entries\n", freed);
 }
 
@@ -108,10 +205,33 @@ int MdSpvCache_Stats(int* out_count) {
 }
 
 
-// Derive SPIR-V path: "shaders/pbr.vert" → "shaders/spirv/pbr.vert.spv"
-static void MakeSpvPath(char* out, size_t out_sz, const char* glsl_path) {
+// Derive SPIR-V path with feature suffix (specialization constant variant selection).
+// "shaders/pbr.frag" + SF_PCF_HIGH → "shaders/spirv/pbr.frag_pcfhigh.spv"
+// Falls back to base variant if feature variant doesn't exist on disk.
+// This is the SDL_GPU adaptation of VkSpecializationInfo: pre-compiled per-variant SPIR-V.
+static void MakeSpvPath(char* out, size_t out_sz, const char* glsl_path,
+                         uint32_t features = 0) {
     const char* slash = strrchr(glsl_path, '/');
     const char* name  = slash ? slash + 1 : glsl_path;
+
+    // Build feature suffix from specialization bits.
+    char suffix[64] = {};
+    int  slen       = 0;
+    auto app = [&](const char* s) {
+        while (*s && slen < (int)sizeof(suffix) - 1) suffix[slen++] = *s++;
+    };
+    if (features & SF_PCF_HIGH)  app("_pcfhigh");
+    if (features & SF_SSAO_INT)  app("_ssao");
+    if (features & SF_IBL)       app("_ibl");
+    if (features & SF_DITHERED)  app("_dither");
+
+    if (slen > 0) {
+        // Try variant first, fall back to base.
+        char variant[256];
+        snprintf(variant, sizeof(variant), "shaders/spirv/%s%s.spv", name, suffix);
+        FILE* f = fopen(variant, "rb");
+        if (f) { fclose(f); snprintf(out, out_sz, "%s", variant); return; }
+    }
     snprintf(out, out_sz, "shaders/spirv/%s.spv", name);
 }
 
@@ -211,8 +331,8 @@ bool GpuPipeline::Create(const Desc& desc) {
     }
 
     char spv_vert[256], spv_frag[256];
-    MakeSpvPath(spv_vert, sizeof(spv_vert), desc.vert_path);
-    MakeSpvPath(spv_frag, sizeof(spv_frag), desc.frag_path);
+    MakeSpvPath(spv_vert, sizeof(spv_vert), desc.vert_path, desc.shader_features);
+    MakeSpvPath(spv_frag, sizeof(spv_frag), desc.frag_path, desc.shader_features);
 
     SDL_GPUShader* vert_sh = LoadSpvShader(dev, spv_vert,
         SDL_GPU_SHADERSTAGE_VERTEX,
@@ -312,11 +432,30 @@ bool GpuPipeline::Create(const Desc& desc) {
     ci.depth_stencil_state.enable_depth_write = desc.raster.depth_write ? true : false;
     ci.target_info = target_info;
 
+    // Pipeline object cache: avoid recompiling identical pipeline configs.
+    uint32_t raster_bits = 0;
+    raster_bits |= (uint32_t)desc.raster.depth_test    << 0;
+    raster_bits |= (uint32_t)desc.raster.depth_write   << 1;
+    raster_bits |= (uint32_t)desc.raster.cull_back     << 2;
+    raster_bits |= (uint32_t)desc.raster.blend_enable   << 3;
+    raster_bits |= (uint32_t)desc.raster.depth_compare_op << 4;
+    const uint32_t pipe_hash = PipeHash(desc.vert_path, desc.frag_path,
+                                         desc.shader_features, raster_bits);
+    SDL_GPUGraphicsPipeline* cached = PipeCache_Get(pipe_hash);
+    if (cached) {
+        SDL_ReleaseGPUShader(dev, vert_sh);
+        SDL_ReleaseGPUShader(dev, frag_sh);
+        sdl_pipeline_ = cached;
+        return true;
+    }
+
     sdl_pipeline_ = SDL_CreateGPUGraphicsPipeline(dev, &ci);
 
     // Shaders are consumed by the pipeline; release immediately.
     SDL_ReleaseGPUShader(dev, vert_sh);
     SDL_ReleaseGPUShader(dev, frag_sh);
+
+    if (sdl_pipeline_) PipeCache_Put(pipe_hash, sdl_pipeline_);
 
     if (!sdl_pipeline_) {
         MD_LOG(MD_LOG_WARNING, "[GpuPipeline] SDL_CreateGPUGraphicsPipeline failed: %s",

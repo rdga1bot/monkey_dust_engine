@@ -28,4 +28,10 @@ struct AnimatorComponent {
 
     // ── Shared (render writes, cull.comp reads via AnimationSoA) ─────────────
     uint8_t lod_tier;        // 0=T0 full … 4=T4 hidden (set by render)
+
+    // ── B-9: AnimEvent tracking (logic side, 10 TPS) ─────────────────────────
+    float    prev_clip_time_ = 0.f;        // time_s at previous logic tick
+    uint32_t prev_clip_id_  = 0xFFFFFFFFu; // clip_id at previous tick (reset on change)
+    uint8_t  weapon_in_hand_ = 0;          // 1 after WeaponGrab event, 0 after WeaponRelease
+    uint8_t  _pad_anim[3]   = {};
 };

@@ -48,6 +48,9 @@ struct ItemDef {
     float cut_resist;
     float blunt_resist;
     float armour_grade;
+    // A-1: per-limb coverage fraction [0..1]; index = limb (0=Head..5=RLeg).
+    // Default 0.0 means "not defined" → treat as 1.0 (full coverage) at runtime.
+    float part_coverage[6];
     // Food
     float nutrition;
     // Prosthetic
@@ -62,7 +65,7 @@ struct ItemDef {
     uint8_t _pad3                = 0;
     float   stackable_bonus_mult = 0.f;  // per-unit bonus multiplier
 };
-static_assert(sizeof(ItemDef) == 100, "ItemDef layout changed");
+static_assert(sizeof(ItemDef) == 124, "ItemDef layout changed (A-1: +part_coverage[6]=24B)");
 
 // ── ItemDatabase singleton ────────────────────────────────────────────────────
 class ItemDatabase {
@@ -119,6 +122,23 @@ public:
             it.stackable_bonus_min  = (int16_t)ri("\"stackable_bonus_min\":");
             it.stackable_bonus_mult = rf("\"stackable_bonus_mult\":");
             it.blueprint_only       = (uint8_t)ri("\"blueprint_only\":");
+            // A-1: parse part_coverage array "[f,f,f,f,f,f]"
+            {
+                const char* pc = strstr(p, "\"part_coverage\":");
+                if (pc && pc < nk + 512) {
+                    const char* arr = strchr(pc, '[');
+                    if (arr) {
+                        arr++;
+                        for (int li = 0; li < 6 && *arr; ++li) {
+                            while (*arr == ' ' || *arr == ',') ++arr;
+                            it.part_coverage[li] = (float)strtod(arr, nullptr);
+                            const char* next = strchr(arr, ',');
+                            if (!next || *arr == ']') break;
+                            arr = next + 1;
+                        }
+                    }
+                }
+            }
             it.loaded = true;
             count_++;
             p = ve + 1;

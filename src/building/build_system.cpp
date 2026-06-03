@@ -195,6 +195,18 @@ void BuildSystem::Tick(float dt_s) {
         for (int i=0; i<b.chain.input_count; ++i) inv.Take(b.chain.inputs[i].item_id, b.chain.inputs[i].amount);
         for (int i=0; i<b.chain.output_count; ++i) inv.Add(b.chain.outputs[i].item_id, b.chain.outputs[i].amount);
         b.progress_s=0;
+        if (b.chain.cycles_done < 255) ++b.chain.cycles_done;
+        // A-2: repeat / Permanent_Job logic
+        if (b.chain.repeat_job) {
+            if (b.chain.queued_cycles > 0) {
+                --b.chain.queued_cycles;
+                b.chain.state = (b.chain.queued_cycles == 0)
+                              ? ProductionState::IDLE : ProductionState::QUEUED;
+            }
+            // queued_cycles==0 && repeat_job → Permanent_Job: stay RUNNING next tick
+        } else {
+            b.chain.state = ProductionState::IDLE;
+        }
         if (reg.all_of<WorldTransform>(be)) {
             const auto& btr = reg.get<WorldTransform>(be);
             ParticleSoA::Get().Emit(btr.x, btr.y+1.5f, btr.z, 0.3f,1.5f,0.3f,180,180,180,200,1.5f,0.12f,3,ParticleType::SMOKE);

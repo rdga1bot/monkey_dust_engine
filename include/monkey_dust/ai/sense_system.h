@@ -9,6 +9,7 @@
 #include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/components/agent_state.h>
+#include <monkey_dust/components/stealth_component.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ai/sense_registry.h>
 #include <monkey_dust/ai/awareness_limits.h>
@@ -68,6 +69,10 @@ inline void SenseSystemUpdate(float now_ms) {
     const WorldTransform* pwt = reg.try_get<WorldTransform>(player);
     if (!pwt) return;
 
+    // B-1: StealthComponent on player reduces all observer activation fills.
+    const StealthComponent* psc = reg.try_get<StealthComponent>(player);
+    float player_stealth = psc ? psc->stealth_factor : 1.f;
+
     auto uint32_now = static_cast<uint32_t>(now_ms);
 
     reg.view<SenseComponent, WorldTransform, AgentState>().each([&](
@@ -117,6 +122,7 @@ inline void SenseSystemUpdate(float now_ms) {
             }
         }
 
+        visual_act *= player_stealth;  // B-1: stealth reduces visual detectability
         bool vis_was_hi = sc.activation[0] >= sc.threshold_hi;
         sc.activation[0] = visual_act;
         if (!vis_was_hi && visual_act >= sc.threshold_hi) {
@@ -141,7 +147,9 @@ inline void SenseSystemUpdate(float now_ms) {
         // VBfA FUN_00468840: (range/dist)^4 — 2× farther → 1/16 activation.
         // Replaces linear (1 - dist/range) which was too generous at long range.
         float eff_audio_range = SENSE_AUDIO_RADIUS_M * audio_range_mult;
-        float audio_act = sense_falloff_r4(dist, eff_audio_range) * fill_mult * noise_mult;
+        // B-1: AudioMovement index=2 uses full stealth; AudioCombat index=1 less affected.
+        float audio_act = sense_falloff_r4(dist, eff_audio_range) * fill_mult * noise_mult
+                        * player_stealth;
         bool  aud_was_hi = sc.activation[1] >= sc.threshold_hi;
         sc.activation[1] = audio_act;
         if (!aud_was_hi && audio_act >= sc.threshold_hi) {

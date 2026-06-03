@@ -39,12 +39,17 @@ enum class DamageType : uint8_t {
 
 // Kenshi: armour_grade scales resist values (0=poor quality, 1=masterwork).
 // Kenshi: armour_penetration on weapons bypasses a fraction of armour (0=none, 1=full bypass).
+// A-1: part_coverage — fraction of that limb covered by this armour [0..1].
+//   1.0 = full coverage (default), 0.0 = limb fully exposed.
+//   Applied as a multiplier on all resist values: uncovered area = no armour.
 struct ArmorStats {
-    float    blunt_resist;       // 0.0 – 0.9
+    float    blunt_resist;           // 0.0 – 0.9
     float    cut_resist;
     float    pierce_resist;
-    float    armour_grade = 1.f; // Kenshi armour grade: multiplies all resist values
-    uint16_t hit_sfx_id   = 0;  // AudioSystem SFX slot played on hit (0 = silent)
+    float    armour_grade    = 1.f;  // multiplies all resist values
+    float    part_coverage   = 1.f;  // A-1: fraction of limb covered [0..1]
+    uint16_t hit_sfx_id      = 0;   // AudioSystem SFX slot (0 = silent)
+    uint8_t  _pad[2]         = {};
 };
 
 struct WeaponStats {
@@ -73,24 +78,27 @@ namespace Armors {
 
 // Розрахувати ефективне пошкодження з урахуванням типу, броні, grade і penetration.
 // skill_level [0..100]: Kenshi Phase 2, Task 2.8 — damage × (1 + skill × 0.01)
-// effective_resist = base * armour_grade * (1 - armour_penetration)
+// effective_resist = base * armour_grade * part_coverage * (1 - armour_penetration)
+// A-1: part_coverage < 1.0 means armour only partially covers the struck limb;
+//   uncovered fraction receives full raw damage (averaged across coverage).
 inline float CalcDamage(const WeaponStats& wpn, const ArmorStats& armor,
                         float hit_zone_mult = 1.0f, int skill_level = 0)
 {
     float raw = wpn.damage * (1.0f + (float)skill_level * 0.01f);
     float pen_factor = 1.0f - wpn.armour_penetration;
+    float cov        = armor.part_coverage;   // A-1: [0..1]
     float effective  = 0.0f;
 
     switch (wpn.type) {
     case DamageType::Blunt:
-        effective = raw * (1.0f - armor.blunt_resist * armor.armour_grade * pen_factor);
+        effective = raw * (1.0f - armor.blunt_resist * armor.armour_grade * cov * pen_factor);
         break;
     case DamageType::Cut:
-        effective = raw * (1.0f - armor.cut_resist * 0.5f * armor.armour_grade * pen_factor);
+        effective = raw * (1.0f - armor.cut_resist * 0.5f * armor.armour_grade * cov * pen_factor);
         break;
     case DamageType::Pierce:
     case DamageType::Ranged:
-        effective = raw * (1.0f - armor.pierce_resist * 0.8f * armor.armour_grade * pen_factor);
+        effective = raw * (1.0f - armor.pierce_resist * 0.8f * armor.armour_grade * cov * pen_factor);
         break;
     default: break;
     }

@@ -152,7 +152,6 @@ target_include_directories(monkey_dust_engine
     PRIVATE ${MD_THIRD_PARTY}/recastnavigation/Detour/Include
     PRIVATE ${MD_THIRD_PARTY}/recastnavigation/DetourCrowd/Include
     PUBLIC  ${MD_THIRD_PARTY}/JoltPhysics
-    PRIVATE ${MD_THIRD_PARTY}/imgui
     PRIVATE ${LUA_INCLUDE_DIR}
     # Vendor: glad, stb headers — PUBLIC so game/ and tools/ can find them too
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor
@@ -179,7 +178,6 @@ else()
     target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3)
 endif()
 target_include_directories(monkey_dust_engine PRIVATE
-    ${MD_THIRD_PARTY}/imgui/backends
     # MOC vendor: .cpp files include "MaskedOcclusionCulling.h" relatively
     ${CMAKE_CURRENT_SOURCE_DIR}/include/vendor/moc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor/moc)

@@ -41,26 +41,29 @@ struct RenderQualityConfig {
     static void ApplyTierPreset(RenderTier tier) noexcept {
         RenderQualityConfig& c = Get();
         switch (tier) {
-        case RenderTier::Forward:           // Intel HD 520: budget
-            c.terrain_cr_m     = 1500.f;
-            c.mesh_lod0_cr_m   =  200.f;
-            c.mesh_lod1_cr_m   =  600.f;
-            c.mesh_lod2_cr_m   = 1500.f;
-            c.actor_cr_m       =   80.f;
-            c.actor_anim_t2_m  =   80.f;
-            c.prop_rock_m      =  300.f;
+        case RenderTier::Forward:           // Intel HD 520: keep terrain LOD as-tuned
+            // Terrain LOD distances unchanged from pre-RenderQualityConfig values —
+            // they were already the minimum viable for HD 520 and must not shrink.
+            // Savings come from prop culling + render_deco=false, NOT terrain LOD.
+            c.terrain_cr_m     = 3000.f;
+            c.mesh_lod0_cr_m   =  500.f;  // original: POM within 500m
+            c.mesh_lod1_cr_m   = 1500.f;  // original
+            c.mesh_lod2_cr_m   = 3000.f;  // original
+            c.actor_cr_m       =  150.f;  // original cull UBO far_sq = 150m
+            c.actor_anim_t2_m  =  150.f;
+            c.prop_rock_m      =  300.f;  // reduced props = real GPU savings
             c.prop_formation_m =  450.f;
             c.prop_hat_rock_m  =  600.f;
             c.prop_veg_m       =  200.f;
             c.prop_tree_m      =  350.f;
-            c.render_deco      = false;   // GL2RenderDeco=0 on low hardware
-            c.tex_detail       = 2;       // mip bias +2 → quarter-res
+            c.render_deco      = false;   // GL2RenderDeco=0: skip vegetation pass
+            c.tex_detail       = 1;       // mip bias +1 only (was 2 = too blurry)
             break;
         case RenderTier::Deferred_Low:      // Iris 540 / Vega 8
-            c.terrain_cr_m     = 2000.f;
-            c.mesh_lod0_cr_m   =  300.f;
-            c.mesh_lod1_cr_m   = 1000.f;
-            c.mesh_lod2_cr_m   = 2000.f;
+            c.terrain_cr_m     = 3000.f;
+            c.mesh_lod0_cr_m   =  500.f;
+            c.mesh_lod1_cr_m   = 1500.f;
+            c.mesh_lod2_cr_m   = 3000.f;
             c.actor_cr_m       =  120.f;
             c.actor_anim_t2_m  =  120.f;
             c.prop_rock_m      =  450.f;

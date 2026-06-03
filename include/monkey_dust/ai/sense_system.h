@@ -10,6 +10,7 @@
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/stealth_component.h>
+#include <monkey_dust/components/noise_emitter.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ai/sense_registry.h>
 #include <monkey_dust/ai/awareness_limits.h>
@@ -160,17 +161,18 @@ inline void SenseSystemUpdate(float now_ms) {
             }
         }
 
-        // VBfA RE §8.5: clamp all 9 activations to [0, 1] using SIMD.
-        // EVE library pattern (#4): AVX2 processes 8 floats in 1 instruction vs 2 SSE ops.
-        // Processes 8 at once, then 1 scalar remainder.
+        // Clamp all MAX_SENSES activations to [0, 1].
+        // B-4: MAX_SENSES=10; AVX2 handles 8+2, SSE handles 4+4+2.
 #ifdef __AVX2__
         {
             __m256 zero8 = _mm256_setzero_ps();
             __m256 one8  = _mm256_set1_ps(1.f);
             float* a = sc.activation;
             _mm256_storeu_ps(a, _mm256_min_ps(_mm256_max_ps(_mm256_loadu_ps(a), zero8), one8));
-            if (a[8] < 0.f) a[8] = 0.f;
-            if (a[8] > 1.f) a[8] = 1.f;
+            for (int i = 8; i < MAX_SENSES; ++i) {
+                if (a[i] < 0.f) a[i] = 0.f;
+                if (a[i] > 1.f) a[i] = 1.f;
+            }
         }
 #elif defined(__SSE__)
         {
@@ -179,8 +181,10 @@ inline void SenseSystemUpdate(float now_ms) {
             float* a = sc.activation;
             _mm_storeu_ps(a + 0, _mm_min_ps(_mm_max_ps(_mm_loadu_ps(a + 0), zero4), one4));
             _mm_storeu_ps(a + 4, _mm_min_ps(_mm_max_ps(_mm_loadu_ps(a + 4), zero4), one4));
-            if (a[8] < 0.f) a[8] = 0.f;
-            if (a[8] > 1.f) a[8] = 1.f;
+            for (int i = 8; i < MAX_SENSES; ++i) {
+                if (a[i] < 0.f) a[i] = 0.f;
+                if (a[i] > 1.f) a[i] = 1.f;
+            }
         }
 #else
         for (int i = 0; i < MAX_SENSES; ++i) {
@@ -188,5 +192,48 @@ inline void SenseSystemUpdate(float now_ms) {
             if (sc.activation[i] > 1.f) sc.activation[i] = 1.f;
         }
 #endif
+    });
+
+    // B-3: NoiseEmitter pass — fill activation[AudioCombat=1] and activation[AudioMovement=2]
+    // from nearby noise sources. Separate from the player detection path above.
+    reg.view<NoiseEmitter, WorldTransform>().each([&](
+        const NoiseEmitter& ne, const WorldTransform& nwt)
+    {
+        if (ne.noise_radius_m <= 0.f) return;
+        float r2 = ne.noise_radius_m * ne.noise_radius_m;
+        reg.view<SenseComponent, WorldTransform>().each([&](
+            SenseComponent& sc, const WorldTransform& owt)
+        {
+            float dx = nwt.x - owt.x, dz = nwt.z - owt.z;
+            float d2 = dx*dx + dz*dz;
+            if (d2 >= r2) return;
+            float contrib = 1.f - d2 / r2;  // linear falloff
+            auto nt = static_cast<NoiseType>(ne.noise_type);
+            if (nt == NoiseType::Weapon || nt == NoiseType::Explosion)
+                sc.activation[(int)SenseType::AudioCombat]   += contrib;
+            if (nt == NoiseType::Footstep || nt == NoiseType::Vent)
+                sc.activation[(int)SenseType::AudioMovement] += contrib;
+            if (nt == NoiseType::Voice) {  // voice activates both at half strength
+                sc.activation[(int)SenseType::AudioCombat]   += contrib * 0.5f;
+                sc.activation[(int)SenseType::AudioMovement] += contrib * 0.5f;
+            }
+        });
+    });
+
+    // B-3: SmellEmitter pass — fill activation[Smell=3] from nearby smell sources.
+    reg.view<SmellEmitter, WorldTransform>().each([&](
+        const SmellEmitter& se, const WorldTransform& swt)
+    {
+        if (se.smell_radius_m <= 0.f) return;
+        float r2 = se.smell_radius_m * se.smell_radius_m;
+        float intensity = (float)se.intensity / 255.f;
+        reg.view<SenseComponent, WorldTransform>().each([&](
+            SenseComponent& sc, const WorldTransform& owt)
+        {
+            float dx = swt.x - owt.x, dz = swt.z - owt.z;
+            float d2 = dx*dx + dz*dz;
+            if (d2 >= r2) return;
+            sc.activation[(int)SenseType::Smell] += (1.f - d2 / r2) * intensity;
+        });
     });
 }

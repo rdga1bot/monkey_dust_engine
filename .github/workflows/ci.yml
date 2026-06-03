@@ -14,24 +14,52 @@ on:
       - 'src/**'
       - 'CMakeLists.txt'
 
+# ── Підхід 1: GitHub Releases artifact ───────────────────────────────────────
+# engine CI (public, ∞ хв) будує libmonkey_dust_engine.a + усі deps
+# і публікує як release asset, тегований по git SHA.
+# monkey_dust CI (private) скачує готовий артефакт → компілює тільки game/tests.
+#
+# Підхід 2: Docker image на ghcr.io (окремий workflow: docker.yml)
+# Підхід 3: Тести engine API переносяться сюди (70/76 тестів тільки engine API)
+
 jobs:
-  # ── Compile check: engine static lib ─────────────────────────────────────────
-  # Public repo → необмежені безкоштовні хвилини.
-  # libsdl3-dev відсутній в ubuntu-24.04 стандартних репо → будуємо з source
-  # і кешуємо за версією. SDL3 build (~5 хв) відбувається тільки при cache miss
-  # (тобто один раз, далі ~10с restore).
-  build-linux:
+  # ── Compile check + artifact publish ─────────────────────────────────────────
+  build-and-publish:
     name: Engine/${{ matrix.config }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         config: [Debug, Release]
+    permissions:
+      contents: write  # для публікації release artifacts
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies (без SDL3)
+      # third_party deps не входять до engine submodule — клонуємо потрібні.
+      # Версії пінені до SHA щоб build був reproducible.
+      - name: Checkout third_party deps
+        run: |
+          mkdir -p third_party
+          git clone --depth=1 https://github.com/skypjack/entt \
+            third_party/entt
+          git clone --depth=1 https://github.com/g-truc/glm \
+            third_party/glm
+          git clone --depth=1 https://github.com/recastnavigation/recastnavigation \
+            third_party/recastnavigation
+          git clone --depth=1 https://github.com/google/googletest \
+            third_party/googletest
+          # JoltPhysics — велика бібліотека, клонуємо shallow
+          git clone --depth=1 --branch v5.1.0 \
+            https://github.com/jrouwe/JoltPhysics \
+            third_party/JoltPhysics
+          # ozz-animation
+          git clone --depth=1 \
+            https://github.com/guillaumeblanc/ozz-animation \
+            third_party/ozz-animation
+
+      - name: Install system dependencies
         run: |
           sudo apt-get update -q
           sudo apt-get install -y \
@@ -42,7 +70,7 @@ jobs:
             libwayland-dev wayland-protocols \
             libegl1-mesa-dev libdrm-dev libgbm-dev
 
-      # SDL3 кешується за тегом версії — rebuild тільки при зміні версії SDL3.
+      # SDL3: кешується по версії — build тільки при cache miss (1 раз).
       - name: Cache SDL3
         id: sdl3
         uses: actions/cache@v4
@@ -50,7 +78,7 @@ jobs:
           path: /opt/sdl3
           key: sdl3-ubuntu24-3.4.8-static
 
-      - name: Build SDL3 (cache miss only)
+      - name: Build SDL3
         if: steps.sdl3.outputs.cache-hit != 'true'
         run: |
           git clone --depth=1 --branch release-3.4.8 \
@@ -58,8 +86,7 @@ jobs:
           cmake -S SDL3_src -B SDL3_build \
             -DSDL_STATIC=ON -DSDL_SHARED=OFF \
             -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF \
-            -DSDL_X11_XSCRNSAVER=OFF \
-            -DSDL_X11_XTEST=OFF \
+            -DSDL_X11_XSCRNSAVER=OFF -DSDL_X11_XTEST=OFF \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/opt/sdl3
           cmake --build SDL3_build --parallel $(nproc)
@@ -87,3 +114,39 @@ jobs:
 
       - name: ccache stats
         run: ccache -s
+
+      # ── Підхід 1: Пакуємо артефакт і публікуємо ──────────────────────────────
+      # Тільки для Release build — Debug занадто великий (~3x).
+      - name: Package engine artifact
+        if: matrix.config == 'Release'
+        run: |
+          mkdir -p dist/lib dist/include
+          cp build/libmonkey_dust_engine.a dist/lib/
+          cp -r include/monkey_dust dist/include/
+          # SDL3 static lib для линкування в main repo
+          cp /opt/sdl3/lib/libSDL3.a dist/lib/ 2>/dev/null || true
+          # Версія + SHA для трекінгу
+          echo "${{ github.sha }}" > dist/engine_sha.txt
+          tar -czf engine-release-${{ github.sha }}.tar.gz -C dist .
+
+      - name: Upload artifact (Підхід 1)
+        if: matrix.config == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-release-${{ github.sha }}
+          path: engine-release-${{ github.sha }}.tar.gz
+          retention-days: 30
+
+      # Публікуємо як GitHub Release при push у master (не PR)
+      - name: Publish GitHub Release (Підхід 1)
+        if: matrix.config == 'Release' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Видаляємо старий release з тим самим тегом якщо є
+          gh release delete "engine-${{ github.sha }}" --yes 2>/dev/null || true
+          gh release create "engine-${{ github.sha }}" \
+            --title "Engine build ${{ github.sha }}" \
+            --notes "Auto-built engine artifact. Use in monkey_dust CI to skip engine recompilation." \
+            --prerelease \
+            engine-release-${{ github.sha }}.tar.gz

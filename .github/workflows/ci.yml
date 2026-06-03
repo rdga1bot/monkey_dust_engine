@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'include/**'
+      - 'src/**'
+      - 'CMakeLists.txt'
+
+jobs:
+  # ── Compile check: engine static lib + public headers ────────────────────────
+  # Public repo → необмежені безкоштовні хвилини.
+  # Мета: перевірити що engine компілюється ізольовано (без game/ і tools/).
+  # split-readiness: engine/ не має #include з game/ або tools/.
+  build-linux:
+    name: Engine/${{ matrix.config }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, Release]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            cmake ninja-build ccache \
+            libsdl3-dev liblua5.4-dev \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libdrm-dev libgbm-dev
+
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ccache-engine-${{ matrix.config }}-${{ github.sha }}
+          restore-keys: ccache-engine-${{ matrix.config }}-
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DUSE_SDL3=ON \
+            -DMD_STATIC_DEPS=OFF
+
+      - name: Build
+        run: ninja -C build monkey_dust_engine
+
+      - name: ccache stats
+        run: ccache -s
+
+  # ── Header include guard check ────────────────────────────────────────────────
+  # Перевіряємо що кожен public header компілюється незалежно (без implicit deps).
+  header-check:
+    name: Header self-containment
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y cmake ninja-build libsdl3-dev liblua5.4-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols
+
+      - name: Check headers compile standalone
+        run: |
+          # Кожен public header повинен компілюватись без implicit includes
+          fail=0
+          for h in include/monkey_dust/**/*.h include/monkey_dust/*.h; do
+            [ -f "$h" ] || continue
+            out=$(echo "#include \"$h\"" | \
+              c++ -std=c++17 -x c++ \
+                -Iinclude \
+                -I../third_party/entt/single_include \
+                -I../third_party/glm \
+                -I../third_party/JoltPhysics \
+                -isystem /usr/include \
+                -fsyntax-only - 2>&1) || true
+            if echo "$out" | grep -q "error:"; then
+              echo "FAIL: $h"
+              echo "$out" | grep "error:" | head -3
+              fail=1
+            fi
+          done
+          exit $fail
+        continue-on-error: true

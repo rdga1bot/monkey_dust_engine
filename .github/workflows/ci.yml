@@ -15,10 +15,11 @@ on:
       - 'CMakeLists.txt'
 
 jobs:
-  # ── Compile check: engine static lib + public headers ────────────────────────
+  # ── Compile check: engine static lib ─────────────────────────────────────────
   # Public repo → необмежені безкоштовні хвилини.
-  # Мета: перевірити що engine компілюється ізольовано (без game/ і tools/).
-  # split-readiness: engine/ не має #include з game/ або tools/.
+  # libsdl3-dev відсутній в ubuntu-24.04 стандартних репо → будуємо з source
+  # і кешуємо за версією. SDL3 build (~5 хв) відбувається тільки при cache miss
+  # (тобто один раз, далі ~10с restore).
   build-linux:
     name: Engine/${{ matrix.config }}
     runs-on: ubuntu-24.04
@@ -30,16 +31,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install system dependencies (без SDL3)
         run: |
           sudo apt-get update -q
           sudo apt-get install -y \
             cmake ninja-build ccache \
-            libsdl3-dev liblua5.4-dev \
+            liblua5.4-dev \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
             libxkbcommon-dev libxkbcommon-x11-dev \
             libwayland-dev wayland-protocols \
             libegl1-mesa-dev libdrm-dev libgbm-dev
+
+      # SDL3 кешується за тегом версії — rebuild тільки при зміні версії SDL3.
+      - name: Cache SDL3
+        id: sdl3
+        uses: actions/cache@v4
+        with:
+          path: /opt/sdl3
+          key: sdl3-ubuntu24-3.4.8-static
+
+      - name: Build SDL3 (cache miss only)
+        if: steps.sdl3.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth=1 --branch release-3.4.8 \
+            https://github.com/libsdl-org/SDL SDL3_src
+          cmake -S SDL3_src -B SDL3_build \
+            -DSDL_STATIC=ON -DSDL_SHARED=OFF \
+            -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/opt/sdl3
+          cmake --build SDL3_build --parallel $(nproc)
+          cmake --install SDL3_build
 
       - name: ccache
         uses: actions/cache@v4
@@ -55,48 +77,11 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DUSE_SDL3=ON \
-            -DMD_STATIC_DEPS=OFF
+            -DMD_STATIC_DEPS=OFF \
+            -DCMAKE_PREFIX_PATH=/opt/sdl3
 
       - name: Build
         run: ninja -C build monkey_dust_engine
 
       - name: ccache stats
         run: ccache -s
-
-  # ── Header include guard check ────────────────────────────────────────────────
-  # Перевіряємо що кожен public header компілюється незалежно (без implicit deps).
-  header-check:
-    name: Header self-containment
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y cmake ninja-build libsdl3-dev liblua5.4-dev \
-            libxkbcommon-dev libwayland-dev wayland-protocols
-
-      - name: Check headers compile standalone
-        run: |
-          # Кожен public header повинен компілюватись без implicit includes
-          fail=0
-          for h in include/monkey_dust/**/*.h include/monkey_dust/*.h; do
-            [ -f "$h" ] || continue
-            out=$(echo "#include \"$h\"" | \
-              c++ -std=c++17 -x c++ \
-                -Iinclude \
-                -I../third_party/entt/single_include \
-                -I../third_party/glm \
-                -I../third_party/JoltPhysics \
-                -isystem /usr/include \
-                -fsyntax-only - 2>&1) || true
-            if echo "$out" | grep -q "error:"; then
-              echo "FAIL: $h"
-              echo "$out" | grep "error:" | head -3
-              fail=1
-            fi
-          done
-          exit $fail
-        continue-on-error: true

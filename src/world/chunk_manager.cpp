@@ -253,6 +253,12 @@ void ChunkManager::ApplyStagedChunks() {
 void ChunkManager::UnloadChunk(int idx) {
     ChunkData& cd = active_[idx];
     if (!cd.loaded()) return;
+    // D-2: transition through Streaming state for graceful wind-down.
+    // First call: enter Streaming; second call (from Update tick): proceed to teardown.
+    if (cd.stream_state == ChunkStreamState::Active) {
+        cd.stream_state = ChunkStreamState::Streaming;
+        return;  // defer actual unload to next Update() call
+    }
     if (cd.dirty) SaveChunk(idx);
 
     auto& reg = Registry::Get();
@@ -308,11 +314,11 @@ void ChunkManager::Update(float player_x, float player_z) {
     for (int i = active_count_ - 1; i >= 0; --i) {
         ChunkCoord c = active_[i].coord;
         int dx = c.x - pc.x, dz = c.z - pc.z;
-        if (dx < -CHUNK_LOAD_RADIUS || dx > CHUNK_LOAD_RADIUS ||
-            dz < -CHUNK_LOAD_RADIUS || dz > CHUNK_LOAD_RADIUS)
-        {
+        bool out_of_range = (dx < -CHUNK_LOAD_RADIUS || dx > CHUNK_LOAD_RADIUS ||
+                             dz < -CHUNK_LOAD_RADIUS || dz > CHUNK_LOAD_RADIUS);
+        // D-2: Streaming chunks that are still out of range proceed to teardown.
+        if (out_of_range || active_[i].stream_state == ChunkStreamState::Streaming)
             UnloadChunk(i);
-        }
     }
 }
 

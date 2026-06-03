@@ -1,6 +1,8 @@
 #include <monkey_dust/world/world_simulation.h>
 #include <monkey_dust/world/world_events.h>
 #include <monkey_dust/world/shop_inventory.h>
+#include <monkey_dust/world/faction_system.h>
+#include <monkey_dust/building/power_grid.h>
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/platform/md_log.h>
 
@@ -101,8 +103,20 @@ void WorldSimulation::Tick(float delta_s) noexcept {
     }
 
     // WageSystem: pay NPC wages once per game-day (every TICKS_PER_GAME_DAY ticks).
-    if ((tick_count_ % TICKS_PER_GAME_DAY) == 0u)
+    // B-2: faction relation decay once per game-day → relations drift toward neutral.
+    if ((tick_count_ % TICKS_PER_GAME_DAY) == 0u) {
         PayDailyWages();
+        auto& fs = FactionSystem::Get();
+        for (int a = 0; a < faction_count_; ++a) {
+            for (int b = a + 1; b < faction_count_; ++b) {
+                uint32_t fa = factions_[a].faction_id;
+                uint32_t fb = factions_[b].faction_id;
+                int8_t r = fs.GetRelation(fa, fb);
+                if (r > 0) fs.ModRelation(fa, fb, -1);
+                else if (r < 0) fs.ModRelation(fa, fb,  1);
+            }
+        }
+    }
 
     // E-1: ShopInventory restock — advance restock_timer_s for all shops each logic second.
     // ShopInventory::TickRestock(delta_s) returns true when shop restocks; we call once/s.
@@ -113,6 +127,9 @@ void WorldSimulation::Tick(float delta_s) noexcept {
             shop.TickRestock(1.0f);  // 1s per WorldSimulation tick
         });
     }
+
+    // B-1: PowerGrid fuel consumption — drain fuel_amounts per registered consumer.
+    PowerGrid::Get().Tick(1.0f);
 
     // F4: World event generation — every 30 sim ticks (~30s real-time).
     // Raids when aggression high, caravans when prosperity high.

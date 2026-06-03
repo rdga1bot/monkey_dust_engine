@@ -58,6 +58,8 @@ jobs:
           cmake -S SDL3_src -B SDL3_build \
             -DSDL_STATIC=ON -DSDL_SHARED=OFF \
             -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF \
+            -DSDL_X11_XSCRNSAVER=OFF \
+            -DSDL_X11_XTEST=OFF \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/opt/sdl3
           cmake --build SDL3_build --parallel $(nproc)

@@ -46,10 +46,23 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
     # Exclude files with ODR conflicts or duplicate static helpers.
     # flare/: item_loader/enemy_loader/power_loader define static ChainOpen().
     # combat/: engine + game both implement PowerManager — unity batch collides with game .o.
-    file(GLOB FLARE_SRC_FILES   "${CMAKE_CURRENT_SOURCE_DIR}/src/flare/*.cpp")
-    file(GLOB COMBAT_SRC_FILES  "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/*.cpp")
-    set_source_files_properties(${FLARE_SRC_FILES} ${COMBAT_SRC_FILES}
-        PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+    # NOTE: explicit list (not GLOB) to avoid CMake re-configure on every ninja run.
+    set(_UNITY_EXCLUDE_FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/flare/item_loader.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/flare/enemy_loader.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/flare/power_loader.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/flare/map_loader.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/power_manager.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/damage_calc.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/hit_zones.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/power_def.cpp"
+    )
+    # Filter to only existing files (safe if some are absent)
+    foreach(_f ${_UNITY_EXCLUDE_FILES})
+        if(EXISTS "${_f}")
+            set_source_files_properties("${_f}" PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+        endif()
+    endforeach()
     message(STATUS "[monkey_dust] engine Unity Build: ENABLED (batch=4, flare/+combat/ excluded)")
 endif()
 
@@ -161,12 +174,7 @@ endif()
 # Not applied to vendor impl files (already excluded from ENGINE_SRC above).
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
     target_precompile_headers(monkey_dust_engine PRIVATE
-        # C stdlib (fast, few deps)
-        <cstdint> <cstdlib> <cstring> <cstdio> <cmath>
-        # C++ containers used across many TUs
-        <cstddef>
-        # EnTT ECS — very heavy header, included in most AI/component files
-        <entt/entt.hpp>
+        <cstdint> <cstdlib> <cstring> <cstdio> <cmath> <cstddef>
     )
-    message(STATUS "[monkey_dust] PCH: ENABLED (entt + stdlib)")
+    message(STATUS "[monkey_dust] PCH: ENABLED (stdlib only, ~2MB)")
 endif()

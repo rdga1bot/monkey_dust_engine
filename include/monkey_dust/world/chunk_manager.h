@@ -38,6 +38,10 @@ public:
     int  StreamingBudgetBytes() const { return stream_budget_; }
     int  BytesStreamedLastUpdate() const { return bytes_last_update_; }
 
+    // B-6: explicit on-demand chunk request (interior portals, teleports).
+    // Async: enqueues into the IO worker queue; Apply happens on next ApplyStagedChunks().
+    void RequestChunkLoad(ChunkCoord c) { TryEnqueuePending(c); }
+
     void StartIOWorker();
     void StopIOWorker();
     bool IsIOWorkerRunning() const { return io_running_.load(); }

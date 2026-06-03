@@ -122,6 +122,12 @@ if(NOT USE_SDL3)
         "The Raylib/OpenGL backend has been removed (see CLAUDE.md П.1-П.3).")
 endif()
 
+# When engine is built standalone (not via root CMakeLists), find SDL3 here.
+# Root CMakeLists already calls find_package(SDL3) before add_subdirectory(engine).
+if(NOT TARGET SDL3::SDL3 AND NOT TARGET SDL3::SDL3-static)
+    find_package(SDL3 REQUIRED CONFIG)
+endif()
+
 # SDL3 + SDL_GPU is the only rendering backend.
 # GLM provides math types; MD_LOG_NO_RAYLIB replaces TraceLog with fprintf.
 target_compile_definitions(monkey_dust_engine PUBLIC USE_SDL3 USE_GLM MD_LOG_NO_RAYLIB MD_SDL_GPU)

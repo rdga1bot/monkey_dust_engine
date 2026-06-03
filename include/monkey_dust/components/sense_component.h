@@ -14,26 +14,22 @@ struct ViewCone {
 };
 
 // ── SenseType ─────────────────────────────────────────────────────────────────
-// Batch 3: expanded from 2 → 9 senses (MD SENSE_SETS analysis).
-// JSON "sense" field accepts name string or integer index (0-8).
-// RE-note (AI.exe FUN_006ca0f0): Alien Isolation uses 7 types with HEARD_COMBAT(1)
-// and HEARD_MOVEMENT(2) as separate entries — different activation thresholds.
-// Future: split Audio → AudioCombat + AudioMovement when sense data is available.
+// B-4: Audio split — RE-confirmed (AI.exe FUN_006ca0f0): HEARD_COMBAT=1,
+// HEARD_MOVEMENT=2 are separate entries with different activation thresholds.
+// Total: 10 sense types (was 9). sizeof(SenseComponent) updated to 112.
+// JSON "sense" field accepts name string or integer index (0-9).
 enum class SenseType : uint8_t {
-    Visual       = 0,  // line-of-sight cone
-    Audio        = 1,  // sound stimulus (combat + movement combined; split when ready)
-    Smell        = 2,  // chemical/scent trail
-    Vibration    = 3,  // footstep tremors
-    Touch        = 4,  // physical contact
-    Peripheral   = 5,  // edge-of-vision movement
-    Motion       = 6,  // motion tracker ping
-    Anxiety      = 7,  // psychological stress state
-    Background   = 8,  // ambient awareness
-    COUNT        = 9,
-    // Aliases for RE-confirmed split (AI.exe HEARD_COMBAT=1, HEARD_MOVEMENT=2).
-    // Use these when setting Audio stimulus to distinguish type in BT conditions.
-    AudioCombat   = Audio,  // gunshot, clash — high urgency
-    AudioMovement = Audio,  // footstep, rustle — lower urgency
+    Visual        = 0,  // line-of-sight cone
+    AudioCombat   = 1,  // gunshot, clash — high urgency (RE: HEARD_COMBAT)
+    AudioMovement = 2,  // footstep, rustle — lower urgency (RE: HEARD_MOVEMENT)
+    Smell         = 3,  // chemical/scent trail
+    Vibration     = 4,  // footstep tremors
+    Touch         = 5,  // physical contact
+    Peripheral    = 6,  // edge-of-vision movement
+    Motion        = 7,  // motion tracker ping
+    Anxiety       = 8,  // psychological stress state
+    Background    = 9,  // ambient awareness
+    COUNT         = 10,
 };
 static constexpr uint8_t MAX_SENSES = static_cast<uint8_t>(SenseType::COUNT);
 
@@ -85,16 +81,18 @@ static_assert(sizeof(VisualSenseEffects) == 16, "VisualSenseEffects must be 16 b
 // sense_cooldown_frames: per-NPC throttle set by SenseSystem when global budget
 // is exceeded. While > 0, sense queries are skipped and decremented each tick.
 // 0 = no throttle (normal operation). Max ~30 = 3s at 10 TPS.
-// alignas(16): activation[9] array starts at offset 4 — load 4 activations via _mm_load_ps.
+// alignas(16): activation[10] array starts at offset 4 — load 4 activations via _mm_load_ps.
+// Layout: 4(header) + 40(activation[10]) + 16(thresholds+pos) + 40(last_ms[10]) = 100 → pad → 112.
 struct alignas(16) SenseComponent {
     uint8_t  cone_set_idx;                  // index into SenseRegistry::sets[]
     uint8_t  sense_cooldown_frames;         // CATHODE: per-NPC sense budget throttle
     uint8_t  _pad[2];
-    float    activation[MAX_SENSES];        // [0]=Visual … [8]=Background
+    float    activation[MAX_SENSES];        // [0]=Visual … [9]=Background
     float    threshold_lo;                  // activation below → Unaware
     float    threshold_hi;                  // activation above → Full alert
     float    last_known_x;
     float    last_known_z;
     uint32_t last_activated_ms[MAX_SENSES]; // timestamp when activation[i] last crossed threshold_hi
+    // Implicit 12-byte trailing pad from alignas(16): 100 raw bytes → 112 total.
 };
-static_assert(sizeof(SenseComponent) == 96, "SenseComponent must be 96 bytes (alignas(16) pads 92→96)");
+static_assert(sizeof(SenseComponent) == 112, "SenseComponent must be 112 bytes (B-4: COUNT 9→10, alignas(16) pads 100→112)");

@@ -42,6 +42,39 @@ static inline SurvivalConfig& GetSurvivalConfig() noexcept {
     return cfg;
 }
 
+// B-3: load SurvivalConfig from a flat JSON file. Silently keeps defaults on error.
+// Format: { "starvation_time_s": 86400, "bed_hunger_rate": 0.5, ... }
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <monkey_dust/platform/md_log.h>
+inline void LoadSurvivalConfig(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) { MD_LOG(MD_LOG_WARNING, "[SurvivalConfig] not found: %s (using defaults)", path); return; }
+    static char buf[1024];
+    int n = (int)fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    SurvivalConfig& c = GetSurvivalConfig();
+    auto readf = [&](const char* key, float& out) {
+        const char* p = strstr(buf, key);
+        if (!p) return;
+        p += strlen(key);
+        while (*p && (*p == '"' || *p == ':' || *p == ' ')) ++p;
+        if (*p) out = (float)strtod(p, nullptr);
+    };
+    readf("starvation_time_s",       c.starvation_time_s);
+    readf("fed_recovery_rate_mult",  c.fed_recovery_rate_mult);
+    readf("bed_hunger_rate",         c.bed_hunger_rate);
+    readf("encumbrance_hunger_rate", c.encumbrance_hunger_rate);
+    readf("food_quality_mult",       c.food_quality_mult);
+    readf("death_time_s",            c.death_time_s);
+    readf("death_threshold_frac",    c.death_threshold_frac);
+    readf("min_respawn_time_s",      c.min_respawn_time_s);
+    readf("max_respawn_time_s",      c.max_respawn_time_s);
+    MD_LOG(MD_LOG_INFO, "[SurvivalConfig] loaded from %s", path);
+}
+
 // Personality archetype — drives idle behavior preferences (Kenshi RE: character personality).
 enum class NpcPersonality : uint8_t {
     Neutral    = 0,

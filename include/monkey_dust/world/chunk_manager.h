@@ -57,7 +57,7 @@ private:
     ChunkManager() : active_count_(0), last_player_chunk_({9999, 9999}) {
         chunks_dir_[0] = '\0';
         for (int i = 0; i < MAX_CHUNKS_ACTIVE; ++i) {
-            active_[i].loaded       = false;
+            active_[i].stream_state = ChunkStreamState::Inactive;
             active_[i].entity_count = 0;
         }
         for (int i = 0; i < MAX_STAGING; ++i)

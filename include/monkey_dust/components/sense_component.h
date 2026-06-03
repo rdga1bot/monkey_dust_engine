@@ -16,19 +16,34 @@ struct ViewCone {
 // ── SenseType ─────────────────────────────────────────────────────────────────
 // Batch 3: expanded from 2 → 9 senses (MD SENSE_SETS analysis).
 // JSON "sense" field accepts name string or integer index (0-8).
+// RE-note (AI.exe FUN_006ca0f0): Alien Isolation uses 7 types with HEARD_COMBAT(1)
+// and HEARD_MOVEMENT(2) as separate entries — different activation thresholds.
+// Future: split Audio → AudioCombat + AudioMovement when sense data is available.
 enum class SenseType : uint8_t {
-    Visual     = 0,  // line-of-sight cone
-    Audio      = 1,  // sound stimulus
-    Smell      = 2,  // chemical/scent trail
-    Vibration  = 3,  // footstep tremors
-    Touch      = 4,  // physical contact
-    Peripheral = 5,  // edge-of-vision movement
-    Motion     = 6,  // motion tracker ping
-    Anxiety    = 7,  // psychological stress state
-    Background = 8,  // ambient awareness
-    COUNT      = 9,
+    Visual       = 0,  // line-of-sight cone
+    Audio        = 1,  // sound stimulus (combat + movement combined; split when ready)
+    Smell        = 2,  // chemical/scent trail
+    Vibration    = 3,  // footstep tremors
+    Touch        = 4,  // physical contact
+    Peripheral   = 5,  // edge-of-vision movement
+    Motion       = 6,  // motion tracker ping
+    Anxiety      = 7,  // psychological stress state
+    Background   = 8,  // ambient awareness
+    COUNT        = 9,
+    // Aliases for RE-confirmed split (AI.exe HEARD_COMBAT=1, HEARD_MOVEMENT=2).
+    // Use these when setting Audio stimulus to distinguish type in BT conditions.
+    AudioCombat   = Audio,  // gunshot, clash — high urgency
+    AudioMovement = Audio,  // footstep, rustle — lower urgency
 };
 static constexpr uint8_t MAX_SENSES = static_cast<uint8_t>(SenseType::COUNT);
+
+// ── Sensory activation thresholds (RE-confirmed, AI.exe FUN_006c7160) ────────
+// 4-level system confirmed across AI.exe ("TRACE/LOWER/ACTIVATED/UPPER_THRESHOLD").
+// These are the activation [0..1] breakpoints, not menace levels.
+static constexpr float SENSE_LOWER_THRESHOLD     = 0.25f; // below → ignore stimulus
+static constexpr float SENSE_ACTIVATED_THRESHOLD = 0.55f; // investigate / alert
+static constexpr float SENSE_UPPER_THRESHOLD     = 0.85f; // immediate attack response
+static constexpr float SENSE_FACING_TOLERANCE_DEG= 30.f;  // visual cone angular slack
 
 // ── SenseModifiers ────────────────────────────────────────────────────────────
 // AI-2: per-entity multipliers that scale activation thresholds (Kenshi/AI RE, 40B).

@@ -56,6 +56,14 @@ struct JobSystem {
         0,  // Idle      → SDL_THREAD_PRIORITY_LOW
     };
 
+    // 3-tier convenience alias — RE-confirmed: Kenshi uses sim/worker/background tiers.
+    // Maps to WorkerRole: HIGH=physics/BT, NORMAL=animation, LOW=pathfinding/streaming.
+    enum class JobPriority : int {
+        HIGH   = RolePhysics,    // BT update, physics step
+        NORMAL = RoleAnimation,  // animation sampling, sense queries
+        LOW    = RoleStreaming,   // pathfinding, chunk I/O
+    };
+
     // Assign a role to worker thread i (applied at Init if called before Init,
     // or immediately if called after). workers 0..N-1, default role = RoleAI.
     void SetWorkerRole(int worker_idx, WorkerRole role);

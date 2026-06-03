@@ -23,7 +23,7 @@ struct ChunkEntityRecord {
 
 int ChunkManager::FindActive(ChunkCoord coord) const {
     for (int i = 0; i < active_count_; ++i)
-        if (active_[i].loaded && active_[i].coord == coord) return i;
+        if (active_[i].loaded() && active_[i].coord == coord) return i;
     return -1;
 }
 
@@ -183,8 +183,8 @@ void ChunkManager::LoadChunkFromStaging(ChunkLoadStaging& stg) {
 
     ChunkData& cd = active_[active_count_];
     memset(&cd, 0, sizeof(cd));
-    cd.coord  = stg.coord;
-    cd.loaded = true;
+    cd.coord         = stg.coord;
+    cd.stream_state  = ChunkStreamState::Active;
     cd.dirty  = false;
     snprintf(cd.filename, sizeof(cd.filename),
              "%s/chunk_%d_%d.bin", chunks_dir_, stg.coord.x, stg.coord.z);
@@ -252,7 +252,7 @@ void ChunkManager::ApplyStagedChunks() {
 
 void ChunkManager::UnloadChunk(int idx) {
     ChunkData& cd = active_[idx];
-    if (!cd.loaded) return;
+    if (!cd.loaded()) return;
     if (cd.dirty) SaveChunk(idx);
 
     auto& reg = Registry::Get();
@@ -264,7 +264,7 @@ void ChunkManager::UnloadChunk(int idx) {
 
     MD_LOG(MD_LOG_INFO, "[ChunkManager] Unloaded %d_%d", cd.coord.x, cd.coord.z);
     active_[idx] = active_[--active_count_];
-    active_[active_count_].loaded = false;
+    active_[active_count_].stream_state = ChunkStreamState::Inactive;
 }
 
 // ─── public ──────────────────────────────────────────────

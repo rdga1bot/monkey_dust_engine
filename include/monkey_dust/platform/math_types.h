@@ -73,3 +73,37 @@
 
 // Simple ray: origin + normalised direction.  Defined after Vec3 aliases.
 struct MdRay { Vec3 pos; Vec3 dir; };
+
+// ── Hot math primitives (RE: lerp score=287/85 call-ins, inv_lerp score=99) ──
+// Both confirmed as the single hottest math functions in Kenshi engine binary.
+// MD_FORCE_INLINE guarantees no call overhead — critical for animation/physics hot-paths.
+#include <monkey_dust/platform/md_hints.h>
+#include <cmath>
+
+MD_FORCE_INLINE float float_lerp(float a, float b, float t) noexcept {
+    return a + (b - a) * t;
+}
+MD_FORCE_INLINE float float_inv_lerp(float a, float b, float v) noexcept {
+    return (v - a) / (b - a);
+}
+MD_FORCE_INLINE float float_clamp(float v, float lo, float hi) noexcept {
+    return v < lo ? lo : v > hi ? hi : v;
+}
+MD_FORCE_INLINE float float_clamp01(float v) noexcept {
+    return v < 0.f ? 0.f : v > 1.f ? 1.f : v;
+}
+MD_FORCE_INLINE Vec3 vec3_lerp(Vec3 a, Vec3 b, float t) noexcept {
+    return { float_lerp(a.x, b.x, t), float_lerp(a.y, b.y, t), float_lerp(a.z, b.z, t) };
+}
+// Normalised lerp — cheaper than slerp, good enough for most bone blends.
+MD_FORCE_INLINE Quat quat_nlerp(Quat a, Quat b, float t) noexcept {
+    float bx = b.x, by = b.y, bz = b.z, bw = b.w;
+    // Ensure shortest arc (dot < 0 → negate b)
+    if (a.x*bx + a.y*by + a.z*bz + a.w*bw < 0.f) { bx=-bx; by=-by; bz=-bz; bw=-bw; }
+    float rx = float_lerp(a.x, bx, t);
+    float ry = float_lerp(a.y, by, t);
+    float rz = float_lerp(a.z, bz, t);
+    float rw = float_lerp(a.w, bw, t);
+    float inv = 1.f / sqrtf(rx*rx + ry*ry + rz*rz + rw*rw);
+    return { rx*inv, ry*inv, rz*inv, rw*inv };
+}

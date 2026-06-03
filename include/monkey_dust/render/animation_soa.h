@@ -55,11 +55,37 @@ struct AnimNpcState {
 };
 static_assert(sizeof(AnimNpcState) == 16, "AnimNpcState size mismatch");
 
+// ── AnimEvent ─────────────────────────────────────────────────────────────────
+// Per-clip keyframe events (RE: VBfA bakes FRAME_OF_WEAPON_GRAB, RIGHT_FOOT_DOWN,
+// ATTACK_OFFSET_*, FRAME_DEATH etc. directly into animation metadata).
+// 4 bytes each → 8 events per clip = 32 bytes overhead per clip.
+enum class AnimEventType : uint8_t {
+    None          = 0,
+    WeaponGrab    = 1,  // FRAME_OF_WEAPON_GRAB — attach weapon to hand bone
+    WeaponRelease = 2,  // FRAME_OF_WEAPON_RELEASE — detach weapon
+    Footstep      = 3,  // RIGHT FOOT DOWN — trigger footstep audio
+    AttackHit     = 4,  // ATTACK_OFFSET_* — param: 0=centre,1=left,2=right,3=above
+    Death         = 5,  // FRAME_DEATH — spawn ragdoll, disable nav
+    VfxSpawn      = 6,  // ANIM_METADATA_SPECIAL_EFFECT_S — param: vfx type index
+    BlendSync     = 7,  // FRAME_CONVERGE — sync point for cross-fade blends
+};
+
+struct AnimEvent {
+    uint16_t      frame;  // keyframe index where event fires
+    AnimEventType type;
+    int8_t        param;  // AttackHit: direction; VfxSpawn: vfx index; others: 0
+};
+static_assert(sizeof(AnimEvent) == 4, "AnimEvent must be 4 bytes");
+static constexpr int MAX_EVENTS_PER_CLIP = 8;
+
 struct AnimationClip {
-    char    name[32];
-    uint8_t id;
-    float   duration_s;
-    int     frame_count;
+    char      name[32];
+    uint8_t   id;
+    float     duration_s;
+    int       frame_count;
+    uint8_t   event_count;                       // number of valid entries in events[]
+    uint8_t   _pad[3];
+    AnimEvent events[MAX_EVENTS_PER_CLIP];       // 32 bytes — keyframe-triggered events
 };
 
 // ─────────────────────────────────────────────────────────

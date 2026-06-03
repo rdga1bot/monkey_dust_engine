@@ -15,13 +15,28 @@ struct ChunkCoord {
     bool operator!=(const ChunkCoord& o) const { return !(*this == o); }
 };
 
+// ── ChunkStreamState ──────────────────────────────────────────────────────────
+// 4-stage lifecycle confirmed by CATHODE Zone Manager RE (AI.exe):
+//   add_to_lo → LOAD → add_to_al → ACTIVE → add_to_su → STREAM → add_to_un → UNLOAD
+// STREAM = graceful wind-down: entities saved, physics removed, but geometry still
+// rendered to avoid pop-out while player moves away. ~1-2 Update() ticks.
+enum class ChunkStreamState : uint8_t {
+    Inactive = 0,  // slot empty
+    Loading  = 1,  // IO worker reading from disk (add_to_lo)
+    Active   = 2,  // fully loaded, entities spawned, physics active (add_to_al)
+    Streaming= 3,  // queued for removal: save in progress, entities despawning (add_to_su)
+    Unloading= 4,  // final teardown: geometry removed (add_to_un)
+};
+
 struct ChunkData {
-    ChunkCoord   coord;
-    entt::entity entities[MAX_ENTITIES_PER_CHUNK];
-    int          entity_count;
-    bool         loaded;
-    bool         dirty;
-    char         filename[64];
+    ChunkCoord       coord;
+    entt::entity     entities[MAX_ENTITIES_PER_CHUNK];
+    int              entity_count;
+    ChunkStreamState stream_state;  // replaces bool loaded (backward compat below)
+    bool             dirty;
+    char             filename[64];
+
+    bool loaded() const noexcept { return stream_state == ChunkStreamState::Active; }
 };
 
 inline ChunkCoord WorldToChunk(float wx, float wz) {

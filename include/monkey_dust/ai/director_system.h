@@ -12,6 +12,31 @@ enum class DirectorStage : uint8_t {
     Intense     // > 0.75
 };
 
+// ── ThreatState ───────────────────────────────────────────────────────────────
+// 6 discrete states confirmed by AI.exe RE (FUN_008b6770 string table).
+// More granular than DirectorStage: DirectorStage drives menace fill logic,
+// ThreatState drives per-NPC animation selection and BT branch choice.
+// Mapping: MenaceToThreatState() below converts float menace → ThreatState.
+enum class ThreatState : uint8_t {
+    Neutral                    = 0,  // NEUTRAL — no threat awareness
+    Suspicious                 = 1,  // SUSPICIOUS — investigating
+    Aggressive                 = 2,  // AGGRESSIVE — direct attack
+    Panicked                   = 3,  // PANICKED — fleeing
+    ThreatEscalationAggressive = 4,  // THREAT_ESCALATION_AGGRESSIVE — full assault
+    ThreatEscalationPanicked   = 5,  // THREAT_ESCALATION_PANICKED — mass retreat
+};
+
+// Convert float menace [0..1] to ThreatState.
+// is_panicking: set true for NPCs with low Toughness or injured limbs.
+inline ThreatState MenaceToThreatState(float menace, bool is_panicking = false) noexcept {
+    if (menace < 0.25f) return ThreatState::Neutral;
+    if (menace < 0.55f) return ThreatState::Suspicious;
+    if (menace < 0.85f) return is_panicking ? ThreatState::Panicked : ThreatState::Aggressive;
+    return is_panicking
+        ? ThreatState::ThreatEscalationPanicked
+        : ThreatState::ThreatEscalationAggressive;
+}
+
 // ── DirectorProfile ───────────────────────────────────────────────────────────
 // Loaded from data/ai/director_profiles.json.
 struct DirectorProfile {

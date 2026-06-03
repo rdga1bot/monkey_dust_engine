@@ -124,7 +124,9 @@ ninja -C build monkey_dust_engine
 > The engine library itself is shader-agnostic — it loads pre-compiled SPIR-V at runtime via `GpuPipeline::Create(desc)`.
 
 **Dependencies** (bring your own or via CMake FetchContent):
-`SDL3` · `EnTT` · `Recast/Detour` · `ozz-animation` · `JoltPhysics` · `miniaudio` · `Lua 5.4` · `ImGui 1.92` (for editor builds)
+`SDL3` · `EnTT` · `Recast/Detour` · `ozz-animation` · `JoltPhysics` · `miniaudio` · `Lua 5.4`
+
+> **ImGui is NOT an engine dependency.** Dear ImGui and all extensions (imnodes, imgui-node-editor, ImGuiColorTextEdit, imguizmo, imgui-flame-graph, imgui-command-palette) live in `tools/third_party/`. The engine library has zero UI dependencies and is split-ready.
 
 ---
 

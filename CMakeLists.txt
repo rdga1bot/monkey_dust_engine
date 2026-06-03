@@ -150,6 +150,10 @@ target_link_libraries(monkey_dust_engine PRIVATE
     ozz_animation_offline
     ozz_base
 )
+# gameplay_module.cpp uses dlopen/dlclose (POSIX dl)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(monkey_dust_engine PRIVATE dl)
+endif()
 
 if(USE_GLM AND NOT USE_SDL3)
     # In SDL3 path USE_GLM is already set above; this handles explicit -DUSE_GLM

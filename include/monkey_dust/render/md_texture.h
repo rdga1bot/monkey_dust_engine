@@ -19,7 +19,8 @@ struct MdTexture {
 
 
 // Load RGBA texture from file via stb_image.
-MdTexture MdLoadTexture(const char* path);
+// mip_lod_bias: L2 GL2TextureDetail — 0=full, +1=half-res mip, +2=quarter-res.
+MdTexture MdLoadTexture(const char* path, float mip_lod_bias = 0.f);
 
 // Load RGBA texture optimized for pixel-art rendering:
 // GL_NEAREST filter + GL_CLAMP_TO_EDGE + mipmap (no seam bleeding / aliasing).

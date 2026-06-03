@@ -508,21 +508,29 @@ struct GpuSamplerDesc {
     enum class Filter : uint8_t { NEAREST, LINEAR, LINEAR_MIPMAP };
     enum class Wrap   : uint8_t { REPEAT, CLAMP_TO_EDGE };
 
-    Filter min_filter = Filter::LINEAR_MIPMAP;
-    Filter mag_filter = Filter::LINEAR;
-    Wrap   wrap_s     = Wrap::REPEAT;
-    Wrap   wrap_t     = Wrap::REPEAT;
-    bool   gen_mipmap = false;
-    bool   flip_v     = false;
+    Filter min_filter  = Filter::LINEAR_MIPMAP;
+    Filter mag_filter  = Filter::LINEAR;
+    Wrap   wrap_s      = Wrap::REPEAT;
+    Wrap   wrap_t      = Wrap::REPEAT;
+    bool   gen_mipmap  = false;
+    bool   flip_v      = false;
+    // L2-style GL2TextureDetail: +0=full, +1=half-res mip, +2=quarter-res mip.
+    // Passed to SDL_GPUSamplerCreateInfo::mip_lod_bias.
+    float  mip_lod_bias = 0.f;
 
     static GpuSamplerDesc Default()  { return {}; }
     static GpuSamplerDesc PixelArt() {
-        return { Filter::LINEAR_MIPMAP, Filter::NEAREST,
-                 Wrap::CLAMP_TO_EDGE, Wrap::CLAMP_TO_EDGE, true, true };
+        GpuSamplerDesc s;
+        s.min_filter = Filter::LINEAR_MIPMAP; s.mag_filter = Filter::NEAREST;
+        s.wrap_s = Wrap::CLAMP_TO_EDGE; s.wrap_t = Wrap::CLAMP_TO_EDGE;
+        s.gen_mipmap = true; s.flip_v = true;
+        return s;
     }
     static GpuSamplerDesc Lut() {
-        return { Filter::LINEAR, Filter::LINEAR,
-                 Wrap::CLAMP_TO_EDGE, Wrap::CLAMP_TO_EDGE, false, false };
+        GpuSamplerDesc s;
+        s.min_filter = Filter::LINEAR; s.mag_filter = Filter::LINEAR;
+        s.wrap_s = Wrap::CLAMP_TO_EDGE; s.wrap_t = Wrap::CLAMP_TO_EDGE;
+        return s;
     }
 };
 

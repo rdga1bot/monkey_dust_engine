@@ -88,18 +88,19 @@ static MdTexture FromGpuTexture(GpuTexture& gt) {
     return t;
 }
 
-MdTexture MdLoadTexture(const char* path) {
+MdTexture MdLoadTexture(const char* path, float mip_lod_bias) {
     const uint32_t h = TexHash(path);
     if (const MdTexture* cached = CacheFind(s_cache_lin, h)) return *cached;
 
     GpuTexture gt;
     auto s = GpuSamplerDesc::Default();
-    s.flip_v     = true;
-    s.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP;
-    s.mag_filter = GpuSamplerDesc::Filter::LINEAR;
-    s.wrap_s     = GpuSamplerDesc::Wrap::REPEAT;
-    s.wrap_t     = GpuSamplerDesc::Wrap::REPEAT;
-    s.gen_mipmap = true;
+    s.flip_v      = true;
+    s.min_filter  = GpuSamplerDesc::Filter::LINEAR_MIPMAP;
+    s.mag_filter  = GpuSamplerDesc::Filter::LINEAR;
+    s.wrap_s      = GpuSamplerDesc::Wrap::REPEAT;
+    s.wrap_t      = GpuSamplerDesc::Wrap::REPEAT;
+    s.gen_mipmap  = true;
+    s.mip_lod_bias = mip_lod_bias;
     if (!gt.InitFromFile(path, s)) return {};
     MdTexture t = FromGpuTexture(gt);
     CacheInsert(s_cache_lin, h, t);

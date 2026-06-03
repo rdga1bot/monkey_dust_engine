@@ -44,6 +44,7 @@ static SDL_GPUSampler* CreateSDLSampler(SDL_GPUDevice* dev, const GpuSamplerDesc
     info.address_mode_w   = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
     info.min_lod          = 0.0f;
     info.max_lod          = s.gen_mipmap ? 1000.0f : 0.0f;
+    info.mip_lod_bias     = s.mip_lod_bias;  // L2 GL2TextureDetail: 0=full, 1=half-res, 2=quarter
     return SDL_CreateGPUSampler(dev, &info);
 }
 

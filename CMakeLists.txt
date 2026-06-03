@@ -4,6 +4,48 @@ project(monkey_dust_engine LANGUAGES CXX C)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ── third_party — engine repo тепер self-contained ───────────────────────────
+# Всі залежності живуть в engine/third_party/ (субмодулі engine repo).
+# При standalone build (engine CI): CMAKE_CURRENT_SOURCE_DIR = engine/
+# При monorepo build:               CMAKE_CURRENT_SOURCE_DIR = root/engine/
+# В обох випадках third_party/ резолвиться правильно.
+set(MD_THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+
+# Додаємо compile targets тільки якщо ще не визначені (при monorepo build
+# root може додати їх раніше — захищаємо від подвійного add_subdirectory).
+if(NOT TARGET entt)
+    add_subdirectory(${MD_THIRD_PARTY}/entt EXCLUDE_FROM_ALL)
+endif()
+if(NOT TARGET glm)
+    add_subdirectory(${MD_THIRD_PARTY}/glm EXCLUDE_FROM_ALL)
+endif()
+if(NOT TARGET Recast)
+    set(RECASTNAVIGATION_DEMO     OFF CACHE BOOL "" FORCE)
+    set(RECASTNAVIGATION_TESTS    OFF CACHE BOOL "" FORCE)
+    set(RECASTNAVIGATION_EXAMPLES OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${MD_THIRD_PARTY}/recastnavigation)
+endif()
+if(NOT TARGET ozz_base)
+    set(ozz_build_tools    OFF CACHE BOOL "" FORCE)
+    set(ozz_build_fbx      OFF CACHE BOOL "" FORCE)
+    set(ozz_build_gltf     OFF CACHE BOOL "" FORCE)
+    set(ozz_build_samples  OFF CACHE BOOL "" FORCE)
+    set(ozz_build_howtos   OFF CACHE BOOL "" FORCE)
+    set(ozz_build_tests    OFF CACHE BOOL "" FORCE)
+    set(ozz_build_data     OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${MD_THIRD_PARTY}/ozz-animation)
+endif()
+if(NOT TARGET Jolt)
+    set(TARGET_UNIT_TESTS       OFF CACHE BOOL "" FORCE)
+    set(TARGET_HELLO_WORLD      OFF CACHE BOOL "" FORCE)
+    set(TARGET_PERFORMANCE_TEST OFF CACHE BOOL "" FORCE)
+    set(TARGET_SAMPLES          OFF CACHE BOOL "" FORCE)
+    set(ENABLE_ALL_WARNINGS     OFF CACHE BOOL "" FORCE)
+    set(CPP_EXCEPTIONS_ENABLED  OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${MD_THIRD_PARTY}/JoltPhysics/Build)
+    set_target_properties(Jolt PROPERTIES PRECOMPILE_HEADERS "")
+endif()
+
 # Lua 5.4: prefer static build (via FetchContent in root CMakeLists, MD_STATIC_DEPS=ON).
 # Fall back to system dynamic library when MD_STATIC_DEPS=OFF.
 if(NOT MD_STATIC_DEPS)
@@ -101,16 +143,16 @@ add_library(monkey_dust::engine ALIAS monkey_dust_engine)
 
 target_include_directories(monkey_dust_engine
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
-    PUBLIC  ${CMAKE_SOURCE_DIR}/third_party/ozz-animation/include
+    PUBLIC  ${MD_THIRD_PARTY}/ozz-animation/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
     # Third-party (PUBLIC so consumers also see them)
-    PUBLIC  ${CMAKE_SOURCE_DIR}/third_party/entt/single_include
-    PUBLIC  ${CMAKE_SOURCE_DIR}/third_party/glm
-    PRIVATE ${CMAKE_SOURCE_DIR}/third_party/recastnavigation/Recast/Include
-    PRIVATE ${CMAKE_SOURCE_DIR}/third_party/recastnavigation/Detour/Include
-    PRIVATE ${CMAKE_SOURCE_DIR}/third_party/recastnavigation/DetourCrowd/Include
-    PUBLIC  ${CMAKE_SOURCE_DIR}/third_party/JoltPhysics
-    PRIVATE ${CMAKE_SOURCE_DIR}/third_party/imgui
+    PUBLIC  ${MD_THIRD_PARTY}/entt/single_include
+    PUBLIC  ${MD_THIRD_PARTY}/glm
+    PRIVATE ${MD_THIRD_PARTY}/recastnavigation/Recast/Include
+    PRIVATE ${MD_THIRD_PARTY}/recastnavigation/Detour/Include
+    PRIVATE ${MD_THIRD_PARTY}/recastnavigation/DetourCrowd/Include
+    PUBLIC  ${MD_THIRD_PARTY}/JoltPhysics
+    PRIVATE ${MD_THIRD_PARTY}/imgui
     PRIVATE ${LUA_INCLUDE_DIR}
     # Vendor: glad, stb headers — PUBLIC so game/ and tools/ can find them too
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor
@@ -137,7 +179,7 @@ else()
     target_link_libraries(monkey_dust_engine PUBLIC SDL3::SDL3)
 endif()
 target_include_directories(monkey_dust_engine PRIVATE
-    ${CMAKE_SOURCE_DIR}/third_party/imgui/backends
+    ${MD_THIRD_PARTY}/imgui/backends
     # MOC vendor: .cpp files include "MaskedOcclusionCulling.h" relatively
     ${CMAKE_CURRENT_SOURCE_DIR}/include/vendor/moc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor/moc)

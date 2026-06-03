@@ -1,0 +1,36 @@
+[submodule "third_party/imguizmo"]
+	path = third_party/imguizmo
+	url = https://github.com/CedricGuillemet/ImGuizmo.git
+[submodule "third_party/entt"]
+	path = third_party/entt
+	url = https://github.com/skypjack/entt.git
+[submodule "third_party/imgui-node-editor"]
+	path = third_party/imgui-node-editor
+	url = https://github.com/thedmd/imgui-node-editor.git
+[submodule "third_party/recastnavigation"]
+	path = third_party/recastnavigation
+	url = https://github.com/recastnavigation/recastnavigation.git
+[submodule "third_party/imgui-flame-graph"]
+	path = third_party/imgui-flame-graph
+	url = https://github.com/bwrsandman/imgui-flame-graph.git
+[submodule "third_party/ImGuiColorTextEdit"]
+	path = third_party/ImGuiColorTextEdit
+	url = https://github.com/BalazsJako/ImGuiColorTextEdit.git
+[submodule "third_party/JoltPhysics"]
+	path = third_party/JoltPhysics
+	url = https://github.com/jrouwe/JoltPhysics.git
+[submodule "third_party/ozz-animation"]
+	path = third_party/ozz-animation
+	url = https://github.com/guillaumeblanc/ozz-animation.git
+[submodule "third_party/imgui-command-palette"]
+	path = third_party/imgui-command-palette
+	url = https://github.com/hnOsmium0001/imgui-command-palette.git
+[submodule "third_party/imgui"]
+	path = third_party/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "third_party/imnodes"]
+	path = third_party/imnodes
+	url = https://github.com/Nelarius/imnodes.git
+[submodule "third_party/glm"]
+	path = third_party/glm
+	url = https://github.com/g-truc/glm.git

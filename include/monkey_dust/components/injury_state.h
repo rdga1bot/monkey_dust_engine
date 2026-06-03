@@ -35,15 +35,28 @@ struct alignas(16) InjuryState {
 };                                    //                         total  42B → padded to 44B
 static_assert(sizeof(InjuryState) == 48, "InjuryState size (alignas(16) pads 44→48)");
 
+// B-5: DeathShutdownSpeed — distance-based death animation budget (Kenshi RE).
+// Graceful: full ragdoll + sound (<20m from player).
+// Expedient: reduced ragdoll, no sound (20-50m).
+// Critical: instant removal, no animation (>50m).
+enum class DeathShutdownSpeed : uint8_t { Graceful = 0, Expedient = 1, Critical = 2 };
+
+inline DeathShutdownSpeed GetDeathShutdownSpeed(float dist_sq) noexcept {
+    if (dist_sq < 20.f * 20.f) return DeathShutdownSpeed::Graceful;
+    if (dist_sq < 50.f * 50.f) return DeathShutdownSpeed::Expedient;
+    return DeathShutdownSpeed::Critical;
+}
+
 // DeathState — tracks dying → dead → respawn cycle.
 // Attach when InjuryState blood fraction drops below SurvivalConfig::death_threshold_frac.
 // Kenshi RE: death_time@+0x544, death_threshold@+0x54c, min/max_respawn_time@+0x164/+0x2d.
 struct DeathState {
-    float death_countdown_s   = 300.f;  // seconds remaining before permanent death; ≤0 = dead
-    float respawn_countdown_s = 0.f;    // if >0: faction respawn pending
-    uint8_t is_dying          = 0;      // 1 = in dying state (can be revived)
-    uint8_t is_dead           = 0;      // 1 = permanently dead
-    uint8_t _pad[2];
+    float               death_countdown_s   = 300.f;  // seconds remaining before permanent death
+    float               respawn_countdown_s = 0.f;    // if >0: faction respawn pending
+    DeathShutdownSpeed  death_speed         = DeathShutdownSpeed::Graceful;
+    uint8_t             is_dying            = 0;      // 1 = in dying state (can be revived)
+    uint8_t             is_dead             = 0;      // 1 = permanently dead
+    uint8_t             _pad                = 0;
 };
 static_assert(sizeof(DeathState) == 12, "DeathState layout");
 

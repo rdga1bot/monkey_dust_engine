@@ -1,6 +1,7 @@
 #include <monkey_dust/world/terrain_gen.h>
 #include <monkey_dust/world/chunk_def.h>
 #include <monkey_dust/world/biome_system.h>
+#include <monkey_dust/world/terrain_pass_grid.h>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
@@ -927,10 +928,34 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     out.center_z = p.world_offset_z + coord.z * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
     out.loaded   = false;  // Upload() sets this
 
-    // ── 4. NavMesh ────────────────────────────────────────────────────────────
-    // Per-chunk navmesh disabled: NPC pathfinding uses NavSystem singleton.
+    // ── 4. NavMesh (disabled) + PassGrid (lightweight, from heightmap slope) ────
+    // Per-chunk NavMesh disabled: NPC pathfinding uses NavSystem singleton.
     // Building 256×256 per-chunk navmeshes costs 15+ seconds at startup.
     (void)p.nav_cs; (void)p.nav_ch;
+
+    // L2-inspired TerrainPassGrid: mark cells walkable based on slope.
+    // Faster than NavMesh — uses existing heightmap already in out.heightmap.
+    // Slope threshold: L2 geodata blocks cells where angle > 45°.
+    out.pass_grid.Clear();
+    {
+        const float max_slope_h = PASS_CELL_SIZE * 1.0f;  // 100% grade ≈ 45°
+        float ox = out.coord.x * CHUNK_SIZE;
+        float oz = out.coord.z * CHUNK_SIZE;
+        (void)ox; (void)oz;
+        for (int row = 0; row < PASS_GRID_N; ++row) {
+            for (int col = 0; col < PASS_GRID_N; ++col) {
+                float lx = (col + 0.5f) * PASS_CELL_SIZE;
+                float lz = (row + 0.5f) * PASS_CELL_SIZE;
+                float h_c = out.SampleHeight(lx, lz);
+                float h_e = out.SampleHeight(lx + PASS_CELL_SIZE, lz);
+                float h_n = out.SampleHeight(lx, lz + PASS_CELL_SIZE);
+                float dh  = (h_e - h_c) > 0.f ? (h_e - h_c) : -(h_e - h_c);
+                float dhz = (h_n - h_c) > 0.f ? (h_n - h_c) : -(h_n - h_c);
+                if (dh < max_slope_h && dhz < max_slope_h)
+                    out.pass_grid.SetWalkable(row, col);
+            }
+        }
+    }
     return true;
 }
 

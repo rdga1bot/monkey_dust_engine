@@ -3,6 +3,7 @@
 #include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/nav/navmesh.h>
 #include <monkey_dust/world/chunk_def.h>
+#include <monkey_dust/world/terrain_pass_grid.h>
 
 // Geomorphing: blends vertex Y toward coarser-LOD target beyond 420m (ramp 420–600m).
 // morph_y filled by TerrainGen_Build; consumed by terrain_pom.vert.
@@ -80,11 +81,12 @@ struct TerrainChunk {
     GpuStaticBuffer ibo_lod[3];        // L1: 32×32, L2: 16×16, L3: 8×8
     GpuStaticBuffer skirt_vbo;         // TerrainVertex * TERRAIN_SKIRT_VERTS (Item 7)
     GpuStaticBuffer skirt_ibo;         // uint16_t * TERRAIN_SKIRT_IDX
-    NavMesh         navmesh;
-    TerrainHeightmap heightmap;        // CPU copy for height queries
+    NavMesh          navmesh;
+    TerrainHeightmap heightmap;         // CPU copy for height queries
+    TerrainPassGrid  pass_grid;         // L2-inspired O(1) passability bitmask
     ChunkPropInstance props[CHUNK_MAX_PROPS];
-    int             prop_count = 0;    // valid entries in props[]
-    bool            loaded = false;
+    int              prop_count = 0;    // valid entries in props[]
+    bool             loaded = false;
 
     // Sample height at local chunk coords (0..CHUNK_SIZE).
     // Bilinear interpolation between grid cells.

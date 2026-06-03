@@ -85,6 +85,24 @@ public:
         else             { nx = 0.f; ny = 1.f; nz = 0.f; }
     }
 
+    // L2-style geodata passability: O(1) walkability check via TerrainPassGrid.
+    // Returns true if world position (wx,wz) is in a walkable terrain cell.
+    // Used as cheap pre-filter in SenseSystem LOS before expensive Detour raycast.
+    bool IsWalkable(float wx, float wz) const {
+        if (!ready_) return true;
+        float rel_x = wx - world_off_x_;
+        float rel_z = wz - world_off_z_;
+        int cx = (int)(rel_x / chunk_size_);
+        int cz = (int)(rel_z / chunk_size_);
+        if (cx < 0 || cx >= tnkn_ || cz < 0 || cz >= tnkn_) return true;
+        int px = (cx + cx_base_) % tnkn_;
+        int pz = (cz + cz_base_) % tnkn_;
+        const TerrainChunk& c = chunks_[pz * tnkn_ + px];
+        float lx = rel_x - cx * chunk_size_;
+        float lz = rel_z - cz * chunk_size_;
+        return c.pass_grid.IsWalkableLocal(lx, lz);
+    }
+
     // G-3: water level constant and query.
     // Returns true if terrain height at (wx,wz) is below the water plane.
     // NavMesh excludes water cells; water.frag renders the flat plane.

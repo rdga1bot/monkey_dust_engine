@@ -1,0 +1,3651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>monkey_dust — Technical Documentation v25.0</title>
+<style>
+:root {
+  --bg:      #0d1117;
+  --bg2:     #161b22;
+  --bg3:     #1c2128;
+  --border:  #30363d;
+  --text:    #c9d1d9;
+  --text2:   #8b949e;
+  --blue:    #58a6ff;
+  --blue2:   #79c0ff;
+  --green:   #56d364;
+  --orange:  #f0883e;
+  --red:     #ff7b72;
+  --yellow:  #e3b341;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg); color: var(--text);
+  font-size: 15px; line-height: 1.6;
+}
+.layout { display: flex; min-height: 100vh; }
+
+/* ── Sidebar ── */
+nav {
+  width: 240px; min-width: 240px;
+  background: var(--bg2); border-right: 1px solid var(--border);
+  padding: 20px 0; position: sticky; top: 0; height: 100vh;
+  overflow-y: auto; flex-shrink: 0;
+}
+nav .logo {
+  padding: 0 16px 16px; border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+nav .logo h2 { color: var(--blue); font-size: 15px; }
+nav .logo p  { color: var(--text2); font-size: 12px; margin-top: 3px; }
+nav a {
+  display: block; padding: 7px 16px; color: var(--text2);
+  text-decoration: none; font-size: 13px; border-left: 3px solid transparent;
+  transition: all .15s;
+}
+nav a:hover  { color: var(--text); background: var(--bg3); }
+nav a.active { color: var(--blue); border-left-color: var(--blue); background: var(--bg3); }
+nav .nav-desc { font-size: 11px; color: var(--text2); padding: 0 16px 4px; opacity: .7; }
+
+/* ── Content ── */
+main { flex: 1; max-width: 960px; padding: 32px 40px; min-width: 0; }
+section { margin-bottom: 60px; padding-bottom: 40px; border-bottom: 1px solid var(--border); }
+section:last-child { border-bottom: none; }
+
+/* ── Typography ── */
+h1 { font-size: 24px; color: #e6edf3; margin: 0 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+h2 { font-size: 20px; color: var(--blue); margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+h3 { font-size: 16px; color: var(--blue2); margin: 20px 0 8px; }
+h4 { font-size: 14px; color: #adbac7; margin: 14px 0 6px; }
+p  { margin-bottom: 12px; }
+a  { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+ul, ol { padding-left: 24px; margin-bottom: 12px; }
+li { margin-bottom: 4px; }
+strong { color: #e6edf3; }
+em { color: var(--text2); }
+
+/* ── Code ── */
+code {
+  font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+  font-size: 13px; background: var(--bg2);
+  padding: 2px 6px; border-radius: 4px; color: var(--orange);
+}
+pre {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 16px; overflow-x: auto;
+  margin: 12px 0; line-height: 1.5;
+}
+pre code {
+  background: none; padding: 0; color: #e6edf3; font-size: 13px;
+}
+
+/* ── Tables ── */
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+th { background: var(--bg3); color: var(--blue2); font-weight: 600;
+     border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+td { border: 1px solid var(--border); padding: 7px 12px; }
+tr:nth-child(even) td { background: #0a0e14; }
+
+/* ── Blockquote ── */
+blockquote {
+  border-left: 3px solid var(--blue); margin: 12px 0;
+  padding: 8px 16px; background: var(--bg3); border-radius: 0 4px 4px 0;
+  color: var(--text2);
+}
+
+/* ── Header card ── */
+.header-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 20px 24px; margin-bottom: 32px;
+}
+.header-card h1 { border: none; margin: 0 0 8px; font-size: 22px; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.badge {
+  background: #1f6feb33; border: 1px solid #1f6feb66;
+  color: var(--blue); padding: 3px 10px; border-radius: 20px; font-size: 12px;
+}
+.meta { color: var(--text2); font-size: 12px; margin-top: 8px; }
+.section-tag {
+  display: inline-block; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); font-size: 11px; padding: 2px 8px; border-radius: 4px;
+  margin-bottom: 8px; vertical-align: middle; margin-left: 8px;
+}
+
+/* ── Scroll spy active ── */
+@media (max-width: 768px) {
+  nav { display: none; }
+  main { padding: 20px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+<div class="logo">
+<h2>monkey_dust</h2>
+<p>Technical Documentation</p>
+<p style="font-size:11px;margin-top:6px;color:#58a6ff">v25.0 &middot; 2026-06-04 15:24</p>
+</div>
+<span class="nav-desc">Overview, stack, build instructions,…</span>
+<a href="#README-md">Game</a>
+<span class="nav-desc">GPU HAL, AI/BT VM, ECS, physics, ani…</span>
+<a href="#engine-README-md">Engine</a>
+<span class="nav-desc">Editor, hot-reload, QA, shader pipel…</span>
+<a href="#tools-README-md">Tools</a>
+<span class="nav-desc">Current milestones and recent change…</span>
+<a href="#CLAUDE_STATE-md">State</a>
+<span class="nav-desc">Critical rules, GPU debug protocol, …</span>
+<a href="#CLAUDE-md">Config & Rules</a>
+<span class="nav-desc">Project constitution, QA protocol, G…</span>
+<a href="#CLAUDE_CONSTITUTION-md">Constitution</a>
+</nav>
+<main>
+<div class="header-card"><h1>monkey_dust — Technical Documentation</h1><div class="badges"><span class="badge">C++17</span><span class="badge">SDL3+SDL_GPU</span><span class="badge">Vulkan 1.1</span><span class="badge">EnTT ECS</span><span class="badge">Intel HD 520</span><span class="badge">60 FPS</span><span class="badge">1557 tests</span><span class="badge">RenderDoc</span></div><p class="meta">Generated 2026-06-04 15:24 &middot; FLARE-inspired open-world RPG sandbox &middot; Solo project</p></div>
+<section id="README-md"><h2>Game<span class="section-tag">README.md</span></h2><h1>monkey_dust</h1>
+<p>Open-world isometric RPG sandbox for Linux. Isometric tile rendering pipeline inspired by Flare Engine. Solo project built with SDL3 + SDL_GPU (Vulkan) + EnTT + Recast/Detour.</p>
+<p><strong>Target hardware:</strong> Intel HD 520 (Skylake AVX2) · Vulkan via SDL_GPU · 4–8 GB shared RAM · 1280×720 · 60 FPS</p>
+<blockquote>
+<p><strong>License:</strong> Proprietary — All Rights Reserved. See <a href="LICENSE">LICENSE</a>.</p>
+<p><strong>Docs:</strong> <a href="https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html">rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html</a> — повна технічна документація движка, редактора та AI-систем.</p>
+</blockquote>
+<hr />
+<h2>Stack</h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Technology</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rendering</td>
+<td><strong>SDL_GPU</strong> (Vulkan/Metal/D3D12) — exclusive, no OpenGL path · glad</td>
+</tr>
+<tr>
+<td>GPU HAL</td>
+<td><code>GpuPipeline</code> · <code>GpuVertexBuffer</code> · <code>GpuCommandBuffer</code> · <code>GpuComputePipeline</code> · <code>GpuComputePass</code> · <code>GpuRingBuffer</code> · <code>GpuDepthTexture</code> · <code>GpuRenderPass</code> · <code>GpuStaticBuffer</code> · <code>GpuTexture</code> · <code>GpuDrawIndexedIndirect</code></td>
+</tr>
+<tr>
+<td>ECS</td>
+<td>EnTT 3.16</td>
+</tr>
+<tr>
+<td>Pathfinding</td>
+<td>Recast/Detour (navmesh) · <strong>DetourCrowd</strong> (ORCA steering, max 64 agents)</td>
+</tr>
+<tr>
+<td>Physics</td>
+<td><strong>Jolt Physics</strong> (CharacterVirtual per NPC, max 512 bodies) — dormant until terrain mesh loaded</td>
+</tr>
+<tr>
+<td>Animation</td>
+<td><strong>AnimationSoA</strong> + CPU SkinMesh (LBS); Kenshi Biped 30-bone rig via cgltf GLB; weight blend 5-level speed curve</td>
+</tr>
+<tr>
+<td>Scripting</td>
+<td>Lua 5.4 (sandboxed: 8 MB limit, io/os/package/debug blocked)</td>
+</tr>
+<tr>
+<td>Debug UI</td>
+<td>Dear ImGui (tools/third_party — not an engine dep; game/tools compile imgui, engine has zero UI deps)</td>
+</tr>
+<tr>
+<td>Math</td>
+<td>GLM 1.1.0 · own Vec3/Mat4 aliases via <code>&lt;monkey_dust/math_types.h&gt;</code></td>
+</tr>
+<tr>
+<td>Window / Input</td>
+<td>SDL3 3.x</td>
+</tr>
+<tr>
+<td>Audio</td>
+<td>miniaudio (singleton, SFX pool MAX=32, music/ambience streaming)</td>
+</tr>
+<tr>
+<td>2D Text/UI</td>
+<td>MdDraw2D (stb_truetype + GL batch)</td>
+</tr>
+<tr>
+<td>SPIR-V shaders</td>
+<td><code>scripts/compile_shaders.sh</code> (glslc) · <code>#version 460</code> · Vulkan 1.1</td>
+</tr>
+<tr>
+<td>Language</td>
+<td>C++17</td>
+</tr>
+<tr>
+<td>Build</td>
+<td>CMake 3.21+ · Ninja · ccache</td>
+</tr>
+<tr>
+<td>Tests</td>
+<td>Google Test · <strong>1557 tests</strong> + QA visual regression + BDD Gherkin runner</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Repository structure</h2>
+<pre><code>engine/                         # Static lib: libmonkey_dust_engine.a
+│   include/monkey_dust/
+│   │   platform/               #   input.h · audio.h · window.h · math_types.h
+│   │   │                       #   md_hints.h · md_fs.h (thin FS abstraction)
+│   │   render/                 #   gpu_hal.h · gpu_ring_buffer.h · gpu_device.h
+│   │   │                       #   animation_soa.h · light_system.h · shadow_system.h
+│   │   │                       #   ssao_system.h · particle_soa.h · instancer.h
+│   │   │                       #   md_camera.h · md_mesh.h · md_shader.h · md_texture.h
+│   │   │                       #   gpu_profiler.h · material_desc.h (OGRE-style JSON → GpuPipeline::Desc)
+│   │   ecs/registry.h
+│   │   nav/path_cache.h        #   LRU 64, spinlock + _mm_pause, TTL 5s
+│   │   save/save_system.h      #   async + CRC32 v8
+│   │   world/                  #   spatial_grid.h · chunk_manager.h · transform_soa.h
+│   │   │                       #   world_simulation.h (1Hz economy: FactionState[8]+TradeRoute[32])
+│   │   scripting/lua_system.h · lua_event_bus.h · flow_graph.h
+│   │   ai/                     #   director_system.h · sense_registry.h · npc_config.h
+│   │   │                       #   behavior_tree.h · bt_node_pool.h · bt_system.h
+│   │   │                       #   bt_json_loader.h · bt_action_registry.h
+│   │   │                       #   role_registry.h · utility_scorer.h
+│   │   components/             #   14 POD ECS components + bt_components.h + npc_memory.h
+│   │   combat/                 #   damage_calc · hit_zones · power_def · power_manager
+│   │   flare/                  #   tile_map.h · tile_map_renderer.h · flare_anim_system.h
+│   src/                        # Engine implementation (.cpp)
+│   │   ai/behavior_tree.cpp · bt_json_loader.cpp · utility_scorer.cpp
+│   │   render/material_desc.cpp
+│   │   tools/md_fs.cpp
+│   │   world/world_simulation.cpp
+│
+game/                           # Executable: monkey_dust
+│   src/
+│   │   main.cpp                #   Game loop (10 TPS logic / 60 FPS render)
+│   │   game_state.h
+│   │   ai/bt_loader.h          #   JSON BT templates + WatchFile/PollReload live reload
+│   │   ai/ · building/ · combat/ · components/
+│   │   dialog/ · nav/ · save/ · systems/ · world/
+│   │   hud_renderer · logic_tick · player_input · world_init
+│
+tools/                          # Standalone executables
+│   editor/                     #   monkey_dust_editor — wicked-style JSON + map editor
+│   │   editor_core · editor_animation_panel · editor_viewcone_panel
+│   │   editor_flowgraph_panel · editor_director_panel · editor_gpu_profiler_panel
+│   flare_convert/              #   md_flare_convert — FLARE INI → JSON
+│   flare_demo/                 #   md_flare_demo — Flare map viewer
+│
+shaders/                        # GLSL 4.60 + SPIR-V (#ifdef SPIRV_COMPILE)
+│   animated.vert/npc_instanced.frag    #   GPU skeletal animation (6 bones/NPC) + ACES tonemapping
+│   skinning.comp               #   Bone transform compute (local_size=64, procedural)
+│   pbr.frag                    #   PBR lighting + ACES filmic tonemapping + gamma
+│   cull.comp                   #   Main frustum + distance culling
+│   shadow_csm.vert/frag        #   3-cascade CSM depth pass
+│   shadow_cull.comp            #   Shadow frustum culling
+│   deferred_point.vert/frag    #   Point light sphere volumes (additive)
+│   deferred_strip.vert/frag    #   Strip (capsule) lights via AABB volume
+│   deferred_lighting.vert/frag #   Ambient + directional fullscreen pass (M57)
+│   ssao.comp                   #   SSAO half-res compute (R8_UNORM, 16-tap)
+│   smaa_edge/blend/final.vert/frag  #   3-pass SMAA post-process
+│   tile_map.vert/frag          #   Isometric tile map (flat/billboard, multi-atlas)
+│   tile_map_2d.vert/frag       #   2D SDL_GPU pixel-perfect tile map (SPIR-V)
+│   particle.vert/frag          #   Point sprite particles
+│
+data/
+│   ai/ · audio/ · buildings/ · chunks/ · dialogs/ · factions/
+│   fonts/                      # Arimo-Regular.ttf · Arimo-Bold.ttf · UbuntuMono-R.ttf
+│   quests/ · scripts/
+│   bt/                         # BT JSON templates: systematic_search.bt.json + others
+scripts/
+│   compile_shaders.sh          # glslc → shaders/spirv/*.spv
+│   remove_gl43_guards.py       # one-time migration tool (FIX-8, kept for reference)
+third_party/                    # entt · recastnavigation · glm · googletest
+                                # (imgui + extensions now in tools/third_party/)
+</code></pre>
+<hr />
+<h2>Build</h2>
+<pre><code class="language-bash">git clone --recurse-submodules https://github.com/rdga1bot/monkey_dust.git
+cd monkey_dust
+
+# Primary build (SDL3 + SDL_GPU — only supported path):
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
+ninja -C build monkey_dust           # game        → build/game/monkey_dust
+ninja -C build monkey_dust_editor    # editor      → build/tools/monkey_dust_editor
+ninja -C build md_flare_convert      # converter   → build/tools/md_flare_convert
+ninja -C build md_flare_demo         # map viewer  → build/tools/md_flare_demo
+
+# Test suite:
+ninja -C build md_tests &amp;&amp; build/tests/md_tests
+</code></pre>
+<blockquote>
+<p><strong><code>-DUSE_SDL3=ON</code></strong> is the only actively developed and supported path. It automatically sets
+<code>MD_SDL_GPU</code> as the exclusive rendering backend, enables GLM math, and excludes Raylib
+from the build entirely. The old <code>-DUSE_SDL3=OFF</code> (Raylib+GLFW) path is kept for reference
+only and is not maintained.</p>
+</blockquote>
+<p>Debug build (ImGui overlay, WorldPlacer, TimingSystem):</p>
+<pre><code class="language-bash">cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUSE_SDL3=ON
+ninja -C build monkey_dust
+</code></pre>
+<p>Wicked-style in-game editor (Phase 34):</p>
+<pre><code class="language-bash">cmake -S . -B build -G Ninja -DUSE_SDL3=ON -DMONKEY_DUST_EDITOR=ON
+ninja -C build monkey_dust
+</code></pre>
+<p>Recompile SPIR-V shaders after any <code>.vert</code>/<code>.frag</code>/<code>.comp</code> change:</p>
+<pre><code class="language-bash">bash scripts/compile_shaders.sh
+</code></pre>
+<p><strong>Shader hot-reload</strong> (no restart required):</p>
+<pre><code class="language-bash"># Terminal 2: watch + auto-recompile on save
+bash tools/shader_watch.sh
+# In editor console:
+/reload-shaders
+</code></pre>
+<p><strong>GPU debugging with RenderDoc:</strong></p>
+<pre><code class="language-bash">SDL_GPU_DEBUGMODE=1 renderdoc build/tools/monkey_dust_editor
+</code></pre>
+<hr />
+<h2>Flare map viewer (md_flare_demo)</h2>
+<p>Standalone <strong>2D pixel-perfect SDL_GPU tile map viewer</strong> for <a href="https://github.com/clintbellanger/flare-game">flare-game</a> map data (dev/testing only). Demonstrates the monkey_dust SDL_GPU API end-to-end: plain SDL3 window → <code>GpuDevice::Init</code> → Vulkan swapchain → SPIR-V shaders → isometric tile map. No OpenGL context, no Raylib. Requires <code>third_party/flare-game/</code> submodule.</p>
+<pre><code class="language-bash">./build/tools/md_flare_demo [mods_root] [mod_name] [map_name]
+# defaults: third_party/flare-game/mods  empyrean_campaign  maps/goblin_camp.txt
+</code></pre>
+<p><strong>Controls:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WASD / arrows</td>
+<td>Pan</td>
+</tr>
+<tr>
+<td>Q / E or scroll</td>
+<td>Zoom out / in</td>
+</tr>
+<tr>
+<td>R</td>
+<td>Reset view</td>
+</tr>
+<tr>
+<td>Escape</td>
+<td>Quit</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Content editor (monkey_dust_editor)</h2>
+<p>Standalone JSON + map editor. Built with SDL3 + ImGui (from tools/third_party) — no Raylib dependency.</p>
+<pre><code class="language-bash">./build/tools/monkey_dust_editor
+</code></pre>
+<p><strong>Tabs:</strong>
+- <strong>Items</strong> — CRUD for <code>data/items/items.json</code>
+- <strong>Factions</strong> — CRUD + relation matrix for <code>data/factions/factions.json</code>
+- <strong>Map</strong> — Isometric tile map editor (M9): FBO viewport, palette, layers, undo/redo 256, flood fill, minimap
+- <strong>Settings</strong> — Font configuration (Label/Header/Mono, path + size, live Apply)</p>
+<hr />
+<h2>Controls (game)</h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WASD</td>
+<td>Move player</td>
+</tr>
+<tr>
+<td>F</td>
+<td>Attack nearest enemy</td>
+</tr>
+<tr>
+<td>E</td>
+<td>Talk to nearby NPC (radius 5m) — opens ImGui dialog popup (NpcDialogSystem, E-key triggers scored conditions/effects)</td>
+</tr>
+<tr>
+<td>P</td>
+<td>Pause / unpause simulation (freezes logic + AI ticks, HUD shows "[ PAUSED ]")</td>
+</tr>
+<tr>
+<td>B</td>
+<td>Place building</td>
+</tr>
+<tr>
+<td>Tab</td>
+<td>Cycle building type</td>
+</tr>
+<tr>
+<td>X</td>
+<td>Demolish building</td>
+</tr>
+<tr>
+<td>F5</td>
+<td>Async save</td>
+</tr>
+<tr>
+<td>F9</td>
+<td>Load</td>
+</tr>
+<tr>
+<td>ESC</td>
+<td>Close dialog / exit</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Debug builds only:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F1</td>
+<td>Debug overlay (BT Visualizer, Entity List, Inspector, Performance, Threading)</td>
+</tr>
+<tr>
+<td>F2</td>
+<td>SpatialGrid overlay</td>
+</tr>
+<tr>
+<td>F4</td>
+<td>WorldPlacer (in-game object editor)</td>
+</tr>
+<tr>
+<td>F6</td>
+<td>Export placement.json</td>
+</tr>
+<tr>
+<td>F7</td>
+<td>Building Def Editor</td>
+</tr>
+<tr>
+<td>F8</td>
+<td>Faction Relations Matrix</td>
+</tr>
+<tr>
+<td>F10</td>
+<td>Clean screenshot mode</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Wicked Editor (<code>MONKEY_DUST_EDITOR=ON</code>):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>F3</td>
+<td>Toggle Wicked-style editor</td>
+</tr>
+<tr>
+<td>W/E/R</td>
+<td>Translate / Rotate / Scale gizmo</td>
+</tr>
+<tr>
+<td>F</td>
+<td>Focus camera on selected entity</td>
+</tr>
+<tr>
+<td>Ctrl+Z / Ctrl+Y</td>
+<td>Undo / Redo</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Features</h2>
+<ul>
+<li><strong>ECS</strong> — EnTT with 500 NPC entities, all components plain POD</li>
+<li><strong>Kenshi Mechanics (KEN-MIGRATION P1–P6)</strong> — 6-phase Kenshi parity: LimbHealth per-limb HP (6 zones), 25-skill StatSheet, bleed/KO/toughness, DailySchedule time-slot goals, NeedsComponent (hunger/fatigue), Ragdoll 30-bone Jolt, FactionRelationMatrix[64][64], BleedSystem+Doctor, OffscreenNpcDatabase[10000] 1Hz, ItemDef[2048]+ShopInventory+PriceCalc, ResearchSystem, RaceModifiers, ParryWindow, ZoneState persistence; Phase 6: 7 BT need-survival leaves wired into <code>BuildWanderBT</code> Selector (vendor→food→buy→bed→surgery→repair_skel→repair_item→wander)</li>
+<li><strong>AI — Stackless BT VM</strong> — data-driven JSON behavior trees; <code>BTJsonLoader</code> (strstr parser, 30+ node types, 11 enum lookup tables, no external JSON lib); <code>BTSystem</code> 3-phase tick (frame_flags+hints reset → bare entities → enabled trees); <code>BTNodePool</code> flat 32 KB arena; <code>BTActionRegistry</code> MAX_ACTIONS=64</li>
+<li><strong>Live BT Reload</strong> — <code>BTLoader::WatchFile</code> (HotReload) + <code>PollReload()</code> deferred to logic tick; zero concurrent tree mutation</li>
+<li><strong>MD AI Patterns</strong> — 20 patterns adapted from Alien: Isolation's MD engine (see section below)</li>
+<li><strong>Utility Scorer</strong> — Echo-inspired goal utility scoring over <code>MotivationType</code>; <code>FillCandidates</code> + <code>Bias(current, 10)</code> inertia + <code>BestFrom</code>; no heap allocation</li>
+<li><strong>NPC Memory</strong> — <code>NpcMemoryComponent</code>: <code>SpatialMemory[8]</code> (LRU evict) + <code>events[8]</code> (FNV IDs, ring overwrite); <code>MemoryCheck</code>/<code>MemoryForget</code> BT nodes</li>
+<li><strong>Director System</strong> — menace gauge [0..1], DirectorStage, DirectorProfile JSON, menace-based NPC spawning</li>
+<li><strong>Role Registry</strong> — <code>RoleRegistry</code> singleton (header-only), 8 <code>NpcRole</code> slots; <code>RoleClaim</code>/<code>RoleRelease</code>/<code>RoleCheck</code> BT nodes; <code>claim()</code> idempotent for owner</li>
+<li><strong>Sense System (M55)</strong> — <code>SenseSystemUpdate(now_ms)</code> after DispatchFrameFlags; Visual = max cone contribution (dist+half-angle); Audio = linear falloff (15 m); rising-edge threshold → <code>last_activated_ms</code>; Visual rising edge → <code>last_known_x/z</code>; ViewConeSet (Close/Focused/Normal/Peripheral), SenseRegistry</li>
+<li><strong>NPC Archetypes (M54)</strong> — Guard (patrol+retaliate+engage), Alien (motivation-gate+low-HP escape), Vendor (passive-wander+flee); <code>BuildGuardBT</code>/<code>BuildAlienBT</code>/<code>BuildVendorBT</code>; breadth-first BT child ordering invariant</li>
+<li><strong>BT Combat Dispatch (M56)</strong> — <code>CombatDispatch(now_ms)</code> after SenseSystemUpdate; reads <code>ff::SHOULD_MELEE_ATTACK(12)</code>/<code>ff::SHOULD_RANGED_SHOOT(9)</code>; target from <code>bb["target_entity"]</code>; range+cooldown gate; CalcDamage+RollHitZone; kill → <code>Combat::is_dead=true</code>+<code>lcf::IS_DEAD</code>; collect→apply, 64-cap</li>
+<li><strong>FlowGraph</strong> — FNV-1a node IDs, MAX 64 nodes + 128 connections, ring buffer triggers (MAX_PENDING=32), typed <code>FlowVar</code> (Float/Bool/Int/Str), <code>FlowDurableTrigger</code> pool (MAX=16, refcount + duration decay)</li>
+<li><strong>AgentState</strong> — <code>AgentTimers[26]</code> (26 named <code>AgentTimerSlot</code> slots), <code>frame_flags uint64</code> (reset each tick), <code>awareness</code>/<code>alertness</code>/<code>mood</code>/<code>withdraw_state</code>, <code>AgentGauges</code> (Retreat+StunDamage), <code>AgentBlackboard[24]</code>, <code>entity_state uint32</code> (23 <code>EntityStateFlag</code> bits), <code>LogicCharacterFlags uint64</code> (40 named lcf bits)</li>
+<li><strong>Scheduling</strong> — ScheduleSystem day/night NPC BT switch per <code>bt_template_id</code>; per-<code>DirectorStage</code> BT override via <code>NpcConfig::bt_stage[4][32]</code></li>
+<li><strong>World Simulation</strong> — 1 Hz economy tick: <code>FactionState[8]</code> + <code>TradeRoute[32]</code>; trade route gold/prosperity/population updates accumulate from 10 TPS logic tick</li>
+<li><strong>Pathfinding</strong> — Recast/Detour navmesh (400×400 m), PathCache LRU 64 (<code>_mm_pause</code> spinlock), async tile rebuild</li>
+<li><strong>Combat</strong> — 6 hit zones, 3 damage types (blunt/cut/pierce), armor resistance, per-entity PRNG</li>
+<li><strong>Powers</strong> — PowerSlotManager 4 slots per entity, cooldowns; melee AoE collect→apply; ranged ProjectileComponent spawn; Lua API</li>
+<li><strong>Factions</strong> — relation matrix from JSON, IsEnemy/IsFriendly, 3 factions</li>
+<li><strong>Building</strong> — grid-snap placement (200×200), production chains, 9 types, LOD wireframe &gt;80 m</li>
+<li><strong>Inventory</strong> — 16 slots, resource costs for construction</li>
+<li><strong>Quests</strong> — JSON chains (KILL/BUILD/COLLECT), bitmask <code>completed_quests[4]</code>, faction rewards, prerequisite chains</li>
+<li><strong>Dialog (M58)</strong> — tree-based JSON; conditions: <code>has_item</code>/<code>faction_friendly</code>/<code>faction_enemy</code>/<code>quest_active</code>/<code>quest_complete</code>; actions: <code>give_quest</code>/<code>complete_quest</code>/<code>give_item</code>/<code>fire_event</code>; <code>NpcInteractionComponent</code> (interaction_range 2.5 m, cooldown_ms 5000)</li>
+<li><strong>Save/Load</strong> — binary <code>.mdsave</code> <strong>v10</strong> (CRC32 + data_size; async; backward compat v2–v9); AgentState inline per NpcRecord; FlowGraph vars + WorldSimulation FactionState/TradeRoute tail section</li>
+<li><strong>Hot Reload</strong> — POSIX stat file watcher, SDL_Thread poll, PollOnce for tests; used by BTLoader live reload</li>
+<li><strong>Chunk Streaming</strong> — 64×64 m chunks, async IO staging ring, procedural spawn, binary save per chunk</li>
+<li><strong>Lua scripting</strong> — Lua 5.4, sandboxed: 8 MB allocator limit, io/os/package/debug blocked, 10 000 instruction hook; 8 C API functions</li>
+<li><strong>LuaEventBus</strong> — MAX_HANDLERS=64, Register/Fire without heap allocation</li>
+<li><strong>Material Desc</strong> — O3DE + OGRE-inspired: JSON → <code>GpuPipeline::Desc</code>; <strong>parent inheritance</strong> (<code>"parent":"base_pbr"</code>); <code>shader_features</code> bitmask (SF_Skinned/SF_Shadows/SF_AlphaTest); <code>MaterialTypeRegistry</code> MAX=32</li>
+<li><strong>FS Abstraction</strong> — <code>md::fs_read_all</code> / <code>fs_read_alloc</code> / <code>fs_free</code> / <code>fs_exists</code> thin platform layer (Cocos2d-x inspired); used by BTJsonLoader and BTLoader</li>
+<li><strong>GPU HAL</strong> — <code>GpuPipeline</code> · <code>GpuVertexBuffer</code> · <code>GpuCommandBuffer</code> · <code>GpuStaticBuffer</code> · <code>GpuTexture</code> · <code>GpuComputePipeline</code> · <code>GpuComputePass</code> · <code>GpuDepthTexture</code> · <code>GpuRenderPass</code> · <code>GpuDrawIndexedIndirect</code></li>
+<li><strong>GPU Ring Buffer</strong> — <code>GpuRingBuffer</code>: N=3 slots persistent coherent map, fence sync; zero CPU-GPU stall (TransformSoA 32 KB + AnimNpcState 8 KB per frame)</li>
+<li><strong>GPU Culling</strong> — <code>cull.comp</code> (frustum + distance, local_size=64) + <code>GpuDrawIndexedIndirect</code>; shadow frustum cull separately</li>
+<li><strong>GPU Skeletal Animation</strong> — AnimationSoA + <code>skinning.comp</code> (local_size=64); <strong>6 bones/NPC</strong> (root+body+4 limbs, procedural IDLE/WALK/ATTACK); FinalBones SSBO ~192 KB</li>
+<li><strong>ACES Tonemapping</strong> — <code>pbr.frag</code> + <code>npc_instanced.frag</code>: <code>clamp((c*(2.51c+0.03))/(c*(2.43c+0.59)+0.14), 0, 1)</code> replaces Reinhard; gamma <code>pow(c, 1/2.2)</code></li>
+<li><strong>Deferred Ambient Pass (M57)</strong> — <code>DeferredLightingSystem::DrawAmbientPass</code>; fullscreen triangle (no VBO); reads GBuffer RT0+RT1; OctDecode oct-normal; Lambertian ambient+directional; emissive scale 1.4875; outputs RGBA16F <code>hdr_color</code>; <code>DeferredAmbientUBO</code> std140 64 B; gate: <code>RenderTierSystem::IsDeferred()</code></li>
+<li><strong>Deferred Point Lights</strong> — icosphere (80 triangles) additive blend volumes via <code>deferred_point.vert/frag</code></li>
+<li><strong>Strip Lights</strong> — capsule SDF AABB volume via <code>deferred_strip.vert/frag</code> (MD DEFERREDSTRIPLIGHTING analogue)</li>
+<li><strong>SSAO</strong> — half-res compute (R8_UNORM), 16-tap rotated disk, <code>ssao.comp</code></li>
+<li><strong>SMAA</strong> — 3-pass fullscreen triangle (edge detect + blend weight + final blend)</li>
+<li><strong>CSM Shadows</strong> — ShadowSystem 3-cascade 1024×1024; <strong>EVSM soft shadows</strong>; texel-snap (roundf quantization eliminates shimmer); 10 % cascade blend overlap; <code>shadow_cull.comp</code> GPU cull</li>
+<li><strong>PBR Lighting</strong> — Cook-Torrance BRDF, split-sum IBL, BRDF LUT 64×64 (Hammersley GGX, CPU-generated)</li>
+<li><strong>Particles</strong> — ParticleSoA + ParticleRenderer (point sprites via GPU HAL)</li>
+<li><strong>ModelManager</strong> — singleton, MAX_MODELS=32, .obj/.gltf with fallback mesh</li>
+<li><strong>TransformSoA</strong> — SoA layout, <strong>AVX2 BulkComputeDistSq/BulkComputeLOD</strong> (8 floats/iter, <code>_mm256_fmadd_ps</code>), <code>alignas(64)</code> on all SoA arrays, <code>MD_HOT</code> branch hints; <strong>dirty faction SSBO</strong> — partial range upload <code>[faction_dirty_min_, faction_dirty_max_]</code></li>
+<li><strong>Isometric Tile Map</strong> — TileMapRenderer: instanced draw, multi-atlas (4), flat/billboard tiles, FRINGE layer, tile animation (8 frames); <strong><code>uint64_t</code> prio sort</strong> (eliminates Z-fight at tile edges); <strong><code>fadeOverlapTile</code></strong> (<code>SetPlayerTilePos</code> → OBJECT tiles at 35 % alpha when player under them); <strong>4-phase pipeline</strong> (<code>SetObjectLayerIdx</code> — overhead layers drawn after NPC sprites); dirty-flag TINST; tile pixel-snap (roundf)</li>
+<li><strong>OIT</strong> — 2-MRT weighted blended OIT: RGBA16F accum + R8G8B8A8 revealage; <strong>compute composite</strong> <code>oit_composite_manual.comp</code> (avoids Intel HD 520 driver crash); depth test against opaque scene prevents cliff projection</li>
+<li><strong>GPU Profiler</strong> — CPU-side BeginPass/EndPass timer with <code>GpuProfiler</code> singleton; editor panel shows budget bars per pass</li>
+<li><strong>Platform abstraction</strong> — <code>window.h</code>: window lifecycle (init/shutdown/begin_frame/end_frame) — pure SDL3, no imgui; <code>md_hints.h</code>: <code>MD_HOT</code>/<code>MD_UNLIKELY</code>/<code>MD_LIKELY</code>/<code>MD_FORCE_INLINE</code>/<code>MD_NOINLINE</code></li>
+<li><strong>Wicked-style Editor</strong> — EditorCore singleton, orbit/fly camera, multi-select (MAX=64), undo/redo; panels: Hierarchy, Inspector, AssetBrowser, GraphicsPanel, CameraPanel, Console (TraceLog + Lua REPL), AnimationPanel, SceneSerializer, <strong>ViewConePanel</strong>, <strong>FlowGraphPanel</strong>, <strong>DirectorPanel</strong>, <strong>GpuProfilerPanel</strong></li>
+<li><strong>Threading</strong> — NavMesh async rebuild (lock-free SPSC queue), ChunkManager async IO, PathCache spinlock with <code>_mm_pause</code></li>
+<li><strong>Test Suite</strong> — Google Test: <strong>1557 tests, 200+ suites</strong> — FNV · AgentBlackboard · FlowGraph · DirectorSystem · PowerSlotManager · NpcConfig · HotReload · FlowVar · AI patterns C1–C20 · BT VM · Batch 3–31 · M47–M58 (SenseSystem, BT archetypes, combat dispatch, deferred lighting, dialogue/quest) · O3DE-1–4 (MaterialDesc, MdPrefabRegistry, SaveVersionChain, MdModuleRegistry) · ZLD-1–2 (MdIniReader, MdFeature) · FL-3–4 (MdStatusRegistry, MdEventScheduler)</li>
+<li><strong>INI Config</strong> — zelda3-inspired <code>MdIniReader</code>; <code>monkey_dust.ini</code> / <code>monkey_dust.user.ini</code> override; <code>MdFeature</code> uint32 bitmask (8 accessibility flags) from <code>[Features]</code> section</li>
+<li><strong>NPC Prefabs</strong> — <code>MdPrefabRegistry</code> data-driven archetypes via <code>data/prefabs/prefabs.json</code>; Guard/Alien/Vendor/default BT templates; <code>MdStatusRegistry</code> Flare CampaignManager-style CSV-serializable status flags; <code>MdEventScheduler</code> Flare EventComponent-style cooldown/delay/OnLoad/OnClear scheduling</li>
+</ul>
+<hr />
+<h2>MD-1–20: Alien: Isolation AI patterns</h2>
+<p>20 patterns adapted from Creative Assembly's MD engine, integrated into monkey_dust's BT VM and AgentState:</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Pattern</th>
+<th>Implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C1</td>
+<td>MotivationType</td>
+<td>14 motivation values (None…PlayerHiding); <code>MotivationCheck</code>/<code>SetMotivation</code> BT nodes; <code>BuildMotivationGateBT</code></td>
+</tr>
+<tr>
+<td>C2</td>
+<td>BranchType</td>
+<td>Named interrupt branches; <code>ShutdownSpeed</code>; <code>addBranch(cond,btype,speed)</code></td>
+</tr>
+<tr>
+<td>C3</td>
+<td>Sub-tree Reference</td>
+<td><code>BTNodeType::Reference</code>; ptr in <code>nd._padding</code>; null → Failure (graceful)</td>
+</tr>
+<tr>
+<td>C4</td>
+<td>LogicCharacterFlags</td>
+<td><code>uint64</code> flag word; <code>namespace lcf</code> (40 named bit indices 0–39); <code>FlagCheck</code>/<code>FlagSet</code> pass <code>bit_idx uint8</code> (not bitmask)</td>
+</tr>
+<tr>
+<td>C5</td>
+<td>AgentTimerSlot</td>
+<td>26 named timer slots (enum); <code>MAX_AGENT_TIMERS=26</code>; <code>timers[] uint64</code> (ms)</td>
+</tr>
+<tr>
+<td>C6</td>
+<td>GaugeType</td>
+<td><code>{Retreat=0, StunDamage=1}</code>; <code>GaugeCheck</code>/<code>GaugeSet</code> BT nodes encode gauge+threshold in <code>data uint32</code></td>
+</tr>
+<tr>
+<td>C7</td>
+<td>FNV Hierarchy</td>
+<td><code>fnv_combine()</code> + <code>fnv_path()</code> — hierarchical IDs without SHA-1</td>
+</tr>
+<tr>
+<td>C8</td>
+<td>EntityStateFlag</td>
+<td>23 flags (bitmask <code>uint32</code>); <code>entity_state</code> in AgentState; <code>esf_test(state, flag)</code> helper</td>
+</tr>
+<tr>
+<td>C9</td>
+<td>Per-stage BT</td>
+<td><code>NpcConfig::bt_stage[4][32]</code> — per-DirectorStage BT override (4 stages × 32 char name)</td>
+</tr>
+<tr>
+<td>C10</td>
+<td>LogicTickContext</td>
+<td><code>dt</code>, <code>frame_index</code>, <code>active</code> guard; prevents re-entrant logic ticks</td>
+</tr>
+<tr>
+<td>C11</td>
+<td>SequenceStateless</td>
+<td>Always restarts from child 0 on every entry; does not store <code>currentChild</code> between ticks</td>
+</tr>
+<tr>
+<td>C12</td>
+<td>TimerStart OnlyIncrease</td>
+<td><code>addTimerStartOnlyIncrease()</code>; flags bit 0 = never shorten timer</td>
+</tr>
+<tr>
+<td>C13</td>
+<td>FrameFlag</td>
+<td><code>frame_flags uint64</code> in AgentState; <code>FrameFlagCheck</code>/<code>FrameFlagSet</code>; reset at BTSystem phase 1+2</td>
+</tr>
+<tr>
+<td>C14</td>
+<td>WeightedSelector</td>
+<td>4 weights packed in <code>data uint32</code> (bits 0–7, 8–15, 16–23, 24–31); LCG RNG = <code>entity ^ frame_index</code></td>
+</tr>
+<tr>
+<td>C15</td>
+<td>AwarenessState</td>
+<td>Enum Dead…Aware; <code>awareness</code> field in AgentState; <code>AwarenessCheck</code> BT node</td>
+</tr>
+<tr>
+<td>C16</td>
+<td>AlertnessState</td>
+<td>Enum Relaxed…Fleeing; <code>alertness</code> field; <code>AlertnessCheck</code> BT node</td>
+</tr>
+<tr>
+<td>C17</td>
+<td>NpcMood</td>
+<td>Enum Neutral…Calm; <code>mood</code> field; <code>MoodCheck</code> BT node</td>
+</tr>
+<tr>
+<td>C18</td>
+<td>NpcRole + Registry</td>
+<td><code>NpcRole</code> enum; <code>RoleRegistry</code> singleton (header-only, 8 slots); <code>RoleCheck</code>/<code>RoleClaim</code>/<code>RoleRelease</code> BT nodes</td>
+</tr>
+<tr>
+<td>C19</td>
+<td>WithdrawState</td>
+<td>Enum (3 states); <code>withdraw_state</code> in AgentState; <code>WithdrawCheck</code>/<code>SetWithdraw</code> BT nodes</td>
+</tr>
+<tr>
+<td>C20</td>
+<td>FlowDurableTrigger</td>
+<td>Pool MAX=16; refcount; duration decay in <code>FlowGraph::Tick</code>; <code>AcquireDurable</code>/<code>AddRef</code>/<code>Release</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>9 Multi-Engine Improvements</h2>
+<p>Analysis of MD, OGRE v1, OGRE-Next, Echo, Banshee 3D, and Cocos2d-x identified 9 improvements adopted into monkey_dust:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Origin</th>
+<th>Feature</th>
+<th>Files</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>IMP-1</td>
+<td>MD</td>
+<td><strong>ACES filmic tonemapping</strong> replaces Reinhard</td>
+<td><code>shaders/pbr.frag</code>, <code>shaders/npc_instanced.frag</code></td>
+</tr>
+<tr>
+<td>IMP-2</td>
+<td>MD</td>
+<td><strong>Live BT reload</strong> via HotReload; <code>PollReload()</code> in logic tick</td>
+<td><code>game/src/ai/bt_loader.h</code>, <code>game/src/logic_tick.cpp</code></td>
+</tr>
+<tr>
+<td>IMP-3</td>
+<td>Echo</td>
+<td><strong>NpcMemoryComponent</strong> POD: <code>SpatialMemory[8]</code> + <code>events[8]</code>; <code>MemoryCheck</code>/<code>MemoryForget</code> BT nodes</td>
+<td><code>engine/include/monkey_dust/components/npc_memory.h</code>, <code>engine/src/ai/behavior_tree.cpp</code></td>
+</tr>
+<tr>
+<td>IMP-4</td>
+<td>OGRE-Next</td>
+<td><strong>Dirty TINST</strong> — TileMapRenderer caches ibuf; skips PASS1–3 when map+anims unchanged</td>
+<td><code>engine/src/flare/tile_map_renderer.cpp</code></td>
+</tr>
+<tr>
+<td>IMP-5</td>
+<td>OGRE-Next</td>
+<td><strong>Dirty faction SSBO</strong> — <code>TransformSoA::MarkFactionDirty</code>; uploads only dirty slot range</td>
+<td><code>engine/include/monkey_dust/world/transform_soa.h</code>, <code>engine/src/world/transform_soa.cpp</code></td>
+</tr>
+<tr>
+<td>IMP-6</td>
+<td>OGRE v1</td>
+<td><strong>WorldSimulation 1 Hz</strong> — <code>FactionState[8]</code> + <code>TradeRoute[32]</code>; economy Tick accumulates from logic tick</td>
+<td><code>engine/include/monkey_dust/world/world_simulation.h</code>, <code>engine/src/world/world_simulation.cpp</code></td>
+</tr>
+<tr>
+<td>IMP-7</td>
+<td>OGRE v1</td>
+<td><strong>MaterialDesc</strong> — OGRE-style JSON → <code>GpuPipeline::Desc</code> auto-builder (strstr parser)</td>
+<td><code>engine/include/monkey_dust/render/material_desc.h</code>, <code>engine/src/render/material_desc.cpp</code></td>
+</tr>
+<tr>
+<td>IMP-8</td>
+<td>Echo</td>
+<td><strong>UtilityScorer</strong> — Echo-style goal utility over <code>MotivationType</code>; <code>FillCandidates</code>+<code>Bias</code>+<code>BestFrom</code></td>
+<td><code>engine/include/monkey_dust/ai/utility_scorer.h</code>, <code>engine/src/ai/utility_scorer.cpp</code></td>
+</tr>
+<tr>
+<td>IMP-9</td>
+<td>Cocos2d-x</td>
+<td><strong>md::fs</strong> — thin FS abstraction; <code>fs_read_all</code>/<code>fs_read_alloc</code>/<code>fs_free</code>/<code>fs_exists</code>; BTJsonLoader + BTLoader migrated</td>
+<td><code>engine/include/monkey_dust/platform/md_fs.h</code>, <code>engine/src/tools/md_fs.cpp</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>SSBO / Texture Unit Layout</h2>
+<table>
+<thead>
+<tr>
+<th>Binding</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SSBO 0</td>
+<td>TransformSoA (xzyr vec4[500])</td>
+</tr>
+<tr>
+<td>SSBO 1</td>
+<td>Main cull visible indices</td>
+</tr>
+<tr>
+<td>SSBO 2</td>
+<td>Main draw indirect command</td>
+</tr>
+<tr>
+<td>SSBO 3</td>
+<td>Faction IDs (partial dirty upload)</td>
+</tr>
+<tr>
+<td>SSBO 4</td>
+<td>FinalBones (500×6 mat4 = ~192 KB, written by skinning.comp)</td>
+</tr>
+<tr>
+<td>SSBO 5</td>
+<td>AnimNpcState (clip_id, time_s — ring-buffered upload)</td>
+</tr>
+<tr>
+<td>SSBO 6</td>
+<td>Shadow visible indices</td>
+</tr>
+<tr>
+<td>SSBO 7</td>
+<td>Shadow draw indirect command</td>
+</tr>
+<tr>
+<td>Tex 5/6/7</td>
+<td>CSM cascade depth maps (1024×1024 each)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Phase history</h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>What was built</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>CMake + Ninja + Raylib + EnTT + Recast submodules</td>
+</tr>
+<tr>
+<td>1–24</td>
+<td>Core gameplay: GameState, SpatialGrid, NavMesh, BehaviorTree VM, CombatSystem, FactionSystem, BuildSystem, SaveSystem, DialogSystem, QuestSystem, NPC Memory, ChunkStreaming, Lua scripting, Debug overlay, Wicked editor</td>
+</tr>
+<tr>
+<td>25</td>
+<td>TransformSoA + SSBO: SoA+SSE2 NPC positions, GpuRingBuffer upload</td>
+</tr>
+<tr>
+<td>26</td>
+<td>GPU compute culling + glMultiDrawElementsIndirect; ParticleRenderer</td>
+</tr>
+<tr>
+<td>27</td>
+<td>Data-driven BT: BTLoader JSON, bt_template_id, ScheduleSystem day/night</td>
+</tr>
+<tr>
+<td>28</td>
+<td>Dynamic NavMesh async rebuild: NavSystem worker, PathCache::Clear</td>
+</tr>
+<tr>
+<td>29</td>
+<td>Save v4: SaveHeaderV4Extra (quest state), NpcRecord v4 (+personal_relation)</td>
+</tr>
+<tr>
+<td>30</td>
+<td>ModelManager: MAX_MODELS=32, .obj/.gltf import, fallback mesh</td>
+</tr>
+<tr>
+<td>31</td>
+<td>GPU skeletal animation: AnimationSoA, skinning.comp (local_size=64)</td>
+</tr>
+<tr>
+<td>32</td>
+<td>PBR + IBL: LightSystem, Cook-Torrance BRDF, BRDF LUT 64×64</td>
+</tr>
+<tr>
+<td>33</td>
+<td>CSM shadows: ShadowSystem 3-cascade 1024×1024, PCF 3×3</td>
+</tr>
+<tr>
+<td>34</td>
+<td>Wicked-style editor (12 subtasks): EditorCore, 3D gizmo, SceneSerializer</td>
+</tr>
+<tr>
+<td>35–39</td>
+<td>Flare INI converter, FlareMapLoader, StatSheet, PowerDef+PowerManager, EditorFlareBrowser</td>
+</tr>
+<tr>
+<td>M0–M5</td>
+<td>SDL3 migration: platform isolation layer, SSBO/Compute → glad, USE_GLM, miniaudio</td>
+</tr>
+<tr>
+<td>M6</td>
+<td>Monorepo refactor: src/ → engine/ + game/ + tools/; 3 CMake targets; MdCamera unified</td>
+</tr>
+<tr>
+<td>M7.1–M7.27</td>
+<td>Flare runtime: map parser, multi-atlas, billboard tiles, FRINGE layer, tile animation, sprite offset; isometric camera; NPC spawns</td>
+</tr>
+<tr>
+<td>M8</td>
+<td>FlareActorComponent + SpawnFlareActors → ECS</td>
+</tr>
+<tr>
+<td>M9.0–M9.10</td>
+<td>Map Editor: FBO viewport, palette, undo/redo 256, flood fill, minimap</td>
+</tr>
+<tr>
+<td>M10</td>
+<td>Depth-correct billboard sort</td>
+</tr>
+<tr>
+<td>M11–M12</td>
+<td>Raylib isolation from engine/; MdDraw2D; standalone SDL3 editor; glad/stb direct</td>
+</tr>
+<tr>
+<td>SDL_GPU A1–A7</td>
+<td>SPIR-V toolchain; GpuRingBuffer; GPU HAL; GpuStaticBuffer/Texture; GpuComputePipeline; CSM HAL; GPU culling</td>
+</tr>
+<tr>
+<td>M_SPLIT</td>
+<td>ECS components + combat → engine/include/monkey_dust/ (split-readiness)</td>
+</tr>
+<tr>
+<td>M14</td>
+<td>FlareAnimSystem + FlareSpriteAnim; sprite direction/stance/run animation</td>
+</tr>
+<tr>
+<td>M15</td>
+<td>LuaEventBus (MAX_HANDLERS=64) + lua_game_api 8 C functions</td>
+</tr>
+<tr>
+<td>M17</td>
+<td>AudioSystem: miniaudio singleton, SFX pool MAX=32, music/ambience, Lua API</td>
+</tr>
+<tr>
+<td>П.1–П.3</td>
+<td>Raylib fully removed from SDL3 build path (CMake + engine + editor + converter)</td>
+</tr>
+<tr>
+<td>M18</td>
+<td>AgentState: AgentTimers, AgentFlags, AgentBlackboard[24]</td>
+</tr>
+<tr>
+<td>M19</td>
+<td>SenseComponent + SenseRegistry + view_cone_sets.json</td>
+</tr>
+<tr>
+<td>M20</td>
+<td>DirectorSystem: menace gauge, DirectorStage, DirectorProfile JSON</td>
+</tr>
+<tr>
+<td>M21</td>
+<td>BT Extensions: Branch/TimerStart/TimerCheck/FlagCheck/FlagSet/SenseCheck</td>
+</tr>
+<tr>
+<td>M22</td>
+<td>NpcConfig $inherit JSON (one-level inheritance)</td>
+</tr>
+<tr>
+<td>M23</td>
+<td>FlowGraph: FNV-1a IDs, MAX 64 nodes + 128 conns, ring buffer triggers</td>
+</tr>
+<tr>
+<td>M24</td>
+<td>MapManager: QueueMap/RequestTransition</td>
+</tr>
+<tr>
+<td>M25</td>
+<td>ProceduralModulator (sinusoidal FLOAT_MODULATE_RANDOM analogue)</td>
+</tr>
+<tr>
+<td>M26–M28</td>
+<td>RenderTier auto-detect; AmbientProbe SSBO binding=8; GBuffer 2-RT RGBA8</td>
+</tr>
+<tr>
+<td><strong>M29</strong></td>
+<td>PointLightSystem: icosphere (80T) additive volumes; <code>deferred_point.vert/frag</code></td>
+</tr>
+<tr>
+<td><strong>M30</strong></td>
+<td>SSAOSystem: R8_UNORM compute half-res, 16-tap rotated disk; <code>ssao.comp</code></td>
+</tr>
+<tr>
+<td><strong>M31</strong></td>
+<td>StripLightSystem: capsule SDF AABB volume; <code>deferred_strip.vert/frag</code></td>
+</tr>
+<tr>
+<td><strong>M32</strong></td>
+<td>SMAASystem: 3-pass fullscreen triangle; <code>smaa_edge/blend/final.vert/frag</code></td>
+</tr>
+<tr>
+<td><strong>M33</strong></td>
+<td>PowerSystem::Use: melee AoE collect→apply; ranged ProjectileComponent spawn</td>
+</tr>
+<tr>
+<td><strong>M34</strong></td>
+<td>ProjectileComponent + ProjectileSystem::Tick: move + hit + expire collect→apply</td>
+</tr>
+<tr>
+<td><strong>M35</strong></td>
+<td>PowerSlotManager: 4 slots/entity, cooldowns; Lua <code>md_assign_power/use_power/get_power_cooldown</code></td>
+</tr>
+<tr>
+<td><strong>M36</strong></td>
+<td>SaveSystem v7: AgentState inline per NpcRecord; FlowGraph vars tail section</td>
+</tr>
+<tr>
+<td><strong>M38</strong></td>
+<td>EditorViewConePanel: SenseComponent activation bars + ViewConeSet table</td>
+</tr>
+<tr>
+<td><strong>M39</strong></td>
+<td>EditorFlowGraphPanel: nodes/vars/pending display + external trigger fire</td>
+</tr>
+<tr>
+<td><strong>M40</strong></td>
+<td>EditorDirectorPanel: menace gauge + stage color + profile params + manual override</td>
+</tr>
+<tr>
+<td><strong>M41</strong></td>
+<td>GpuProfiler (CPU-side BeginPass/EndPass) + EditorGpuProfilerPanel budget bars</td>
+</tr>
+<tr>
+<td><strong>M42</strong></td>
+<td>Integration pass: ProjectileSystem + DirectorSystem wired to logic tick; GpuProfiler probes</td>
+</tr>
+<tr>
+<td><strong>M43</strong></td>
+<td>Google Test suite: 58 tests, 6 suites; PowerManager::LoadFromJson+Find impl</td>
+</tr>
+<tr>
+<td><strong>M44</strong></td>
+<td>HotReload file watcher: POSIX stat, SDL_Thread, PollOnce for tests; +7 tests (total 65)</td>
+</tr>
+<tr>
+<td><strong>M45</strong></td>
+<td>FlowVar typed union (Float/Bool/Int/Str); SetVarBool/Int/Str + GetVarBool/Int/Str; +13 tests (total 77)</td>
+</tr>
+<tr>
+<td><strong>M46</strong></td>
+<td><code>md_hints.h</code>: MD_HOT/MD_UNLIKELY/MD_LIKELY macros; AVX2 BulkComputeDistSq/BulkComputeLOD (<code>_mm256_fmadd_ps</code>, <code>alignas(64)</code>)</td>
+</tr>
+<tr>
+<td><strong>Security audit (10 fixes)</strong></td>
+<td>FIX-1: <code>system()</code> → POSIX mkdir; FIX-2: Lua 8 MB allocator; FIX-3: block io/os/package/debug; FIX-4: CRC32 SaveHeader v8; FIX-5: shadow_cull.comp <code>#version 460</code>; FIX-6: MAX_BONES 128→6 (FinalBones 4 MB→192 KB); FIX-7: <code>_mm_pause()</code> in PathCache spinlock; FIX-8: remove 1449 lines dead MD_OPENGL43_ENABLED code (32 files); FIX-9: SaveAsync char[256] no heap alloc; FIX-10: stale Raylib comment removed</td>
+</tr>
+<tr>
+<td><strong>MD-1–10</strong></td>
+<td>C1: MotivationType 14 values + MotivationCheck/SetMotivation/BuildMotivationGateBT; C2: BranchType+ShutdownSpeed; C3: BTNodeType::Reference sub-tree delegation; C4: LogicCharacterFlags uint64 + lcf namespace (40 bits); C5: AgentTimerSlot enum + MAX_AGENT_TIMERS=26; C6: GaugeType+GaugeCheck/GaugeSet; C7: fnv_combine+fnv_path; C8: EntityStateFlag 23 bits + esf_test; C9: NpcConfig::bt_stage[4][32]; C10: LogicTickContext(dt,frame_index,active); +5 tests (total 82)</td>
+</tr>
+<tr>
+<td><strong>MD-11–20</strong></td>
+<td>C11: SequenceStateless; C12: TimerStartOnlyIncrease; C13: FrameFlag frame_flags uint64; C14: WeightedSelector (4 weights packed); C15: AwarenessState+AwarenessCheck; C16: AlertnessState+AlertnessCheck; C17: NpcMood+MoodCheck; C18: NpcRole+RoleRegistry+RoleCheck/Claim/Release; C19: WithdrawState+WithdrawCheck/SetWithdraw; C20: FlowDurableTrigger pool MAX=16; +23 tests (total 105)</td>
+</tr>
+<tr>
+<td><strong>Full BT VM</strong></td>
+<td>BTNodePool flat 32 KB arena (sizeof(BT)=4616&gt;BLOCK_SIZE → single bump ptr); BTSystem 3-phase (frame_flags+hints, bare entities, enabled trees); BTJsonLoader strstr parser (30+ node types, 11 enum tables); role_registry.h header-only singleton (8 NpcRoles); bt_components.h (BehaviorTreeComponent + DirectorHintComponent MAX_PENDING=10); data/bt/systematic_search.bt.json example; +26 tests (total 131)</td>
+</tr>
+<tr>
+<td><strong>IMP-1–9</strong></td>
+<td>ACES tonemapping; live BT reload; NpcMemoryComponent+MemoryCheck/MemoryForget; dirty TINST tile cache; dirty faction SSBO partial upload; WorldSimulation 1 Hz economy; MaterialDesc OGRE-style JSON→GpuPipeline::Desc; UtilityScorer Echo-style goal scoring; md::fs thin FS abstraction</td>
+</tr>
+<tr>
+<td><strong>M47</strong></td>
+<td>NavLodTier (Close/Frozen); PathCache::Freeze/Unfreeze; <code>QueryPathLod(tier)</code> bypasses TTL for frozen paths</td>
+</tr>
+<tr>
+<td><strong>M48</strong></td>
+<td>Save v9: NpcMemoryComponent (260 B) inline per NpcRecord; is_v9 backward compat (_pad[1]=1 flag)</td>
+</tr>
+<tr>
+<td><strong>M49</strong></td>
+<td>ReplaySnapshot: 16 B NpcState, 1048 B frame (64 NPCs+CRC32), 300-frame ring (307 KB BSS); RPLY file format</td>
+</tr>
+<tr>
+<td><strong>M50</strong></td>
+<td>FlowVar::Vec3 (val.v3[3]) + EntityRef (val.entity_ref uint32); SetVarVec3/GetVarVec3/SetVarEntity/GetVarEntity</td>
+</tr>
+<tr>
+<td><strong>M51</strong></td>
+<td>Save v10: SaveHeaderV10Extra (+ws_faction_count+ws_route_count, 108 B); FactionState[]+TradeRoute[] tail; WorldSimulation::Reset()+restore</td>
+</tr>
+<tr>
+<td><strong>M52</strong></td>
+<td>AllianceMatrix singleton (9×9 stance table); AllianceGroup enum; Player↔Alien/Android hostile defaults</td>
+</tr>
+<tr>
+<td><strong>M53</strong></td>
+<td>FrameFlagDispatcher: reads <code>frame_flags</code> after BT tick → NavAgent/WorldTransform rotation/Combat death/entity destroy</td>
+</tr>
+<tr>
+<td><strong>M54</strong></td>
+<td>NPC archetype BT templates: Guard/Alien/Vendor builders; BT breadth-first child-ordering invariant fixed</td>
+</tr>
+<tr>
+<td><strong>M55</strong></td>
+<td>SenseSystem: <code>SenseSystemUpdate(now_ms)</code>; visual cone (dist+angle vs ViewConeSet); audio linear falloff 15 m; rising-edge → <code>last_activated_ms</code>/<code>last_known_x/z</code></td>
+</tr>
+<tr>
+<td><strong>M56</strong></td>
+<td>BT combat dispatch: <code>CombatDispatch(now_ms)</code>; ff::SHOULD_MELEE_ATTACK+RANGED_SHOOT; CalcDamage+RollHitZone; kill → IS_DEAD+Combat::is_dead; collect→apply 64-cap</td>
+</tr>
+<tr>
+<td><strong>M57</strong></td>
+<td>Deferred ambient pass: <code>DeferredLightingSystem</code>; fullscreen triangle; GBuffer RT0+RT1 → RGBA16F hdr_color; <code>DeferredAmbientUBO</code> std140 64 B; <code>deferred_lighting.vert/frag</code> SPIR-V</td>
+</tr>
+<tr>
+<td><strong>M58</strong></td>
+<td>Dialogue quest conditions: <code>DialogCondType::QuestActive/QuestComplete</code>; <code>NpcInteractionComponent</code> (20 B, range 2.5 m); dialog graph expanded with quest-gated nodes</td>
+</tr>
+<tr>
+<td><strong>KEN-1–8</strong></td>
+<td>Kenshi asset integration: OGRE→GLB pipeline; SkinMesh (CPU LBS, stride=52); body texture; WorldMapUI; editor World tab; NavMesh spam fix; AnimationSoA + CPU blend trees; JoltWorld+CrowdSystem</td>
+</tr>
+<tr>
+<td><strong>VBfA-R1–9</strong></td>
+<td>SSAO, bloom, color grade, 6-sample probe, snow, shadow fade, motion blur, emissive/dissolve</td>
+</tr>
+<tr>
+<td><strong>VBfA-AI1–6</strong></td>
+<td>BT LOD tiers, awareness limits, AI budget, repulsion, squad controller, impact events</td>
+</tr>
+<tr>
+<td><strong>M59 Foot IK</strong></td>
+<td>Analytic 2-bone foot placement IK via TerrainQuery ray-cast</td>
+</tr>
+<tr>
+<td><strong>Terrain Atlas</strong></td>
+<td><code>world_hmap.r32</code> (67 MB); cross-chunk normal stitching; F3 runtime brush; <code>SmoothBoundaries()</code> N=15 at startup</td>
+</tr>
+<tr>
+<td><strong>RD-2</strong></td>
+<td>Sky render order fix; skintone sat/bri system; combat idle combatstance; Kenshi RE 6 files</td>
+</tr>
+<tr>
+<td><strong>RD-3</strong></td>
+<td><code>monkey_dust_editor</code> migrated to SDL_GPU/Vulkan; TerrainRenderer in standalone editor</td>
+</tr>
+<tr>
+<td><strong>RD-4</strong></td>
+<td>Terrain zone seam fix: LOD IBO T-junction → disabled; <code>SmoothBoundaries()</code> N=15; <code>ndl_min=0.57</code>; camera endpoint clamp</td>
+</tr>
+<tr>
+<td><strong>RD-5</strong></td>
+<td>3D World editor: full 64×64 world (all chunks always loaded), per-chunk distance LOD (0–3), no overview mesh, tab-gated RTT, camera starts at 8000 m; <code>DrawRaw/DrawRawPOM</code> <code>int lod</code> parameter; Heightmap panel default zoom 1.0 (full world); tab order updated</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION P1</strong></td>
+<td>Kenshi combat parity: limits (MAX_AGENTS→512), LimbHealth{hp[6]}, cut dmg 0.5f, StatSheet 25 skills, KO/Toughness/Bleed, IdleStance enum</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION P2</strong></td>
+<td>DirectorConfig wired; AoeHit+AoeApply; CombatConfig combo/stagger per speed class; SenseModifiers+VisualSenseEffects</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION P3</strong></td>
+<td>DailySchedule time-slot goals; NeedsComponent hunger/fatigue/medical; Ragdoll 30 bones; FactionRelationMatrix[64][64]+BountyRecord; BleedSystem+DoctorAction; OffscreenNpcDatabase{[10000]} 1Hz bulk tick</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION P4</strong></td>
+<td>gamedata.base FCS parser; ItemDef[2048]; ResearchSystem; LoadMods(); 60 zones (WR_MAX_ZONES=128); BuildingIntegrity BFS; FactionSystem::LoadFromFcs; fauna configs 5 presets</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION P5</strong></td>
+<td>ShopInventory+PriceCalc; WageSystem (faction pays NPCs/day); ItemInstance+EquipmentSlots[7]; BuildingState phases+PowerGrid; RaceModifiers+XP+TraitBitmask; ParryWindow CalcParryChance; ZoneState persistence; DialogSystem ConditionEvaluator+DialogDef</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION P6</strong></td>
+<td><code>actSeekFood</code>/<code>actSeekBed</code> hunger/fatigue BT leaves (hysteresis <code>is_sleeping</code>); <code>actSurgery</code> FieldMedic heal 2× clinic; <code>actRepairSkeleton</code> Engineering 2× station; <code>actVendorTend</code> ShopInventory TickRestock; <code>actBuyFromVendor</code> faction-wealth economy trade; <code>actRepairItem</code> condition restore; <code>CombatDispatch</code> weapon/armour condition degradation; <code>NpcDialogSystem</code> (namespace md, E-key ImGui popup SDL_GPU)</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Technical constraints</h2>
+<ul>
+<li>No <code>malloc</code>/<code>free</code>/<code>new[]</code> in hot path — fixed arrays + EnTT pools</li>
+<li>No <code>std::vector</code>/<code>map</code> in hot path — fixed arrays <code>[MAX_N]</code></li>
+<li>No external JSON libraries — custom strstr parser throughout</li>
+<li>No C++20 — C++17 maximum</li>
+<li>No FSM for AI — BehaviorTree.h only</li>
+<li>No <code>assert()</code> — <code>MD_LOG_WARNING</code> + return default</li>
+<li>No mutation of registry during <code>view.each()</code> — collect → apply</li>
+<li>All ImGui/editor code behind <code>#ifdef MONKEY_DUST_EDITOR</code></li>
+<li>SDL_GPU exclusive: <code>MD_SDL_GPU</code> always defined when <code>USE_SDL3=ON</code>; no raw GL calls outside HAL impl files</li>
+<li>Engine split-readiness: <code>engine/</code> has zero <code>#include</code> from <code>game/</code> or <code>tools/</code></li>
+<li>Math: <code>engine/</code> never includes Raylib headers; Vec3/Mat4 via <code>&lt;monkey_dust/math_types.h&gt;</code></li>
+<li>Lua sandbox: 8 MB memory hard cap via custom <code>lua_newstate</code> allocator; <code>io</code>/<code>os</code>/<code>package</code>/<code>debug</code> + <code>dofile</code>/<code>loadfile</code>/<code>load</code> nil-ed after <code>luaL_openlibs</code>; 10 000-instruction hook</li>
+<li><code>frame_flags</code>: reset in BTSystem Tick phases 1+2 <strong>before</strong> BT::tick (C13 invariant)</li>
+<li><code>BTActionRegistry::Get().Clear()</code> + <code>RegisterAllBTBindings()</code> must be called before <code>BTJsonLoader::LoadFromFile/String</code></li>
+</ul>
+<hr />
+<h2>License</h2>
+<p><strong>Proprietary — All Rights Reserved.</strong></p>
+<p>Copyright (c) 2024–2026 monkey_dust project author.</p>
+<p>Unauthorized copying, modification, distribution, or use of this software,
+via any medium, is strictly prohibited without explicit written permission.
+See <a href="LICENSE">LICENSE</a> for full terms.</p>
+<p><strong>Third-party components</strong> (EnTT, Recast/Detour, Dear ImGui, GLM, Lua, stb, miniaudio, googletest)
+are used under their respective permissive licenses (MIT/zlib/public-domain).
+See <code>third_party/</code> and <code>tools/third_party/</code> for individual license texts.</p>
+<p>The <code>third_party/flare-game/</code> submodule is used <strong>for development and testing only</strong> and
+is not distributed as part of this product.</p>
+<hr />
+<h1>monkey_dust (Українська)</h1>
+<p>Ізометричний RPG-sandbox з відкритим світом для Linux. Пайплайн рендерингу натхненний Flare Engine. Соло-проєкт на SDL3 + SDL_GPU (Vulkan) + EnTT + Recast/Detour.</p>
+<p><strong>Цільове залізо:</strong> Intel HD 520 (Skylake AVX2) · Vulkan через SDL_GPU · 4–8 GB спільна RAM · 1280×720 · 60 FPS</p>
+<hr />
+<h2>Стек</h2>
+<table>
+<thead>
+<tr>
+<th>Шар</th>
+<th>Технологія</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Рендеринг</td>
+<td><strong>SDL_GPU</strong> (Vulkan/Metal/D3D12) — виключний, без OpenGL-шляху · glad</td>
+</tr>
+<tr>
+<td>GPU HAL</td>
+<td><code>GpuPipeline</code> · <code>GpuVertexBuffer</code> · <code>GpuCommandBuffer</code> · <code>GpuComputePipeline</code> · <code>GpuComputePass</code> · <code>GpuRingBuffer</code> · <code>GpuDepthTexture</code> · <code>GpuRenderPass</code> · <code>GpuStaticBuffer</code> · <code>GpuTexture</code> · <code>GpuDrawIndexedIndirect</code></td>
+</tr>
+<tr>
+<td>ECS</td>
+<td>EnTT 3.16</td>
+</tr>
+<tr>
+<td>Пошук шляхів</td>
+<td>Recast/Detour (navmesh)</td>
+</tr>
+<tr>
+<td>Скриптинг</td>
+<td>Lua 5.4 (sandbox: 8 МБ ліміт, io/os/package/debug заблоковано)</td>
+</tr>
+<tr>
+<td>Debug UI</td>
+<td>Dear ImGui (tools/third_party — не залежність engine; UI тільки у tools/game, engine — zero UI)</td>
+</tr>
+<tr>
+<td>Математика</td>
+<td>GLM 1.1.0 · власні Vec3/Mat4 через <code>&lt;monkey_dust/math_types.h&gt;</code></td>
+</tr>
+<tr>
+<td>Вікно / Ввід</td>
+<td>SDL3 3.x</td>
+</tr>
+<tr>
+<td>Аудіо</td>
+<td>miniaudio (singleton, SFX pool MAX=32, music/ambience streaming)</td>
+</tr>
+<tr>
+<td>2D Text/UI</td>
+<td>MdDraw2D (stb_truetype + GL batch)</td>
+</tr>
+<tr>
+<td>SPIR-V шейдери</td>
+<td><code>scripts/compile_shaders.sh</code> · <code>#version 460</code> · Vulkan 1.1</td>
+</tr>
+<tr>
+<td>Мова</td>
+<td>C++17</td>
+</tr>
+<tr>
+<td>Збірка</td>
+<td>CMake 3.21+ · Ninja · ccache</td>
+</tr>
+<tr>
+<td>Тести</td>
+<td>Google Test · <strong>1557 тестів у 200+ suite</strong></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Збірка</h2>
+<pre><code class="language-bash">git clone --recurse-submodules https://github.com/rdga1bot/monkey_dust.git
+cd monkey_dust
+
+# Основна збірка (SDL3 + SDL_GPU — єдиний підтримуваний шлях):
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
+ninja -C build monkey_dust           # гра          → build/game/monkey_dust
+ninja -C build monkey_dust_editor    # редактор     → build/tools/monkey_dust_editor
+ninja -C build md_flare_convert      # конвертер    → build/tools/md_flare_convert
+ninja -C build md_flare_demo         # перегляд мап → build/tools/md_flare_demo
+
+# Тести:
+ninja -C build md_tests &amp;&amp; build/tests/md_tests
+</code></pre>
+<p>Debug-білд:</p>
+<pre><code class="language-bash">cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUSE_SDL3=ON
+ninja -C build monkey_dust
+</code></pre>
+<p>Wicked-style редактор (Фаза 34):</p>
+<pre><code class="language-bash">cmake -S . -B build -G Ninja -DUSE_SDL3=ON -DMONKEY_DUST_EDITOR=ON
+ninja -C build monkey_dust
+</code></pre>
+<p>Перекомпіляція SPIR-V шейдерів після зміни <code>.vert</code>/<code>.frag</code>/<code>.comp</code>:</p>
+<pre><code class="language-bash">bash scripts/compile_shaders.sh
+</code></pre>
+<hr />
+<h2>Переглядач мап Flare (md_flare_demo)</h2>
+<p>Standalone <strong>2D pixel-perfect SDL_GPU переглядач тайлових мап</strong> для <a href="https://github.com/clintbellanger/flare-game">flare-game</a>. Демонструє monkey_dust SDL_GPU API: plain SDL3 window → Vulkan swapchain → SPIR-V → ізометрична тайлова мапа. Без OpenGL, без Raylib. Потребує субмодуль <code>third_party/flare-game/</code>.</p>
+<pre><code class="language-bash">./build/tools/md_flare_demo [mods_root] [mod_name] [map_name]
+</code></pre>
+<hr />
+<h2>Редактор контенту (monkey_dust_editor)</h2>
+<p>Standalone JSON-редактор + Map Editor. Побудований на SDL3 + ImGui, без Raylib. Запускати з кореня репозиторію:</p>
+<pre><code class="language-bash">./build/tools/monkey_dust_editor
+</code></pre>
+<p><strong>Вкладки:</strong> Items · Factions · Map (FBO viewport, palette, undo/redo 256) · Settings</p>
+<hr />
+<h2>Керування (гра)</h2>
+<table>
+<thead>
+<tr>
+<th>Клавіша</th>
+<th>Дія</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>WASD</td>
+<td>Рух гравця</td>
+</tr>
+<tr>
+<td>F</td>
+<td>Атака найближчого ворога</td>
+</tr>
+<tr>
+<td>E</td>
+<td>Розмова з NPC (радіус 5м) — відкриває ImGui-попап діалогу (NpcDialogSystem)</td>
+</tr>
+<tr>
+<td>P</td>
+<td>Пауза / розпауза симуляції (freeze logic+AI, HUD "[ PAUSED ]")</td>
+</tr>
+<tr>
+<td>B / Tab / X</td>
+<td>Поставити / змінити тип / знести будівлю</td>
+</tr>
+<tr>
+<td>F5 / F9</td>
+<td>Асинхронне збереження / завантаження</td>
+</tr>
+<tr>
+<td>ESC</td>
+<td>Закрити діалог / вийти</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Технічні обмеження</h2>
+<ul>
+<li>Без <code>malloc</code>/<code>new[]</code> у hot-path — фіксовані масиви + EnTT пули</li>
+<li>Без <code>std::vector</code>/<code>map</code> у hot-path — масиви <code>[MAX_N]</code></li>
+<li>Без зовнішніх JSON-бібліотек — власний strstr-парсер</li>
+<li>C++17 максимум, без FSM для AI (тільки BehaviorTree.h)</li>
+<li>SDL_GPU виключний: <code>MD_SDL_GPU</code> завжди визначений з <code>USE_SDL3=ON</code></li>
+<li>Split-readiness: <code>engine/</code> не має жодного <code>#include</code> з <code>game/</code> або <code>tools/</code></li>
+<li>Lua sandbox: 8 МБ custom allocator; io/os/package/debug заблоковано; 10 000-інструкційний хук</li>
+<li><code>frame_flags</code>: скидати у BTSystem::Tick фазах 1+2 ДО BT::tick (інваріант C13)</li>
+</ul>
+<hr />
+<h2>Ліцензія</h2>
+<p><strong>Пропрієтарне ПЗ — усі права захищено.</strong></p>
+<p>Copyright (c) 2024–2026 автор проєкту monkey_dust.</p>
+<p>Сторонні компоненти (EnTT, Recast/Detour, Dear ImGui, GLM, Lua, stb, miniaudio, googletest)
+використовуються за дозвільними ліцензіями (MIT/zlib/public-domain). Тексти — у <code>third_party/</code> та <code>tools/third_party/</code>.</p>
+<p>Субмодуль <code>third_party/flare-game/</code> використовується виключно для розробки та тестування.</p></section>
+<section id="engine-README-md"><h2>Engine<span class="section-tag">engine/README.md</span></h2><h1>monkey_dust — Engine</h1>
+<p>Open-source C++17 game engine library for a Flare-inspired isometric RPG sandbox.
+Built around <strong>SDL3 + SDL_GPU (Vulkan)</strong>, <strong>EnTT ECS</strong>, a custom stackless <strong>Behavior Tree VM</strong>, <strong>ozz-animation</strong>, and <strong>Jolt Physics</strong>.</p>
+<blockquote>
+<p><strong>Full documentation →</strong> <a href="https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html">rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html</a></p>
+</blockquote>
+<hr />
+<h2>Features</h2>
+<h3>Rendering — SDL_GPU / Vulkan</h3>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tile map renderer</td>
+<td>FLARE-inspired isometric tiles; TINST stride=36; <code>uint64_t</code> depth sort (eliminates Z-fight at tile edges); billboard + flat-XZ; fringe layers; <code>fadeOverlapTile</code> (player under roof = 35 % alpha); 4-phase pipeline (<code>SetObjectLayerIdx</code>)</td>
+</tr>
+<tr>
+<td>OIT</td>
+<td>2-MRT weighted blended OIT: RGBA16F accum + R8G8B8A8 revealage; <strong>compute composite</strong> (avoids Intel HD 520 driver crash with 2+ fragment samplers); depth test against opaque scene</td>
+</tr>
+<tr>
+<td>Deferred lighting</td>
+<td>GBuffer 2-RT (RT0=albedo+rough, RT1=oct-normal+metallic+flags); ambient pass <code>DeferredLightingSystem</code> → RGBA16F hdr_color; point volumes; strip lights; ACES tonemapping</td>
+</tr>
+<tr>
+<td>Cascaded Shadow Maps</td>
+<td>3-cascade <strong>EVSM</strong> soft shadows; texel-snap (eliminates shimmer); 10 % cascade blend overlap; GPU compute culling (<code>shadow_cull.comp</code>)</td>
+</tr>
+<tr>
+<td>SSAO</td>
+<td>Half-res R8 compute pass; 16-tap hemisphere kernel</td>
+</tr>
+<tr>
+<td>SMAA</td>
+<td>3-pass fullscreen triangle (edge → blend → final)</td>
+</tr>
+<tr>
+<td>Point / strip lights</td>
+<td>Icosphere additive pass; capsule-SDF strip lights</td>
+</tr>
+<tr>
+<td>GPU skinning</td>
+<td>AnimationSoA; SSBO skeletal bones (MAX_BONES=6); compute dispatch</td>
+</tr>
+<tr>
+<td>Particles</td>
+<td>ParticleSoA CPU-sim; SMOKE/SPARK/BLOOD types</td>
+</tr>
+<tr>
+<td>Material system</td>
+<td>O3DE-inspired: JSON → <code>GpuPipeline::Desc</code>; <strong>parent inheritance</strong> (<code>"parent": "base_pbr"</code>); <code>shader_features</code> bitmask; <code>MaterialTypeRegistry</code> (MAX=32)</td>
+</tr>
+<tr>
+<td>Terrain POM</td>
+<td>Parallax Occlusion Mapping + self-shadow; per-vertex geomorphing L0→L1; <code>DrawRaw(int lod)</code> / <code>DrawRawPOM(int lod)</code> — lod=0 full-res (64×64), lod=1/2/3 uses <code>chunk.ibo_lod[lod-1]</code> (32/16/8 quads); POM only at lod=0; editor uses distance-based per-chunk LOD</td>
+</tr>
+</tbody>
+</table>
+<h3>AI — Behavior Tree VM</h3>
+<ul>
+<li>Stackless BT VM (<code>BehaviorTree.h</code>) — 30+ node types, zero heap allocations</li>
+<li>Extended AI patterns (C1–C20) — MotivationType · LogicCharacterFlags · AgentTimerSlot · GaugeType · AwarenessState · AlertnessState · NpcMood · NpcRole · WithdrawState · EntityStateFlag</li>
+<li>BTNodePool — flat 32 KB arena bump-allocator</li>
+<li>BTSystem — 3-phase tick (frame_flags reset → hint expiry → tree tick)</li>
+<li>BTJsonLoader — recursive strstr parser; 11 enum tables; no external JSON library</li>
+<li>NPC Archetypes (M54) — Guard/Alien/Vendor <code>BuildXxxBT()</code> helpers; breadth-first child ordering</li>
+<li>SenseSystem (M55) — <code>SenseSystemUpdate</code>; visual cone (dist+half-angle); audio linear 15 m falloff; rising-edge → <code>last_activated_ms</code> / <code>last_known_x/z</code></li>
+<li>CombatDispatch (M56) — <code>ff::SHOULD_MELEE_ATTACK</code>/<code>SHOULD_RANGED_SHOOT</code>; target from AgentBlackboard; CalcDamage+RollHitZone; IS_DEAD on kill</li>
+<li>DirectorSystem — menace gauge <code>[0..1]</code>; 4 DirectorStages; <code>NpcConfig::bt_stage[4][32]</code> per-stage BT overrides</li>
+<li>UtilityScorer — Echo-inspired goal utility; motivation inertia bonus</li>
+<li>NpcMemoryComponent — <code>SpatialMemory[8]</code> + <code>events[8]</code> POD; no heap</li>
+<li>NpcInteractionComponent (M58) — <code>dialog_faction_id</code> + <code>interaction_range</code> (2.5 m) + <code>cooldown_ms</code>; 20 bytes</li>
+<li>FlowDurableTrigger — ref-counted durable triggers with duration decay</li>
+</ul>
+<h3>ECS — EnTT</h3>
+<p>15 engine-side components: <code>WorldTransform</code> · <code>AIAgent</code> · <code>Health</code> · <code>Combat</code> · <code>Renderable</code> · <code>Building</code> · <code>Inventory</code> · <code>ProjectileComponent</code> · <code>SenseComponent</code> · <code>AgentState</code> · <code>NpcMemoryComponent</code> · <code>BehaviorTreeComponent</code> · <code>DirectorHintComponent</code> · <code>FlareSpriteAnim</code> · <code>NpcInteractionComponent</code></p>
+<h3>Physics &amp; Animation</h3>
+<ul>
+<li><strong>Jolt Physics</strong> — <code>JoltWorld</code>: <code>CharacterVirtual</code> (max_bodies=512); <code>TempAllocatorImpl</code> 8 MB</li>
+<li><strong>ozz-animation</strong> — <code>OzzAnimPlayer</code>: blend trees, <code>Eval/EvalBlend</code>; 30-joint Biped rig</li>
+<li><strong>DetourCrowd</strong> — <code>CrowdSystem</code> ORCA; max_agents=64</li>
+<li><strong>Foot IK</strong> (M59) — analytic 2-bone foot placement; TerrainQuery ray-cast</li>
+</ul>
+<h3>Terrain</h3>
+<ul>
+<li><code>TerrainQuery</code> singleton — single source of truth for terrain heights/normals/slopes</li>
+<li><code>TerrainAtlas</code> — <code>world_hmap.r32</code> (67 MB, 4096 zones 65×65); O(1) RAM lookup; dirty-zone partial save</li>
+<li><strong><code>TerrainAtlas_SmoothBoundaries()</code></strong> — N=15 kernel blends zone boundary heights (eliminates Kenshi fullmap 22m+ height-jump seams → NdotL cliffs)</li>
+<li>Cross-chunk normal stitching via atlas (no file I/O, no seam artefacts)</li>
+<li><strong><code>ndl_min=0.57</code></strong> in <code>terrain_pom.frag</code> — floor = flat-terrain NdotL; zone-boundary faces match flat ground (no warm/cool split)</li>
+<li><code>TerrainGen_Build</code> / <code>TerrainGen_Upload</code> — worker-thread mesh gen + GPU upload</li>
+<li><strong>Parallax Occlusion Mapping</strong> — <code>terrain_pom.vert/frag</code>; linear search + binary refinement; self-shadowing with view-angle attenuation; 15 m distance cutoff; detail tile 8×; <code>height_scale=0.04</code></li>
+<li><strong>Mesh LOD</strong> — 4 levels (64/32/16/8 quads) via separate IBOs per chunk; distance thresholds 600/1200/2000 m; <code>TERRAIN_LOD_DIST[3]</code> / <code>TERRAIN_LOD_IDX[3]</code></li>
+<li><strong>Per-vertex geomorphing</strong> — <code>morph_y</code> field in <code>TerrainVertex</code> (stride 48→52); L0→L1 blend zone 420–600 m computed per-vertex in <code>terrain_pom.vert</code>; eliminates LOD pop</li>
+<li><strong><code>PoissonScatter</code></strong> — Bridson O(n) Poisson Disk Sampling for prop placement; min-distance guarantee; slope + embed constraints; deterministic seed; used for mixed rock+vegetation scatter</li>
+</ul>
+<h3>Navigation</h3>
+<ul>
+<li>Recast/Detour integration; async SPSC pathfinding worker</li>
+<li><code>PathCache</code> with spinlock (<code>_mm_pause()</code>); <code>MAX_PATH_LEN=64</code></li>
+<li>NavMesh rebuild enqueue (<code>EnqueueRebuild</code>) from BuildSystem/editor</li>
+</ul>
+<h3>Audio — miniaudio</h3>
+<ul>
+<li><code>AudioSystem</code>: SFX pool (MAX_SFX=32, BSS); music + ambience streaming</li>
+<li><code>AudioHandle</code> = opaque int — no miniaudio types leak to public headers</li>
+<li>Lua API: <code>md_play_sfx</code> / <code>md_play_music</code> / <code>md_play_ambience</code> / <code>md_stop_*</code> / <code>md_set_volume</code></li>
+</ul>
+<h3>Scripting — Lua 5.4</h3>
+<ul>
+<li>8 MB custom allocator; io/os/package/debug sandboxed out</li>
+<li><code>LuaEventBus</code> (MAX_HANDLERS=64 BSS); <code>FlowGraph</code> FNV-1a node IDs; ring buffer</li>
+<li><code>AgentBlackboard</code> (MAX_ENTRIES=24; FNV-1a keys)</li>
+<li><strong><code>MdEventScheduler</code></strong> — Flare EventComponent-inspired: OneShot / Cooldown / Delayed / Repeating / FireOnLoad / FireOnClear; <code>RequestFire()</code> for manual cooldown trigger</li>
+</ul>
+<h3>World Simulation</h3>
+<ul>
+<li><code>WorldSimulation</code> 1 Hz tick: <code>FactionState[8]</code> + <code>TradeRoute[32]</code>; gold/prosperity/aggression/population economy</li>
+<li><code>FactionSystem</code> — relation matrix <code>[-100..100]</code>; JSON loader</li>
+<li><code>BuildSystem</code> — 200×200 grid; <code>ProductionChain</code> (inputs → outputs, timed cycles)</li>
+<li><code>SaveSystem</code> v10 — CRC32 header; async save; <code>AgentState</code> + <code>NpcMemoryComponent</code> inline per NPC record; <code>WorldSimulation</code> faction/trade tail</li>
+<li><strong><code>SaveVersionChain</code></strong> — O3DE-inspired post-load version converter chain (<code>Register(from,to,fn)</code> + <code>RunUpgrades</code>); eliminates growing <code>is_vN</code> branches for future versions</li>
+<li><strong><code>MdStatusRegistry</code></strong> — Flare CampaignManager-inspired string-based status flags; <code>GetAllCSV</code>/<code>SetAllCSV</code> for human-readable saves; FNV-1a hashed IDs; MAX=128</li>
+<li><strong><code>MdPrefabRegistry</code></strong> — data-driven NPC archetypes via <code>data/prefabs/prefabs.json</code>; <code>MdPrefab</code> {name, bt_template, hp, wander_radius, combat_profile}; MAX=32</li>
+</ul>
+<h3>Config &amp; Features</h3>
+<ul>
+<li><strong><code>MdIniReader</code></strong> — zelda3-inspired INI parser; sections, <code>key=value</code>, ParseBool (0/1/yes/no/true/false/on/off), <code>!include</code>, <code>monkey_dust.user.ini</code> override fallback</li>
+<li><strong><code>MdFeature</code></strong> uint32 bitmask — 8 accessibility toggles (DisableLowHealthBeep, SkipIntroOnKeypress, ShowFps, etc.); <code>MdFeaturesLoad(ini)</code> from <code>[Features]</code> INI section</li>
+<li><strong><code>MdModuleRegistry</code></strong> — O3DE Gem-inspired plug-in lifecycle for <code>tools/</code> targets; <code>Register/Load/Unload/UnloadAll</code> (reverse order); <code>data/modules/*.module.json</code> metadata</li>
+</ul>
+<h3>GPU Dev Tooling</h3>
+<ul>
+<li><strong><code>GpuPipeline::Reload()</code></strong> — invalidates SPV cache entry + destroys + re-reads SPIR-V from disk; safe to call mid-session for hot-reload</li>
+<li><strong><code>MdSpvCache_Invalidate(path)</code></strong> — evicts one SPIR-V cache entry by glsl path (e.g. <code>"shaders/char_hair.frag"</code>)</li>
+<li><strong><code>MdSpvCache_Shutdown()</code></strong> — releases all cached bytecode at exit</li>
+<li><code>SkinMesh::LoadGLB</code> validates NORMAL / JOINTS / WEIGHTS attributes and emits <code>[SkinMesh] WARN</code> if missing (missing normals → <code>normalize(0)</code> → NaN → white fragments)</li>
+<li>Hair shader (<code>char_hair.vert/.frag</code>) — Lambert only (Kajiya-Kay removed: V≈−L → normalize(0) → NaN); depth bias <code>gl_Position.z -= 0.0003*w</code> prevents Z-fighting against head geometry</li>
+</ul>
+<h3>Performance</h3>
+<ul>
+<li>AVX2 <code>BulkComputeDistSq</code> / <code>BulkComputeLOD</code> (<code>_mm256_fmadd_ps</code>, <code>alignas(64)</code> SoA)</li>
+<li><code>MD_HOT</code> / <code>MD_LIKELY</code> / <code>MD_UNLIKELY</code> / <code>MD_FORCE_INLINE</code> compiler hints (<code>md_hints.h</code>)</li>
+<li>TINST dirty-flag — skip GPU upload when tiles unchanged</li>
+<li>TransformSoA faction dirty — range upload (not full 65536-slot buffer)</li>
+<li>Hot-reload file watcher (POSIX <code>stat</code> + <code>SDL_Thread</code>); live BT JSON reload</li>
+</ul>
+<hr />
+<h2>Target Hardware</h2>
+<p>Intel HD 520 (Skylake, AVX2) · Vulkan via SDL_GPU · 4–8 GB shared RAM · 1280×720 · 60 FPS</p>
+<hr />
+<h2>Build</h2>
+<pre><code class="language-bash"># Static library only
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
+ninja -C build monkey_dust_engine
+</code></pre>
+<blockquote>
+<p><strong>Shaders</strong> live in the parent <a href="https://github.com/rdga1bot/monkey_dust"><code>monkey_dust</code></a> game repository (<code>shaders/</code> + <code>scripts/compile_shaders.sh</code>).
+The engine library itself is shader-agnostic — it loads pre-compiled SPIR-V at runtime via <code>GpuPipeline::Create(desc)</code>.</p>
+</blockquote>
+<p><strong>Dependencies</strong> (bring your own or via CMake FetchContent):
+<code>SDL3</code> · <code>EnTT</code> · <code>Recast/Detour</code> · <code>ozz-animation</code> · <code>JoltPhysics</code> · <code>miniaudio</code> · <code>Lua 5.4</code></p>
+<blockquote>
+<p><strong>ImGui is NOT an engine dependency.</strong> Dear ImGui and all extensions (imnodes, imgui-node-editor, ImGuiColorTextEdit, imguizmo, imgui-flame-graph, imgui-command-palette) live in <code>tools/third_party/</code>. The engine library has zero UI dependencies and is split-ready.</p>
+</blockquote>
+<hr />
+<h2>Tests</h2>
+<pre><code class="language-bash">ninja -C build md_tests
+./build/tests/md_tests          # 1557 tests across 206+ suites
+</code></pre>
+<p>Suites: FNV · AgentBlackboard · FlowGraph · DirectorSystem · PowerSlotManager · NpcConfig · HotReload · FlowVar · AI Patterns C1–C20 · BT VM · Batch 3–31 · M47–M59 (NavLod, ReplaySnapshot, AllianceMatrix, SenseSystem, BT Archetypes, CombatDispatch, DeferredLighting, DialogQuest, FootIK) · O3DE-1–4 (MaterialDesc, MdPrefabRegistry, SaveVersionChain, MdModuleRegistry) · ZLD-1–2 (MdIniReader, MdFeature) · FL-3–4 (MdStatusRegistry, MdEventScheduler) · KEN-1–8 (SkinMesh, OzzAnimPlayer, JoltWorld, CrowdSystem) · VBfA-R1–9 · VBfA-AI1–6</p>
+<hr />
+<h2>Repository Layout</h2>
+<pre><code>engine/
+  include/monkey_dust/     ← public headers (install target)
+    ai/                    ← BT VM, director, sense, utility scorer
+    audio/                 ← AudioSystem
+    building/              ← BuildSystem, ProductionChain
+    combat/                ← damage_calc, hit_zones, power_def
+    components/            ← 14 ECS components
+    ecs/                   ← Registry (EnTT singleton)
+    flare/                 ← tile map, sprite animation, renderer
+    math_types.h           ← Vec3/Mat4 (GLM switch -DUSE_GLM)
+    nav/                   ← PathCache
+    platform/              ← input/audio/window/md_fs/md_log/md_hints
+    render/                ← GPU HAL, ring buffer, shadow, SSAO, SMAA …
+    save/                  ← SaveSystem v10 · SaveVersionChain
+    scripting/             ← LuaSystem, LuaEventBus, FlowGraph
+    world/                 ← FactionSystem, WorldSimulation, TransformSoA, MdStatusRegistry, MdPrefabRegistry …
+    prefab/                ← MdPrefabRegistry (data-driven NPC archetypes)
+    module/                ← MdModuleRegistry (plug-in lifecycle)
+    asset/                 ← (reserved: MdAssetHandle when asset pipeline scales)
+  src/                     ← implementation units
+  tests/                   ← Google Test suite
+</code></pre>
+<hr />
+<h2>License</h2>
+<p>GNU General Public License v3.0 — see <a href="LICENSE">LICENSE</a>.</p>
+<p>The game itself (<code>monkey_dust</code> executable and <code>game/</code> sources) is proprietary and not part of this repository.</p></section>
+<section id="tools-README-md"><h2>Tools<span class="section-tag">tools/README.md</span></h2><h1>monkey_dust — Tools</h1>
+<p>Editor, asset converter, terrain pipeline, and Flare demo viewer for the monkey_dust engine.
+Depends on <a href="https://github.com/rdga1bot/monkey_dust_engine">monkey_dust_engine</a> as a submodule.</p>
+<p>All tool names use the <code>md_</code> prefix (no proprietary asset branding in public repos).</p>
+<blockquote>
+<p><strong>Full documentation →</strong> <a href="https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html">rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html</a></p>
+</blockquote>
+<hr />
+<h2>Targets</h2>
+<h3><code>monkey_dust_editor</code> — Wicked-style Level Editor</h3>
+<p>ImGui-based editor compiled into the engine binary via <code>MONKEY_DUST_EDITOR=ON</code>.
+All ImGui libraries (core + extensions) live in <code>tools/third_party/</code>: imgui, imnodes, imgui-node-editor, ImGuiColorTextEdit, imguizmo, imgui-flame-graph, imgui-command-palette.
+Runs as a standalone SDL_GPU/Vulkan window (RD-3: migrated from OpenGL).
+Includes a <strong>3D terrain viewport</strong> (<code>editor_world_3d_sdlgpu.h</code>): full 64×64 world (32×32 km), all chunks always loaded, per-chunk distance-based LOD (LOD0+POM &lt;1.2 km, LOD1 &lt;3.5 km, LOD2 &lt;8 km, LOD3 &lt;18 km, skip beyond), LOD thresholds scale with camera altitude. No overview mesh. Camera starts at 8000 m altitude to see the full world; T resets to world center at 8000 m. Brush cursor is a screen-space crosshair (+). All rendering suspends when the tab is inactive (zero background CPU/GPU). RTT → ImGui::Image.
+<code>TerrainAtlas_SmoothBoundaries()</code> applied at startup (same zone-seam fix as the game).</p>
+<p><strong>14 panels:</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Panel</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Hierarchy</td>
+<td>Entity tree; multi-select; drag to reparent</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Inspector</td>
+<td>Component editing with undo/redo (256 steps)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Assets</td>
+<td>Asset browser with texture preview</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Console</td>
+<td>Log output + live Lua REPL (ImGuiColorTextEdit)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Graphics</td>
+<td>Renderer state: SSAO / SMAA / shadow cascade toggles</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Camera</td>
+<td>Orbit ↔ Flythrough mode; FOV; near/far clip</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Animation</td>
+<td>AnimationSoA clip table; play / stop</td>
+</tr>
+<tr>
+<td>7</td>
+<td><em>(reserved)</em></td>
+<td>—</td>
+</tr>
+<tr>
+<td>8</td>
+<td>ViewCone Inspector</td>
+<td>SenseComponent activation bars + ViewConeSet table</td>
+</tr>
+<tr>
+<td>9</td>
+<td>FlowGraph</td>
+<td>imnodes visual graph; node/var/pending display; trigger fire</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Director</td>
+<td>Menace gauge; stage color; profile params; manual override</td>
+</tr>
+<tr>
+<td>11</td>
+<td>GPU Profiler</td>
+<td>imgui-flame-graph; per-pass CPU timings and budget bars</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Node Graph</td>
+<td>Generic imnodes workspace</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Sequencer</td>
+<td>ImSequencer timeline</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Toolbar:</strong>
+- New Entity popup (Transform / NPC Bandit / NPC Trader / NPC Holy / Building)
+- Gizmo mode buttons (Translate W · Rotate E · Scale R)
+- World ↔ Local space toggle (G)
+- Physics pause toggle
+- FPS counter</p>
+<p><strong>Command Palette</strong> (<code>Ctrl+P</code>):
+Fuzzy-scored command search (+1 prefix · +4 acronym · +2 substring) across all editor actions.</p>
+<p><strong>Menu bar:</strong> File · Edit (Undo/Redo, Duplicate, Delete, Select All) · View · Scene · Debug · Help</p>
+<p><strong>Camera:</strong>
+- <em>Orbit</em>: RMB drag rotates around <code>cam_target</code>; scroll = zoom
+- <em>Flythrough</em>: hold RMB + WASD flies in look direction; Q/E = up/down</p>
+<hr />
+<h3>Shader hot-reload — zero-restart shader iteration</h3>
+<pre><code class="language-bash"># Terminal 2: auto-recompile on .vert/.frag/.comp save
+bash tools/shader_watch.sh
+
+# In editor console after compilation:
+/reload-shaders   # reloads all GPU pipelines without restart
+</code></pre>
+<p><code>tools/shader_watch.sh</code> uses <code>inotifywait</code> (inotify-tools) to watch <code>shaders/</code>; falls back to 5-second polling if not available.
+<code>/reload-shaders</code> calls <code>GpuPipeline::Reload()</code> on all char-preview pipelines after running <code>compile_shaders.sh</code>.</p>
+<p><strong>RenderDoc integration:</strong></p>
+<pre><code class="language-bash">SDL_GPU_DEBUGMODE=1 renderdoc build/tools/monkey_dust_editor   # editor
+SDL_GPU_DEBUGMODE=1 renderdoc build/game/monkey_dust            # game
+# F12 = capture frame → inspect uniform buffers, depth texture, per-draw state
+</code></pre>
+<p><strong>GPU debug overlay</strong> (Ctrl+D in Characters tab): real-time <code>hair_color</code>, <code>eye_pos</code>, pipeline status, bone21 diagonal. Red highlight when <code>hair_color</code> = white (HairFU binding error).</p>
+<hr />
+<h3><code>tools/qa/char_preview_qa.sh</code> — Character Preview Visual Regression</h3>
+<pre><code class="language-bash">bash tools/qa/char_preview_qa.sh --save    hair_front   # baseline from latest screenshot
+bash tools/qa/char_preview_qa.sh --compare hair_front   # pixel diff (ImageMagick RMSE)
+bash tools/qa/char_preview_qa.sh --list                 # list saved baselines
+</code></pre>
+<p>Baselines stored in <code>tools/qa/baselines/char_preview/</code>. Threshold: RMSE &lt; 0.02.</p>
+<hr />
+<h3><code>ozz_bake</code> — GLB → ozz Animation Converter</h3>
+<p>Offline converter: reads a GLB file with embedded skeleton and animations, writes <code>.ozz</code> skeleton + per-clip animation files consumed by <code>OzzAnimPlayer</code>.</p>
+<pre><code class="language-bash">ninja -C build ozz_bake
+./build/tools/ozz_bake   # input: game/data/props/md_human.glb
+                          # output: game/data/anim/md_human.ozz
+</code></pre>
+<hr />
+<h3><code>md_extract_terrain.py</code> — Terrain Atlas Builder</h3>
+<p>Extracts all 4096 terrain zones from <code>fullmap.tif</code> (16385×16385 uint16) and packs them into a single <code>world_hmap.r32</code> atlas (67 MB).</p>
+<pre><code class="language-bash"># Extract individual zone files:
+python3 tools/md_extract_terrain.py extract
+
+# Pack into atlas:
+python3 tools/md_extract_terrain.py pack_atlas
+# → game/data/terrain/world_hmap.r32
+</code></pre>
+<p>Atlas format: <code>magic=0x414D4800</code> · 4096 zones (64×64 grid) · each zone = <code>float hmin + float hmax + float[65×65]</code> heights.</p>
+<hr />
+<h3><code>md_convert.py</code> — Mesh Pipeline</h3>
+<p>OGRE XML skeleton/mesh → cgltf GLB with embedded animations. Used for character assets.</p>
+<pre><code class="language-bash">python3 tools/md_convert.py   # → game/data/props/md_human.glb
+</code></pre>
+<hr />
+<h3><code>md_mod_import.py</code> — World Data Import</h3>
+<p>Imports JSON mod data into <code>game/data/md_world.json</code>. Uses <code>md_id</code> as the canonical identifier key.</p>
+<hr />
+<h3><code>md_flare_convert</code> — FLARE INI → JSON Converter</h3>
+<p>Converts FLARE engine <code>.ini</code> tileset / map files to the monkey_dust JSON format.</p>
+<pre><code class="language-bash">./md_flare_convert &lt;input.ini&gt; &lt;output.json&gt;
+</code></pre>
+<hr />
+<h3><code>md_flare_demo</code> — Standalone Flare Tile + 3D World Viewer</h3>
+<p>Renders a FLARE map file using the engine's <code>TileMapRenderer</code> without the game layer.
+Press <strong>S</strong> to toggle between 2D isometric tile view and 3D world view.</p>
+<p><strong>2D mode:</strong> validates atlas packing, animation timing, NPC sprite overlay, <code>uint64_t</code> depth sort, <code>fadeOverlapTile</code> transparency.</p>
+<p><strong>3D mode:</strong> exercises the full SDL_GPU pipeline — GPU NPC frustum culling (<code>npc_cull.comp</code>), EVSM soft shadows (3-cascade CSM with texel-snap), OIT transparent quads (2-MRT compute composite), deferred lighting, SSAO, SMAA.</p>
+<pre><code>Controls: WASD = pan/fly · Scroll = zoom · S = toggle 2D/3D · F3 = stats overlay
+</code></pre>
+<hr />
+<h2>Build</h2>
+<pre><code class="language-bash">cmake -S .. -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
+ninja -C build monkey_dust_editor    # editor
+ninja -C build md_flare_convert      # converter
+ninja -C build md_flare_demo         # demo viewer
+</code></pre>
+<p>Editor with MONKEY_DUST_EDITOR panels compiled into the game binary:</p>
+<pre><code class="language-bash">cmake -S .. -B build -G Ninja -DUSE_SDL3=ON -DMONKEY_DUST_EDITOR=ON
+ninja -C build monkey_dust           # game + editor overlay
+</code></pre>
+<hr />
+<h2>Architecture</h2>
+<pre><code>tools/
+  editor/              ← ImGui wicked-style editor (MONKEY_DUST_EDITOR)
+    editor_core.*      ← EditorCore singleton; camera; undo history
+    editor_toolbar.*   ← Menu bar + button bar + hotkeys
+    editor_hierarchy.* ← Entity tree panel
+    editor_inspector.* ← Component inspector
+    editor_console.*   ← Log panel + Lua REPL
+    editor_map_view.*  ← M9 map editor (FBO viewport + tile palette)
+    editor_world_panel.h ← World tab: Zone/Faction/Town + map preview (KEN-5)
+    editor_world_3d_sdlgpu.h ← 3D terrain viewport (SDL_GPU, full 64×64 world, per-chunk LOD 0–3, tab-gated RTT→ImGui)
+    editor_*_panel.*   ← Specialist panels (ViewCone, FlowGraph, Director, GPU Profiler …)
+    scene_serializer.h ← Import/Export scene JSON
+    editor_game_context.h ← Callback bridge to game-side systems
+  ozz_bake/            ← GLB → ozz animation converter
+  md_terrain/          ← md2terrain.py terrain zone helpers
+  md_mesh_conv/        ← md_chars.py · ogre2glb.py — OGRE XML → GLB
+  md_extract_terrain.py ← fullmap.tif → 4096 zone r32 → world_hmap.r32 atlas
+  md_convert.py        ← OGRE mesh → GLB pipeline
+  md_mod_import.py     ← JSON mod data → md_world.json (key: md_id)
+  md_biome_import.py   ← Biome map JSON import
+  md_heightmap_import.py ← Raw heightmap → atlas format
+  md_stitch_terrain.py ← Post-process zone edge stitching
+  flare_convert/       ← FLARE INI converter
+  flare_demo/          ← Standalone tile viewer
+  flare_2d_render.py   ← Python helper: renders a map frame to PNG (offline preview)
+</code></pre>
+<p><strong>Dependency rule:</strong> <code>tools/</code> depends only on <code>engine/</code> (via <code>&lt;monkey_dust/...&gt;</code> headers) plus its own <code>tools/third_party/</code> (imgui + extensions).
+Zero includes from <code>game/</code>. Game-specific callbacks are injected at runtime via <code>EditorGameContext</code>.</p>
+<hr />
+<h2>License</h2>
+<p>GNU General Public License v3.0 — see <a href="LICENSE">LICENSE</a>.</p></section>
+<section id="CLAUDE_STATE-md"><h2>State<span class="section-tag">CLAUDE_STATE.md</span></h2><h1>monkey_dust — Поточний стан (CLAUDE_STATE.md)</h1>
+<blockquote>
+<p>Цей файл замінює розділ "Стан проекту" у CLAUDE.md.
+Оновлювати на початку кожного нового milestone. Архівувати у CLAUDE_HISTORY.md раз на місяць.
+Деталі завершених milestone: <code>cat CLAUDE_HISTORY.md</code></p>
+</blockquote>
+<hr />
+<p><strong>Оновлено:</strong> 2026-06-03<br />
+<strong>Поточний milestone:</strong> TERRAIN-LOD-3D-WORLD ✅ (editor full-world LOD + GPU Synthesis)
+<strong>Тести:</strong> 1557</p>
+<hr />
+<h2>Нещодавно завершено</h2>
+<table>
+<thead>
+<tr>
+<th>Milestone</th>
+<th>Дата</th>
+<th>Суть</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>IMGUI-SPLIT</strong></td>
+<td>2026-06-03</td>
+<td>imgui core+extensions → tools/third_party/. debug_system → game/src/ (SDL_GPU stub). font_loader.h → tools/editor/. window.h: pure SDL3. game/src/imgui_platform.h: new imgui wrappers. engine split-ready: no UI deps.</td>
+</tr>
+<tr>
+<td><strong>MOUSE-FIX</strong></td>
+<td>2026-06-03</td>
+<td>window_end_frame: removed SDL_PollEvent (was silently consuming events → missed LMB). Unified event pump at frame start in main.cpp. W3D viewport: RMB orbit → SDL_GetRelativeMouseState (no edge clamping). IsItemHovered(AllowWhenBlockedByActiveItem).</td>
+</tr>
+<tr>
+<td><strong>WASD-FIX</strong></td>
+<td>2026-06-03</td>
+<td>player_input.h: accumulate all movement keys → normalize → single rot_y. Fixes W+A facing sideways, A/D strafing, diagonal speed boost.</td>
+</tr>
+<tr>
+<td><strong>RENAME-KEN</strong></td>
+<td>2026-06-03</td>
+<td>kenshi_data_parser.h → ken_data_parser.h, re_kenshi_charstruct.py → re_ken_charstruct.py, videoplayback_frames_kenshi/ → ken/, regen_kenshi_assets.sh → regen_ken_assets.sh (trademark precaution).</td>
+</tr>
+<tr>
+<td><strong>TERRAIN-LOD-3D-WORLD</strong></td>
+<td>2026-06-02</td>
+<td>3D World editor: batch API (hoisted pipeline/UBO/sampler/IBO), compact VBO per LOD level (fixed slot=cz*64+cx, all 4096 chunks), GPU Synthesis VBO (256×256 grid, 1 draw call for full world, no vertex sampler → safe Gen9). terrain_forward.frag ndl bug fixed (dot(N,-sun_dir)). LOD gated by fixed thresholds (d0=1200m,d1=3500m,d2=8000m); culling distance only scales with alt_scale. Game: LOD0+POM &lt;500m, LOD1-3 beyond. Editor: 59 FPS ground / 50-55 FPS bird's-eye synthesis. CLAUDE.md: vert_samplers+frag_samplers=GPU hang, skirt LOD=0 only, uint32 IBO, compact VBO slot convention, alt_scale LOD bug.</td>
+</tr>
+<tr>
+<td><strong>GPU-TOOLING</strong></td>
+<td>2026-06-01</td>
+<td>GpuPipeline::Reload()+MdSpvCache_Invalidate() у engine; /reload-shaders у editor console (compile+reload без рестарту); tools/shader_watch.sh (inotifywait auto-recompile); GPU debug overlay Ctrl+D у Characters tab (hair_color/eye_pos/pipeline status); tools/qa/char_preview_qa.sh (baseline save/compare); RenderDoc встановлено (SDL_GPU_DEBUGMODE=1); cgltf validation у SkinMesh::LoadGLB; CLAUDE.md GPU debug protocol + Intel HD 520 checklist.</td>
+</tr>
+<tr>
+<td><strong>CHAR-HAIR-FIX</strong></td>
+<td>2026-06-01</td>
+<td>Root cause: Z-fighting між hair mesh і head geometry → depth bias <code>gl_Position.z -= 0.0003*w</code> у char_hair.vert; editor_char_preview_game.h: frag_uniform_bufs 1→2 + HairShadingFU push; hair shader Lambert (Kajiya-Kay removed — V≈-L → NaN→white); spec levels 0.55→0.12; game orbit camera guard for editor mode.</td>
+</tr>
+<tr>
+<td><strong>PERF-13..18</strong></td>
+<td>2026-05-31</td>
+<td>rsqrtps fast math (md_hints.h+sense_system+ai_goal), anim stagger by lod_tier, skeleton sharing for T3/T4 (shared idle pose), T1 parallel JobSystem eval, SSAO 4-param (ao_influence+specular_occlusion), GetFinalBonesLOD(12) for T2. perf_extract.py: single-pass 7.6M-line RE scan (SIMD/threading/floats/hotspots).</td>
+</tr>
+<tr>
+<td><strong>Task5.12+WorldSim+ZoneSave</strong></td>
+<td>2026-05-31</td>
+<td>InteriorPortal wiring, schedule-aware OffscreenNpcDatabase (night/day), zone_NNNN.onpc NPC persistence. MAX_AGENTS=512 doc-only (was already done).</td>
+</tr>
+<tr>
+<td><strong>QA-EXPANSION</strong></td>
+<td>2026-05-31</td>
+<td>Log-based QA: <code>QaStateSetEnabled()</code> у logic_tick → JSONL per tick (NPC pos/vel 150m), <code>MD_QA_STATE</code> env var. <code>qa_regression.py</code>: visual regression baseline/compare + HTML drag-to-reveal scrubber. <code>qa_bdd.py</code>: Gherkin BDD runner + 7 built-in steps (npc_freeze/teleport/count, player_speed, sky_visible, npc_visible). Feature files: npc_behavior/rendering/player. qa_run.sh: timestamped capture dir + MD_QA_STATE + BDD step.</td>
+</tr>
+<tr>
+<td><strong>KEN gaps</strong></td>
+<td>2026-05-30</td>
+<td>B-1: PowerGrid fuel (RegisterWithFuel/AddFuel/Tick drain). D-1: trigger_campaign action у ApplyAction. D-2: CompareOp enum + SkillCompare/RelationCompare/FlagCheck у CheckCondition. CM-1/CM-2/SV-1/I-1 вже були закриті.</td>
+</tr>
+<tr>
+<td><strong>Tier 2-4</strong></td>
+<td>2026-05-30</td>
+<td>G-3: water.vert/frag world-space quad Y=0.2m, depth test, Blinn-Phong, 3-oct waves. C-2: синя куля видалена (гравець рендериться як kenshi_human через NavAgent view). Всі інші Tier 2-4 вже були реалізовані: G-1 Jolt, G-2 норм тильт, C-1 skeletal, C-3 LOD T0-T4, W-1 LightSystem::Tick, W-2 zone banner, W-3 minimap, W-4 biome audio.</td>
+</tr>
+<tr>
+<td><strong>RD-5</strong></td>
+<td>2026-05-30</td>
+<td>3D World editor 7×7→64×64 чанків (повний світ), per-chunk LOD 0-3 по дистанції, tab-gated rendering, brush crosshair.</td>
+</tr>
+<tr>
+<td><strong>P-NG-4+P-NG-6</strong></td>
+<td>2026-05-28</td>
+<td>P-NG-4: FieldFn lazy eval вже було (PcgNoiseNode/AddNode/ClampNode/DomainWarpNode, PcgOutputNode::Materialize). P-NG-6: PcgScatterNode (Poisson-disk 4096 pts) ✅, scatter ECS spawn у EditorTerrainPanel ✅, Jolt HeightFieldShape (ReplaceTerrainBody 129×129) ✅, terrain_splat.vert/frag ✅, BiomeSplatUBO C++ struct + BiomeSplatNode_FillUBO() ✅, compile_shaders.sh wired ✅.</td>
+</tr>
+<tr>
+<td><strong>KEN-INJURY-PATROL-PORTAL</strong></td>
+<td>2026-05-28</td>
+<td>injury_state.h: per-limb bleed_rate[6]+resting_heal+ko_recovery_timer+doctor mult, InjurySystem::Tick у logic_tick; patrol_route.h: PatrolRoute MAX_WAYPOINTS=8 + actPatrolNext BT leaf; interior_portal.h: trigger-box + InteriorSystem::Tick → gs.pending_zone_id; zone_state.h: ZoneStateRegistry MAX_ZONES=512 wired on chunk-shift.</td>
+</tr>
+<tr>
+<td><strong>KEN-FACE-MORPH</strong></td>
+<td>2026-05-28</td>
+<td>md_convert.py: 23 OGRE poses → GLB morph targets; SkinMesh: WriteMorphedVerts+MorphCount+MorphName+morph_weights[32]; CharPreviewSDLGPU: CPU morph apply + SDL_GPU copy pass; character_editor.h: SetMorphWeightsFromFace() maps 14 face sliders → morph weights.</td>
+</tr>
+<tr>
+<td><strong>CHAR-BONE-MORPH</strong></td>
+<td>2026-05-26</td>
+<td>editor_char_preview_sdlgpu: SDL_GPUTexture* R32G32B32A32_FLOAT 30×1 для bone scales; per-frame upload via transfer buffer + copy pass; SDL_BindGPUVertexSamplers vert slot 0; SetBoneScalesFromDef() maps 18 BODY + FACE sliders → per-bone XYZ scale + pivot_Y (Kenshi bone-scaling approach).</td>
+</tr>
+<tr>
+<td><strong>CHAR-EDITOR-KENSHI</strong></td>
+<td>2026-05-26</td>
+<td>character_editor.h повністю переписано у Kenshi-стилі: 3-колонкова компоновка (160px ліво + центр 3D + 270px право), brownish-olive тема (28 кольорів), 18 BODY + 24 FACE + 5 HAIR = 47 морфів, KenshiSlider/NavRow/StatBar widgets, 6 рас з описами та стат-барами.</td>
+</tr>
+<tr>
+<td><strong>TERRAIN-SEAM-RESTORE</strong></td>
+<td>2026-05-26</td>
+<td>TerrainAtlas_SmoothBoundaries() випадково видалено у 8fcf799; відновлено у SceneRender::Init() → артефакти зникли.</td>
+</tr>
+<tr>
+<td><strong>F3-DETACH</strong></td>
+<td>2026-05-26</td>
+<td>F3 in-game editor dock/detach: всі 6 вкладок завжди в tab bar; floating вікно всередині BeginTabItem scope → ImGui автоматично ховає при перемиканні; NoBackground коли активна вкладка detached (гра видна позаду); позиція → editor_f3_layout.json</td>
+</tr>
+<tr>
+<td><strong>RAGDOLL-TERRAIN</strong></td>
+<td>2026-05-26</td>
+<td>Ragdoll terrain floor clamp (TerrainQuery) у logic_tick; ragdoll IK override у npc_render (kBS[30] bone→segment mapping)</td>
+</tr>
+<tr>
+<td><strong>TERRAIN-SPLAT-SHADER</strong></td>
+<td>2026-05-26</td>
+<td>terrain_splat.vert/frag додано до SPIR-V compile pass (triplanar+biome Tier 1)</td>
+</tr>
+<tr>
+<td><strong>EDITOR-CRASH-FIX</strong></td>
+<td>2026-05-24</td>
+<td>Debug tab: FlameGetter null-guard (PlotFlame depth-scan передає nullptr для s/e/cap → segfault після frame 1); FlowGraph: imnodes_ctx_ init перенесено у DrawContent(); Animation/Sequencer: seq_.count init перенесено у DrawContent(). Задокументовано DrawContent() invariant у CLAUDE.md.</td>
+</tr>
+<tr>
+<td><strong>KEN-MECH-DOCS</strong></td>
+<td>2026-05-23</td>
+<td>11 файлів KEN_MECH_*.md + KEN_IMPL_MASTER.md (методологія впровадження)</td>
+</tr>
+<tr>
+<td><strong>BUG-CAPTURE</strong></td>
+<td>2026-05-23</td>
+<td>BugCapture::Open/Close, DumpState, F9 editor+game, кнопка Dump в Characters</td>
+</tr>
+<tr>
+<td><strong>PAUSE-SYS</strong></td>
+<td>2026-05-23</td>
+<td>Клавіша P — пауза/розпауза: freeze now_s+logic_accum+AI, HUD "[ PAUSED ]"</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION-P2</strong></td>
+<td>2026-05-23</td>
+<td>Фаза 2 залишки: MotivationType +4, SquadComponent, FactionState +population/economy, Inventory weight system, Settlement, weapon skill mult</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION-4</strong></td>
+<td>2026-05-23</td>
+<td>Фаза 4: kenshi_data_parser (FCS), item_def (2048 slots), building_integrity BFS, fauna configs (5 presets), FactionSystem::LoadFromFcs, research_system, LoadMods(), 60 зон</td>
+</tr>
+<tr>
+<td><strong>char-preview-sync</strong></td>
+<td>2026-05-23</td>
+<td>editor_char_preview_sdlgpu: FU 32→48B, frag_samplers 1→3, muscle+hair params</td>
+</tr>
+<tr>
+<td><strong>PERF-RE</strong></td>
+<td>2026-05-22</td>
+<td>Perf аудит VBfA+AI.exe → <code>CLAUDE_PERF_RE.md</code>: Animation LOD T0-T4, BT cull 3TPS/1TPS, job queue 100, 64KB stack</td>
+</tr>
+<tr>
+<td><strong>AI-RE</strong></td>
+<td>2026-05-22</td>
+<td>RE аудит Alien: Isolation (AI.exe.c, SDK, OpenIsolation) → <code>CLAUDE_AI_RE.md</code> (Director, Sense, BT 89 nodes)</td>
+</tr>
+<tr>
+<td><strong>VBFA-RE</strong></td>
+<td>2026-05-22</td>
+<td>RE аудит Viking BfA (viking.exe.c) → <code>CLAUDE_VBFA_RE.md</code> (29 squad states, AoE, anim metadata)</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION-2</strong></td>
+<td>2026-05-23</td>
+<td>AI-1 DirectorConfig wired, VB-1 AoeHit/AoeApply, VB-3 CombatConfig; AI-2/VB-2 вже були</td>
+</tr>
+<tr>
+<td><strong>EDITOR-ISSUES</strong></td>
+<td>2026-05-23</td>
+<td>#4 PropRenderer scatter, #5 body morph sliders + preview, #6 geomorph guard — всі закриті</td>
+</tr>
+<tr>
+<td><strong>KEN-MIGRATION-1</strong></td>
+<td>2026-05-23</td>
+<td>Фаза 1 MVP: ліміти, LimbHealth, Cut dmg 0.5f, StatSheet 25 skills, KO/Toughness/Bleed, IdleStance</td>
+</tr>
+<tr>
+<td><strong>KEN-AUDIT</strong></td>
+<td>2026-05-22</td>
+<td>Повний аудит Kenshi RE + data/ → <code>CLAUDE_KEN_MIGRATION.md</code> + <code>KEN_MIGRATION_PROMPT.md</code></td>
+</tr>
+<tr>
+<td><strong>KEN-9</strong></td>
+<td>2026-05-22</td>
+<td>Animation weight blend: s_blend_t[], breathing overlay upper-body, Kenshi-style idle↔walk transition</td>
+</tr>
+<tr>
+<td><strong>RD-4</strong></td>
+<td>2026-05-22</td>
+<td>Terrain zone seam: SmoothBoundaries N=15 + ndl_min=0.57 + LOD IBO disabled. Деталі: <code>CLAUDE_TERRAIN_SEAM.md</code></td>
+</tr>
+<tr>
+<td><strong>RD-3</strong></td>
+<td>2026-05-21</td>
+<td><code>monkey_dust_editor</code> → SDL_GPU/Vulkan; <code>editor_world_3d_sdlgpu.h</code> (7×7 terrain, async, RTT)</td>
+</tr>
+<tr>
+<td><strong>RD-2</strong></td>
+<td>2026-05-21</td>
+<td><code>CharacterDef</code> skintone sat/bri; sky render order fix; combat idle; Kenshi RE 6 файлів</td>
+</tr>
+<tr>
+<td><strong>KEN-1–8</strong></td>
+<td>2026-05-18</td>
+<td>Kenshi assets: OGRE→GLB, SkinMesh, AnimationSoA, JoltWorld, CrowdSystem</td>
+</tr>
+<tr>
+<td><strong>VBfA-R/AI</strong></td>
+<td>2026-05-19</td>
+<td>SSAO, bloom, motion blur, emissive/dissolve; BT LOD tiers, AI budget</td>
+</tr>
+<tr>
+<td><strong>M59 Foot IK</strong></td>
+<td>2026-05-19</td>
+<td>Аналітичний 2-bone foot placement IK</td>
+</tr>
+</tbody>
+</table>
+<p>Повна історія M0–M58: <code>cat CLAUDE_HISTORY.md</code></p>
+<hr />
+<h2>Наступні пріоритети</h2>
+<h3>KEN-MIGRATION Фаза 1 ✅ (MVP — завершено 2026-05-23)</h3>
+<p>Повний план: <code>cat KEN_MIGRATION_PROMPT.md</code> | Аудит: <code>cat CLAUDE_KEN_MIGRATION.md</code></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Завдання</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1.1</td>
+<td>Збільшити ліміти (MAX_AGENTS→512, MAX_FACTIONS→64, INV_MAX_SLOTS→64...)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>1.2</td>
+<td>LimbHealth{hp[6]} замість Health{float}</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>1.3</td>
+<td>Cut damage коефіцієнт 0.7f → 0.5f</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>1.4</td>
+<td>StatSheet 3→25 skills</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>1.5</td>
+<td>KO при limb≤0, Toughness XP, Bleed per-limb</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>1.6</td>
+<td>6 idle stances (IdleStance enum → AnimSoA clip)</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<h3>KEN-MIGRATION Фаза 2 ✅ (завершено 2026-05-23)</h3>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AI-1: DirectorConfig wired (LoadConfig + Tick)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>AI-2: SenseModifiers + VisualSenseEffects</td>
+<td>✅ (вже було)</td>
+</tr>
+<tr>
+<td>VB-1: AoeHit + AoeApply()</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>VB-2: SkinClip::flags + impact_time</td>
+<td>✅ (вже було)</td>
+</tr>
+<tr>
+<td>VB-3: CombatConfig combo/stagger per speed class</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<h3>KEN-MIGRATION Фаза 4 ✅ (завершено 2026-05-23)</h3>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>4.1: gamedata.base binary parser (FCS)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4.3: ItemDef[2048]</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4.5: ResearchSystem</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4.6: LoadMods() + mod directory scan</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4.7: 60 зон (WR_MAX_ZONES=128)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4.7b: BuildingIntegrity BFS</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>4.8: FactionSystem::LoadFromFcs, fauna configs (5 presets)</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<h3>GitHub Issues (всі закриті)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Назва</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/rdga1bot/monkey_dust/issues/4">#4</a></td>
+<td>PropRenderer в editor 3D viewport</td>
+<td>✅ closed</td>
+</tr>
+<tr>
+<td><a href="https://github.com/rdga1bot/monkey_dust/issues/5">#5</a></td>
+<td>Character editor — morph sliders</td>
+<td>✅ closed</td>
+</tr>
+<tr>
+<td><a href="https://github.com/rdga1bot/monkey_dust/issues/6">#6</a></td>
+<td>Geomorphing cleanup</td>
+<td>✅ closed</td>
+</tr>
+</tbody>
+</table>
+<h3>KEN-MIGRATION Фаза 3 ✅ (завершено 2026-05-24)</h3>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3.1 DailySchedule component — time-slot goal selection</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>3.2 NeedsComponent — hunger/fatigue/medical</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>3.3 Ragdoll — Jolt RagdollSettings 30 bones</td>
+<td>✅ wired: Init(npc_render.cpp:180), Tick(logic_tick)</td>
+</tr>
+<tr>
+<td>3.4 FactionRelationMatrix[64][64] + BountyRecord</td>
+<td>✅ BountyRecord 16B + Add/Get/Clear у faction_system</td>
+</tr>
+<tr>
+<td>3.5 BleedSystem::Tick + DoctorAction</td>
+<td>✅ bleed tick у logic_tick + actDoctorHeal у ai_goal.h</td>
+</tr>
+<tr>
+<td>3.6 OffscreenNpcDatabase{OffscreenNpcState[10000]} 1Hz bulk tick</td>
+<td>✅ Tick+Spawn кожні 10 логік-тіків</td>
+</tr>
+</tbody>
+</table>
+<h3>P-NG Node Graph Terrain Editor (поточна)</h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Task</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P-NG-1</td>
+<td>PcgData/PcgNode/PcgGraph + pin type safety</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>P-NG-2</td>
+<td>Topological sort + dirty propagation + concrete nodes (10 types)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>P-NG-3</td>
+<td>TerrainTileGen worker thread + EditorTerrainPanel PCG controls + 3D bridge</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>P-NG-4</td>
+<td>Field<T> lazy evaluation (FieldFn pass-through without materialization)</td>
+<td>✅ (вже було)</td>
+</tr>
+<tr>
+<td>P-NG-5</td>
+<td>Live 400ms debounce → 3D RTT viewport auto-update</td>
+<td>✅ (wired in EditorTerrainPanel)</td>
+</tr>
+<tr>
+<td>P-NG-6</td>
+<td>Scatter ECS entities + Jolt HeightField + triplanar splat shader</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<h3>KEN-MIGRATION Фаза 6 — Інтеграція (завершено 2026-05-24)</h3>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>6.1 NeedsSystem → BT (hunger→actSeekFood, fatigue→actSeekBed)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>6.2 SurgerySystem + Skeleton RepairAction</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>6.3 VendorAI leaf (actVendorTend + actBuyFromVendor)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>6.4 Dialog UI panel (ImGui E-key popup)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>6.5 Item condition degradation + RepairItem</td>
+<td>✅</td>
+</tr>
+</tbody>
+</table>
+<h3>KEN-MIGRATION Фаза 5 ✅ (завершено 2026-05-24) — Remaining Mechanics</h3>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5.1 ShopInventory + PriceCalc formula</td>
+<td>✅ shop_inventory.h: ShopSlot[32], ItemGrade, PriceCalc namespace</td>
+</tr>
+<tr>
+<td>5.2 WageSystem (faction pays NPCs per day)</td>
+<td>✅ PayDailyWages() у WorldSimulation — 1/день (1440 тіків)</td>
+</tr>
+<tr>
+<td>5.3 ItemInstance + EquipmentSlots[7]</td>
+<td>✅ equipment.h: ItemInstance(8B) + EquipmentComponent(64B)</td>
+</tr>
+<tr>
+<td>5.4 BuildingState phases + PowerGrid</td>
+<td>✅ BuildingPhase enum + TickConstruct/TakeDamage + power_grid.h</td>
+</tr>
+<tr>
+<td>5.5 RaceModifiers + XP formula + TraitBitmask</td>
+<td>✅ race_def.h (6 рас), TraitBitmask у stat_sheet.h, XP soft-cap</td>
+</tr>
+<tr>
+<td>5.6 ParryWindow (combat timing)</td>
+<td>✅ CalcParryChance(def vs atk skill) у combat_dispatch.h</td>
+</tr>
+<tr>
+<td>5.7 ZoneState persistence (save/load per-zone NPCs)</td>
+<td>✅ OnPlayerEnter + PurgeZone + capture далеких NPC (800m)</td>
+</tr>
+<tr>
+<td>5.8 DialogSystem (ConditionEvaluator + DialogDef)</td>
+<td>✅ dialog_system.h: DialogLine + ConditionEvaluator + ApplyEffects</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Відомі обмеження / технічний борг</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Опис</th>
+<th>Workaround</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>БОРГ-RD4-1</td>
+<td>F3 brush: правки на col&lt;16 від межі зони перезаписуються SmoothBoundaries при рестарті</td>
+<td>Редагувати ≥125m від краю зони</td>
+</tr>
+<tr>
+<td>БОРГ-RD4-2 ✅</td>
+<td>LOD IBO вимкнено → geomorphing тепер за #define TERRAIN_GEOMORPH_ENABLED 0</td>
+<td>Закрито #6</td>
+</tr>
+<tr>
+<td>БОРГ-KEN-2 ✅</td>
+<td>Cut damage coeff виправлено 0.7f → 0.5f</td>
+<td>Фаза 1</td>
+</tr>
+<tr>
+<td>БОРГ-KEN-3</td>
+<td>KEN_MECH_INDEX.md статуси потребують оновлення після кожної сесії</td>
+<td><code>cat KEN_MECH_INDEX.md</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>GitHub Issues</h2>
+<p>Відстеження: <code>gh issue list -R rdga1bot/monkey_dust</code>
+Новий issue: <code>gh issue create -R rdga1bot/monkey_dust --title "..." --body "..."</code></p>
+<p>Всі issues закриті. Відстеження: <code>gh issue list -R rdga1bot/monkey_dust</code></p></section>
+<section id="CLAUDE-md"><h2>Config & Rules<span class="section-tag">CLAUDE.md</span></h2><h1>monkey_dust — CLAUDE.md v25.0</h1>
+<p>FLARE-inspired open-world RPG sandbox. C++17 · SDL3 + SDL_GPU · EnTT · Recast/Detour · <strong>Jolt Physics</strong> · <strong>DetourCrowd</strong> · miniaudio · Lua 5.4.
+Залізо: Intel HD 520 (AVX2) · 4-8 GB shared RAM · 1280×720 · 60 FPS.
+Репо: /home/rdga1/rdga1prj/monkeydust/
+Структура: monorepo, 4 cmake targets — <code>engine</code> · <code>game</code> · <code>tools</code> (editor + converters + demo)
+Kenshi встановлено: <code>/run/media/rdga1/win/SteamLibrary/steamapps/common/Kenshi/</code>
+RE-аналіз: <code>tmp_md/kenshi_re/</code> (6 файлів) — НЕ видаляти.</p>
+<h2>Білд</h2>
+<pre><code class="language-bash"># Основна збірка (USE_SDL3=ON — ЄДИНИЙ активний шлях; Raylib видалено з engine/):
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
+ninja -C build monkey_dust          # гра       → build/game/monkey_dust
+ninja -C build monkey_dust_editor   # редактор  → build/tools/monkey_dust_editor
+ninja -C build md_flare_convert     # конвертер → build/tools/md_flare_convert
+ninja -C build md_flare_demo        # демо      → build/tools/md_flare_demo
+
+# Kenshi asset pipeline (запускати з кореня репо):
+OgreXMLConverter data/character/meshes/human/human_male.mesh /tmp/kenshi_mesh/human_male.mesh.xml
+OgreXMLConverter data/character/meshes/male_skeleton/male_skeleton.skeleton /tmp/kenshi_mesh/male_skeleton.skeleton.xml
+python3 tools/md_convert.py     # → game/data/props/md_human.glb (30 bones, 10 clips)
+# ozz_bake ВИДАЛЕНО — система анімації: AnimationSoA + CPU SkinMesh + skinning.comp
+
+# З редакторними панелями (wicked-style editor в грі):
+cmake -S . -B build -G Ninja -DUSE_SDL3=ON -DMONKEY_DUST_EDITOR=ON &amp;&amp; ninja -C build monkey_dust
+
+# SPIR-V шейдери (після будь-якої зміни .vert/.frag/.comp):
+bash scripts/compile_shaders.sh     # або CMake target MD_COMPILE_SPIRV
+
+# Тимчасові/експериментальні збірки → temp_/ (у .gitignore):
+cmake -S . -B temp_/build_asan -G Ninja -DCMAKE_BUILD_TYPE=Debug -DUSE_SDL3=ON -DMONKEY_DUST_ASAN=ON
+# Правило: build_*/ != build/ → завжди temp_/build_*
+# temp_/   = тимчасові білди (gitignored, видаляти вільно)
+# tmp_md/  = ПОСТІЙНИЙ: RE дані Kenshi/VBfA/AI — НЕ видаляти.
+</code></pre>
+<h2>QA System — ОБОВ'ЯЗКОВО</h2>
+<p>Детальна документація: <strong><code>cat tools/qa/QA_GUIDE.md</code></strong></p>
+<pre><code class="language-bash">bash tools/qa/qa_run.sh                    # повний QA цикл
+python3 tools/qa/qa_report.py --open       # звіт по останньому capture
+python3 tools/qa/qa_bdd.py tools/qa/features/ --capture latest   # BDD перевірки
+python3 tools/qa/qa_regression.py --baseline CAPTURE_ID          # зберегти baseline
+python3 tools/qa/qa_regression.py --compare  CAPTURE_ID          # pixel diff vs baseline
+</code></pre>
+<p><strong>Правило "Тест перед фіксом":</strong>
+Перед будь-яким виправленням багу — спочатку переконайся що QA система його детектує.
+Якщо НЕ детектує → спочатку додай detection до <code>qa_report.py</code>, потім виправляй.</p>
+<p>Artifacts: <code>tools/qa/captures/TIMESTAMP/frames/</code> (PNG) · <code>captures/TIMESTAMP/qa_state.jsonl</code> (JSONL log) · <code>tools/qa/reports/</code> (gitignored)
+Аномалії: freeze · twitch · jump · sky_missing · npc_transparent · npc_freeze · pose_freeze
+Log-based: <code>MD_QA_STATE=&lt;path&gt;.jsonl</code> → <code>QaStateSetEnabled()</code> у logic_tick → JSONL per tick (NPC pos/vel, 150m radius)
+BDD steps: npc_freeze · npc_teleport · npc_count · player_speed · sky_visible · npc_visible
+Regression: <code>tools/qa/baselines/</code> — еталонні кадри; HTML звіт зі scrubber (drag to reveal)</p>
+<h2>Kenshi Terrain Pipeline</h2>
+<h3>Kenshi data files (mount: /run/media/rdga1/win/SteamLibrary/steamapps/common/Kenshi/)</h3>
+<ul>
+<li><code>data/newland/land/fullmap.tif</code>  — 16385×16385 uint16 heightmap (I;16); потребує <code>PIL.Image.MAX_IMAGE_PIXELS = None</code></li>
+<li><code>data/newland/land/biomemap.png</code> — 1024×1024 zone segmentation (унікальний RGB = одна Kenshi зона)</li>
+<li><code>data/newland/land/overlaymaps/colour.X.Y.png</code> — 2048×2048 surface colour tiles (8×8 grid = весь світ)</li>
+</ul>
+<h3>Terrain sync rule (КРИТИЧНО — порушення = editor і game показують різний ландшафт)</h3>
+<p>Після будь-якої зміни <code>world_hmap.r32</code> — обов'язково:</p>
+<pre><code class="language-bash">python3 tools/md_master_hmap_gen.py   # оновлює md_master_hmap.r32 (gitignored!)
+python3 tools/md_worldmap_gen.py      # оновлює world_map.png
+</code></pre>
+<p><code>md_master_hmap.r32</code> — gitignored, але він є різним від <code>world_hmap.r32</code>: без sync editor/game height queries розходяться.</p>
+<h3>Повний pipeline Kenshi terrain → game</h3>
+<pre><code class="language-bash">python3 tools/md_kenshi_hmap_import.py --preview  # fullmap.tif → world_hmap.r32 (seam=0.0m)
+python3 tools/md_master_hmap_gen.py               # sync master 256×256 (gitignored)
+python3 tools/md_worldmap_gen.py                  # regen world_map.png (biomemap shapes + наша палітра)
+ninja -C build monkey_dust monkey_dust_editor     # rebuild після зміни terrain
+</code></pre>
+<h2>Git — submodule gotcha</h2>
+<p><code>tools/</code> є git submodule. Для git операцій з файлами в tools/:</p>
+<pre><code class="language-bash">git -C tools add qa/...      # НЕ git add tools/qa/...  (→ fatal: pathspec in submodule)
+git -C tools commit -m &quot;...&quot;
+git add tools &amp;&amp; git commit  # оновити submodule pointer у головному репо окремо
+</code></pre>
+<h2>Стан проекту</h2>
+<p>M0–M59 · KEN-1–8 · VBfA-R/AI · RD-2–5 ✅ · KEN-MIGRATION Фази 1-2,4 ✅ · Tier 2-4 ✅ · KEN gaps ✅ — <strong>1557 тестів</strong>
+Поточний milestone / наступні кроки / відкриті борги: <strong><code>cat CLAUDE_STATE.md</code></strong>
+Повна історія: <code>CLAUDE_HISTORY.md</code> · GPU/Deferred: <code>CLAUDE_SDL_GPU_PREP_MD.md</code></p>
+<h2>GPU Debug — Протокол діагностики шейдерів</h2>
+<p><strong>Перш ніж писати будь-який шейдерний фікс — обов'язковий порядок:</strong></p>
+<pre><code>Крок 1: fragColor = vec4(N*0.5+0.5, 1.0)        ← нормалі OK? NaN? деген?
+Крок 2: fragColor = vec4(uf.some_color.rgb, 1.0) ← uniform buffer читається правильно?
+Крок 3: fragColor = vec4(1,0,1,1)               ← шейдер взагалі запускається?
+Тільки після відповіді на всі три — писати фікс.
+</code></pre>
+<p><strong>Char preview GPU overlay</strong> (Ctrl+D у Characters tab): показує hair_color, eye_pos, pipeline status, bone21. Використовувати перед будь-якою shader зміною.</p>
+<p><strong>RenderDoc</strong> (найпотужніший інструмент):</p>
+<pre><code class="language-bash"># CLI — перевірена команда (working dir -d ОБОВ'ЯЗКОВИЙ):
+SDL_GPU_DEBUGMODE=1 renderdoccmd capture -w \
+  -d &quot;/home/rdga1/rdga1prj/monkeydust&quot; \
+  &quot;/home/rdga1/rdga1prj/monkeydust/build/tools/monkey_dust_editor&quot;
+# F12 у запущеній програмі → зберігає capture.rdc → відкрити через qrenderdoc
+
+# GUI (зручніше для перегляду):
+qrenderdoc   # File → Open Capture → вибрати .rdc файл
+# Встановити: sudo pacman -S renderdoc
+</code></pre>
+<p><strong>Shader hot-reload</strong> (без рестарту гри/редактора):</p>
+<pre><code class="language-bash"># Термінал 1: запустити watcher
+bash tools/shader_watch.sh
+# Після зміни .frag/.vert → автоматично перекомпілюється
+# Термінал 2 / editor console: 
+/reload-shaders   # ← перезавантажує всі pipelines без рестарту
+</code></pre>
+<h2>Intel HD 520 — Hardware Checklist (ПЕРЕВІРЯТИ ПЕРЕД КОЖНИМ GPU PR)</h2>
+<pre><code>□ Push constants: vert ≤ 128B, frag ≤ 128B. Разом VU(64B)+HairFU(16B)+HairShadingFU(80B) &lt; 256B OK.
+  НЕБЕЗПЕЧНО: два mat4 (128B) в одному vert UB — може overflow на деяких конфігах.
+□ frag_uniform_bufs МУСИТЬ = кількості set=3 binding=N у SPIR-V шейдері.
+  Порушення → silent garbage у binding N+1 → NaN → white fragments.
+□ Depth format: ТІЛЬКИ D32_FLOAT. D24_UNORM = GPU hang на Intel Gen9 (ANV driver).
+□ frag_samplers + vert_storage_bufs &gt; 0 = silent fail (SDL3 3.4.8 bug). Workaround: vert SSBO→location=4.
+□ vert_samplers &gt; 0 + frag_samplers &gt; 0 = GPU hang → повний freeze ОС на Intel Gen9 ANV.
+  Workaround: vertex height reads через VBO (pre-computed CPU side), НЕ через vertex texture sampling.
+□ OIT composite: ТІЛЬКИ compute path. Fragment path з 2+ samplers = crash.
+□ Z-fighting hair/skin: depth bias у vert shader: gl_Position.z -= 0.0003 * gl_Position.w.
+  Більше 0.001 → hair перекриває обличчя. Менше 0.0001 → Z-fighting повертається.
+□ Skirt geometry: тільки LOD=0 (ground-level). Для LOD1+ — непотрібно і подвоює draw calls.
+□ LOD alt_scale: масштабувати alt_scale ТІЛЬКИ для culling distance (d3sq).
+  НЕ масштабувати LOD пороги (d0/d1/d2sq) — інакше bird's-eye = 1-5 FPS (всі чанки → LOD0).
+</code></pre>
+<h2>Char Preview QA — Visual Regression</h2>
+<pre><code class="language-bash"># Зберегти baseline (після стабільного стану):
+bash tools/qa/char_preview_qa.sh --save hair_front_dark
+bash tools/qa/char_preview_qa.sh --save hair_back_dark
+
+# Після змін — порівняти:
+bash tools/qa/char_preview_qa.sh --compare hair_front_dark
+
+# Список baselines:
+bash tools/qa/char_preview_qa.sh --list
+</code></pre>
+<p>Процедура: відкрити редактор → Characters tab → потрібний кут → PrintScreen → <code>--save NAME</code>.</p>
+<h2>Критичні правила (НІКОЛИ не порушувати)</h2>
+<ul>
+<li><strong>Без std::vector/map у hot-path</strong> — фіксовані масиви [MAX_N]</li>
+<li><strong>Без malloc/new у game loop</strong> — EnTT пули</li>
+<li><strong>Без мутації reg під час view.each()</strong> — collect → apply</li>
+<li><strong>Без assert()</strong> — MD_LOG_WARNING(...) + return default</li>
+<li><strong>Без C++20</strong> — C++17 maximum</li>
+<li><strong>Без зовнішніх JSON бібліотек</strong> — власний strstr-парсер</li>
+<li><strong>Без FSM для AI</strong> — BehaviorTree.h</li>
+<li><strong>Path індексування:</strong> X=path[i<em>3], Y=path[i</em>3+1], Z=path[i*3+2]. НЕ path[i]</li>
+<li><strong>ImGui тільки #ifdef MONKEY_DUST_EDITOR</strong> — не в реліз-білді</li>
+<li><strong>terrain_forward.frag ndl:</strong> <code>dot(N, -sun_dir)</code> — sun_dir = sun→surface (y від'ємний при elevation &gt; 0), нegate для Lambert. Без negation LOD1-3 завжди темні.</li>
+<li><strong>Compact VBO slot:</strong> завжди <code>slot = cz*N+cx</code> (фіксований на чанк), НЕ на основі lod_count — lod_count змінюється між кадрами → out-of-bounds vertex access.</li>
+<li><strong>uint32 IBO:</strong> обов'язковий при vertex count &gt; 65535. SDL_GPU_INDEXELEMENTSIZE_32BIT. Synthesis grid 513²=263K → uint32.</li>
+<li><strong>DrawContent() invariant:</strong> кожна панель має <code>Draw()</code> (Begin/End + visibility guard) і <code>DrawContent()</code> (тільки вміст). F3 tab layout (<code>##f3editor</code>) викликає ТІЛЬКИ <code>DrawContent()</code> — тому будь-яка lazy init (seq_.count, imnodes_ctx_, тощо) ПОВИННА бути в <code>DrawContent()</code>, а не в <code>Draw()</code>. Також: callbacks типу <code>FlameGetter</code> з imgui-flame-graph передають nullptr для деяких параметрів — завжди null-check перед dereference.</li>
+<li><strong>split-readiness:</strong> engine/ НЕ має #include з game/ або tools/</li>
+<li><strong>Нові компоненти/combat → engine:</strong> <code>engine/include/monkey_dust/components/</code> або <code>combat/</code>; game/ файли = forwarding wrappers</li>
+<li><strong>math abstraction:</strong> engine/ не включає raymath.h; Vec3/Mat4/mat4_<em>/vec3_</em> для нового коду; <code>mat4_ptr(m)</code> замість <code>&amp;m.m0</code></li>
+<li><strong>Flare UV:</strong> <code>v_gl = 1.0f - y_file/atlas_h</code> (stbi flip активний у MdLoadTexturePixelArt)</li>
+<li><strong>Flare tilesetdef img=:</strong> тільки ПЕРШИЙ рядок → atlas_rel_path; решта → atlas_idx++</li>
+<li><strong>MdLoadTexturePixelArt:</strong> GL_LINEAR_MIPMAP_LINEAR + glGenerateMipmap + GL_NEAREST mag — не спрощувати</li>
+<li><strong>Billboard:</strong> <code>offset_y &gt; h/2</code> = billboard (вертикальний quad); <code>≤ h/2</code> = flat XZ. h&gt;96 з offset_y≤h/2 (скелі) = ПЛОСКИЙ</li>
+<li><strong>Y-extents:</strong> <code>y_top = offset_y/96*tsz</code>, <code>y_bot = -(h−offset_y)/96*tsz</code>; 0=flat sentinel</li>
+<li><strong>TINST layout (stride=36):</strong> pos(8)+uv_rect(16)+y_bot(4)+y_top(4)+x_off(4). НЕ змінювати без sync з tile_map.vert</li>
+<li><strong>x_off:</strong> <code>(w/2 − offset_x) * tsz/192</code>; додається до ОБОХ wx і wz</li>
+<li><strong>FRINGE depth:</strong> <code>(col+row)*3 + layer_prio</code> (0=bg, 1=fringe, 2=object)</li>
+<li><strong>Tile pixel-snap:</strong> <code>x_tl/y_tl</code> у <code>tile_map_2d_renderer.cpp</code> ЗАВЖДИ через <code>roundf()</code> — 3 місця: GL (~347), SDL_GPU tile (~473), SDL_GPU NPC (~529).</li>
+<li><strong>Tile animation:</strong> <code>animation=id;sx,sy,Nms;...</code>; frame = <code>(now_ms % total_ms)</code>; max 8; now_s=0 → вимкнено</li>
+<li><strong>MINIAUDIO_IMPLEMENTATION:</strong> ТІЛЬКИ у engine/src/audio/audio_system.cpp</li>
+<li><strong>AudioHandle:</strong> opaque int — miniaudio типи не виходять у public headers</li>
+<li><strong>SDL_GPU only:</strong> MD_OPENGL43_ENABLED не використовувати; MD_SDL_GPU авто з USE_SDL3</li>
+<li><strong>GPU HAL:</strong> новий рендерний код → GpuPipeline/GpuCommandBuffer, не raw GL</li>
+<li><strong>SPIR-V:</strong> нові шейдери → scripts/compile_shaders.sh → .spv; #version 460</li>
+<li><strong>OIT accum pipeline:</strong> <code>enable_depth_test=true, enable_depth_write=false, compare_op=LESS_OR_EQUAL, depth_stencil_format=D32_FLOAT</code>. <code>OitPass::BeginAccum(cmd, opaque_depth)</code> — передати depth texture з непрозорого пасу. <strong>Не D24_UNORM</strong> — ANV GPU hang на Intel Gen9.</li>
+<li><strong>OIT composite:</strong> compute path (не fragment) — уникає Intel HD 520 crash при 2+ fragment samplers.</li>
+<li><strong>Hair shader:</strong> Lambert тільки (<code>ndl*diffuse_level + ambient_level</code>). Kajiya-Kay specular = складність без benefit на HD520; при V≈-L нормалізація дає NaN → white. Hair шейдер <strong>НЕ</strong> потребує view-dependent термінів.</li>
+<li><strong>Hair mesh depth bias:</strong> <code>gl_Position.z -= 0.0003 * gl_Position.w</code> — запобігає Z-fighting з head geometry. Значення 0.0003 перевірене. НЕ змінювати без тестування на HD520.</li>
+<li><strong>Hair architecture (майбутнє):</strong> перехід на alpha-tested cards при наступному оновленні hair assets — фізично усуває Z-fighting, industry standard (Kenshi, більшість ігор).</li>
+<li><strong>FlowGraph:</strong> FNV-1a uint32 для node IDs; ring buffer MAX_PENDING=32; без malloc</li>
+<li><strong>AgentBlackboard key:</strong> FNV-1a від string literal; MAX_ENTRIES=24</li>
+<li><strong>LuaEventBus:</strong> MAX_HANDLERS=64 BSS масив — не збільшувати без профайлінгу</li>
+<li><strong>SDL event pump:</strong> єдиний SDL_PollEvent loop на початку кадру (game/src/main.cpp після input_begin_frame). window_end_frame() НЕ дренує чергу подій — інакше clicks між imgui_new_frame і window_end_frame губляться.</li>
+</ul>
+<h2>Editor 3D World viewport — критичні інваріанти (editor_world_3d_sdlgpu.cpp)</h2>
+<ul>
+<li><strong><code>EDITOR_TNKN = 64</code></strong> — повний 64×64 світ (4096 chunks); <code>TNKN = 9</code> в game (9×9, 4500m) — різні системи</li>
+<li><strong>Synthesis VBO</strong> (256×256 quads) — ЗАВЖДИ рендерити як background без перевірки висоти; LOD chunks зверху через depth test</li>
+<li><strong><code>handle_input()</code> guard:</strong> <code>if (hov || s_rmb || s_focused || any_move_key)</code> — без <code>any_move_key</code> WASD зависає при русі миші за межі viewport</li>
+<li><strong>Camera speed:</strong> <code>s_speed = 1000 m/s</code> (fixed, не пропорційно висоті); scroll=zoom (<code>step = s_cy * 0.08</code>); Shift+Scroll=speed</li>
+<li><strong>Scroll zoom formula:</strong> <code>step = s_cy * 0.08 * wheel; cx+=step*sin(yaw); cz+=step*cos(yaw); cy *= 0.88 or 1.12</code></li>
+</ul>
+<h2>Game SceneRender terrain — НІКОЛИ не порушувати</h2>
+<ul>
+<li><strong><code>TNKN = 9</code></strong> — статичний масив 9×9 зон; фіксований при <code>Init()</code> навколо стартової зони гравця</li>
+<li><strong>НЕ робити <code>SceneRender::RebuildAt()</code></strong> — ламає систему координат: <code>tnoff_x/z</code> і <code>zone_ox/oz</code> несумісні після ручного repositioning</li>
+<li><strong>Terrain streaming відсутній за дизайном</strong> — для перегляду всього світу використовувати editor World3D tab (EDITOR_TNKN=64)</li>
+</ul>
+<h2>F3 Flythrough camera (editor_core.cpp) — інваріанти</h2>
+<ul>
+<li><strong>Окремий стан:</strong> <code>fly_yaw/fly_pitch</code> (radians) в <code>EditorCore</code> — незалежний від orbit <code>cam_yaw/pitch</code> (degrees)</li>
+<li><strong>Eye=target:</strong> <code>editor_cam.pos = cam_target</code>; look = <code>cam_target + (cos(p)*sin(y), -sin(p), cos(p)*cos(y))</code>; <code>return;</code> після блоку щоб пропустити orbit computation</li>
+<li><strong>Scroll min floor:</strong> <code>step = max(|cam_target.y|, 100.f) * 0.30f</code> — без min floor zoom невидимий при y &lt; 10m</li>
+<li><strong>WASD через <code>SDL_GetKeyboardState()</code></strong> — <code>ImGui::IsKeyDown</code> зависає при <code>WantCaptureKeyboard</code> (текстові поля UI)</li>
+</ul>
+<h2>Технічні борги</h2>
+<pre><code>БОРГ-1 ✅  BuildSystem::RebuildGridFromEntities() реалізована (world_serializer.cpp:510)
+БОРГ-6 ✅  TransformSoA::slot серіалізується з v5+ (world_serializer.cpp:435-437)
+БОРГ-7 ✅  AnimationSoA::states_[] є private; аксесор GetState(int slot)
+БОРГ-8 ✅  AnimationSoA::clips_[] є private; аксесори GetClip(i)/ClipCount()
+БОРГ-9 ✅  ChunkLoadStaging::MAX_STAGING = 32 (chunk_load_staging.h:41)
+БОРГ-10 ✅ BTJsonLoader JSON формат задокументовано (CLAUDE_INVARIANTS.md)
+БОРГ-11 ✅ NpcMemoryComponent::ExpireOlderThan() очищає spatial[]+events[]
+БОРГ-12 ✅ SaveSystem::SaveAsync() логує MD_LOG_WARNING якщо async_pending_
+БОРГ-13 ✅ BuildGuardBT/BuildAlienBT переведені на addSequenceStateless()
+</code></pre>
+<h2>Ключові файли</h2>
+<h3>engine/ (static lib <code>monkey_dust::engine</code>)</h3>
+<ul>
+<li><code>engine/include/monkey_dust/platform/{input,audio,window}.h</code> — Rule M-A: тільки main.cpp; window.h є pure SDL3 (без imgui includes/functions)</li>
+<li><code>engine/include/monkey_dust/audio/audio_system.h</code> — SFX pool/music/ambience</li>
+<li><code>engine/include/monkey_dust/math_types.h</code> — Vec3/Mat4; -DUSE_GLM switch</li>
+<li><code>engine/include/monkey_dust/render/gpu_hal.h</code> — GpuPipeline/GpuVertexBuffer/GpuCommandBuffer/GpuStaticBuffer/GpuTexture/GpuSamplerDesc/GpuComputePipeline/GpuDepthTexture/GpuRenderPass/GpuDrawIndexedIndirect</li>
+<li><code>engine/include/monkey_dust/render/gpu_device.h</code> — GpuDevice singleton; AcquireCommandBuffer(); Submit()</li>
+<li><code>engine/include/monkey_dust/render/gpu_ring_buffer.h</code> — GpuRingBuffer N=3 persistent coherent</li>
+<li><code>engine/include/monkey_dust/render/animation_soa.h</code> — GPU skeletal anim; SSBOs 4+5; DispatchSkinning()</li>
+<li><code>engine/include/monkey_dust/render/light_system.h</code> — PBR IBL; BRDF LUT 64×64</li>
+<li><code>engine/include/monkey_dust/render/shadow_system.h</code> — CSM 3-cascade; texel-snap; cascade blend 10% overlap</li>
+<li><code>engine/include/monkey_dust/render/oit_pass.h</code> — OitPass: BeginAccum/BeginComposite/Composite; compute composite</li>
+<li><code>engine/include/monkey_dust/render/render_tier.h</code> — RenderTierSystem; RenderTier enum</li>
+<li><code>engine/include/monkey_dust/render/material_desc.h</code> — MaterialDesc: JSON→GpuPipeline::Desc; shader_features bitmask</li>
+<li><code>engine/include/monkey_dust/render/skin_mesh.h/.cpp</code> — SkinMesh: cgltf GLB; SkinVertex stride=52; GetFinalBones (CPU LBS)</li>
+<li><code>engine/include/monkey_dust/ecs/registry.h</code> — EnTT singleton</li>
+<li><code>engine/include/monkey_dust/nav/path_cache.h</code> — PathCache; MAX_PATH_LEN=64; Freeze/Unfreeze</li>
+<li><code>engine/include/monkey_dust/nav/crowd_system.h/.cpp</code> — CrowdSystem; dtCrowd; MAX_AGENTS=128</li>
+<li><code>engine/include/monkey_dust/physics/jolt_world.h/.cpp</code> — JoltWorld; CharacterVirtual; MAX_CHARS=64</li>
+<li><code>engine/include/monkey_dust/save/save_system.h</code> — SaveSystem::SetCallbacks()</li>
+<li><code>engine/include/monkey_dust/world/spatial_grid.h</code> — SpatialGrid; CELL_SIZE</li>
+<li><code>engine/include/monkey_dust/world/chunk_manager.h</code> — ChunkManager; ChunkLoadStaging (MAX_STAGING=32)</li>
+<li><code>engine/include/monkey_dust/world/world_simulation.h</code> — WorldSimulation singleton; 1Hz Tick</li>
+<li><code>engine/include/monkey_dust/world/alliance.h</code> — AllianceGroup/AllianceStance + AllianceMatrix singleton</li>
+<li><code>engine/include/monkey_dust/scripting/lua_system.h</code> — LuaSystem; Lua 5.4; 10000 op limit</li>
+<li><code>engine/include/monkey_dust/scripting/lua_event_bus.h</code> — LuaEventBus; MAX_HANDLERS=64</li>
+<li><code>engine/include/monkey_dust/scripting/flow_graph.h</code> — FlowGraph; FNV-1a IDs; MAX_PENDING=32</li>
+<li><code>engine/include/monkey_dust/components/agent_state.h</code> — AgentTimers[26]+lcflags+frame_flags+awareness+...</li>
+<li><code>engine/include/monkey_dust/components/sense_component.h</code> — SenseType (Visual…Background=8); sizeof=92</li>
+<li><code>engine/include/monkey_dust/components/npc_memory.h</code> — NpcMemoryComponent; SpatialMemory[8]+events[8]</li>
+<li><code>engine/include/monkey_dust/components/npc_relationship.h</code> — NpcRelationshipComponent (MAX_RELATIONS=8)</li>
+<li><code>engine/include/monkey_dust/components/bt_components.h</code> — BehaviorTreeComponent + DirectorHintComponent</li>
+<li><code>engine/include/monkey_dust/components/nav_agent.h</code> — NavAgent: path[], crowd_idx, desired_vel</li>
+<li><code>engine/include/monkey_dust/combat/</code> — damage_calc, hit_zones, power_def, power_manager</li>
+<li><code>engine/include/monkey_dust/ai/behavior_tree.h</code> — stackless BT VM; BTNode(24B); 30+ BTNodeType</li>
+<li><code>engine/include/monkey_dust/ai/bt_node_pool.h</code> — flat 32KB bump arena</li>
+<li><code>engine/include/monkey_dust/ai/bt_system.h</code> — BTSystem::Tick; ConnectRegistry()</li>
+<li><code>engine/include/monkey_dust/ai/bt_json_loader.h</code> — BTJsonLoader::LoadFromFile/String/ReadName</li>
+<li><code>engine/include/monkey_dust/ai/bt_action_registry.h</code> — md::BTActionRegistry; MAX_ACTIONS=64</li>
+<li><code>engine/include/monkey_dust/ai/role_registry.h</code> — RoleRegistry singleton; 8 NpcRoles</li>
+<li><code>engine/include/monkey_dust/ai/director_system.h</code> — DirectorSystem; menace [0..1]; ChooseMotivation</li>
+<li><code>engine/include/monkey_dust/ai/alien_config.h</code> — AlienConfigurationType (9 presets) + AlienConfigPreset (64B)</li>
+<li><code>engine/include/monkey_dust/ai/utility_scorer.h</code> — UtilityScorer: FillCandidates+Bias+BestFrom</li>
+<li><code>engine/include/monkey_dust/ai/squad_signal.h</code> — SquadSignalBus singleton; MAX_SQUADS=8</li>
+<li><code>engine/include/monkey_dust/ai/suspicious_item_group.h</code> — SuspiciousItemGroupRegistry (MAX_GROUPS=4)</li>
+<li><code>engine/include/monkey_dust/ai/npc_development.h</code> — NpcDevelopmentStage/npc_ability + NpcDevelopmentComponent</li>
+<li><code>engine/include/monkey_dust/ai/{named_branch,npc_sound,param_registry,procedural_modulator,state_handler,state_transition,tick_budget,director_handle,npc_config,sense_registry}.h</code></li>
+<li><code>engine/include/monkey_dust/platform/md_fs.h</code> — md::fs_read_alloc/free/exists</li>
+<li><code>engine/include/monkey_dust/net/replay_snapshot.h</code> — ReplayNpcState(16B)+ReplayFrame(1048B)+ReplayBuffer(300 ring)</li>
+<li><code>engine/include/monkey_dust/flare/tile_map.h</code> — FlareMap, TileMetaRegistry, TileAnim</li>
+<li><code>engine/include/monkey_dust/flare/tile_map_renderer.h</code> — TileMapRenderer; TINST layout; ComputeTileCullBounds</li>
+<li><code>engine/include/monkey_dust/flare/flare_anim_system.h</code> — FlareAnimSystem singleton</li>
+<li><code>engine/include/monkey_dust/editor/</code> — EditorPanelRegistry singleton (MAX_PANELS=16)</li>
+<li><code>shaders/tile_map.vert</code> — attribs 0–5; flat vs billboard branch</li>
+</ul>
+<h3>game/ (executable <code>monkey_dust</code>)</h3>
+<ul>
+<li><code>game/src/main.cpp</code> — game loop (10 TPS logic / 60 FPS render); InitNpcSDL(); CPU anim eval; unified SDL event pump at frame start</li>
+<li><code>game/src/imgui_platform.h</code> — imgui_init/shutdown/new_frame/render/sdlgpu wrappers (Rule M-A: main.cpp only); events pumped once per frame at frame start, NOT inside imgui_new_frame</li>
+<li><code>game/src/logic_tick.cpp</code> — LOGIC_TICK_S=0.1f; CrowdSystem::Update → JoltWorld::Step → readback</li>
+<li><code>game/src/ai/ai_goal.h</code> — BT leaf functions; actMoveToTarget; WANDER_R=40m; STEP_100MS=0.35m</li>
+<li><code>game/src/ai/bt_loader.h</code> — JSON BT templates; bt_template_id mapping; ResolveRefs()</li>
+<li><code>game/src/nav/nav_system.h</code> — NavMesh + PathCache singleton; async SPSC worker</li>
+<li><code>game/src/world/world_map_ui.h/.cpp</code> — WorldMapUI (M key); <code>zoom_</code> (1–8×), <code>pan_u_/pan_v_</code> (UV at screen centre); scroll=zoom around cursor; labels always drawn (не тільки при editor_open)</li>
+<li><code>game/src/render/scene_render.h/.cpp</code> — SceneRender; <code>TNKN=9</code> (9×9 fixed static array); <code>zone_ox/oz</code> встановлюється один раз у Init(); НЕ намагатись RebuildAt</li>
+<li><code>game/src/world/world_registry.h/.cpp</code> — WorldRegistry; LoadFromTerrainConfig(); 34 zones</li>
+<li><code>game/src/save/world_serializer.h</code> — Serialize/Deserialize; Save v7/v8/v9/v10 compat</li>
+<li><code>game/src/scripting/lua_game_api.h/.cpp</code> — RegisterLuaGameAPI(); 8 C functions</li>
+<li><code>game/data/props/md_human.glb</code> — 15504 verts, 30 bones, 6 clips; SkinVertex stride=52</li>
+<li><code>game/data/terrain_config.txt</code> — 34 Kenshi zones с grid_x/z, biome, danger, factions</li>
+</ul>
+<h3>tools/ — terrain pipeline (запускати з кореня репо)</h3>
+<ul>
+<li><code>tools/md_kenshi_hmap_import.py</code> — Kenshi fullmap.tif (uint16,16385²) → world_hmap.r32; subsample кожен 4й піксель 257→65 verts; seam=0.0m</li>
+<li><code>tools/md_srtm_terrain.py</code>       — NASA SRTM → world_hmap.r32; 9 biomes з окремих регіонів; cache: tmp_md/srtm_cache/*.npy</li>
+<li><code>tools/md_master_hmap_gen.py</code>    — world_hmap.r32 → md_master_hmap.r32 (256×256 blurred, gitignored); ОБОВ'ЯЗКОВО після md_kenshi_hmap_import</li>
+<li><code>tools/md_worldmap_gen.py</code>       — world_map.png: Kenshi biomemap shapes + наша палітра + hillshading; fallback=domain-warped Voronoi</li>
+</ul>
+<h3>tools/ — editor</h3>
+<ul>
+<li><code>tools/third_party/imgui/</code> — Dear ImGui core (moved from engine/third_party/; imgui extensions also in tools/third_party/)</li>
+<li><code>tools/editor/font_loader.h</code> — font loading helpers (moved from engine/include/monkey_dust/platform/)</li>
+<li><code>tools/editor/editor_core.h/.cpp</code> — wicked-style F3 editor; <code>##f3editor</code> fullscreen window + tab bar; tabs: Scene/AI/Animation/FlowGraph/Debug/Camera; кожна панель: <code>Draw()</code> (floating) + <code>DrawContent()</code> (embedded у tab). <strong>F3 Detach invariant:</strong> floating вікно панелі відкривається ВСЕРЕДИНІ <code>BeginTabItem</code> scope — тому існує тільки коли та вкладка активна (ImGui автоматично ховає при перемиканні). <code>##f3editor</code> отримує <code>NoBackground</code> коли активна вкладка detached. Позиція зберігається в <code>data/editor_f3_layout.json</code>.</li>
+<li><code>tools/editor/editor_console.cpp</code> — EditorConsole; ring buf 512×160; Lua mode з TextEditor; HistCB callback</li>
+<li><code>tools/editor/editor_sequencer_panel.cpp</code> — ImSequencer; lazy init (seq_.count/entries) у DrawContent()</li>
+<li><code>tools/editor/editor_flowgraph_panel.cpp</code> — ImNodes FlowGraph; imnodes_ctx_ у DrawContent() (не в Draw())</li>
+<li><code>tools/editor/editor_gpu_profiler_panel.cpp</code> — FlameGetter null-guards (PlotFlame передає nullptr для s/e/cap)</li>
+<li><code>tools/editor/editor_map_view.h/.cpp</code> — M9 Map Editor (FBO viewport + 9 panels)</li>
+<li><code>tools/editor/editor_world_panel.h</code> — World tab: Zone/Faction/Town + map preview</li>
+<li><code>tools/editor/editor_world_3d_sdlgpu.h</code> — 3D terrain viewport (SDL_GPU, 64×64 chunks, RTT, per-chunk LOD, RD-5)</li>
+<li><code>tools/md_convert.py</code> — OGRE XML→GLB (Python); <code>--all-anims</code> for all 174</li>
+<li><code>tools/flare_convert/flare_ini_converter.h/.cpp</code> — FLARE INI → JSON converter</li>
+<li><code>tools/flare_demo/main.cpp</code> — SDL_GPU demo: 2D tile render + 3D world</li>
+</ul>
+<h2>Third-party залежності</h2>
+<pre><code># engine/third_party/ (лінкується у engine static lib):
+engine/third_party/entt/               — EnTT ECS (header-only)
+engine/third_party/glm/                — GLM math (header-only)
+engine/third_party/recastnavigation/   — Recast + Detour + DetourCrowd (compiled into engine)
+engine/third_party/ozz-animation/      — НЕ ЛІНКУЄТЬСЯ (KEN-7: замінено AnimationSoA+SkinMesh CPU LBS)
+engine/third_party/JoltPhysics/        — Jolt Physics MIT (CharacterVirtual, TempAllocatorImpl 8MB)
+engine/third_party/raylib/             — Raylib headers (NOT linked; miniaudio.h lives here)
+
+# tools/third_party/ (лінкується ТІЛЬКИ у tools/editor — НЕ в engine):
+tools/third_party/imgui/               — Dear ImGui core
+tools/third_party/imnodes/             — node editor for FlowGraph panel
+tools/third_party/imgui-node-editor/   — alternate node editor
+tools/third_party/ImGuiColorTextEdit/  — syntax-highlighted TextEditor (editor_console)
+tools/third_party/imguizmo/            — gizmo overlays
+tools/third_party/imgui-flame-graph/   — GPU profiler flame chart
+tools/third_party/imgui-command-palette/ — command palette
+</code></pre>
+<p><strong>Пакети системи:</strong></p>
+<pre><code>ogre-14.5.2   — OgreXMLConverter (конвертація Kenshi .mesh → XML)
+bullet-3.25   — Bullet Physics (OGRE dep, не використовується в engine)
+</code></pre>
+<h2>Формат запиту (ОБОВ'ЯЗКОВИЙ)</h2>
+<pre><code>PROJECT: monkey_dust | PHASE: [N] | TASK: [одне речення]
+FILES: [макс 3-4]
+CONSTRAINT: [що НЕ можна]
+OUTPUT: REPLACE blocks only. No prose.
+</code></pre>
+<h2>Fail-Safe</h2>
+<pre><code>Порушує правила   → // ERROR: VIOLATES CONSTRAINT [rule]
+Файл не існує     → // ERROR: FILE NOT IN CANONICAL STRUCTURE
+Не вистачає даних → // NEED CONTEXT: [що потрібно]
+</code></pre>
+<h2>Деталі (читай за потребою)</h2>
+<ul>
+<li>Інваріанти компонентів: <code>cat CLAUDE_INVARIANTS.md</code></li>
+<li>Рендер (VBfA-R + deferred): <code>cat CLAUDE_RENDER.md</code></li>
+<li>AI деталі (VBfA-AI + M59 + BT): <code>cat CLAUDE_AI.md</code></li>
+<li>Реверс-інжиніринг: <code>cat CLAUDE_RE.md</code></li>
+<li>Архітектура + стандарти коду: <code>cat CLAUDE_ARCH.md</code></li>
+<li>Дорожня карта + M18–M42: <code>cat CLAUDE_ROADMAP.md</code></li>
+<li>Changelog M0–M52: <code>cat CLAUDE_HISTORY.md</code></li>
+<li>GPU tier + Deferred design: <code>cat CLAUDE_SDL_GPU_PREP_MD.md</code></li>
+<li>Terrain seam debug + fix log: <code>cat CLAUDE_TERRAIN_SEAM.md</code></li>
+<li>Поточний milestone / борги: <code>cat CLAUDE_STATE.md</code></li>
+<li>Методологія KEN механік: <code>cat KEN_IMPL_MASTER.md</code></li>
+<li>Статус KEN механік: <code>cat KEN_MECH_INDEX.md</code></li>
+</ul></section>
+<section id="CLAUDE_CONSTITUTION-md"><h2>Constitution<span class="section-tag">CLAUDE_CONSTITUTION.md</span></h2><h1>MONKEY_DUST_CONSTITUTION.md — monkey_dust Project Constitution v8.0</h1>
+<h1>Єдиний файл: промпт + архітектура + операційний протокол</h1>
+<h1>Розташування: monkey_dust/CLAUDE_CONSTITUTION.md</h1>
+<h1>Версія: 8.0 (SYNCHRONIZED) | Дата: 2026-05-22</h1>
+<p>┌─────────────────────────────────────────────────────────────┐
+│  ЦЕЙ ФАЙЛ — ЄДИНЕ ДЖЕРЕЛО ПРАВДИ ДЛЯ ВСІХ AI-АСИСТЕНТІВ  │
+│  • Не пояснюй • Не вчи • Пиши код • Дотримуйся правил     │
+│  • Порушення §1.2 = // ERROR: VIOLATES CONSTRAINT [rule]   │
+└─────────────────────────────────────────────────────────────┘</p>
+<hr />
+<h2>§0 · КОНТЕКСТ ПРОЄКТУ</h2>
+<pre><code>Проєкт:    monkey_dust — FLARE-inspired open-world RPG sandbox (Kenshi-like)
+Залізо:    Intel HD 520 · 4-8 GB shared RAM · 1280×720 · ціль 60 FPS
+Мова:      C++17 (НЕ C, НЕ C++20)
+Window:    SDL3 (USE_SDL3=ON — ЄДИНИЙ активний build path)
+Rendering: SDL_GPU HAL (GpuPipeline/GpuVertexBuffer/GpuCommandBuffer)
+           MD_SDL_GPU визначається автоматично з USE_SDL3
+Shaders:   SPIR-V (Vulkan 1.1), compile via scripts/compile_shaders.sh → .spv
+ECS:       EnTT (md::Registry::Get() singleton)
+AI:        BehaviorTree stackless VM (24-byte ноди, MAX_NODES=128) + BTLoader JSON
+NavMesh:   Recast/Detour (NavSystem singleton, PathCache LRU)
+Audio:     AudioSystem (miniaudio, ЄДИНИЙ TU: audio_system.cpp)
+Lua:       LuaSystem (Lua 5.4, 10000 op guard) + LuaEventBus (MAX_HANDLERS=64)
+Save:      бінарний .mdsave v4 (async, .tmp→rename)
+Logic:     10 TPS (LOGIC_TICK_S = 0.1f)
+Render:    60 FPS
+Debug UI:  ImGui (imgui_impl_sdl3/opengl3) — ТІЛЬКИ #ifdef MONKEY_DUST_EDITOR
+GPU ext:   SDL_GPU HAL (після SDL_GPU Actions 1–7); raw glad тільки у legacy code
+Структура: monorepo: engine/ (static lib) + game/ (executable) + tools/
+Репо:      /home/rdga1/rdga1prj/monkeydust/
+Input:     platform/input.h (Rule M-A: тільки main.cpp)
+Audio H:   platform/audio.h (Rule M-A: USE_SDL3 → AudioSystem delegates)
+Window H:  platform/window.h (Rule M-A: тільки main.cpp)
+Math:      math_types.h (Vec3/Mat4 aliases; -DUSE_GLM перемикає на GLM 1.1.0)
+Raylib:    ВИДАЛЕНО з USE_SDL3 build path (П.3)
+Фаза:      M0–M59 + KEN-1–8 + VBfA-R/AI + RD-2–5 + GPU-TOOLING (1557 тестів)
+Наступне:  CLAUDE_STATE.md (поточний milestone)
+Save:      .mdsave v10 (CRC32 + AgentState + WorldSimulation tail)
+Debug:     RenderDoc (SDL_GPU_DEBUGMODE=1 renderdoc build/tools/monkey_dust_editor)
+Hot-reload: /reload-shaders у editor console; tools/shader_watch.sh (inotifywait)
+</code></pre>
+<blockquote>
+<p><strong>Протокол помилкового запиту</strong>: Якщо запит ≠ формату §7.1 → відповідай лише:
+<code>[CONSTITUTION] Запит не відповідає формату §7.1. Використайте: PROJECT: ... | PHASE: ... | TASK: ...</code></p>
+</blockquote>
+<hr />
+<h2>§1 · БІЛД</h2>
+<pre><code class="language-bash"># ЄДИНИЙ активний build path (USE_SDL3=ON):
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_SDL3=ON
+ninja -C build monkey_dust          # гра       → build/game/monkey_dust
+ninja -C build monkey_dust_editor   # редактор  → build/tools/monkey_dust_editor
+ninja -C build md_flare_convert     # конвертер → build/tools/md_flare_convert
+ninja -C build md_flare_demo        # демо      → build/tools/md_flare_demo
+
+# З редакторними панелями (wicked-style editor у грі):
+cmake -S . -B build -G Ninja -DUSE_SDL3=ON -DMONKEY_DUST_EDITOR=ON &amp;&amp; ninja -C build monkey_dust
+
+# СПІР-V шейдери (компілювати після зміни будь-якого .vert/.frag/.comp):
+bash scripts/compile_shaders.sh  # або CMake target MD_COMPILE_SPIRV
+
+# ЗАСТАРІЛИ (НЕ ВИКОРИСТОВУВАТИ):
+# cmake без -DUSE_SDL3=ON  — Raylib path видалено з engine/
+# -DMD_OPENGL43=ON         — замінено MD_SDL_GPU (авто з USE_SDL3)
+</code></pre>
+<p>CMakeLists: monorepo targets → engine (static lib) + game + tools.
+split-readiness: engine/ не має залежностей від game/ або tools/.</p>
+<hr />
+<h2>§2 · СТЕК І ЗАБОРОНИ</h2>
+<h3>§2.1 · Технічний стек (ПОТОЧНИЙ)</h3>
+<table>
+<thead>
+<tr>
+<th>Компонент</th>
+<th>Рішення</th>
+<th>Примітка</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Window/Input</td>
+<td>SDL3</td>
+<td>USE_SDL3=ON mandatory</td>
+</tr>
+<tr>
+<td>Rendering</td>
+<td>SDL_GPU HAL</td>
+<td>GpuPipeline/VB/CB/ComputePipeline</td>
+</tr>
+<tr>
+<td>Shaders</td>
+<td>SPIR-V Vulkan 1.1</td>
+<td>scripts/compile_shaders.sh → .spv</td>
+</tr>
+<tr>
+<td>ECS</td>
+<td>EnTT</td>
+<td>md::Registry::Get() singleton</td>
+</tr>
+<tr>
+<td>AI</td>
+<td>BehaviorTree.h + BTLoader</td>
+<td>stackless VM + JSON</td>
+</tr>
+<tr>
+<td>NavMesh</td>
+<td>Recast/Detour</td>
+<td>NavSystem::Get() singleton</td>
+</tr>
+<tr>
+<td>Audio</td>
+<td>AudioSystem (miniaudio)</td>
+<td>ЄДИНИЙ TU: audio_system.cpp</td>
+</tr>
+<tr>
+<td>Lua</td>
+<td>Lua 5.4</td>
+<td>LuaSystem + LuaEventBus</td>
+</tr>
+<tr>
+<td>JSON</td>
+<td>власний strstr-парсер</td>
+<td>strstr + strtol + SkipBlock()</td>
+</tr>
+<tr>
+<td>Debug UI</td>
+<td>ImGui imgui_impl_sdl3</td>
+<td>#ifdef MONKEY_DUST_EDITOR ONLY</td>
+</tr>
+<tr>
+<td>Save</td>
+<td>.mdsave v4</td>
+<td>async .tmp→rename</td>
+</tr>
+<tr>
+<td>Math</td>
+<td>math_types.h (Vec3/Mat4)</td>
+<td>-DUSE_GLM → GLM 1.1.0</td>
+</tr>
+<tr>
+<td>Input H</td>
+<td>platform/input.h</td>
+<td>Rule M-A; SDL3 path</td>
+</tr>
+<tr>
+<td>Audio H</td>
+<td>platform/audio.h</td>
+<td>Rule M-A; delegates AudioSystem</td>
+</tr>
+<tr>
+<td>Window H</td>
+<td>platform/window.h</td>
+<td>Rule M-A</td>
+</tr>
+<tr>
+<td>2D HUD</td>
+<td>MdDraw2D</td>
+<td>stb_truetype + GL batch</td>
+</tr>
+<tr>
+<td>Raylib</td>
+<td>ВИДАЛЕНО (П.3)</td>
+<td>залишається тільки у !USE_SDL3 CMake</td>
+</tr>
+</tbody>
+</table>
+<h3>§2.2 · Абсолютні заборони</h3>
+<table>
+<thead>
+<tr>
+<th>Заборонено</th>
+<th>Причина</th>
+<th>Альтернатива</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>std::vector/map</code> у hot-path</td>
+<td>alloc у game loop</td>
+<td>фіксовані масиви [MAX_N]</td>
+</tr>
+<tr>
+<td><code>malloc/free/new[]</code> у hot-path</td>
+<td>фрагментація heap</td>
+<td>EnTT пули, фіксовані масиви</td>
+</tr>
+<tr>
+<td><code>assert()</code></td>
+<td>крашить при nil</td>
+<td><code>MD_LOG_WARNING(...)</code> + return</td>
+</tr>
+<tr>
+<td>мутація <code>reg</code> під час <code>view.each()</code></td>
+<td>UB в EnTT</td>
+<td>collect → apply патерн</td>
+</tr>
+<tr>
+<td>C++20 features</td>
+<td>compiler compat</td>
+<td>C++17 maximum</td>
+</tr>
+<tr>
+<td>зовнішні JSON бібліотеки</td>
+<td>є власний парсер</td>
+<td>strstr-патерн</td>
+</tr>
+<tr>
+<td>FSM/switch для AI</td>
+<td>BT вже реалізовано</td>
+<td>BehaviorTree.h + M21 extensions</td>
+</tr>
+<tr>
+<td>глобальні змінні (не static)</td>
+<td>coupling</td>
+<td>singleton або параметр</td>
+</tr>
+<tr>
+<td>ImGui поза MONKEY_DUST_EDITOR</td>
+<td>overhead в релізі</td>
+<td>#ifdef MONKEY_DUST_EDITOR</td>
+</tr>
+<tr>
+<td>MINIAUDIO_IMPLEMENTATION поза audio_system.cpp</td>
+<td>ODR violation</td>
+<td>єдиний TU</td>
+</tr>
+<tr>
+<td>#include raylib.h у engine/</td>
+<td>Raylib видалено</td>
+<td>SDL3 + SDL_GPU HAL</td>
+</tr>
+<tr>
+<td>MD_OPENGL43_ENABLED у USE_SDL3</td>
+<td>замінено MD_SDL_GPU</td>
+<td>авто з USE_SDL3</td>
+</tr>
+<tr>
+<td>raw GL без GPU HAL у новому коді</td>
+<td>не portable</td>
+<td>GpuPipeline/GpuCommandBuffer</td>
+</tr>
+<tr>
+<td><code>IsKeyDown/IsKeyPressed</code> напряму</td>
+<td>ламає SDL3</td>
+<td><code>input_key_down/input_key_pressed</code></td>
+</tr>
+<tr>
+<td><code>GetFrameTime/GetFPS</code> напряму</td>
+<td>ламає SDL3</td>
+<td><code>frame_dt() / frame_fps()</code></td>
+</tr>
+<tr>
+<td><code>#include "platform_input.h"</code> поза Main</td>
+<td>Rule M-A</td>
+<td>тільки Main.cpp/EditorMain</td>
+</tr>
+<tr>
+<td><code>Vector3/Matrix</code> напряму у нових файлах</td>
+<td>ламає -DUSE_GLM</td>
+<td><code>Vec3/Mat4</code> (math_types.h)</td>
+</tr>
+<tr>
+<td>TINST_STRIDE зміна</td>
+<td>tile_map.vert sync</td>
+<td>оновити Init()+attribs+shader разом</td>
+</tr>
+<tr>
+<td>FlowGraph malloc</td>
+<td>немає free у game loop</td>
+<td>ring buffer + static arrays</td>
+</tr>
+</tbody>
+</table>
+<h3>§2.3 · Політика оновлення залежностей</h3>
+<pre><code>Оновлення ДОЗВОЛЕНО якщо: critical security bug АБО блокує фічу + 100% backward compat.
+Заборонено під час активної фази.
+Перед оновленням: гілка → тест → CHANGELOG → approve.
+</code></pre>
+<hr />
+<h2>§3 · АРХІТЕКТУРА</h2>
+<h3>§3.1 · Файлова структура (monorepo M6, split-ready)</h3>
+<pre><code>monkey_dust/
+├── CLAUDE.md                        ← v24.0: build + критичні правила (slim, ~220 рядків)
+├── CLAUDE_CONSTITUTION.md           ← v8.0: цей файл — єдине джерело правди
+├── CLAUDE_STATE.md                  ← поточний milestone + GitHub Issues (оновлювати щомісяця)
+├── CLAUDE_HISTORY.md                ← фази + ADR рішення (append-only)
+├── CLAUDE_TERRAIN_SEAM.md           ← RD-4 debug log + checklist для регресій
+├── CLAUDE_ARCH.md                   ← детальна архітектура + API
+├── CLAUDE_ROADMAP.md                ← довгострокова дорожня карта
+├── CLAUDE_SDL_GPU_PREP_MD.md        ← GPU tier + Deferred design
+│
+├── engine/                          static lib → libmonkey_dust_engine.a
+│   ├── include/monkey_dust/
+│   │   ├── platform/ (input.h, audio.h, window.h) — Rule M-A
+│   │   ├── math_types.h, md_log.h, ecs/registry.h
+│   │   ├── audio/audio_system.h     — no miniaudio types exported
+│   │   ├── scripting/ (lua_system.h, lua_event_bus.h, flow_graph.h M23)
+│   │   ├── ai/ (behavior_tree.h, director_system.h M20,
+│   │   │        sense_registry.h M19, npc_config.h M22)
+│   │   ├── render/ (gpu_hal.h, gpu_device.h, gpu_ring_buffer.h,
+│   │   │           ssbo.h, animation_soa.h, light_system.h, shadow_system.h,
+│   │   │           model_manager.h, particle_soa.h, particle_renderer.h,
+│   │   │           render_tier.h M26, ambient_probe.h M27,
+│   │   │           gbuffer.h M28, light_volume.h M29/M31,
+│   │   │           ssao_system.h M30, gpu_timer.h M41)
+│   │   ├── flare/ (tile_map.h, tile_map_renderer.h, billboard_renderer.h,
+│   │   │          sprite_animation.h, sprite_resolver.h, flare_anim_system.h)
+│   │   ├── components/ (14 existing + agent_state.h M18,
+│   │   │               sense_component.h M19, projectile.h M34)
+│   │   ├── combat/ (damage_calc.h, hit_zones.h, power_def.h,
+│   │   │           power_manager.h, power_system.h M33)
+│   │   ├── world/ (spatial_grid.h, chunk_manager.h, transform_soa.h,
+│   │   │          map_manager.h M24)
+│   │   ├── nav/path_cache.h, save/save_system.h, building/production_chain.h
+│   └── src/ (audio/audio_system.cpp [MINIAUDIO_IMPL],
+│             flare/*.cpp, render/md_texture.cpp,
+│             ai/*.cpp M19–M22, scripting/flow_graph.cpp M23,
+│             world/map_manager.cpp M24, render/*.cpp M26–M30)
+│
+├── game/src/                        executable monkey_dust
+│   ├── main.cpp                     game loop · 10 TPS / 60 FPS
+│   ├── game_state.h                 POD · read-only між тіками
+│   ├── player_input.h               Rule M-A variant
+│   ├── hud_renderer.h/.cpp          MdDraw2D-based HUD
+│   ├── logic_tick.h/.cpp            LOGIC_TICK_S=0.1f
+│   ├── ai/ (ai_goal.h, bt_loader.h, schedule_system.h, sense_system.h M19)
+│   ├── combat/ (combat_system.h, projectile_system.h M34)
+│   ├── building/ (build_system.h, production_chain.h)
+│   ├── nav/ (nav_system.h, nav_mesh.h, nav_async_queue.h, path_cache.h)
+│   ├── save/ (world_serializer.h — v4; v5 planned M36)
+│   ├── dialog/ (dialog_system.h)
+│   ├── systems/ (quest_system.h)
+│   ├── scripting/ (lua_game_api.h/.cpp [8 C func], lua_bt_bridge.h)
+│   └── tools/ (world_placer.h/.cpp, timing_system.h)
+│
+├── tools/                           ← git submodule (git -C tools add/commit!)
+│   ├── flare_demo/main.cpp          standalone Flare map viewer
+│   ├── editor/                      standalone ImGui editor (M9 panels)
+│   ├── flare_convert/               INI → JSON converter
+│   └── qa/                          QA система
+│       ├── qa_run.sh                повний цикл: build→capture→report→BDD
+│       ├── qa_report.py             аналіз PNG: freeze/twitch/sky/npc/pose_freeze
+│       ├── qa_regression.py         visual regression: baseline→diff→HTML scrubber
+│       ├── qa_bdd.py                Gherkin BDD runner (7 built-in steps)
+│       ├── features/                .feature files (npc_behavior, rendering, player)
+│       ├── captures/TIMESTAMP/      frames/ + qa_state.jsonl (JSONL per tick)
+│       └── baselines/               еталонні кадри для regression
+│
+├── shaders/                         .vert/.frag/.comp → .spv via compile_shaders.sh
+│   ├── [existing shaders]
+│   ├── gbuffer.vert/.frag           M28 📋
+│   ├── deferred_lighting.frag       M28 📋
+│   ├── deferred_point.vert/.frag    M29 📋
+│   ├── deferred_strip.frag          M31 📋
+│   ├── ssao.comp                    M30 📋
+│   └── smaa_edge/blend/resolve.frag M32 📋
+│
+└── data/
+    ├── ai/ (view_cone_sets.json M19, director_profiles.json M20,
+    │        npc_configs.json M22, animations.json, bt_templates.json)
+    ├── maps/manifest.json           M24 📋
+    ├── flow/*.flow.json             M23 📋
+    └── [existing: factions, items, buildings, dialogs, scripts, audio]
+</code></pre>
+<h3>§3.2 · SSBO Binding Map (КАНОНІЧНА)</h3>
+<pre><code>Binding 0 = TransformSoA xzyr (vec4 · slot-indexed)
+Binding 1 = main_vis      (GPU culling result)
+Binding 2 = main_indirect (GpuDrawIndexedIndirect)
+Binding 3 = faction       (uint per NPC)
+Binding 4 = finalBones    (mat4[500×128] GPU skinning)
+Binding 5 = animState     (per-NPC animation state)
+Binding 6 = shadow_vis    (shadow_cull.comp result)
+Binding 7 = shadow_indirect
+Binding 8 = AmbientProbe[64] (M27)
+Binding 9 = SSAO result half-res image (M30)
+
+Texture units (forward path):
+  5 = CSM cascade 0
+  6 = CSM cascade 1
+  7 = CSM cascade 2
+</code></pre>
+<h3>§3.3 · Game Loop (КАНОНІЧНИЙ — НЕ РЕСТРУКТУРУВАТИ)</h3>
+<pre><code>input_begin_frame() → frame_tick()
+while (!input_should_quit()):
+  dt = frame_dt()
+  [Input: input_key_down/input_key_pressed]
+  logic_accum += dt
+  if logic_accum &gt;= 0.1f:           // 10 TPS
+    logic_accum -= 0.1f
+    FlareAnimSystem::Tick(dt)
+    DirectorSystem::Tick(dt)         // M20, після впровадження
+    [scheduleSystem/aiSystem/combatSystem/BuildSystem]
+    [Player movement + attack]
+    [Autosave · SaveSystem::CheckAsyncDone()]
+  [TransformSoA SSBO upload]
+  [GpuComputePass: cull + skinning]
+  ShadowSystem::RenderShadowPass()
+  [GpuRenderPass: geometry (forward / GBuffer M28)]
+  [GpuRenderPass: deferred lighting M28+]
+  [GpuComputePass: SSAO M30+]
+  [HUD: MdDraw2D · Dialog overlay]
+  [if MONKEY_DUST_EDITOR: ImGui panels]
+  input_begin_frame(); frame_tick()
+</code></pre>
+<h3>§3.4 · EnTT Pattern (КАНОНІЧНИЙ)</h3>
+<pre><code class="language-cpp">// ЧИТАННЯ:
+auto&amp; reg = md::Registry::Get();
+reg.view&lt;A,B&gt;().each([](const A&amp;, const B&amp;){});
+// ЗАПИС:
+reg.view&lt;A&gt;().each([&amp;](entt::entity e, A&amp; a){ a.value = ...; });
+// ЗНИЩЕННЯ (collect→apply):
+static entt::entity dead[512]; int n=0;
+reg.view&lt;Combat&gt;().each([&amp;](entt::entity e, Combat&amp; c){
+    if (c.is_dead &amp;&amp; n&lt;512) dead[n++] = e;
+});
+for (int i=0; i&lt;n; ++i) {
+    if (reg.valid(dead[i])) {
+        TransformSoA::Get().Free(dead[i]);  // ПЕРЕД destroy
+        reg.destroy(dead[i]);
+    }
+}
+</code></pre>
+<h3>§3.5 · BehaviorTree VM</h3>
+<pre><code>Stackless VM. Нода: 24 bytes (cache-line aligned).
+Статуси: BTStatus::Success | BTStatus::Failure | BTStatus::Running
+BTActionFunc = BTStatus(*)(md::EngineContext&amp;, entt::entity)
+BTConditionFunc = bool(*)(md::EngineContext&amp;, entt::entity)
+game casts: static_cast&lt;GameState&amp;&gt;(ctx)
+
+RegisterAllBTBindings() ПЕРЕД BTLoader::Get().LoadFromFile()
+
+M21 нові типи: Branch, TimerStart, TimerCheck, FlagCheck, FlagSet, SenseCheck
+  AgentTimers[8] — per-entity timers (у AgentState M18)
+  AgentFlags uint32 — bitmask (у AgentState M18)
+  SenseActivation — з SenseComponent (M19)
+</code></pre>
+<h3>§3.6 · NavSystem</h3>
+<pre><code>NavSystem::Get() singleton: NavMesh + PathCache + async worker.
+QueryPath(PathCache-first) → NavMesh → waypoints у nav.path[].
+Path індексування: X=path[i*3], Y=path[i*3+1], Z=path[i*3+2]. ЗАБОРОНЕНО: path[i].
+</code></pre>
+<h3>§3.7 · Save format (.mdsave v4)</h3>
+<pre><code>Бінарний, #pragma pack(1), magic 0x4D445341 &quot;MDSA&quot;.
+v4: SaveHeaderV4Extra (completed_quests[4], active_quest_id, quest_flags[2])
+    NpcRecord v4 (+personal_relation int8, +bt_template_id uint8)
+Backward compat: читає v2/v3.
+SaveSystem::SetCallbacks(SaveCb, LoadCb, nullptr) — НЕ SetContext.
+v5 (M36 planned): + AgentState + FlowGraph per-entity serialization
+</code></pre>
+<h3>§3.8 · JSON-парсер (незмінний)</h3>
+<pre><code>strstr + strtol + SkipBlock(). Без зовнішніх залежностей.
+Порядок полів ВАЖЛИВИЙ — парсер знаходить перший збіг через strstr.
+Масиви: &quot;[&quot; → цикл &quot;{&quot; → парсинг → &quot;}&quot; → ',' або ']'. БЕЗ рекурсії.
+Валідація: if (!ParseInt(...)) { MD_LOG_WARNING(&quot;Missing: %s&quot;, key); return false; }
+</code></pre>
+<h3>§3.9 · AudioSystem</h3>
+<pre><code>AudioSystem::Get() singleton.
+SFX pool: MAX_SFX=32 (BSS ma_sound arrays — не malloc).
+Music/ambience: streaming looping playback.
+SetMasterVolume(float 0..1).
+platform/audio.h USE_SDL3 path → делегує до AudioSystem:
+  AudioHandle = opaque int (НЕ ma_sound* — miniaudio типи не виходять у public headers).
+MINIAUDIO_IMPLEMENTATION: тільки engine/src/audio/audio_system.cpp.
+</code></pre>
+<hr />
+<h2>§4 · СТАН ПРОЄКТУ</h2>
+<blockquote>
+<p><strong>Всі фази M0–M59, KEN-1–8, VBfA-R1–9, VBfA-AI1–6, RD-2–4 ✅ — 1557 тестів.</strong>
+Поточний milestone та наступні кроки: <strong><code>cat CLAUDE_STATE.md</code></strong>
+Повна фазова історія: <code>CLAUDE_HISTORY.md</code></p>
+</blockquote>
+<p>Ключові системи (всі ✅):
+ECS · BT VM · BTLoader · SenseSystem · DirectorSystem · FlowGraph · CrowdSystem · JoltWorld ·
+AnimationSoA · SkinMesh · TerrainAtlas · TerrainGen · PropRenderer · OIT · EVSM CSM · SSAO ·
+SMAA · Deferred Lighting · PBR IBL · SaveSystem v10 · WorldSimulation · AllianceMatrix ·
+NpcMemory · LuaSystem · AudioSystem · NavMesh · PathCache · CombatSystem · PowerSystem ·
+monkey_dust_editor (SDL_GPU) · TerrainRenderer у editor · WorldMapUI · CharacterDef ·
+<strong>QA System</strong> (qa_report · qa_regression · qa_bdd · MD_QA_STATE JSONL log)</p>
+<hr />
+<h2>§5 · ТЕХНІЧНІ БОРГИ</h2>
+<blockquote>
+<p>БОРГ-1–13 з CLAUDE.md v23 всі <strong>✅ вирішені</strong> (2026-05-16–22).
+Поточні відкриті борги: <strong><code>cat CLAUDE_STATE.md</code></strong> → таблиця "Відомі обмеження".</p>
+</blockquote>
+<p>Активні (RD-4):
+- <strong>БОРГ-RD4-1</strong>: F3 brush правки col&lt;16 від межі зони перезаписуються SmoothBoundaries → редагувати ≥125m від краю зони
+- <strong>БОРГ-RD4-2</strong>: LOD IBO вимкнено → geomorphing у terrain_pom.vert непотрібний; guard або видалити (#6)</p>
+<hr />
+<h2>§6 · ДОРОЖНЯ КАРТА</h2>
+<pre><code>Всі фази M0–M59 + KEN-1–8 + VBfA + RD-2–4 ЗАВЕРШЕНІ (2026-05-22).
+
+Поточний стан та наступні кроки: CLAUDE_STATE.md
+GitHub Issues: gh issue list -R rdga1bot/monkey_dust
+
+Найближчі пріоритети (з CLAUDE_STATE.md):
+  #4 PropRenderer у monkey_dust_editor 3D viewport
+  #5 Character editor — morph sliders + live preview
+  #6 Geomorphing cleanup (terrain_pom.vert)
+
+Довгостроково (без терміну):
+  Zone painting у editor 3D viewport
+  Kenshi town/faction data import
+  Повноцінний NPC dialog + quest system у world
+</code></pre>
+<hr />
+<h2>§7 · ОПЕРАЦІЙНИЙ ПРОТОКОЛ</h2>
+<h3>§7.1 · Формат запиту (ОБОВ'ЯЗКОВИЙ)</h3>
+<pre><code>PROJECT: monkey_dust | PHASE: [N або DEBT] | TASK: [одне речення]
+FILES: [макс. 3-4 файли що змінюються]
+CONSTRAINT: [що НЕ можна / що зберегти]
+OUTPUT: REPLACE blocks only. No prose.
+</code></pre>
+<h3>§7.2 · Формат відповіді</h3>
+<pre><code class="language-cpp">// FILE: engine/include/monkey_dust/render/gpu_hal.h
+// REPLACE START: GpuPipeline::Init
+void Init(const void* vert_spv, size_t vert_size, ...);
+// REPLACE END
+</code></pre>
+<p><strong>НІКОЛИ не приймати:</strong>
+- Повний файл, якщо змінено &lt;5 функцій
+- Код без <code>// REPLACE START/END</code>
+- Нові headers без <code>#pragma once</code>
+- Зовнішні залежності без узгодження</p>
+<h3>§7.3 · Правило "Нульового розмішу"</h3>
+<p>Код ЗА МЕЖАМИ REPLACE блоку = ІДЕНТИЧНИЙ оригіналу.</p>
+<h3>§7.4 · Бюджет токенів</h3>
+<table>
+<thead>
+<tr>
+<th>Задача</th>
+<th>Стратегія</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Баг-фікс</td>
+<td>Тільки функція + помилка компілятора</td>
+</tr>
+<tr>
+<td>Мала фіча</td>
+<td>Тільки .h файли</td>
+</tr>
+<tr>
+<td>Нова система</td>
+<td>Phase 1: header → Phase 2: impl</td>
+</tr>
+<tr>
+<td>Рефакторинг</td>
+<td>Тільки diff</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Правило 3-ітерацій:</strong> Не вирішено за 3 запити → STOP, stub, повернись пізніше.</p>
+<h3>§7.5 · Fail-Safe Protocol</h3>
+<h3>§7.6 · QA Protocol</h3>
+<pre><code class="language-bash"># Повний QA цикл (гра):
+bash tools/qa/qa_run.sh                              # build → capture → report → BDD
+python3 tools/qa/qa_bdd.py tools/qa/features/ --capture latest
+python3 tools/qa/qa_regression.py --baseline CAPTURE_ID   # зберегти еталон
+python3 tools/qa/qa_regression.py --compare  CAPTURE_ID   # pixel diff
+
+# Char preview visual regression (редактор):
+bash tools/qa/char_preview_qa.sh --save    NAME   # зберегти baseline зі скріншоту
+bash tools/qa/char_preview_qa.sh --compare NAME   # pixel diff vs baseline
+bash tools/qa/char_preview_qa.sh --list           # список baselines
+</code></pre>
+<p><code>MD_QA_STATE=&lt;path&gt;.jsonl</code> env var → гра пише JSONL per tick (NPC pos/vel 150m) → <code>QaStateSetEnabled()</code>
+<strong>Правило "Тест перед фіксом":</strong> QA має детектувати баг → якщо ні → спочатку додай detection, потім фікс.
+<strong>git submodule:</strong> <code>tools/</code> → <code>git -C tools add/commit</code> (НЕ <code>git add tools/qa/...</code> — fatal error)</p>
+<h3>§7.7 · GPU Shader Debug Protocol</h3>
+<p><strong>ОБОВ'ЯЗКОВО перед будь-яким шейдерним фіксом — 3 кроки:</strong></p>
+<pre><code class="language-glsl">// Крок 1: чи правильні нормалі?
+fragColor = vec4(N * 0.5 + 0.5, 1.0);
+// Крок 2: чи правильно читається uniform buffer?
+fragColor = vec4(uf.some_color.rgb, 1.0);
+// Крок 3: чи взагалі запускається шейдер?
+fragColor = vec4(1.0, 0.0, 1.0, 1.0);  // MAGENTA
+</code></pre>
+<p>Тільки після відповіді на всі три — писати фікс. Порушення = витрата годин.</p>
+<p><strong>GPU Debug Overlay:</strong> Ctrl+D у Characters tab → real-time: hair_color, eye_pos, pipeline status, bone21.</p>
+<p><strong>RenderDoc:</strong></p>
+<pre><code class="language-bash">SDL_GPU_DEBUGMODE=1 renderdoc build/tools/monkey_dust_editor   # editor
+SDL_GPU_DEBUGMODE=1 renderdoc build/game/monkey_dust            # game
+# F12 = capture frame. Pipeline State → Uniform Buffers → бачите всі значення.
+</code></pre>
+<p><strong>Shader Hot-Reload (без рестарту):</strong></p>
+<pre><code class="language-bash">bash tools/shader_watch.sh   # термінал 2: auto-recompile при зміні .frag/.vert
+# У editor console: /reload-shaders
+</code></pre>
+<p><strong>Intel HD 520 Checklist (перевіряти ПЕРЕД кожним GPU PR):</strong></p>
+<pre><code>□ Push constants: vert ≤ 128B, frag ≤ 128B
+□ frag_uniform_bufs = кількість set=3 binding=N у SPIR-V (мismatch → garbage/NaN)
+□ Depth format: тільки D32_FLOAT (D24_UNORM = GPU hang)
+□ frag_samplers + vert_storage_bufs &gt; 0 = silent fail
+□ OIT composite: тільки compute path
+□ Hair Z-fighting: gl_Position.z -= 0.0003*gl_Position.w (0.0003 перевірено на HD520)
+</code></pre>
+<pre><code>Порушує §2.2            → // ERROR: VIOLATES CONSTRAINT [rule]
+Файл ∉ §3.1             → // ERROR: FILE NOT IN CANONICAL STRUCTURE: [name]
+Не вистачає контексту    → // NEED CONTEXT: [що потрібно]
+Помилка в іншому файлі   → // CROSS-FILE ERROR: [filename]
+→ НЕ генеруй код, НЕ вигадуй сигнатури, НЕ пропонуй обходи
+</code></pre>
+<hr />
+<h2>§8 · СТАНДАРТИ КОДУ</h2>
+<h3>§8.1 · Новий компонент (engine, split-ready)</h3>
+<pre><code class="language-cpp">#pragma once
+#include &lt;cstdint&gt;
+namespace md {
+struct NewComponent { // POD, БЕЗ бізнес-логіки, БЕЗ вказівників на heap
+    float value; uint32_t id; bool active;
+};
+}
+</code></pre>
+<h3>§8.2 · Нова система (collect→apply)</h3>
+<pre><code class="language-cpp">class NewSystem {
+public:
+    void Update(float dt, entt::registry&amp; reg) {
+        static entt::entity to_destroy[512]; int n = 0;
+        reg.view&lt;A,B&gt;().each([&amp;](entt::entity e, A&amp; a, B&amp; b) {
+            if (/* death */) { if (n&lt;512) to_destroy[n++] = e; }
+        });
+        for (int i=0; i&lt;n; ++i)
+            if (reg.valid(to_destroy[i])) reg.destroy(to_destroy[i]);
+    }
+};
+</code></pre>
+<h3>§8.3 · BT Action/Condition (post-M6 signature)</h3>
+<pre><code class="language-cpp">inline BTStatus actNew(md::EngineContext&amp; ctx, entt::entity e) {
+    auto&amp; gs = static_cast&lt;GameState&amp;&gt;(ctx);
+    auto&amp; reg = md::Registry::Get();
+    if (!reg.all_of&lt;WorldTransform, NavAgent&gt;(e)) return BTStatus::Failure;
+    return BTStatus::Running;
+}
+</code></pre>
+<h3>§8.4 · Debug/Safety</h3>
+<pre><code class="language-cpp">if (ptr == nullptr) { MD_LOG_WARNING(&quot;[Sys] null %s:%d&quot;, __FILE__, __LINE__); return; }
+if (id &gt;= MAX_N) { MD_LOG_WARNING(&quot;[Sys] id %u OOB&quot;, id); return &amp;arr[0]; }
+</code></pre>
+<h3>§8.5 · GPU HAL (SDL_GPU — новий стандарт)</h3>
+<pre><code class="language-cpp">// Замість raw glad у новому коді:
+GpuCommandBuffer cmd = GpuDevice::Get().AcquireCommandBuffer();
+GpuRenderPass pass = cmd.BeginRenderPass(color_target, depth_target);
+pass.BindPipeline(pipeline_);
+pass.DrawIndexed(index_count, instance_count, 0, 0, 0);
+pass.End();
+GpuDevice::Get().Submit(cmd);
+</code></pre>
+<h3>§8.6 · SPIR-V Shader Convention</h3>
+<pre><code class="language-glsl">#version 460
+#ifdef SPIRV_COMPILE
+  layout(set=0, binding=0) uniform UBO { mat4 view; mat4 proj; };
+  layout(set=1, binding=0) readonly buffer SSBOBuf { vec4 data[]; };
+  layout(location=0) in vec3 a_pos;
+  layout(location=0) out vec4 out_color;
+#endif
+</code></pre>
+<h3>§8.7 · Новий файл (Rule M-C)</h3>
+<pre><code class="language-cpp">#pragma once
+#include &lt;monkey_dust/math_types.h&gt;  // Vec3/Mat4 — сумісні з -DUSE_GLM
+</code></pre>
+<hr />
+<h2>§9 · MD-INSPIRED PATTERNS (M18–M25)</h2>
+<h3>AgentState (аналог EntityInterface find_parameter<T>)</h3>
+<pre><code class="language-cpp">// engine/include/monkey_dust/components/agent_state.h
+struct AgentState {
+    uint64_t timers[8];     // AgentTimers — в мілісекундах
+    uint32_t flags;         // AgentFlags bitmask
+    struct { uint32_t key; uint8_t type;
+             union { bool b; int32_t i; float f; float v[3]; uint32_t e; } val; }
+        blackboard[24];     // AgentBlackboard, key = FNV-1a
+    int bb_count;
+};
+</code></pre>
+<h3>FNV-1a (замість MD SHA1)</h3>
+<pre><code class="language-cpp">constexpr uint32_t fnv1a(const char* s, uint32_t h = 2166136261u) {
+    return *s ? fnv1a(s+1, (h ^ (uint8_t)*s) * 16777619u) : h;
+}
+// Compile-time: constexpr auto k = fnv1a(&quot;director_stage&quot;);
+</code></pre>
+<hr />
+<h2>§10 · ШАБЛОНИ ЗАПИТІВ</h2>
+<h3>Запит: M18 AgentState</h3>
+<pre><code>PROJECT: monkey_dust | PHASE: M18 | TASK: Додати AgentState ECS component
+FILES: engine/include/monkey_dust/components/agent_state.h
+CONSTRAINT: тільки POD, без бізнес-логіки, C++17.
+            AgentTimers[8]=uint64_t, AgentFlags=uint32_t, AgentBlackboard[24].
+            FNV-1a для key. static_assert(sizeof(AgentState) &lt;= 256).
+OUTPUT: REPLACE blocks only. No prose.
+</code></pre>
+<h3>Запит: M19 SenseComponent</h3>
+<pre><code>PROJECT: monkey_dust | PHASE: M19 | TASK: Додати SenseComponent + SenseRegistry
+FILES: engine/include/monkey_dust/components/sense_component.h,
+       engine/include/monkey_dust/ai/sense_registry.h,
+       engine/src/ai/sense_registry.cpp
+CONSTRAINT: ViewCone 4 типи (Close/Focused/Normal/Peripheral), MAX_SETS=8.
+            SenseActivation[2] ([0]=Visual, [1]=Audio). static_assert(sizeof(SenseComponent)==28).
+OUTPUT: REPLACE blocks only. No prose.
+</code></pre>
+<h3>Запит: [БОРГ-1] BuildSystem grid_</h3>
+<pre><code>PROJECT: monkey_dust | PHASE: DEBT-1 | TASK: Додати BuildSystem::OccupyGrid() + Deserialize fix
+FILES: game/src/building/build_system.h, game/src/save/world_serializer.h
+CONSTRAINT: grid_ лишається приватним. Публічний OccupyGrid(gx, gz, entity).
+            У Deserialize замінити (void)gx; (void)gz; на bs.OccupyGrid(gx, gz, e).
+OUTPUT: REPLACE blocks only. No prose.
+</code></pre>
+<h3>Запит: новий SSBO</h3>
+<pre><code>PROJECT: monkey_dust | PHASE: M27 | TASK: Додати AmbientProbe SSBO binding=8
+FILES: engine/include/monkey_dust/render/ambient_probe.h,
+       engine/src/render/ambient_probe.cpp
+CONSTRAINT: binding=8 (нове, після shadow_indirect=7). MAX_PROBES=64. 128 bytes/probe.
+            Тільки GpuStaticBuffer або raw SSBO — НЕ raw GL у HAL build.
+OUTPUT: REPLACE blocks only. No prose.
+</code></pre>
+<hr />
+<h2>§11 · АРХІТЕКТУРНІ ПРАВИЛА</h2>
+<h3>Чек-лист нової механіки</h3>
+<pre><code>[ ] EnTT компонент у engine/include/monkey_dust/components/ (split-ready)?
+[ ] Логіка в logic tick (10 TPS)?
+[ ] NPC поведінки через BT Action/Condition?
+[ ] Дані з JSON (не хардкод)?
+[ ] Singleton або параметр (не глобал)?
+[ ] Vec3/Mat4 (не Vector3/Matrix напряму)?
+[ ] input_key_down (не IsKeyDown напряму)?
+[ ] Шейдери → .spv через compile_shaders.sh?
+[ ] GPU HAL замість raw GL у новому рендерному коді?
+[ ] AudioSystem або platform/audio.h (не ma_* напряму)?
+[ ] LuaEventBus для events (не global callbacks)?
+[ ] Debug через ImGui (#ifdef MONKEY_DUST_EDITOR)?
+[ ] Немає malloc/new у hot-path?
+</code></pre>
+<h3>§11.1 · Захищені костилі (НЕ ВИПРАВЛЯТИ)</h3>
+<pre><code>[1] NavSystem::Get() singleton — легалізований
+[2] BuildSystem::grid_[200][200] — 160KB static, НЕ dynamic
+[3] Власний strstr JSON-парсер — НЕ nlohmann/rapidjson
+[4] 24-byte BT ноди — НЕ змінювати без профайлінгу
+[5] Single-thread game logic — детермінізм &gt; паралелізм
+[6] ImGui тільки #ifdef MONKEY_DUST_EDITOR
+[7] platform/* тільки в Main.cpp/EditorMain.cpp (Rule M-A)
+[8] MdLoadTexturePixelArt: stbi flip=1 + LINEAR_MIPMAP + NEAREST — НЕ спрощувати
+[9] MINIAUDIO_IMPLEMENTATION тільки у audio_system.cpp
+[10] LuaEventBus MAX_HANDLERS=64 — BSS масив, фіксований
+[11] TINST stride=36 — НЕ змінювати без синхронізації Init()+tile_map.vert
+</code></pre>
+<hr />
+<h2>§12 · ТЕСТУВАННЯ</h2>
+<pre><code class="language-cpp">// engine/src/test_helper.h (без raylib.h — USE_SDL3 build)
+#pragma once
+#include &lt;monkey_dust/md_log.h&gt;
+#define test_assert(cond, msg) do { \
+    if (!(cond)) { MD_LOG_ERROR(&quot;[TEST FAIL] %s:%d: %s&quot;, \
+        __FILE__, __LINE__, msg); return false; } \
+} while(0)
+#define test_run(name, func) do { \
+    MD_LOG_INFO(&quot;[TEST] %s&quot;, name); \
+    if (!func()) MD_LOG_ERROR(&quot;[TEST FAILED] %s&quot;, name); \
+    else MD_LOG_INFO(&quot;[TEST PASSED] %s&quot;, name); \
+} while(0)
+</code></pre>
+<hr />
+<h2>§13 · PERFORMANCE BUDGET</h2>
+<pre><code>[CPU] NPC (LOD_HIGH): ≤0.5ms | SpatialGrid query: ≤0.2ms
+[CPU] CombatSystem tick: ≤2.0ms | AISystem tick: ≤3.0ms
+[GPU] Кадр: ≤16.6ms (60 FPS) | ImGui (активний): ≤2.0ms
+[GPU] AnimationSoA skinning.comp: ≤1.5ms (500 NPC × 128 bones)
+[GPU] ShadowSystem 3 cascades: ≤3.0ms
+[GPU] GBuffer pass (M28): ≤2.0ms (720p)
+[GPU] Deferred lighting (M28): ≤1.0ms
+[GPU] SSAO compute (M30): ≤0.8ms (half-res 16tap)
+[RAM] ≤6.5 GB загальне
+</code></pre>
+<hr />
+<h2>§14 · АРХІТЕКТУРНІ РІШЕННЯ (ADR) — СТИСЛИЙ ВИКЛАД</h2>
+<pre><code>Stackless BT 24-byte:    детермінізм + cache-friendly. Відхилено: рекурсивний BT, FSM.
+10 TPS logic:            60 FPS на HD 520. Відхилено: 60 TPS (бюджет), 5 TPS (лаг).
+Фіксовані масиви:        реальний-таймовий без фрагментації. Відхилено: custom allocator.
+NavSystem singleton:     NavMesh + PathCache + async worker разом.
+Пряме glad → GPU HAL:   Raylib 6.x видалив rlCompute*/rlLoadShaderBuffer.
+platform_input.h M-A:   ізоляція SDL3 path; один #include керує input/audio/timing.
+math_types.h Vec3/Mat4:  -DUSE_GLM → GLM 1.1.0 без змін у решті коду.
+TransformSoA SoA:        500+ NPC: AoS = cache miss кожен NPC; SoA = векторизація SSE2.
+CSM one-frame lag:       shadow pass використовує кістки попереднього кадру; 16ms непомітно.
+AudioSystem singleton:   MINIAUDIO_IMPL = один TU; miniaudio типи не виходять у .h.
+FNV-1a vs SHA1:         mod-tool потребує uniqueness, не криптостійкості; FNV1a = 10 рядків.
+Iris Plus eDRAM:         64 MB eDRAM &gt; 7.4 MB GBuffer → lighting reads ~1.4 TB/s internal.
+</code></pre>
+<hr />
+<h2>§15 · ВІДОМІ PITFALLS</h2>
+<pre><code>- MINIAUDIO_IMPLEMENTATION: тільки audio_system.cpp (ODR)
+- MD_SDL_GPU: авто з USE_SDL3, не дублювати MD_OPENGL43_ENABLED
+- GpuRingBuffer: sync fence ПІСЛЯ Submit(), не перед
+- engine/ НЕ включає game/ або tools/ (split-readiness)
+- BTActionFunc: BTStatus(*)(md::EngineContext&amp;, entt::entity)
+  game casts: static_cast&lt;GameState&amp;&gt;(ctx)
+- RegisterAllBTBindings() ПЕРЕД BTLoader::Get().LoadFromFile()
+- SaveSystem::SetCallbacks(SaveCb, LoadCb, nullptr) — НЕ SetContext
+- Flare UV: v = 1.0 - y_file/atlas_h (stbi flip) — НЕ y_file/atlas_h
+- billboard: offset_y &gt; h/2 (НЕ h &gt; 96!) — water 192×192 з oy=48 flat
+- TINST_STRIDE зміна: constants + Init() attribs + tile_map.vert РАЗОМ
+- now_s=0.0f вимикає анімацію — передавати GetTime() у Render()
+- FlowGraph FNV-1a: compile-time через constexpr fnv1a(&quot;name&quot;)
+- AgentBlackboard key: FNV-1a від string literal (не random uint)
+- LuaEventBus MAX_HANDLERS=64: BSS масив — не збільшувати без профайлінгу
+- ChunkLoadStaging MAX=8: при radius ≥5 тихе переповнення (БОРГ-9)
+</code></pre>
+<hr />
+<h2>§16 · ШПАРГАЛКА</h2>
+<pre><code>❓ &quot;std::optional?&quot;           → C++17 є, але уникати у hot-path
+❓ &quot;Raylib у SDL3 build?&quot;     → НЕ. Видалено П.3. SDL3+SDL_GPU тільки.
+❓ &quot;ImGui у релізі?&quot;          → НЕ. #ifdef MONKEY_DUST_EDITOR
+❓ &quot;IsKeyDown напряму?&quot;       → НЕ. input_key_down() (platform/input.h)
+❓ &quot;GetFrameTime напряму?&quot;    → НЕ. frame_dt() (platform/audio.h)
+❓ &quot;raw GL у новому коді?&quot;    → НЕ. GpuPipeline/GpuCommandBuffer (gpu_hal.h)
+❓ &quot;ma_sound* у headers?&quot;     → НЕ. AudioHandle = opaque int (audio_system.h)
+❓ &quot;MINIAUDIO_IMPL у .h?&quot;     → НЕ. Тільки audio_system.cpp
+❓ &quot;MD_OPENGL43_ENABLED?&quot;     → НЕ ВИКОРИСТОВУВАТИ. Замінено MD_SDL_GPU.
+❓ &quot;SPIR-V шейдер?&quot;           → scripts/compile_shaders.sh → .spv; #version 460
+❓ &quot;Новий AI компонент?&quot;      → engine/include/monkey_dust/components/ (split-ready)
+❓ &quot;AgentBlackboard?&quot;         → FNV-1a key, typed union, MAX_ENTRIES=24
+❓ &quot;FlowGraph?&quot;               → scripting/flow_graph.h, MAX_NODES=64, ring buffer
+❓ &quot;DirectorSystem?&quot;          → ai/director_system.h, menace [0..1], stages
+❓ &quot;SenseComponent?&quot;          → components/sense_component.h, ViewConeSet, activation[2]
+❓ &quot;AmbientProbe?&quot;            → render/ambient_probe.h, SSBO binding=8, MAX=64
+❓ &quot;GBuffer deferred?&quot;        → render/gbuffer.h, 2-RT RGBA8, M28
+❓ &quot;SSAO?&quot;                    → render/ssao_system.h, half-res compute, M30
+❓ &quot;RenderTier?&quot;              → render/render_tier.h, auto-detect vendor_id, M26
+❓ &quot;Без assert()?&quot;            → MD_LOG_WARNING(...) + return default
+❓ &quot;Path індексування?&quot;       → X=path[i*3], Y=path[i*3+1], Z=path[i*3+2]
+❓ &quot;billboard vs flat?&quot;       → offset_y &gt; h/2; НЕ h &gt; 96!
+❓ &quot;TINST нове поле?&quot;         → stride++; Off_*; attrib; tile_map.vert — ВСЕ РАЗОМ
+</code></pre>
+<hr />
+<h2>§17 · ПРОТОКОЛ ОНОВЛЕННЯ ЦЬОГО ФАЙЛУ</h2>
+<pre><code>Коли: завершено milestone | змінено стек | нова система | нова заборона.
+Чек-лист:
+  [ ] VERSION §0 vX.Y → vX.Y+1
+  [ ] §18 CHANGELOG оновлено
+  [ ] §4 таблиця стану відповідає реальному коду
+  [ ] §3.1 файлова структура актуальна
+  [ ] §2.2 заборони актуальні
+  [ ] §10 шаблони запитів протестовано
+  [ ] CLAUDE_HISTORY.md changelog оновлено
+</code></pre>
+<hr />
+<h2>§18 · CHANGELOG</h2>
+<pre><code>v1.0–v5.0  — [детально у CLAUDE_HISTORY.md changelog]
+v5.1  — M6 monorepo split (engine/+game/+tools/), MdCamera, include conventions
+v6.0  — Flare runtime M7.1–M7.27, TINST layout finalized, Flare UV convention
+v8.0  — РЕСИНХРОНІЗАЦІЯ (2026-05-22):
+         • §0: Фаза → M0–M59+KEN+VBfA+RD-2–4 ✅; Save v10; ref CLAUDE_STATE.md
+         • §4: collapsed → ref CLAUDE_STATE.md + CLAUDE_HISTORY.md (не дублюємо)
+         • §5: БОРГ-1–13 всі ✅; активні БОРГ-RD4-1/2 задокументовано
+         • §6: roadmap → ref CLAUDE_STATE.md + GitHub Issues
+         • §3.1: додано CLAUDE_STATE.md + CLAUDE_TERRAIN_SEAM.md
+         • Нова документаційна архітектура: CLAUDE.md (slim) + STATE + HISTORY + domain files
+         • §19.4: CLAUDE_CONSTITUTION.md залишається ТІЛЬКИ у приватному репо ✓
+v7.0  — ПОВНА РЕСИНХРОНІЗАЦІЯ (2026-05-13):
+         • M8–M17 (FlareActor, Map Editor M9, SDL_GPU Actions 1–7)
+         • M_SPLIT (ECS/combat → engine/), М14 (FlareAnimSystem)
+         • M15 (LuaEventBus + lua_game_api 8C), M17 (AudioSystem miniaudio)
+         • П.1/П.2/П.3: Raylib повністю видалено з USE_SDL3 build path
+         • §0: оновлено стек (SDL3, SDL_GPU, SPIR-V, AudioSystem, LuaEventBus)
+         • §1: USE_SDL3=ON = ЄДИНИЙ активний path; старі cmake варіанти видалено
+         • §2.1: таблиця стека оновлена (Raylib→ВИДАЛЕНО, GPU HAL, SPIR-V)
+         • §2.2: +20 нових заборон (Raylib, MD_OPENGL43, MINIAUDIO TU, FlowGraph malloc)
+         • §3.1: файлова структура оновлена (engine/ai/, scripting/, M18–M42 📋)
+         • §3.2: SSBO binding 8+9 (M27 AmbientProbe, M30 SSAO)
+         • §3.9: AudioSystem новий розділ
+         • §4: стан систем — 33 рядки (✅ + 📋)
+         • §5: борги підтверджені (БОРГ-1/6/7/8/9)
+         • §6: roadmap оновлено, M18 Тиждень 1 пріоритети
+         • §8.5/8.6: GPU HAL + SPIR-V патерни
+         • §9: MD-inspired patterns (AgentState, FNV-1a)
+         • §10: шаблони запитів для M18/M19/M27
+         • §11.1: +костилі [9][10][11]
+         • §14: ADR розширено (+AudioSystem, +FNV-1a, +Iris Plus eDRAM)
+         • §15: pitfalls оновлено (+FlowGraph, +AgentBlackboard, +LuaEventBus)
+         • §16: шпаргалка — +25 нових Q&amp;A (M18–M42)
+         • Нові файли: CLAUDE_SDL_MD_MIGRATION_PLAN.md + CLAUDE_SDL_GPU_PREP_MD.md
+</code></pre>
+<hr />
+<h2>§19 · РЕПОЗИТОРІЇ ТА ПРАВИЛА ЗАКРИТОЇ ІНФОРМАЦІЇ</h2>
+<h3>§19.1 · Структура репозиторіїв</h3>
+<table>
+<thead>
+<tr>
+<th>Репо</th>
+<th>Видимість</th>
+<th>Вміст</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>monkey_dust</code> (основний)</td>
+<td><strong>ПРИВАТНИЙ</strong> — назавжди</td>
+<td>Весь проект: game/, engine/ submodule ref, tools/ submodule ref, docs/re_assets/, data/</td>
+</tr>
+<tr>
+<td><code>monkey_dust-engine</code></td>
+<td><strong>ПУБЛІЧНИЙ</strong></td>
+<td>engine/ статична бібліотека (без ігрового коду, без RE даних)</td>
+</tr>
+<tr>
+<td><code>monkey_dust-tools</code></td>
+<td><strong>ПУБЛІЧНИЙ</strong></td>
+<td>tools/ конвертери та редактор (без RE даних)</td>
+</tr>
+</tbody>
+</table>
+<h3>§19.2 · Правила зберігання RE-даних (ОБОВ'ЯЗКОВІ)</h3>
+<pre><code>НІКОЛИ не додавати до engine/ або tools/ (публічних репо):
+  ✗ Декомпілований або дизасемблований код з AI.exe, kenshi_x64.exe, viking.exe
+  ✗ Витягнуті HLSL/GLSL шейдери з VBfA, AI, Kenshi
+  ✗ XML/BML дані поведінки з Alien: Isolation (CATHODE)
+  ✗ Будь-які asset-файли з ліцензованих ігор (текстури, меші, аудіо, конфіги)
+  ✗ Результати аналізу бінарників (struct layouts, vtable offsets, symbol names)
+  ✗ Файли з docs/re_assets/, tmp_/, game/data/ що є похідними RE
+
+ТІЛЬКИ у приватному monkey_dust репо:
+  ✓ docs/re_assets/ — весь RE архів (VBfA шейдери, AI CATHODE XML, конфіги)
+  ✓ docs/re_assets/ai_decompile_findings.md — struct layouts з Ghidra
+  ✓ game/data/textures/kenshi_* — конвертовані Kenshi assets
+  ✓ game/data/props/kenshi_human.glb — сконвертований Kenshi mesh
+  ✓ tmp_/ — Ghidra .c виходи, .rep бази (gitignored, локально)
+  ✓ CLAUDE.md розділи &quot;VBfA RE-*&quot;, &quot;RE-1&quot;, &quot;RE-2&quot; — RE findings документація
+</code></pre>
+<h3>§19.3 · Юридична основа</h3>
+<p>Reverse engineering для ОСОБИСТОГО НЕ-КОМЕРЦІЙНОГО дослідження (interoperability,
+education) допустиме у більшості юрисдикцій. Однак EULA Sega (VBfA), Creative
+Assembly (Alien: Isolation) та Lo-Fi Games (Kenshi) забороняють публічну
+демонстрацію або дистрибуцію матеріалів з їхніх ігор. Тому:
+- Всі RE дані залишаються у ПРИВАТНОМУ репо
+- Публічний engine/ містить ТІЛЬКИ оригінальний код (похідні архітектури,
+  але не копійований код)
+- Якщо RE дані стали основою для коду у engine/ або tools/ — публічний
+  код має бути повністю переписаний у власній мові без прямих копій</p>
+<h3>§19.4 · Чек-лист перед push до публічних репо</h3>
+<pre><code>[ ] Жодного файлу з docs/re_assets/ або tmp_/ у staged змінах
+[ ] Жодного Kenshi/VBfA/AI shader коду у engine/ shaders/
+[ ] Коментарі у коді не містять прямих цитат з декомпільованих джерел
+[ ] game/data/ не входить до engine/ або tools/ коміту
+[ ] CLAUDE.md та CLAUDE_CONSTITUTION.md — ТІЛЬКИ у приватному monkey_dust репо
+</code></pre>
+<hr />
+<pre><code># ═══════════════════════════════════════════════════════════════
+# monkey_dust CLAUDE_CONSTITUTION.md v8.0 — КІНЕЦЬ КОНСТИТУЦІЇ
+# НЕ видаляти · НЕ скорочувати · ОНОВЛЮВАТИ згідно §17
+# Дата: 2026-05-22
+# USE_SDL3=ON mandatory | SDL_GPU exclusive | Raylib removed
+# §4/§5/§6: ref CLAUDE_STATE.md для поточного стану (не дублювати тут)
+# ═══════════════════════════════════════════════════════════════
+</code></pre></section>
+</main>
+</div>
+
+<script>
+const secs = document.querySelectorAll('section[id]');
+const links = document.querySelectorAll('nav a[href^="#"]');
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.remove('active'));
+      const a = document.querySelector('nav a[href="#' + e.target.id + '"]');
+      if (a) a.classList.add('active');
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+secs.forEach(s => obs.observe(s));
+</script>
+
+</body>
+</html>

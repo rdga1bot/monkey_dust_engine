@@ -25,7 +25,7 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Be
 | Terrain POM | Parallax Occlusion Mapping + self-shadow; per-vertex geomorphing L0→L1; `DrawRaw(int lod)` / `DrawRawPOM(int lod)` — lod=0 full-res (64×64), lod=1/2/3 uses `chunk.ibo_lod[lod-1]` (32/16/8 quads); POM only at lod=0; editor uses distance-based per-chunk LOD |
 
 ### AI — Behavior Tree VM
-- Stackless BT VM (`BehaviorTree.h`) — 30+ node types, zero heap allocations
+- Stackless BT VM (`behavior_tree.h`, 373 lines core VM) + `bt_types.h` (987 lines — all enums/structs: BTNodeType, BTNode, BTState, etc.) + `bt_factories.cpp` (868 lines — Batch 2–35 factory methods) — 30+ node types, zero heap allocations
 - Extended AI patterns (C1–C20) — MotivationType · LogicCharacterFlags · AgentTimerSlot · GaugeType · AwarenessState · AlertnessState · NpcMood · NpcRole · WithdrawState · EntityStateFlag
 - BTNodePool — flat 32 KB arena bump-allocator
 - BTSystem — 3-phase tick (frame\_flags reset → hint expiry → tree tick)
@@ -155,7 +155,7 @@ engine/
     flare/                 ← tile map, sprite animation, renderer
     math_types.h           ← Vec3/Mat4 (GLM switch -DUSE_GLM)
     nav/                   ← PathCache
-    platform/              ← input/audio/window/md_fs/md_log/md_hints
+    platform/              ← input/audio/window/md_fs/md_log/md_hints/timing_system
     render/                ← GPU HAL, ring buffer, shadow, SSAO, SMAA …
     save/                  ← SaveSystem v10 · SaveVersionChain
     scripting/             ← LuaSystem, LuaEventBus, FlowGraph
@@ -171,6 +171,6 @@ engine/
 
 ## License
 
-GNU General Public License v3.0 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 The game itself (`monkey_dust` executable and `game/` sources) is proprietary and not part of this repository.

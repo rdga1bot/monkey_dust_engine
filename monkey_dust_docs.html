@@ -128,7 +128,7 @@ blockquote {
 <div class="logo">
 <h2>monkey_dust</h2>
 <p>Technical Documentation</p>
-<p style="font-size:11px;margin-top:6px;color:#58a6ff">v25.0 &middot; 2026-06-04 15:24</p>
+<p style="font-size:11px;margin-top:6px;color:#58a6ff">v25.0 &middot; 2026-06-04 20:55</p>
 </div>
 <span class="nav-desc">Overview, stack, build instructions,…</span>
 <a href="#README-md">Game</a>
@@ -144,7 +144,7 @@ blockquote {
 <a href="#CLAUDE_CONSTITUTION-md">Constitution</a>
 </nav>
 <main>
-<div class="header-card"><h1>monkey_dust — Technical Documentation</h1><div class="badges"><span class="badge">C++17</span><span class="badge">SDL3+SDL_GPU</span><span class="badge">Vulkan 1.1</span><span class="badge">EnTT ECS</span><span class="badge">Intel HD 520</span><span class="badge">60 FPS</span><span class="badge">1557 tests</span><span class="badge">RenderDoc</span></div><p class="meta">Generated 2026-06-04 15:24 &middot; FLARE-inspired open-world RPG sandbox &middot; Solo project</p></div>
+<div class="header-card"><h1>monkey_dust — Technical Documentation</h1><div class="badges"><span class="badge">C++17</span><span class="badge">SDL3+SDL_GPU</span><span class="badge">Vulkan 1.1</span><span class="badge">EnTT ECS</span><span class="badge">Intel HD 520</span><span class="badge">60 FPS</span><span class="badge">1557 tests</span><span class="badge">RenderDoc</span></div><p class="meta">Generated 2026-06-04 20:55 &middot; FLARE-inspired open-world RPG sandbox &middot; Solo project</p></div>
 <section id="README-md"><h2>Game<span class="section-tag">README.md</span></h2><h1>monkey_dust</h1>
 <p>Open-world isometric RPG sandbox for Linux. Isometric tile rendering pipeline inspired by Flare Engine. Solo project built with SDL3 + SDL_GPU (Vulkan) + EnTT + Recast/Detour.</p>
 <p><strong>Target hardware:</strong> Intel HD 520 (Skylake AVX2) · Vulkan via SDL_GPU · 4–8 GB shared RAM · 1280×720 · 60 FPS</p>
@@ -1404,7 +1404,7 @@ Built around <strong>SDL3 + SDL_GPU (Vulkan)</strong>, <strong>EnTT ECS</strong>
 </table>
 <h3>AI — Behavior Tree VM</h3>
 <ul>
-<li>Stackless BT VM (<code>BehaviorTree.h</code>) — 30+ node types, zero heap allocations</li>
+<li>Stackless BT VM (<code>behavior_tree.h</code>, 373 lines core VM) + <code>bt_types.h</code> (987 lines — all enums/structs: BTNodeType, BTNode, BTState, etc.) + <code>bt_factories.cpp</code> (868 lines — Batch 2–35 factory methods) — 30+ node types, zero heap allocations</li>
 <li>Extended AI patterns (C1–C20) — MotivationType · LogicCharacterFlags · AgentTimerSlot · GaugeType · AwarenessState · AlertnessState · NpcMood · NpcRole · WithdrawState · EntityStateFlag</li>
 <li>BTNodePool — flat 32 KB arena bump-allocator</li>
 <li>BTSystem — 3-phase tick (frame_flags reset → hint expiry → tree tick)</li>
@@ -1528,7 +1528,7 @@ The engine library itself is shader-agnostic — it loads pre-compiled SPIR-V at
     flare/                 ← tile map, sprite animation, renderer
     math_types.h           ← Vec3/Mat4 (GLM switch -DUSE_GLM)
     nav/                   ← PathCache
-    platform/              ← input/audio/window/md_fs/md_log/md_hints
+    platform/              ← input/audio/window/md_fs/md_log/md_hints/timing_system
     render/                ← GPU HAL, ring buffer, shadow, SSAO, SMAA …
     save/                  ← SaveSystem v10 · SaveVersionChain
     scripting/             ← LuaSystem, LuaEventBus, FlowGraph
@@ -1541,7 +1541,7 @@ The engine library itself is shader-agnostic — it loads pre-compiled SPIR-V at
 </code></pre>
 <hr />
 <h2>License</h2>
-<p>GNU General Public License v3.0 — see <a href="LICENSE">LICENSE</a>.</p>
+<p>MIT — see <a href="LICENSE">LICENSE</a>.</p>
 <p>The game itself (<code>monkey_dust</code> executable and <code>game/</code> sources) is proprietary and not part of this repository.</p></section>
 <section id="tools-README-md"><h2>Tools<span class="section-tag">tools/README.md</span></h2><h1>monkey_dust — Tools</h1>
 <p>Editor, asset converter, terrain pipeline, and Flare demo viewer for the monkey_dust engine.
@@ -2635,7 +2635,7 @@ bash tools/qa/char_preview_qa.sh --list
 engine/third_party/entt/               — EnTT ECS (header-only)
 engine/third_party/glm/                — GLM math (header-only)
 engine/third_party/recastnavigation/   — Recast + Detour + DetourCrowd (compiled into engine)
-engine/third_party/ozz-animation/      — НЕ ЛІНКУЄТЬСЯ (KEN-7: замінено AnimationSoA+SkinMesh CPU LBS)
+engine/third_party/ozz-animation/      — ЛІНКУЄТЬСЯ (ozz_animation + ozz_animation_offline) для OzzAnimator T2-path; основна анімація = AnimationSoA+SkinMesh CPU LBS
 engine/third_party/JoltPhysics/        — Jolt Physics MIT (CharacterVirtual, TempAllocatorImpl 8MB)
 engine/third_party/raylib/             — Raylib headers (NOT linked; miniaudio.h lives here)
 
@@ -2701,7 +2701,7 @@ AI:        BehaviorTree stackless VM (24-byte ноди, MAX_NODES=128) + BTLoade
 NavMesh:   Recast/Detour (NavSystem singleton, PathCache LRU)
 Audio:     AudioSystem (miniaudio, ЄДИНИЙ TU: audio_system.cpp)
 Lua:       LuaSystem (Lua 5.4, 10000 op guard) + LuaEventBus (MAX_HANDLERS=64)
-Save:      бінарний .mdsave v4 (async, .tmp→rename)
+Save:      бінарний .mdsave v10 (async, .tmp→rename, CRC32)
 Logic:     10 TPS (LOGIC_TICK_S = 0.1f)
 Render:    60 FPS
 Debug UI:  ImGui (imgui_impl_sdl3/opengl3) — ТІЛЬКИ #ifdef MONKEY_DUST_EDITOR
@@ -2808,8 +2808,8 @@ split-readiness: engine/ не має залежностей від game/ або 
 </tr>
 <tr>
 <td>Save</td>
-<td>.mdsave v4</td>
-<td>async .tmp→rename</td>
+<td>.mdsave v10</td>
+<td>async .tmp→rename, CRC32, SaveVersionChain</td>
 </tr>
 <tr>
 <td>Math</td>
@@ -3006,7 +3006,7 @@ split-readiness: engine/ не має залежностей від game/ або 
 │   ├── combat/ (combat_system.h, projectile_system.h M34)
 │   ├── building/ (build_system.h, production_chain.h)
 │   ├── nav/ (nav_system.h, nav_mesh.h, nav_async_queue.h, path_cache.h)
-│   ├── save/ (world_serializer.h — v4; v5 planned M36)
+│   ├── save/ (world_serializer.h — v10; SaveVersionChain compat v2–v9)
 │   ├── dialog/ (dialog_system.h)
 │   ├── systems/ (quest_system.h)
 │   ├── scripting/ (lua_game_api.h/.cpp [8 C func], lua_bt_bridge.h)
@@ -3118,13 +3118,12 @@ M21 нові типи: Branch, TimerStart, TimerCheck, FlagCheck, FlagSet, Sense
 QueryPath(PathCache-first) → NavMesh → waypoints у nav.path[].
 Path індексування: X=path[i*3], Y=path[i*3+1], Z=path[i*3+2]. ЗАБОРОНЕНО: path[i].
 </code></pre>
-<h3>§3.7 · Save format (.mdsave v4)</h3>
+<h3>§3.7 · Save format (.mdsave v10)</h3>
 <pre><code>Бінарний, #pragma pack(1), magic 0x4D445341 &quot;MDSA&quot;.
-v4: SaveHeaderV4Extra (completed_quests[4], active_quest_id, quest_flags[2])
-    NpcRecord v4 (+personal_relation int8, +bt_template_id uint8)
-Backward compat: читає v2/v3.
+SAVE_VERSION = 10u  (save_version_chain.h)
+v10: CRC32 trailer + AgentState + WorldSimulation tail
+Backward compat: SaveVersionChain читає v2–v9, RunUpgrades() до поточної.
 SaveSystem::SetCallbacks(SaveCb, LoadCb, nullptr) — НЕ SetContext.
-v5 (M36 planned): + AgentState + FlowGraph per-entity serialization
 </code></pre>
 <h3>§3.8 · JSON-парсер (незмінний)</h3>
 <pre><code>strstr + strtol + SkipBlock(). Без зовнішніх залежностей.

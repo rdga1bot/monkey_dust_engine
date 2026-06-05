@@ -324,6 +324,34 @@ bool GpuPipeline::Create(const Desc& desc) {
     raster_ = desc.raster;
 
 #ifdef MD_SDL_GPU
+    // ── Intel HD 520 / ANV binding validation ─────────────────────────────────
+    // These combinations are silent GPU hangs or garbage output on Gen9 ANV.
+    // Fail fast at pipeline creation rather than debugging corrupted frames.
+#ifdef DEBUG
+    if (desc.vert_samplers > 0 && desc.frag_samplers > 0) {
+        MD_LOG(MD_LOG_WARNING,
+            "[GpuPipeline] INVALID: vert_samplers=%u + frag_samplers=%u — "
+            "full OS freeze on Intel Gen9 ANV. Use VBO for vertex height reads. (%s)",
+            desc.vert_samplers, desc.frag_samplers, desc.vert_path);
+        return false;
+    }
+    if (desc.vert_storage_bufs > 0 && desc.frag_samplers > 0) {
+        MD_LOG(MD_LOG_WARNING,
+            "[GpuPipeline] INVALID: vert_storage_bufs=%u + frag_samplers=%u — "
+            "silent fail on SDL3 3.4.8 (binding N+1 garbage). "
+            "Use vert SSBO via location=4 workaround. (%s)",
+            desc.vert_storage_bufs, desc.frag_samplers, desc.vert_path);
+        return false;
+    }
+    if (desc.has_depth_target && !desc.depth_only && desc.frag_samplers == 0
+        && desc.frag_storage_bufs == 0 && desc.frag_uniform_bufs == 0) {
+        MD_LOG(MD_LOG_WARNING,
+            "[GpuPipeline] SUSPICIOUS: depth enabled but zero frag resources — "
+            "check frag_uniform_bufs matches SPIR-V set=3 binding count. (%s / %s)",
+            desc.vert_path, desc.frag_path);
+    }
+#endif // DEBUG
+
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     if (!dev) {
         MD_LOG(MD_LOG_WARNING, "[GpuPipeline] SDL_GPU not ready");

@@ -28,6 +28,12 @@ ninja -C build monkey_dust_engine
 ```
 Output: `libmonkey_dust_engine.a` + headers in `engine/include/monkey_dust/`.
 
+## Recently added (DECOUPLE-1, 2026-06-05)
+- `engine/include/monkey_dust/world/biome_def.h` — BiomeDef struct + kBiomeTable[] + ForZone()
+- `engine/include/monkey_dust/world/world_registry.h` + `engine/src/world/world_registry.cpp`
+  — WorldRegistry singleton; LoadFromTerrainConfig(), GenerateSettlements()
+  — moved from `game/src/world/` (previously game-only, now engine-owned)
+
 ## CI checkpoint (split-readiness)
 ```bash
 grep -r '#include.*"\.\./game/' engine/   # MUST BE EMPTY

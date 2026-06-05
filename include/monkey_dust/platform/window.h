@@ -19,11 +19,6 @@
 #ifdef MD_SDL_GPU
 #  include <monkey_dust/render/gpu_device.h>
 #endif
-#if defined(DEBUG) || defined(MONKEY_DUST_STANDALONE_EDITOR)
-#  include "backends/imgui_impl_sdl3.h"
-#  include "backends/imgui_impl_opengl3.h"
-#  include "imgui.h"
-#endif
 
    // Compat no-ops for Raylib calls that may still appear in non-migrated game code.
 #  define SetTraceLogLevel(...)  ((void)0)
@@ -156,99 +151,15 @@
 #ifndef MD_SDL_GPU
        SDL_GL_SwapWindow(_wnd::ptr());
 #endif
-       SDL_Event e;
-       while (SDL_PollEvent(&e)) {
-#if (defined(DEBUG) || defined(MONKEY_DUST_STANDALONE_EDITOR))
-           ImGui_ImplSDL3_ProcessEvent(&e);
-#endif
-#ifdef MD_SDL_GPU
-           // Re-maximize when moved to a different display.
-           if (e.type == SDL_EVENT_WINDOW_DISPLAY_CHANGED)
-               SDL_MaximizeWindow(_wnd::ptr());
-#endif
-       }
+       // Events are NOT drained here — they stay in the SDL queue until the next
+       // frame's pump (imgui_pump_events or the caller's own SDL_PollEvent loop).
+       // Draining here would silently consume events between imgui_new_frame and
+       // window_end_frame, causing missed clicks in ImGui.
    }
-
-// ── ImGui functions ──────────────────────────────────────────────────────────
-// Non-SDL_GPU path: imgui_impl_opengl3 + imgui_impl_sdl3
-#if (defined(DEBUG) || defined(MONKEY_DUST_STANDALONE_EDITOR)) && !defined(MD_SDL_GPU)
-   inline void imgui_init() {
-       ImGui::CreateContext();
-       ImGui_ImplSDL3_InitForOpenGL(_wnd::ptr(), _wnd::ctx());
-       ImGui_ImplOpenGL3_Init("#version 430");
-   }
-   inline void imgui_shutdown() {
-       ImGui_ImplOpenGL3_Shutdown();
-       ImGui_ImplSDL3_Shutdown();
-       ImGui::DestroyContext();
-   }
-   inline void imgui_new_frame() {
-       ImGui_ImplOpenGL3_NewFrame();
-       ImGui_ImplSDL3_NewFrame();
-       ImGui::NewFrame();
-   }
-   inline void imgui_render() {
-       ImGui::Render();
-       ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-   }
-#endif
-
-// SDL_GPU path: imgui_impl_sdlgpu3 + imgui_impl_sdl3
-// imgui_sdlgpu_init() must be called after GpuDevice::Init(), not at window creation.
-// GPU upload + render pass done in main.cpp (needs GpuDevice) via imgui_sdlgpu_draw().
-#if defined(MD_SDL_GPU) && (defined(DEBUG) || defined(MONKEY_DUST_STANDALONE_EDITOR))
-#  include "backends/imgui_impl_sdl3.h"
-#  include "backends/imgui_impl_sdlgpu3.h"
-#  include "imgui.h"
-
-   inline void imgui_init() { /* no-op: call imgui_sdlgpu_init() after GpuDevice is ready */ }
-   inline void imgui_shutdown() {
-       ImGui_ImplSDLGPU3_Shutdown();
-       ImGui_ImplSDL3_Shutdown();
-       ImGui::DestroyContext();
-   }
-   inline void imgui_sdlgpu_init(SDL_GPUDevice* device, SDL_GPUTextureFormat fmt) {
-       ImGui::CreateContext();
-       ImGui_ImplSDL3_InitForSDLGPU(_wnd::ptr());
-       ImGui_ImplSDLGPU3_InitInfo info = {};
-       info.Device            = device;
-       info.ColorTargetFormat = fmt;
-       ImGui_ImplSDLGPU3_Init(&info);
-   }
-   inline void imgui_new_frame() {
-       ImGui_ImplSDLGPU3_NewFrame();
-       ImGui_ImplSDL3_NewFrame();
-       ImGui::NewFrame();
-   }
-   // Finalizes ImGui CPU draw lists — GPU upload/present done via imgui_sdlgpu_draw().
-   inline void imgui_render() { ImGui::Render(); }
-   // Call after all render passes but before Submit().
-   // sc_tex = swapchain texture acquired via GpuDevice::AcquireSwapchainTexture().
-   inline void imgui_sdlgpu_draw(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* sc_tex) {
-       if (!sc_tex) return;
-       ImDrawData* dd = ImGui::GetDrawData();
-       if (!dd || dd->CmdListsCount == 0) return;
-       ImGui_ImplSDLGPU3_PrepareDrawData(dd, cmd);
-       SDL_GPUColorTargetInfo ct = {};
-       ct.texture  = sc_tex;
-       ct.load_op  = SDL_GPU_LOADOP_LOAD;
-       ct.store_op = SDL_GPU_STOREOP_STORE;
-       ct.cycle    = false;
-       SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-       if (rp) {
-           ImGui_ImplSDLGPU3_RenderDrawData(dd, cmd, rp);
-           SDL_EndGPURenderPass(rp);
-       }
-   }
-#endif
 
 #else  // ── Raylib path (!USE_SDL3) ──────────────────────────────────────────
 #  include "raylib.h"
 #  include <monkey_dust/render/md_camera.h>
-#ifdef DEBUG
-#  include "rlImGui.h"
-#  include "imgui.h"
-#endif
 
    // w=0/h=0 → auto-detect from current monitor.
    inline void window_init(int w, int h, const char* title) {
@@ -273,12 +184,5 @@
    inline void window_end_frame()             { EndDrawing(); }
    inline void window_begin_3d(const MdCamera& cam) { BeginMode3D(cam.ToRaylib()); }
    inline void window_end_3d()                { EndMode3D(); }
-
-#ifdef DEBUG
-   inline void imgui_init()      { rlImGuiSetup(true); }
-   inline void imgui_shutdown()  { rlImGuiShutdown(); }
-   inline void imgui_new_frame() { rlImGuiBegin(); }
-   inline void imgui_render()    { rlImGuiEnd(); }
-#endif
 
 #endif // USE_SDL3

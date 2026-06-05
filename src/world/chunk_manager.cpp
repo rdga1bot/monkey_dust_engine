@@ -1,7 +1,7 @@
 #include <monkey_dust/world/chunk_manager.h>
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/world/transform_soa.h>
-#include <monkey_dust/tools/timing_system.h>
+#include <monkey_dust/platform/timing_system.h>
 #include <monkey_dust/platform/md_log.h>
 #include <cstdio>
 #include <cstring>

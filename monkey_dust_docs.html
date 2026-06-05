@@ -134,7 +134,7 @@
 <div id="sidebar">
   <div class="sidebar-logo">
     <div class="title">monkey_dust</div>
-    <div class="subtitle">Developer Docs · v26.2 · DECOUPLE milestone · 3D World tab → game/src/editor/ · char preview Intel fix · 2026-06-06</div>
+    <div class="subtitle">Developer Docs · v26.3 · DECOUPLE phase 2 — tools/ повністю відокремлено від game/ · 2026-06-06</div>
   </div>
   <div class="sidebar-search">
     <input type="text" id="search-input" placeholder="Пошук..." oninput="filterNav(this.value)">
@@ -206,7 +206,7 @@
 <section class="doc-section" id="intro">
   <div class="breadcrumb"><span>Документація</span> <span class="sep">›</span> Огляд</div>
   <div class="hero">
-    <div class="version-badge">v26.2 · DECOUPLE milestone · 3D World tab → game/src/editor/ · char preview Intel fix · C++17 · SDL3 + SDL_GPU (Vulkan) · EnTT · Recast/Detour · Jolt Physics · AVX2</div>
+    <div class="version-badge">v26.3 · DECOUPLE phase 2 — tools/ відокремлено від game/ · C++17 · SDL3 + SDL_GPU (Vulkan) · EnTT · Recast/Detour · Jolt Physics · AVX2</div>
     <h1>monkey_dust</h1>
     <p style="font-size:17px;color:var(--text);margin-bottom:0;">
       Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Бекенд: SDL3 + SDL_GPU (Vulkan), виключний — OpenGL/Raylib повністю видалено (FIX-8). AI архітектура натхненна механіками Alien: Isolation. Kenshi asset pipeline (KEN-1–8): cgltf GLB, ozz-animation, Jolt CharacterVirtual, DetourCrowd. Terrain atlas <code>world_hmap.r32</code> (67 MB, 4096 зон). Цільове залізо: Intel HD 520 (AVX2).
@@ -361,8 +361,7 @@ bash scripts/compile_shaders.sh</code></pre>
 │   ├── <span class="dir">src/</span>
 │   │   ├── <span class="hl">main.cpp</span>               <span class="note">10 TPS logic / 60 FPS render; F7 terrain brush; atlas load</span>
 │   │   ├── <span class="hl">ai/bt_loader.h</span>         <span class="note">JSON BT templates + WatchFile/PollReload live reload (IMP-2)</span>
-│   │   ├── <span class="dir">editor/</span>                <span class="note">game-coupled editor panels (DECOUPLE milestone)</span>
-│   │   │   └── <span class="hl">editor_world_3d_sdlgpu.h/.cpp</span> <span class="note">3D terrain viewport — full 64×64 world, per-chunk LOD 0–3 (RD-5)</span>
+│   │   ├── <span class="dir">editor/</span>                <span class="note">game-coupled panels: editor_inspector + editor_terrain_panel</span>
 │   │   ├── <span class="dir">ai/ · combat/ · building/ · nav/ · world/</span>
 │   │   └── <span class="dir">save/world_serializer.h</span>  <span class="note">v10 + CRC32 (FIX-4); POSIX mkdir (FIX-1)</span>
 │   └── <span class="dir">data/</span>
@@ -377,6 +376,8 @@ bash scripts/compile_shaders.sh</code></pre>
 │   ├── <span class="dir">flare_demo/</span>                <span class="hl">md_flare_demo — SDL_GPU Vulkan Flare tile viewer</span>
 │   ├── <span class="dir">editor/</span>                    <span class="hl">monkey_dust_editor — wicked-style JSON + map editor</span>
 │   │   ├── <span class="note">editor_core · editor_hierarchy · editor_inspector · editor_map_view</span>
+│   │   ├── <span class="hl">editor_world_3d_sdlgpu.h/.cpp</span> <span class="note">3D terrain viewport — 64×64 світ, per-chunk LOD 0–3, RTT (DECOUPLE-2: tools/ only)</span>
+│   │   ├── <span class="hl">settings_editor.h</span>       <span class="note">Settings tab — camera params, font sizes (DECOUPLE-2)</span>
 │   │   ├── <span class="hl">editor_world_panel.h</span>    <span class="note">World tab: Zone/Faction/Town + map preview (KEN-5)</span>
 │   │   ├── <span class="hl">editor_viewcone_panel.h</span>  <span class="note">SenseComponent activation bars (M38)</span>
 │   │   ├── <span class="hl">editor_flowgraph_panel.h</span> <span class="note">FlowGraph nodes/vars/pending (M39)</span>
@@ -1303,7 +1304,7 @@ python3 tools/md_extract_terrain.py pack_atlas  # → game/data/terrain/world_hm
     <tr><td><strong>Map</strong></td><td>Ізометричний Map Editor (M9): FBO viewport + palette + paint tools</td></tr>
     <tr><td><strong>World</strong></td><td>Zone/Faction/Town + map preview (KEN-5)</td></tr>
     <tr><td><strong>Heightmap</strong></td><td>F7 terrain brush, undo/redo 32 кроки (PROC-3)</td></tr>
-    <tr><td><strong>3D World</strong></td><td>Terrain viewport — 64×64 світ, per-chunk LOD 0–3, RTT→ImGui (RD-5); <code>game/src/editor/editor_world_3d_sdlgpu.h</code></td></tr>
+    <tr><td><strong>3D World</strong></td><td>Terrain viewport — 64×64 світ, per-chunk LOD 0–3, RTT→ImGui (RD-5); <code>tools/editor/editor_world_3d_sdlgpu.h</code></td></tr>
     <tr><td><strong>NPCs</strong></td><td>NPC + settlement management (PROC-4)</td></tr>
     <tr><td><strong>Characters</strong></td><td>Character preview: char_preview.vert UBO bone matrices (Intel HD 520 fix — без vert samplers)</td></tr>
     <tr><td><strong>Settings</strong></td><td>Конфіг шрифтів (Label/Header/Mono): path + size, live Apply; camera params</td></tr>

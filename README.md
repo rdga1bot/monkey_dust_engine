@@ -80,6 +80,7 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Be
 - `WorldSimulation` 1 Hz tick: `FactionState[8]` + `TradeRoute[32]`; gold/prosperity/aggression/population economy
 - `FactionSystem` — relation matrix `[-100..100]`; JSON loader
 - `BuildSystem` — 200×200 grid; `ProductionChain` (inputs → outputs, timed cycles)
+- **`SettlementPlacer`** — procedural settlement generation: stratified grid sampling + flatness scoring + biome weights; greedy 500 m minimum gap between sites; `FactionVoronoi` assignment by nearest faction seed; returns `SettlementCandidate[]` sorted by score
 - `SaveSystem` v10 — CRC32 header; async save; `AgentState` + `NpcMemoryComponent` inline per NPC record; `WorldSimulation` faction/trade tail
 - **`SaveVersionChain`** — O3DE-inspired post-load version converter chain (`Register(from,to,fn)` + `RunUpgrades`); eliminates growing `is_vN` branches for future versions
 - **`MdStatusRegistry`** — Flare CampaignManager-inspired string-based status flags; `GetAllCSV`/`SetAllCSV` for human-readable saves; FNV-1a hashed IDs; MAX=128
@@ -159,7 +160,7 @@ engine/
     render/                ← GPU HAL, ring buffer, shadow, SSAO, SMAA …
     save/                  ← SaveSystem v10 · SaveVersionChain
     scripting/             ← LuaSystem, LuaEventBus, FlowGraph
-    world/                 ← FactionSystem, WorldSimulation, TransformSoA, MdStatusRegistry, MdPrefabRegistry …
+    world/                 ← FactionSystem, WorldSimulation, TransformSoA, SettlementPlacer, MdStatusRegistry, MdPrefabRegistry …
     prefab/                ← MdPrefabRegistry (data-driven NPC archetypes)
     module/                ← MdModuleRegistry (plug-in lifecycle)
     asset/                 ← (reserved: MdAssetHandle when asset pipeline scales)

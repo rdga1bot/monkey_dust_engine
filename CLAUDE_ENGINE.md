@@ -1,5 +1,8 @@
 # monkey_dust/engine — universal core (Flare-engine analog)
 
+> **Головний документ проекту:** `CLAUDE_CONSTITUTION.md` у приватному репо `monkey_dust/`.
+> Всі правила §2.2 (заборони, стандарти коду, архітектурні інваріанти) діють тут повністю.
+
 ## Mission
 Game-agnostic foundation: render (PBR/CSM/skinning), nav (Recast), ECS (EnTT),
 BT VM, scripting (Lua), platform abstraction (SDL3/audio/input/math).

@@ -48,6 +48,10 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     // slider=100 → factor=1.0 → no deformation (mesh baked at slider=100).
     float H   = cl(body[2]  / 100.f);  // Height
     float Fr  = cl(body[3]  / 100.f);  // Frame
+    // body[4] Posture: neutral=35 in [0,99]; map to 0-1 where 35=neutral
+    float Po  = cl(body[4]  /  35.f);  // Posture (0=slouch, >1=upright)
+    float SS  = cl(body[5]  / 100.f);  // Shoulder set (clavicle height)
+    float NP  = cl(body[6]  / 100.f);  // Neck position (neck attach height)
     float LL  = cl(body[7]  / 100.f);  // Leg length
     float Sh  = cl(body[8]  / 100.f);  // Shoulders
     float Ab  = cl(body[9]  / 100.f);  // Arm bulk
@@ -100,17 +104,22 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     setBS(12, H, HipsC*Fr, HipsC*St*Fr);
 
     // Spine1 [13]: (Waist*Fr, H, Stomach*Fr)
-    setBS(13, H, Wa*Fr, St*Fr);
+    // Posture compresses spine Z (forward extent) by up to 10% at max slouch
+    setBS(13, H, Wa*Fr, St*Fr * comp(Po, 0.1f));
 
     // Spine2 [14]: (comp(Ch,0.45)*Fr, H, comp(Ch,0.9)*Fr)
-    setBS(14, H, comp(Ch,0.45f)*Fr, comp(Ch,0.9f)*Fr);
+    setBS(14, H, comp(Ch,0.45f)*Fr, comp(Ch,0.9f)*Fr * comp(Po, 0.08f));
 
     // ── Arms ──────────────────────────────────────────────────────────────────
-    // Clavicles [15,25]
+    // Clavicles [15,25]: Shoulder set adjusts their vertical attachment
     float ShY = comp(Sh, 0.3f)*Fr;
     for (int ji = 15; ji <= 25; ji += 10) {
         out.bone[ji][0] = Sh*Fr; out.bone[ji][1] = ShY; out.bone[ji][2] = Sh*Fr;
     }
+    // Shoulder set: scale clavicle positional Y offset (raises/lowers shoulder line)
+    float ss_pos = comp(SS, 0.5f);
+    out.pos[15][1] = ss_pos;
+    out.pos[25][1] = ss_pos;
 
     // UpperArms [16,26]
     float AbFr = Ab * Fr;
@@ -133,12 +142,14 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     }
 
     // ── Head/Neck ─────────────────────────────────────────────────────────────
+    float Nc  = cl(face[2]  / 100.f);  // Neck (overall neck scale — face[2])
     float Nw  = cl(face[3]  / 100.f);  // Neck width
-    float Nl  = cl(face[4]  / 100.f);  // Neck length (index 4 = "Neck length" in kFaceLbl)
+    float Nl  = cl(face[4]  / 100.f);  // Neck length
     float jaw = cl(face[17] / 100.f);  // Jaw
 
-    // Neck [20]
-    setBS(20, Nl, Nw*Fr, jaw*Fr);
+    // Neck [20]: Nc scales overall neck, Nl scales Y, NP shifts attach height
+    setBS(20, Nl * Nc, Nw*Fr*Nc, jaw*Fr*Nc);
+    out.pos[20][1] = comp(NP, 0.4f);  // Neck position: vertical attach offset
 
     // Head [21]
     float Hd  = cl(face[0] / 100.f);  // Head size

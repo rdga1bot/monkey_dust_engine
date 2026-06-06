@@ -103,11 +103,10 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     // Spine [12]: (comp(Hips,0.6)*Fr, H, comp(Hips,0.6)*St*Fr)
     setBS(12, H, HipsC*Fr, HipsC*St*Fr);
 
-    // Spine1 [13]: (Waist*Fr, H, Stomach*Fr)
-    // Posture compresses spine Z (forward extent) by up to 10% at max slouch
-    setBS(13, H, Wa*Fr, St*Fr * comp(Po, 0.1f));
+    // Spine1 [13]: compress Waist/Stomach through comp() to avoid 2× torso at slider max
+    setBS(13, H, comp(Wa,0.7f)*Fr, comp(St,0.65f)*Fr * comp(Po, 0.1f));
 
-    // Spine2 [14]: (comp(Ch,0.45)*Fr, H, comp(Ch,0.9)*Fr)
+    // Spine2 [14]
     setBS(14, H, comp(Ch,0.45f)*Fr, comp(Ch,0.9f)*Fr * comp(Po, 0.08f));
 
     // ── Arms ──────────────────────────────────────────────────────────────────
@@ -122,10 +121,11 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     out.pos[25][1] = ss_pos;
 
     // UpperArms [16,26]
+    // Ab controls XZ thickness; arm Y (length) uses only H*Fr — not Ab (bulk != length)
     float AbFr = Ab * Fr;
     float AbZ  = comp(Ab, 1.5f) * Fr;
     for (int ji = 16; ji <= 26; ji += 10) {
-        out.bone[ji][0] = AbFr*AbFr; out.bone[ji][1] = H*AbFr; out.bone[ji][2] = AbZ*AbFr;
+        out.bone[ji][0] = AbFr*AbFr; out.bone[ji][1] = H*Fr; out.bone[ji][2] = AbZ*AbFr;
     }
     float arm_pos = cl(Sh * H);
     out.pos[16][0] = arm_pos;
@@ -133,7 +133,7 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
 
     // Forearms [17,27]
     for (int ji = 17; ji <= 27; ji += 10) {
-        out.bone[ji][0] = AbFr*AbFr; out.bone[ji][1] = H*AbFr; out.bone[ji][2] = AbFr*AbFr;
+        out.bone[ji][0] = AbFr*AbFr; out.bone[ji][1] = H*Fr; out.bone[ji][2] = AbFr*AbFr;
     }
 
     // Hands [18,28]

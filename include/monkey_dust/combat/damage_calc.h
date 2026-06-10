@@ -157,8 +157,8 @@ inline float CalcDamageLerped(const CombatConfig& cfg, DamageType type,
                                int skill_level) noexcept {
     int ti = (int)type;
     if (ti < 0 || ti >= 4) ti = 0;
-    float t = (float)skill_level / 99.f;
-    if (t < 0.f) t = 0.f;
+    // Kenshi RE: lerp(dmg1, dmg99, (skill-1)/98) — skill=1→t=0→damage_1; skill=99→t=1→damage_99
+    float t = (skill_level <= 1) ? 0.f : (float)(skill_level - 1) / 98.f;
     if (t > 1.f) t = 1.f;
     float d = cfg.damage_1[ti] + (cfg.damage_99[ti] - cfg.damage_1[ti]) * t;
     if (type == DamageType::Pierce) d *= cfg.pierce_damage_mult;

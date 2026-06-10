@@ -61,7 +61,7 @@ enum class BTStatus : uint8_t {
     Running
 };
 
-enum class BTNodeType : uint8_t {
+enum class BTNodeType : uint16_t {
     Selector,
     Sequence,
     Condition,
@@ -760,6 +760,33 @@ enum class BTNodeType : uint8_t {
     //   ConditionTargetLogicCharacterFlags: data=(bit_idx<<8)|(check_set:1/check_clear:0)
     //     reads target from bb; checks target's lcf bit
     ConditionTargetLogicCharacterFlags,
+
+    // ── Batch K: Kenshi-style capture/prisoner/KO mechanics ──────────────────
+    //   ActionStealthKO: attempt silent knock-out on adjacent unaware target.
+    //     Sets ff::SHOULD_STEALTH_KO; returns Running until target has lcf::IS_KNOCKED_OUT
+    //     or target becomes alert (sc->awareness >= Aware → Failure).
+    //     data = 0 (unused)
+    ActionStealthKO,
+    //   ConditionIsKnockedOut: Success if target (data=0→self, 1→bb["target_entity"])
+    //     has lcf::IS_KNOCKED_OUT set. Used for "is it safe to loot/carry?"
+    ConditionIsKnockedOut,
+    //   ConditionIsSurrendered: Success if self has lcf::IS_SURRENDERED set; data=0
+    ConditionIsSurrendered,
+    //   ActionEscortPrisoner: sets ff::SHOULD_ESCORT_PRISONER; nav follows bb["escort_dest"].
+    //     Returns Running while escorting; Success on arrival; Failure if prisoner escapes.
+    //     data = 0 (unused)
+    ActionEscortPrisoner,
+    //   ConditionHasBountyTarget: Success if bb["target_entity"] has BountyComponent::HasBounty().
+    //     Failure if no target / no BountyComponent / amount==0.
+    //     data = 0 (unused)
+    ConditionHasBountyTarget,
+    //   ActionCaptureBountyTarget: sets ff::SHOULD_CAPTURE_TARGET — combat system will KO rather
+    //     than kill. Returns Running until target has lcf::IS_KNOCKED_OUT or IS_SURRENDERED.
+    //     data = 0 (unused)
+    ActionCaptureBountyTarget,
+    //   ConditionIsPrisoner: Success if self has lcf::IS_PRISONER set; data=0
+    //     (set by slaver/guard who acquired this NPC as a prisoner)
+    ConditionIsPrisoner,
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)

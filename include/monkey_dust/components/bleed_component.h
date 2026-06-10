@@ -13,13 +13,15 @@
 
 #include <cstdint>
 
-// alignas(16): 16 bytes exactly — zero waste, SSE-friendly in BleedSystem tight loop.
-struct alignas(16) BleedComponent {
+struct BleedComponent {
     float    bleed_rate  = 2.0f;  // HP/s while bleeding (Kenshi default: ~2 HP/s)
     float    clot_rate   = 0.5f;  // HP/s clot recovery when not actively bleeding
     float    accum       = 0.0f;  // fractional accumulator; apply floor each tick
+    // Kenshi RE: haemorrhage_shock — one-shot HP loss applied on the next tick then zeroed.
+    // Represents immediate blood loss from a cut (20% of cut damage, applied instantly).
+    float    immediate   = 0.0f;
     bool     active      = false; // true = wound open, taking damage; false = clotting
     uint8_t  bleed_zone  = 1;     // LimbHealth index of the wounded limb (default: Torso=1)
     uint8_t  _pad[2]     = {};
 };
-static_assert(sizeof(BleedComponent) == 16, "BleedComponent must be 16 bytes");
+static_assert(sizeof(BleedComponent) == 20, "BleedComponent must be 20 bytes");

@@ -116,6 +116,10 @@ namespace lcf {
     static constexpr uint8_t HAS_KILLTRAP                        = 46;  // Batch 26: searched most recent sensed position
     static constexpr uint8_t IS_TARGETED                         = 47;  // Batch 33: another entity has this as Combat::target (game combat sets)
     static constexpr uint8_t IS_USING_MELEE                      = 48;  // Batch 33: entity performed melee this tick (game combat sets)
+    // Kenshi-style state flags (Batch K)
+    static constexpr uint8_t IS_KNOCKED_OUT                      = 49;  // NPC unconscious — HP≈0, not dead; recovers via medic
+    static constexpr uint8_t IS_SURRENDERED                      = 50;  // NPC gave up; won't attack; can be taken prisoner
+    static constexpr uint8_t IS_PRISONER                         = 51;  // NPC being escorted as prisoner (slaver/bounty)
 }
 
 struct LogicCharacterFlags {
@@ -399,6 +403,10 @@ namespace ff {
     static constexpr uint8_t SHOULD_FORCE_SEARCH                  = 46; // Batch 34: force search regardless of conditions
     static constexpr uint8_t SHOULD_APPLY_DAMAGE_CONTROL          = 47; // Batch 35: apply first aid / damage control response
     static constexpr uint8_t SHOULD_MOVE_TO_OBJECTIVE             = 48; // Batch 35: move to squad objective (bb squad_tx/tz)
+    // Kenshi-style action flags (Batch K)
+    static constexpr uint8_t SHOULD_STEALTH_KO                   = 49; // attempt silent knock-out on adjacent unsuspecting target
+    static constexpr uint8_t SHOULD_ESCORT_PRISONER              = 50; // guard/escort entity in bb["escort_target"] toward bb["escort_dest"]
+    static constexpr uint8_t SHOULD_CAPTURE_TARGET               = 51; // non-lethal capture attempt (stops at KO, not death)
 }
 
 // ── AgentBlackboard entry ─────────────────────────────────────────────────────

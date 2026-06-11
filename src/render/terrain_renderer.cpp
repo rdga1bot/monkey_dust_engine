@@ -33,7 +33,7 @@ bool TerrainRenderer::Init() {
 
     pd.vert_uniform_bufs = 1;  // slot 0: TerrainVertUBO (80 bytes)
     pd.frag_uniform_bufs = 1;  // slot 0: TerrainFragUBO (48 bytes)
-    pd.frag_samplers     = 2;  // binding 0: kenshi colour overlay, binding 1: detail
+    pd.frag_samplers     = 1;  // binding 0: kenshi colour overlay only
 
 #ifdef MD_SDL_GPU
     // Create 1×1 white fallback texture for slots where InitTextures was not
@@ -50,13 +50,6 @@ bool TerrainRenderer::Init() {
     if (fb.InitFromMemory(white, 1, 1, sd)) {
         fallback_tex_     = fb.TakeSDLTexture();
         fallback_sampler_ = fb.TakeSDLSampler();
-    }
-    // Neutral detail fallback (128,128,128) → detail_rgb*2=1.0 → no tint if detail not loaded.
-    uint8_t neutral[4] = { 128, 128, 128, 0 };
-    GpuTexture fbd;
-    if (!fallback_detail_tex_ && fbd.InitFromMemory(neutral, 1, 1, sd)) {
-        fallback_detail_tex_     = fbd.TakeSDLTexture();
-        fallback_detail_sampler_ = fbd.TakeSDLSampler();
     }
 #endif
 
@@ -389,10 +382,10 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     fubo.world_params[2]= world_to_uv;    fubo.world_params[3] = 0.f;
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[2];
-    FillPomSamplerBindings(bindings);
+    SDL_GPUTextureSamplerBinding bindings[1];
+    FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 2);
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 1);
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
 
@@ -443,10 +436,10 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     fubo.world_params[2]= world_to_uv;    fubo.world_params[3] = 0.f;
     cb.PushFragmentUniforms(0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[2];
-    FillPomSamplerBindings(bindings);
+    SDL_GPUTextureSamplerBinding bindings[1];
+    FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    cb.BindFragmentSamplers(0, bindings, 2);
+    cb.BindFragmentSamplers(0, bindings, 1);
 
     SDL_DrawGPUIndexedPrimitives(cb.SDLPass(), TERRAIN_IDX, 1, 0, 0, 0);
 #endif
@@ -480,10 +473,10 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     fubo.world_params[2]=world_to_uv;    fubo.world_params[3]=0.f;
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[2];
-    FillPomSamplerBindings(bindings);
+    SDL_GPUTextureSamplerBinding bindings[1];
+    FillSamplerBindings(bindings);
     if (bindings[0].texture && bindings[0].sampler)
-        SDL_BindGPUFragmentSamplers(rp, 0, bindings, 2);
+        SDL_BindGPUFragmentSamplers(rp, 0, bindings, 1);
 
     if (lod_ibo_shared_[lod_clamped-1].SDLBuffer()) {
         SDL_GPUBufferBinding ib { lod_ibo_shared_[lod_clamped-1].SDLBuffer(), 0u };

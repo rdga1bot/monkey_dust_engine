@@ -64,9 +64,11 @@ static void GenIcosphereFlat(float* out, int& vert_count) {
         float my = (vn[a][1]+vn[b][1])*0.5f;
         float mz = (vn[a][2]+vn[b][2])*0.5f;
         NormVec3(mx, my, mz, out3);
-        cache[cn].key = key;
-        cache[cn].v[0] = out3[0]; cache[cn].v[1] = out3[1]; cache[cn].v[2] = out3[2];
-        ++cn;
+        if (cn < 64) {
+            cache[cn].key = key;
+            cache[cn].v[0] = out3[0]; cache[cn].v[1] = out3[1]; cache[cn].v[2] = out3[2];
+            ++cn;
+        }
     };
 
     auto emit = [&](const float a[3], const float b[3], const float c[3]) {

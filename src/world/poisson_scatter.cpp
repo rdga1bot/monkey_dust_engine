@@ -20,7 +20,7 @@ int PoissonScatter(float* pos_out, const PoissonScatterParams& par)
     const float D    = par.range * 2.f;
     const int   W    = (int)(D / cell) + 2;
 
-    int*   grid   = (int*)  malloc(sizeof(int)   * (size_t)(W * W));
+    int*   grid   = (int*)  malloc(sizeof(int)   * (size_t)W * (size_t)W);
     float* xz     = (float*)malloc(sizeof(float) * 2u * (size_t)par.max_n);
     int*   active = (int*)  malloc(sizeof(int)   * (size_t)par.max_n);
     if (!grid || !xz || !active) {
@@ -28,7 +28,7 @@ int PoissonScatter(float* pos_out, const PoissonScatterParams& par)
         fprintf(stderr, "[PoissonScatter] alloc failed (W=%d max_n=%d)\n", W, par.max_n);
         return 0;
     }
-    memset(grid, -1, sizeof(int) * (size_t)(W * W));
+    memset(grid, -1, sizeof(int) * (size_t)W * (size_t)W);
 
     auto& tq = TerrainQuery::Get();
 

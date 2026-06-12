@@ -87,9 +87,8 @@ void DeferredLightingSystem::Init(SDL_GPUDevice* dev, int w, int h) {
     sampler_linear_ = SDL_CreateGPUSampler(dev, &si);
 
     // Fullscreen triangle pipeline
-    // set=0: 3 frag samplers (RT0, RT1, Depth)
-    // set=2: 3 frag samplers (EVSM cascade 0/1/2)
-    // set=1: 1 frag UBO (DeferredAmbientUBO, 352B)
+    // frag samplers → set=2 binding 0..5: RT0, RT1, Depth, EVSM0, EVSM1, EVSM2
+    // frag UBO      → set=3 binding=0: DeferredAmbientUBO (352B)
     GpuPipeline::Desc d;
     d.vert_path           = "shaders/deferred_lighting.vert";
     d.frag_path           = "shaders/deferred_lighting.frag";
@@ -101,7 +100,7 @@ void DeferredLightingSystem::Init(SDL_GPUDevice* dev, int w, int h) {
     d.raster.cull_back    = false;
     d.vert_uniform_bufs   = 0;
     d.frag_uniform_bufs   = 1;
-    d.frag_samplers       = 6;   // RT0+RT1+Depth (set=0) + EVSM×3 (set=2)
+    d.frag_samplers       = 6;   // slots 0-2: RT0/RT1/Depth; slots 3-5: EVSM×3
     d.has_depth_target    = false;
     d.depth_only          = false;
 
@@ -133,7 +132,7 @@ void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
 
     SDL_BindGPUGraphicsPipeline(pass, pipeline_.SDLPipeline());
 
-    // ── set=0: GBuffer RT0, RT1, Depth ───────────────────────────────────────
+    // ── slots 0-2: GBuffer RT0, RT1, Depth → SPIR-V set=2 binding=0/1/2 ───────
     {
         SDL_GPUTextureSamplerBinding b[3] = {};
         b[0] = { gbuf.RT0(), sampler_nearest_ };
@@ -145,7 +144,7 @@ void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
         SDL_BindGPUFragmentSamplers(pass, 0, b, 3);
     }
 
-    // ── set=2: EVSM moment maps (cascade 0 / 1 / 2) ──────────────────────────
+    // ── slots 3-5: EVSM moment maps → SPIR-V set=2 binding=3/4/5 ────────────
     const md::EvsmShadow& evsm = md::EvsmShadow::Get();
     const bool evsm_ready = evsm.IsReady() && depth_tex;
     {
@@ -157,7 +156,7 @@ void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
         SDL_BindGPUFragmentSamplers(pass, 3, b, 3);   // slots 3,4,5
     }
 
-    // ── set=1 binding=0: DeferredAmbientUBO ──────────────────────────────────
+    // ── frag UBO slot=0 → SPIR-V set=3 binding=0: DeferredAmbientUBO ────────
     {
         DeferredAmbientUBO ubo = {};
 

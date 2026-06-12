@@ -484,7 +484,7 @@ bool FlowGraph::LoadFromJson(const char* path) {
             if (!obj || (arr_end && obj > arr_end)) break;
             const char* obj_start = obj; while (obj_start > buf && *obj_start != '{') --obj_start;
             const char* obj_end   = strstr(obj, "}"); if (!obj_end) obj_end = buf + sz;
-            size_t blen = static_cast<size_t>(obj_end - obj_start); if (blen > 512) blen = 512;
+            size_t blen = static_cast<size_t>(obj_end - obj_start); if (blen > 511) blen = 511;
             char block[512] = {}; memcpy(block, obj_start, blen);
 
             FlowNode& nd    = nodes[node_count];
@@ -524,7 +524,7 @@ bool FlowGraph::LoadFromJson(const char* path) {
             if (!obj || (arr_end && obj > arr_end)) break;
             const char* obj_start = obj; while (obj_start > buf && *obj_start != '{') --obj_start;
             const char* obj_end   = strstr(obj, "}"); if (!obj_end) obj_end = buf + sz;
-            size_t blen = static_cast<size_t>(obj_end - obj_start); if (blen > 512) blen = 512;
+            size_t blen = static_cast<size_t>(obj_end - obj_start); if (blen > 511) blen = 511;
             char block[512] = {}; memcpy(block, obj_start, blen);
 
             FlowConn& c  = conns[conn_count];
@@ -555,7 +555,7 @@ bool FlowGraph::LoadFromJson(const char* path) {
             if (!obj || (arr_end && obj > arr_end)) break;
             const char* obj_start = obj; while (obj_start > buf && *obj_start != '{') --obj_start;
             const char* obj_end   = strstr(obj, "}"); if (!obj_end) obj_end = buf + sz;
-            size_t blen = static_cast<size_t>(obj_end - obj_start); if (blen > 256) blen = 256;
+            size_t blen = static_cast<size_t>(obj_end - obj_start); if (blen > 255) blen = 255;
             char block[256] = {}; memcpy(block, obj_start, blen);
 
             uint32_t k = jstr_id(block, "\"key\"");

@@ -124,7 +124,7 @@ bool SenseRegistry::Load(const char* json_path) {
 
             // Extract fields from this cone block (null-terminate a local copy)
             size_t block_len = static_cast<size_t>(cone_end - type_key);
-            if (block_len > 512) block_len = 512;
+            if (block_len > 511) block_len = 511;
             char block[512] = {};
             memcpy(block, type_key, block_len);
 

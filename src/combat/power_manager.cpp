@@ -42,7 +42,7 @@ bool PowerManager::LoadFromJson(const char* path) {
         if (!obj_end) obj_end = buf + sz;
 
         size_t blen = static_cast<size_t>(obj_end - obj_start);
-        if (blen > 256) blen = 256;
+        if (blen > 255) blen = 255;
         char block[256] = {};
         memcpy(block, obj_start, blen);
 

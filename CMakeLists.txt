@@ -73,6 +73,8 @@ list(FILTER ENGINE_SRC EXCLUDE REGEX "glad_impl\\.cpp$")
 list(FILTER ENGINE_SRC EXCLUDE REGEX "cgltf_impl\\.cpp$")
 # MaskedOcclusionCulling files need specific per-file compile flags (see below).
 list(FILTER ENGINE_SRC EXCLUDE REGEX "vendor/moc/.*\\.cpp$")
+# embedded_fonts.cpp moved to tools/ — only editor needs it, not the engine lib.
+list(FILTER ENGINE_SRC EXCLUDE REGEX "vendor/fonts/.*\\.cpp$")
 add_library(monkey_dust_engine STATIC ${ENGINE_SRC})
 
 # ── Unity Build — 110 engine .cpp → ~14 batched TU ──────────────────────────
@@ -216,7 +218,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(MSVC)
         target_compile_options(monkey_dust_engine PRIVATE /O2 /arch:AVX2)
     else()
-        target_compile_options(monkey_dust_engine PRIVATE -O2 -march=native)
+        target_compile_options(monkey_dust_engine PRIVATE -O2 -march=x86-64-v2)
     endif()
 endif()
 

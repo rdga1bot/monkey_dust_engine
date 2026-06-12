@@ -190,6 +190,7 @@ void TileMapRenderer::Render(const FlareMap& map, const MdCamera& cam,
 
     int vis_cols = vis.columns > 0 ? vis.columns :
                    (a0.w > 0 && vis.tile_w > 0) ? a0.w / vis.tile_w : 16;
+    if (vis_cols < 1) vis_cols = 1;
     float iaw = (a0.w > 0 && vis.tile_w > 0) ? (float)vis.tile_w / a0.w : 1.0f / vis_cols;
     float iah = (a0.h > 0 && vis.tile_h > 0) ? (float)vis.tile_h / a0.h : iaw;
     float ground_iah = (a0.h > 0 && map.tile_h > 0) ? (float)map.tile_h / (float)a0.h : iah;

@@ -105,7 +105,7 @@ void DirectorSystem::Init(const char* json_path) {
         if (!obj_end) obj_end = buf + sz;
 
         size_t block_len = static_cast<size_t>(obj_end - obj_start);
-        if (block_len > 1024) block_len = 1024;
+        if (block_len > 1023) block_len = 1023;
         char block[1024] = {};
         memcpy(block, obj_start, block_len);
 

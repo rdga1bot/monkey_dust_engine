@@ -362,7 +362,7 @@ static bool LoadTxt(const char* path, FlareMap& m) {
                 // "path,tile_w,tile_h,offset_x,offset_y"
                 const char* p = val;
                 int pi = 0;
-                while (*p && !(*p == ',' && pi < 127)) {
+                while (*p && *p != ',' && pi < 127) {
                     ts.image_path[pi++] = *p++;
                 }
                 ts.image_path[pi] = '\0';

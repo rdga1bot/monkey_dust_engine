@@ -22,7 +22,6 @@ void WorldSimulation::Tick(float delta_s) noexcept {
 
     ++tick_count_;
 
-    // VBfA §4.1 %958/%1024 ultra-rare tier: global state recheck every ~960s (16 min).
     // Used for: faction territory recalculation, long-range spawn decisions.
     // BT_LOD_ULTRA_MODULO=960 at 10TPS → 96s; at 1Hz (WorldSim) → 960 ticks = 16 min.
     static constexpr uint32_t WS_ULTRA_RARE_TICKS = 960u;
@@ -52,7 +51,6 @@ void WorldSimulation::Tick(float delta_s) noexcept {
     }
 
     // F3: Economy — dynamic trade routes with prosperity-scaled efficiency.
-    // Kenshi RE: wealthy factions attract more trade volume (demand scaling).
     for (int r = 0; r < route_count_; ++r) {
         TradeRoute& rt = routes_[r];
         if (!rt.active || rt.volume == 0) continue;
@@ -120,7 +118,6 @@ void WorldSimulation::Tick(float delta_s) noexcept {
 
     // E-1: ShopInventory restock — advance restock_timer_s for all shops each logic second.
     // ShopInventory::TickRestock(delta_s) returns true when shop restocks; we call once/s.
-    // Kenshi RE: restock_deadline@+0x1f8 (base 24000.0s ≈ 6.67 game-hours at 1Hz).
     {
         auto& reg = Registry::Get();
         reg.view<ShopInventory>().each([](ShopInventory& shop) {

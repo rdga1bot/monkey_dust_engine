@@ -87,7 +87,7 @@ void JoltWorld::Init(int max_bodies) {
     JPH::RegisterTypes();
 
     // Kenshi pattern: physics thread counts from config (internalThreadCount, threadMask).
-    // VBfA pattern: Tasks.txt-driven thread pool. MdConfig reads data/md_config.txt.
+
     const MdConfig& cfg = MdConfig::Get();
     const int temp_mb   = cfg.physics_temp_mb;   // default 8
     const int workers   = cfg.physics_threads;   // default 2 (deadlock-safe minimum)

@@ -7,7 +7,6 @@
 #include <cstring>
 #include <cmath>
 
-// VBfA RE §8.8 — pre-allocated bone scratch buffer (eliminates 4 KB stack push/pop
 // per NPC per frame). Thread-local: T2 async jobs run on worker threads concurrently
 // with main-thread T0/T1 eval — a global would race. thread_local gives each thread
 // its own copy with zero overhead after the first access.
@@ -211,7 +210,6 @@ bool SkinMesh::LoadGLB(const char* path) {
         int names_found = 0;
         s_parse_morph_names(extras_json, morph_names_, n_targets, &names_found);
 
-        // VBfA RE §9.2 — 16-byte aligned alloc for SIMD-ready morph delta storage.
         size_t delta_floats = (size_t)n_targets * nv * 3;
         size_t delta_bytes  = delta_floats * sizeof(float);
         morph_deltas_ = (float*)aligned_alloc(16, (delta_bytes + 15) & ~(size_t)15);
@@ -565,6 +563,11 @@ void SkinMesh::PatchBoneIK(int bone_idx, const float* new_world_16,
                              float* out_bones) const {
     if (bone_idx < 0 || bone_idx >= bone_count) return;
     mat4_mul(out_bones + bone_idx * 16, new_world_16, inv_bind_[bone_idx]);
+}
+
+float SkinMesh::LastBoneWorldY(int bone_idx) const {
+    if (bone_idx < 0 || bone_idx >= MAX_SKIN_BONES) return 0.f;
+    return g_bone_world_scratch[bone_idx][13];
 }
 
 void SkinMesh::GetFinalBonesBlend(int base_clip, float base_t,

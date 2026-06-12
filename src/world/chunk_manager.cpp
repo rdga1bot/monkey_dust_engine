@@ -213,7 +213,6 @@ void ChunkManager::LoadChunkFromStaging(ChunkLoadStaging& stg) {
 }
 
 void ChunkManager::ApplyStagedChunks() {
-    // CATHODE RE §7.9: streaming budget — limit bytes applied per Update() call.
     // Prevents single-frame stall when many chunks arrive simultaneously.
     // Deferred chunks are processed next Update(); gameplay continues unblocked.
     bytes_last_update_ = 0;

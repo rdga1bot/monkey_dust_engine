@@ -23,7 +23,6 @@ int SDLCALL JobSystem::s_worker_entry(void* self) {
 }
 
 void JobSystem::worker_loop() {
-    // CATHODE RE §7.5: apply priority from role table at thread startup.
     // SDL_SetCurrentThreadPriority sets the *calling* thread's priority.
     // worker_roles_ index is determined by matching thread ID.
     {
@@ -85,7 +84,6 @@ void JobSystem::LoadFromCfg(const char* path) {
            cfg_worker_override_, batch_size_);
 }
 
-// CATHODE RE §7.5: set priority role for worker thread i.
 constexpr int JobSystem::kPriorityTable[JobSystem::RoleCount];
 
 void JobSystem::SetWorkerRole(int idx, WorkerRole role) {
@@ -116,13 +114,11 @@ void JobSystem::Init() {
         SDL_snprintf(name, sizeof(name), "JobWorker%d", i);
         threads_[i] = SDL_CreateThread(s_worker_entry, name, this);
 
-        // CATHODE RE §7.5: apply priority from role table (SDL3 uses SetCurrentThreadPriority,
         // called from within the worker thread itself via s_worker_entry).
         // We store the role; worker calls SDL_SetCurrentThreadPriority at startup.
         (void)worker_roles_[i];  // applied inside worker_loop()
 
 #ifdef __linux__
-        // VBfA RE §8.10 + CATHODE RE §7: pin workers to physical cores.
         {
             pthread_t tid = (pthread_t)SDL_GetThreadID(threads_[i]);
             cpu_set_t cs;

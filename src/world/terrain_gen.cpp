@@ -1,6 +1,8 @@
 #include <monkey_dust/world/terrain_gen.h>
 #include <monkey_dust/world/chunk_def.h>
 #include <monkey_dust/world/biome_system.h>
+#include <monkey_dust/world/biome_def.h>
+#include <monkey_dust/world/world_registry.h>
 #include <monkey_dust/world/terrain_pass_grid.h>
 #include <cmath>
 #include <cstring>
@@ -677,6 +679,21 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
                 s_splat(h, p.amplitude, s_verts_buf[vi].splat, BiomeType::Desert);
             }
 
+            // Variant B: edge-fade — fade splat to 0 at chunk boundary (outer 15%).
+            // Both sides of any seam → pure overlay → no visible biome stitch.
+            {
+                float lx = (float)col / TERRAIN_GRID;
+                float lz = (float)row / TERRAIN_GRID;
+                float et = lx < (1.f-lx) ? lx : (1.f-lx);
+                if (lz      < et) et = lz;
+                if ((1.f-lz)< et) et = 1.f-lz;
+                et /= 0.15f;
+                if (et < 1.f) {
+                    float f = et * et * (3.f - 2.f * et);
+                    for (int k = 0; k < 4; ++k) s_verts_buf[vi].splat[k] *= f;
+                }
+            }
+
             // Nav positions (flat float array for Recast)
             s_nav_pos[vi * 3 + 0] = wx;
             s_nav_pos[vi * 3 + 1] = h;
@@ -741,6 +758,33 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
         float len = sqrtf(nx*nx + ny*ny + nz*nz);
         if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
         else { nx = 0.0f; ny = 1.0f; nz = 0.0f; }
+    }
+
+    // ── Variant C: slope-based splat (overwrites Variant B noise splat) ─────────
+    // splat[0]=flat  splat[1]=slope  splat[2]=cliff  splat[3]=0
+    // Matches BiomeDef tex0-3 semantic: flat/slope/cliff per biome.
+    for (int i = 0; i < TERRAIN_VERTS; ++i) {
+        float ny    = s_verts_buf[i].ny;          // 1=flat, 0=vertical
+        float flat_w  = ny * ny;
+        float slope_w = 4.f * ny * (1.f - ny);
+        float cliff_w = (1.f - ny) * (1.f - ny);
+        float sum = flat_w + slope_w + cliff_w;
+        if (sum > 1e-6f) { flat_w /= sum; slope_w /= sum; cliff_w /= sum; }
+
+        int col_ = i % (TERRAIN_GRID + 1);
+        int row_ = i / (TERRAIN_GRID + 1);
+        float lx = (float)col_ / TERRAIN_GRID;
+        float lz = (float)row_ / TERRAIN_GRID;
+        float et = lx < (1.f-lx) ? lx : (1.f-lx);
+        if (lz       < et) et = lz;
+        if ((1.f-lz) < et) et = 1.f-lz;
+        et /= 0.15f;
+        float f = et < 1.f ? et*et*(3.f-2.f*et) : 1.f;
+
+        s_verts_buf[i].splat[0] = flat_w  * f;
+        s_verts_buf[i].splat[1] = slope_w * f;
+        s_verts_buf[i].splat[2] = cliff_w * f;
+        s_verts_buf[i].splat[3] = 0.f;
     }
 
     // ── Cross-chunk normal stitching ──────────────────────────────────────────
@@ -927,6 +971,22 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     out.center_x = p.world_offset_x + coord.x * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
     out.center_z = p.world_offset_z + coord.z * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
     out.loaded   = false;  // Upload() sets this
+
+    // Biome ground-texture lookup — zone slug → GroundTexLayer indices per splat channel
+    if (p.zone_origin_x >= 0) {
+        int zx = p.zone_origin_x + coord.x;
+        int zy = p.zone_origin_z + coord.z;
+        int nz = 0;
+        const ZoneRecord* zones = WorldRegistry::Get().GetAll(nz);
+        const char* slug = nullptr;
+        for (int i = 0; i < nz; ++i)
+            if (zones[i].grid_x == zx && zones[i].grid_z == zy) { slug = zones[i].name; break; }
+        const BiomeDef& bd = BiomeDef::ForZone(slug);
+        out.ground_layers[0] = (float)bd.tex0;
+        out.ground_layers[1] = (float)bd.tex1;
+        out.ground_layers[2] = (float)bd.tex2;
+        out.ground_layers[3] = (float)bd.tex3;
+    }
 
     // ── 4. NavMesh (disabled) + PassGrid (lightweight, from heightmap slope) ────
     // Per-chunk NavMesh disabled: NPC pathfinding uses NavSystem singleton.

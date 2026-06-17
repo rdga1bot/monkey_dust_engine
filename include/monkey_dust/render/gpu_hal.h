@@ -544,6 +544,9 @@ class GpuTexture {
 public:
     bool InitFromFile  (const char* path,              const GpuSamplerDesc& s = {});
     bool InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSamplerDesc& s = {});
+    // Load a 2D texture array from multiple BC3/DXT5 DDS files (SDL_GPU only).
+    // All files must have identical dimensions, format, and mip count.
+    bool InitFromDDSArray(const char* const* paths, int count, const GpuSamplerDesc& s = {});
     void Shutdown();
 
     // OpenGL: glActiveTexture + glBindTexture.

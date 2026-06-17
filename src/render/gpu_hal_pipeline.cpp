@@ -455,7 +455,12 @@ bool GpuPipeline::Create(const Desc& desc) {
                                      ? SDL_GPU_CULLMODE_BACK
                                      : SDL_GPU_CULLMODE_NONE;
     ci.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-    ci.depth_stencil_state.compare_op         = desc.raster.depth_compare_op;
+    // Guard: SDL3 asserts if compare_op==INVALID when depth_test=true.
+    // Defensive fallback so callers that forget to set depth_compare_op don't crash.
+    SDL_GPUCompareOp eff_compare_op = desc.raster.depth_compare_op;
+    if (desc.raster.depth_test && eff_compare_op == SDL_GPU_COMPAREOP_INVALID)
+        eff_compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+    ci.depth_stencil_state.compare_op         = eff_compare_op;
     ci.depth_stencil_state.enable_depth_test  = desc.raster.depth_test  ? true : false;
     ci.depth_stencil_state.enable_depth_write = desc.raster.depth_write ? true : false;
     ci.target_info = target_info;
@@ -477,6 +482,10 @@ bool GpuPipeline::Create(const Desc& desc) {
         return true;
     }
 
+    fprintf(stderr, "[PipeDiag] %s / %s  depth_test=%d compare_op=%d\n",
+            desc.vert_path, desc.frag_path,
+            (int)ci.depth_stencil_state.enable_depth_test,
+            (int)ci.depth_stencil_state.compare_op);
     sdl_pipeline_ = SDL_CreateGPUGraphicsPipeline(dev, &ci);
 
     // Shaders are consumed by the pipeline; release immediately.

@@ -68,13 +68,14 @@ public:
         // 96 bytes total
     };
 
-    // Fragment UBO for POM pipeline: TerrainFragUBO (48 bytes) + pom_params (16 bytes) = 64 bytes.
+    // Fragment UBO for POM pipeline: 64 bytes + ground_layers (16 bytes) = 80 bytes.
     struct TerrainPomFragUBO {
         float sun_dir_str[4];   // 16 bytes
         float ambient[4];       // 16 bytes
         float world_params[4];  // 16 bytes
         float pom_params[4];    // x=height_scale, y=layers_min, z=layers_max, w=unused
-        // 64 bytes total
+        float ground_layers[4]; // xyzw = GroundTexLayer float indices per splat channel
+        // 80 bytes total
     };
 
     // UBOs for GPU Synthesis pipeline (terrain_synth.vert/frag).
@@ -102,9 +103,9 @@ public:
     // Load Kenshi stitched colour overlay (md_terrain.png, 4096×4096).
     bool InitKenshiOverlay(const char* path);
 
-    // Legacy 4-texture splat — kept for non-Kenshi terrain; no-op when Kenshi overlay loaded.
-    bool InitTextures(const char* grass, const char* rock,
-                      const char* dirt,  const char* bark);
+    // Load 24-layer BC3 DDS texture array for per-biome ground texturing (POM path).
+    // Must be called after Init() and before InitPOM().
+    bool InitGroundTextureArray();
 
     // Draw chunk inside an already-open GpuCommandBuffer colour pass.
     // vp16: column-major Mat4 (16 floats = 64 bytes).
@@ -184,9 +185,10 @@ public:
 
 private:
     GpuPipeline pipeline_;
-    GpuTexture  tex_colour_;   // Kenshi colour overlay (slot 0)
-    GpuTexture  tex_[4];       // legacy splat (kept for InitTextures compat)
-    bool        tex_loaded_ = false;
+    GpuTexture  tex_colour_;        // Kenshi colour overlay (forward pass slot 0)
+    GpuTexture  tex_ground_array_;  // 24-layer BC3 DDS array (POM pass slot 0)
+    bool        tex_loaded_        = false;
+    bool        ground_array_ready_= false;
 
     // POM pipeline data
     GpuPipeline pom_pipeline_;
@@ -217,7 +219,7 @@ private:
     SDL_GPUSampler* fallback_sampler_        = nullptr;
     SDL_GPUTexture* fallback_detail_tex_     = nullptr;
     SDL_GPUSampler* fallback_detail_sampler_ = nullptr;
-    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[1]) const;
-    void FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[2]) const;
+    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[2]) const;
+    void FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[3]) const;
 #endif
 };

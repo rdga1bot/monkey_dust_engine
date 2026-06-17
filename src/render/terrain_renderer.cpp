@@ -1,4 +1,5 @@
 #include <monkey_dust/render/terrain_renderer.h>
+#include <monkey_dust/world/biome_def.h>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -33,7 +34,7 @@ bool TerrainRenderer::Init() {
 
     pd.vert_uniform_bufs = 1;  // slot 0: TerrainVertUBO (80 bytes)
     pd.frag_uniform_bufs = 1;  // slot 0: TerrainFragUBO (48 bytes)
-    pd.frag_samplers     = 1;  // binding 0: kenshi colour overlay only
+    pd.frag_samplers     = 2;  // b0=kenshi colour overlay, b1=detail tint (matches terrain_forward.frag)
 
 #ifdef MD_SDL_GPU
     // Create 1×1 white fallback texture for slots where InitTextures was not
@@ -76,11 +77,35 @@ bool TerrainRenderer::Init() {
     return true;
 }
 
+bool TerrainRenderer::InitGroundTextureArray()
+{
+#ifdef MD_SDL_GPU
+    GpuSamplerDesc sd;
+    sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP;
+    sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    sd.wrap_s     = GpuSamplerDesc::Wrap::REPEAT;
+    sd.wrap_t     = GpuSamplerDesc::Wrap::REPEAT;
+    sd.gen_mipmap = false;
+    tex_ground_array_.Shutdown();
+    if (!tex_ground_array_.InitFromDDSArray(kGroundTexPaths, kGroundTexCount, sd)) {
+        fprintf(stderr, "[TerrainRenderer] ground texture array failed — POM will fall back to forward\n");
+        ground_array_ready_ = false;
+        return false;
+    }
+    ground_array_ready_ = true;
+    fprintf(stderr, "[TerrainRenderer] ground texture array ready (%d layers)\n", kGroundTexCount);
+    return true;
+#else
+    return false;
+#endif
+}
+
 void TerrainRenderer::Shutdown() {
     ShutdownPOM();
     tex_colour_.Shutdown();
-    for (int i = 0; i < 4; ++i) tex_[i].Shutdown();
-    tex_loaded_ = false;
+    tex_ground_array_.Shutdown();
+    tex_loaded_         = false;
+    ground_array_ready_ = false;
 
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
@@ -97,7 +122,7 @@ void TerrainRenderer::Shutdown() {
 
 bool TerrainRenderer::IsPomReady() const {
 #ifdef MD_SDL_GPU
-    return pom_loaded_ && pom_pipeline_.SDLPipeline() != nullptr;
+    return pom_loaded_ && ground_array_ready_ && pom_pipeline_.SDLPipeline() != nullptr;
 #else
     return false;
 #endif
@@ -123,8 +148,9 @@ bool TerrainRenderer::InitPOM(const char* detail_path, const PomParams& p)
     pd.has_depth_target   = true;
     pd.vert_uniform_bufs  = 1;   // slot 0: TerrainPomVertUBO (96 bytes)
     pd.frag_uniform_bufs  = 1;   // slot 0: TerrainPomFragUBO (64 bytes)
-    pd.frag_samplers      = 2;   // binding 0: tex_colour, binding 1: tex_detail
+    pd.frag_samplers      = 3;   // b0=tex_colour, b1=tex_ground(array), b2=tex_detail
 
+    fprintf(stderr, "[TerrainRenderer] creating POM pipeline...\n");
     if (!pom_pipeline_.Create(pd)) {
         fprintf(stderr, "[TerrainRenderer] POM pipeline failed to create\n");
         return false;
@@ -185,14 +211,21 @@ void TerrainRenderer::ShutdownPOM()
 }
 
 #ifdef MD_SDL_GPU
-void TerrainRenderer::FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[2]) const
+void TerrainRenderer::FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[3]) const
 {
-    // binding 0: world colour overlay (same as base renderer)
-    FillSamplerBindings(out);
-    // binding 1: detail/height texture
+    // binding 0: Kenshi overlay (world colour — biome identity)
+    bool ov = tex_colour_.Valid() && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
+    out[0].texture = ov ? tex_colour_.SDLTexture() : fallback_tex_;
+    out[0].sampler = ov ? tex_colour_.SDLSampler() : fallback_sampler_;
+    // binding 1: per-biome DDS ground array (detail modulator)
+    bool ga = ground_array_ready_ && tex_ground_array_.Valid()
+              && tex_ground_array_.SDLTexture() && tex_ground_array_.SDLSampler();
+    out[1].texture = ga ? tex_ground_array_.SDLTexture() : nullptr;
+    out[1].sampler = ga ? tex_ground_array_.SDLSampler() : nullptr;
+    // binding 2: detail/height texture (POM ray marching height field)
     bool dv = tex_detail_.Valid() && tex_detail_.SDLTexture() && tex_detail_.SDLSampler();
-    out[1].texture = dv ? tex_detail_.SDLTexture() : fallback_detail_tex_;
-    out[1].sampler = dv ? tex_detail_.SDLSampler() : fallback_detail_sampler_;
+    out[2].texture = dv ? tex_detail_.SDLTexture() : fallback_detail_tex_;
+    out[2].sampler = dv ? tex_detail_.SDLSampler() : fallback_detail_sampler_;
 }
 #endif
 
@@ -256,13 +289,16 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
     fubo.pom_params[1]  = (float)pom_params_.layers_min;
     fubo.pom_params[2]  = (float)pom_params_.layers_max;
     fubo.pom_params[3]  = 0.f;
+    fubo.ground_layers[0] = chunk.ground_layers[0];
+    fubo.ground_layers[1] = chunk.ground_layers[1];
+    fubo.ground_layers[2] = chunk.ground_layers[2];
+    fubo.ground_layers[3] = chunk.ground_layers[3];
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[2];
+    SDL_GPUTextureSamplerBinding bindings[3];
     FillPomSamplerBindings(bindings);
-    if (!bindings[0].texture || !bindings[0].sampler ||
-        !bindings[1].texture || !bindings[1].sampler) return;
-    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 2);
+    if (!bindings[0].texture || !bindings[0].sampler) return;
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 3);
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
 #endif
@@ -296,45 +332,25 @@ bool TerrainRenderer::InitKenshiOverlay(const char* path)
     return true;
 }
 
-bool TerrainRenderer::InitTextures(const char* grass, const char* rock,
-                                   const char* dirt,  const char* bark)
-{
-    // Legacy splat path — kept for non-Kenshi use. When Kenshi overlay is loaded,
-    // InitKenshiOverlay takes precedence.
-    const char* paths[4] = { grass, rock, dirt, bark };
-    GpuSamplerDesc sd;
-    sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP;
-    sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
-    sd.wrap_s     = GpuSamplerDesc::Wrap::REPEAT;
-    sd.wrap_t     = GpuSamplerDesc::Wrap::REPEAT;
-    sd.gen_mipmap = true;
-    sd.flip_v     = false;
-    bool all_ok = true;
-    for (int i = 0; i < 4; ++i) {
-        tex_[i].Shutdown();
-        if (!tex_[i].InitFromFile(paths[i], sd)) all_ok = false;
-    }
-    // If no kenshi overlay loaded yet, use tex_[0] as fallback colour slot
-    if (!tex_colour_.Valid() && tex_[0].Valid()) {
-        tex_colour_ = tex_[0];
-    }
-    tex_loaded_ = true;
-    return all_ok;
-}
 
 #ifdef MD_SDL_GPU
-void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[1]) const
+void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[2]) const
 {
     // UseColourOverride() swaps texture for a batch (VT local composite).
     if (col_override_tex_ && col_override_smp_) {
         out[0].texture = col_override_tex_;
         out[0].sampler = col_override_smp_;
-        return;
+    } else {
+        bool valid = tex_loaded_ && tex_colour_.Valid()
+                     && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
+        out[0].texture = valid ? tex_colour_.SDLTexture() : fallback_tex_;
+        out[0].sampler = valid ? tex_colour_.SDLSampler() : fallback_sampler_;
     }
-    bool valid = tex_loaded_ && tex_colour_.Valid()
-                 && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
-    out[0].texture = valid ? tex_colour_.SDLTexture() : fallback_tex_;
-    out[0].sampler = valid ? tex_colour_.SDLSampler() : fallback_sampler_;
+    // b1: detail tint (loaded by InitPOM; fallback=white 1×1 → neutral blend)
+    bool det = pom_loaded_ && tex_detail_.Valid()
+               && tex_detail_.SDLTexture() && tex_detail_.SDLSampler();
+    out[1].texture = det ? tex_detail_.SDLTexture() : fallback_tex_;
+    out[1].sampler = det ? tex_detail_.SDLSampler() : fallback_sampler_;
 }
 #endif
 
@@ -382,10 +398,10 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     fubo.world_params[2]= world_to_uv;    fubo.world_params[3] = 0.f;
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[1];
+    SDL_GPUTextureSamplerBinding bindings[2];
     FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 1);
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 2);
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
 
@@ -436,10 +452,10 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     fubo.world_params[2]= world_to_uv;    fubo.world_params[3] = 0.f;
     cb.PushFragmentUniforms(0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[1];
+    SDL_GPUTextureSamplerBinding bindings[2];
     FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    cb.BindFragmentSamplers(0, bindings, 1);
+    cb.BindFragmentSamplers(0, bindings, 2);
 
     SDL_DrawGPUIndexedPrimitives(cb.SDLPass(), TERRAIN_IDX, 1, 0, 0, 0);
 #endif
@@ -473,10 +489,10 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     fubo.world_params[2]=world_to_uv;    fubo.world_params[3]=0.f;
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[1];
+    SDL_GPUTextureSamplerBinding bindings[2];
     FillSamplerBindings(bindings);
     if (bindings[0].texture && bindings[0].sampler)
-        SDL_BindGPUFragmentSamplers(rp, 0, bindings, 1);
+        SDL_BindGPUFragmentSamplers(rp, 0, bindings, 2);
 
     if (lod_ibo_shared_[lod_clamped-1].SDLBuffer()) {
         SDL_GPUBufferBinding ib { lod_ibo_shared_[lod_clamped-1].SDLBuffer(), 0u };

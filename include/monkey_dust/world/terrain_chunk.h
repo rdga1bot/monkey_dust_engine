@@ -86,6 +86,7 @@ struct TerrainChunk {
     TerrainPassGrid  pass_grid;         // L2-inspired O(1) passability bitmask
     ChunkPropInstance props[CHUNK_MAX_PROPS];
     int              prop_count = 0;    // valid entries in props[]
+    float            ground_layers[4] = {0.f, 1.f, 2.f, 3.f}; // GroundTexLayer indices (per biome)
     bool             loaded = false;
 
     // Sample height at local chunk coords (0..CHUNK_SIZE).

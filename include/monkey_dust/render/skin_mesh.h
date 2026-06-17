@@ -147,6 +147,10 @@ public:
     // Call after GetFinalBones*() to get correct GPU skinning matrices.
     void ApplyInvBind(float* bones) const;
 
+    // Returns the world-space Y of bone_idx from the last GetFinalBones*() call.
+    // Used for foot-grounding queries without a full re-evaluation.
+    float LastBoneWorldY(int bone_idx) const;
+
     // Upper/lower body blend: evaluate base_clip for all bones, then override lower-body
     // bones from override_clip (use lower_mask[i]=true for bones to override).
     // Pass lower_mask=nullptr to skip override (equivalent to plain GetFinalBones).

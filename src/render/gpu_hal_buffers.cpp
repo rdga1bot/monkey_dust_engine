@@ -1,5 +1,6 @@
 #include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/md_log.h>
+#include <monkey_dust/platform/md_fs.h>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -345,6 +346,183 @@ bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSam
     glBindTexture(GL_TEXTURE_2D, 0);
     return true;
 }
+
+#ifdef MD_SDL_GPU
+// ── DDS (BC3/DXT5) 2D texture array loader ───────────────────────────────────
+
+// Returns height(12), width(16), mip_count(28), is_bc3, data_offset.
+static bool s_parse_dds(const uint8_t* buf, uint32_t len,
+                         int& w, int& h, int& mips, bool& is_bc3, uint32_t& data_off)
+{
+    if (len < 128 || buf[0]!='D'||buf[1]!='D'||buf[2]!='S'||buf[3]!=' ') return false;
+    auto r32 = [&](uint32_t o) { uint32_t v; memcpy(&v, buf+o, 4); return v; };
+    h       = (int)r32(12);
+    w       = (int)r32(16);
+    mips    = (int)r32(28); if (mips < 1) mips = 1;
+    // DDPIXELFORMAT at offset 76: flags(+4), fourCC(+8)
+    uint32_t pf_flags = r32(80);
+    uint32_t fourcc   = r32(84);
+    is_bc3   = (pf_flags & 4u) && (fourcc == 0x35545844u); // DDPF_FOURCC && 'DXT5'
+    data_off = 128;
+    return true;
+}
+
+static size_t s_bc3_mip_bytes(int w, int h)
+{
+    int bw = (w+3)/4, bh = (h+3)/4;
+    return (size_t)bw * bh * 16;
+}
+
+bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
+                                   const GpuSamplerDesc& /*s*/)
+{
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (!dev || count < 1 || !paths) return false;
+
+    struct LayerData { char* buf; uint32_t len; };
+    LayerData* layers = (LayerData*)malloc((size_t)count * sizeof(LayerData));
+    if (!layers) return false;
+    memset(layers, 0, (size_t)count * sizeof(LayerData));
+
+    int ref_w = 0, ref_h = 0, ref_mips = 0; bool ref_bc3 = false;
+    uint32_t ref_doff = 0;
+    bool ok = true;
+
+    for (int i = 0; i < count && ok; ++i) {
+        layers[i].buf = md::fs_read_alloc(paths[i], &layers[i].len);
+        if (!layers[i].buf) {
+            MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: missing %s", paths[i]);
+            ok = false; break;
+        }
+        int w, h, m; bool bc3; uint32_t doff;
+        if (!s_parse_dds((const uint8_t*)layers[i].buf, layers[i].len, w, h, m, bc3, doff)) {
+            MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: bad header %s", paths[i]);
+            ok = false; break;
+        }
+        if (i == 0) { ref_w=w; ref_h=h; ref_mips=m; ref_bc3=bc3; ref_doff=doff; }
+        else if (w!=ref_w||h!=ref_h||m!=ref_mips||bc3!=ref_bc3) {
+            MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: layer %d size mismatch", i);
+            ok = false; break;
+        }
+    }
+    if (ok && !ref_bc3) {
+        MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: only BC3/DXT5 supported");
+        ok = false;
+    }
+
+    if (!ok) {
+        for (int i=0;i<count;++i) md::fs_free(layers[i].buf);
+        free(layers); return false;
+    }
+
+    // Compute per-mip byte sizes and total transfer size
+    size_t mip_sz[32] = {};
+    size_t layer_stride = 0;
+    { int mw=ref_w, mh=ref_h;
+      for (int m=0; m<ref_mips && m<32; ++m) {
+          mip_sz[m] = s_bc3_mip_bytes(mw, mh);
+          layer_stride += mip_sz[m];
+          mw = mw>1?mw/2:1; mh = mh>1?mh/2:1;
+      }
+    }
+    uint32_t total = (uint32_t)(layer_stride * (size_t)count);
+
+    SDL_GPUTextureCreateInfo ti = {};
+    ti.type                 = SDL_GPU_TEXTURETYPE_2D_ARRAY;
+    ti.format               = SDL_GPU_TEXTUREFORMAT_BC3_RGBA_UNORM;
+    ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    ti.width                = (Uint32)ref_w;
+    ti.height               = (Uint32)ref_h;
+    ti.layer_count_or_depth = (Uint32)count;
+    ti.num_levels           = (Uint32)ref_mips;
+    fprintf(stderr, "[DDS array] creating texture %dx%d %d layers %d mips, transfer=%u bytes\n",
+            ref_w, ref_h, count, ref_mips, total);
+    sdl_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    if (!sdl_tex_) {
+        MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: SDL_CreateGPUTexture failed: %s", SDL_GetError());
+        for (int i=0;i<count;++i) md::fs_free(layers[i].buf);
+        free(layers); return false;
+    }
+    fprintf(stderr, "[DDS array] texture created OK\n");
+
+    SDL_GPUTransferBufferCreateInfo tbci = {};
+    tbci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbci.size  = total;
+    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbci);
+    if (!tb) {
+        SDL_ReleaseGPUTexture(dev, sdl_tex_); sdl_tex_ = nullptr;
+        for (int i=0;i<count;++i) md::fs_free(layers[i].buf);
+        free(layers); return false;
+    }
+    fprintf(stderr, "[DDS array] transfer buffer created OK\n");
+
+    uint8_t* mapped = (uint8_t*)SDL_MapGPUTransferBuffer(dev, tb, false);
+    if (mapped) {
+        uint32_t dst_off = 0;
+        for (int i=0;i<count;++i) {
+            memcpy(mapped + dst_off, (const uint8_t*)layers[i].buf + ref_doff, layer_stride);
+            dst_off += (uint32_t)layer_stride;
+        }
+        SDL_UnmapGPUTransferBuffer(dev, tb);
+    }
+    fprintf(stderr, "[DDS array] data mapped+copied OK\n");
+
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+    if (!cmd) {
+        fprintf(stderr, "[DDS array] AcquireGPUCommandBuffer returned NULL!\n");
+        SDL_ReleaseGPUTransferBuffer(dev, tb);
+        SDL_ReleaseGPUTexture(dev, sdl_tex_); sdl_tex_ = nullptr;
+        for (int i=0;i<count;++i) md::fs_free(layers[i].buf);
+        free(layers); return false;
+    }
+    fprintf(stderr, "[DDS array] cmd acquired OK\n");
+    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+
+    uint32_t tb_off = 0;
+    for (int i=0;i<count;++i) {
+        int mw=ref_w, mh=ref_h;
+        for (int m=0; m<ref_mips && m<32; ++m) {
+            SDL_GPUTextureTransferInfo src = {};
+            src.transfer_buffer = tb;
+            src.offset          = tb_off;
+            src.pixels_per_row  = (Uint32)mw;
+            src.rows_per_layer  = (Uint32)mh;
+            SDL_GPUTextureRegion dst = {};
+            dst.texture   = sdl_tex_;
+            dst.mip_level = (Uint32)m;
+            dst.layer     = (Uint32)i;
+            dst.w         = (Uint32)mw;
+            dst.h         = (Uint32)mh;
+            dst.d         = 1;
+            SDL_UploadToGPUTexture(cp, &src, &dst, false);
+            tb_off += (uint32_t)mip_sz[m];
+            mw = mw>1?mw/2:1; mh = mh>1?mh/2:1;
+        }
+    }
+
+    SDL_EndGPUCopyPass(cp);
+    SDL_SubmitGPUCommandBuffer(cmd);
+    SDL_ReleaseGPUTransferBuffer(dev, tb);
+
+    SDL_GPUSamplerCreateInfo si = {};
+    si.min_filter     = SDL_GPU_FILTER_LINEAR;
+    si.mag_filter     = SDL_GPU_FILTER_LINEAR;
+    si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+    si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+    si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+    si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
+    si.min_lod        = 0.f;
+    si.max_lod        = (float)(ref_mips - 1);
+    sdl_sampler_ = SDL_CreateGPUSampler(dev, &si);
+
+    w_ = ref_w; h_ = ref_h;
+    for (int i=0;i<count;++i) md::fs_free(layers[i].buf);
+    free(layers);
+
+    if (!sdl_sampler_) { SDL_ReleaseGPUTexture(dev, sdl_tex_); sdl_tex_ = nullptr; return false; }
+    return true;
+}
+#endif // MD_SDL_GPU (InitFromDDSArray)
 
 void GpuTexture::Shutdown() {
 #ifdef MD_SDL_GPU

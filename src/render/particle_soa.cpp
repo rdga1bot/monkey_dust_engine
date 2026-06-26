@@ -73,14 +73,30 @@ void ParticleSoA::Update(float dt) {
     }
 }
 
-int ParticleSoA::BuildVertices(ParticleVertex* out, int max_out) const {
+int ParticleSoA::BuildVertices(ParticleVertex* out, int max_out,
+                                float cam_x, float cam_y, float cam_z,
+                                float max_dist) const {
+    const float max_dist_sq = max_dist > 0.0f ? max_dist * max_dist : 0.0f;
     int count = 0;
     for (int i = 0; i < active_count && count < max_out; ++i) {
         if (life[i] <= 0.0f) continue;
+        if (max_dist_sq > 0.0f) {
+            float dx = px[i] - cam_x, dy = py[i] - cam_y, dz = pz[i] - cam_z;
+            if (dx*dx + dy*dy + dz*dz > max_dist_sq) continue;
+        }
         ParticleVertex& v = out[count++];
         v.x = px[i]; v.y = py[i]; v.z = pz[i];
         v.size = size[i];
         v.r = r[i]; v.g = g[i]; v.b = b[i]; v.a = a[i];
     }
     return count;
+}
+
+bool ParticleSoA::ShouldEmit(float ox, float oy, float oz, float extent,
+                              float cam_x, float cam_y, float cam_z,
+                              float vis_dist_max) {
+    float cull_r = extent * PARTICLE_BOUNDING_RADIUS_MULT;
+    float eff_dist = vis_dist_max + PARTICLE_VIS_PADDING + cull_r;
+    float dx = ox - cam_x, dy = oy - cam_y, dz = oz - cam_z;
+    return (dx*dx + dy*dy + dz*dz) <= (eff_dist * eff_dist);
 }

@@ -37,7 +37,8 @@ void ParticleRenderer::Draw(Mat4 viewProj, Vec3 cam_pos) {
     if (!ptr) return;
 
     int count = ParticleSoA::Get().BuildVertices(
-        static_cast<ParticleVertex*>(ptr), MAX_PARTICLES);
+        static_cast<ParticleVertex*>(ptr), MAX_PARTICLES,
+        cam_pos.x, cam_pos.y, cam_pos.z, PARTICLE_VIS_DIST_DEFAULT);
     vbuf_.Unmap();
 
     if (count <= 0) {
@@ -45,7 +46,6 @@ void ParticleRenderer::Draw(Mat4 viewProj, Vec3 cam_pos) {
         return;
     }
 
-    // Record and immediately execute draw commands.
     float cp[3] = { cam_pos.x, cam_pos.y, cam_pos.z };
 
     cmd_.BindPipeline(&pipeline_);
@@ -65,11 +65,12 @@ void ParticleRenderer::Shutdown() {
 
 #ifdef MD_SDL_GPU
 
-int ParticleRenderer::PrepareSDLGPU(SDL_GPUCommandBuffer* cmd) {
+int ParticleRenderer::PrepareSDLGPU(SDL_GPUCommandBuffer* cmd, Vec3 cam_pos) {
     void* ptr = vbuf_.MapWrite();
     if (!ptr) return 0;
     int count = ParticleSoA::Get().BuildVertices(
-        static_cast<ParticleVertex*>(ptr), MAX_PARTICLES);
+        static_cast<ParticleVertex*>(ptr), MAX_PARTICLES,
+        cam_pos.x, cam_pos.y, cam_pos.z, PARTICLE_VIS_DIST_DEFAULT);
     vbuf_.Unmap();
     if (count > 0) vbuf_.Upload(cmd);
     return count;

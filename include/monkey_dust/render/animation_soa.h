@@ -133,9 +133,9 @@ public:
         memset(states_, 0, sizeof(states_));
         for (int i = 0; i < MAX_ANIMATED_NPC; ++i)
             states_[i].slot = (uint32_t)i;
-        // mat4 = 64 bytes; finalBoneMatrices: MAX_ANIMATED_NPC * MAX_BONES * 64
-        // bones_ssbo_ is written by CPU/compute and read in vertex shaders.
-        bones_ssbo_.Init(MAX_ANIMATED_NPC * MAX_BONES * 64,
+        // BoneQsT = 48 bytes (Q=16 + s=16 + T=16); finalBones: MAX_ANIMATED_NPC * MAX_BONES * 48
+        // Written by skinning.comp; read by animated.vert via qst_to_mat4().
+        bones_ssbo_.Init(MAX_ANIMATED_NPC * MAX_BONES * 48,
                          SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ);
         // anim_state_ring_ is written by CPU each frame — ring-buffered.
         anim_state_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState)), 5);
@@ -182,8 +182,23 @@ public:
     void SetClip(int slot, uint8_t clip_id) {
         if (MD_UNLIKELY(slot < 0 || slot >= MAX_ANIMATED_NPC)) return;
         if (states_[slot].clip_id == clip_id) return;
+
+        // KEN-ANIM-1: sync window — if old clip is near its end (within ANIM_SYNC_WINDOW),
+        // start new clip at the same fractional phase to avoid a pop at the loop point.
+        float new_t = 0.0f;
+        uint32_t old_cid = states_[slot].clip_id;
+        float    old_t   = states_[slot].time_s;
+        if (old_cid < (uint32_t)clips_count_ && clip_id < (uint8_t)clips_count_) {
+            float old_dur = clips_[old_cid].duration_s;
+            float new_dur = clips_[clip_id].duration_s;
+            if (old_dur > 0.f && new_dur > 0.f &&
+                (old_dur - old_t) <= ANIM_SYNC_WINDOW) {
+                new_t = (old_t / old_dur) * new_dur;
+            }
+        }
+
         states_[slot].clip_id = clip_id;
-        states_[slot].time_s  = 0.0f;
+        states_[slot].time_s  = new_t;
     }
 
     void Advance(float dt) {

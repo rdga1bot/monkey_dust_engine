@@ -46,6 +46,23 @@ static constexpr int MAX_DRAW_CALLS_PER_STREAM = 200;
 static constexpr int MAX_DRAW_STREAMS          = 2;
 static constexpr int MAX_DRAW_CALLS_TOTAL      = MAX_DRAW_CALLS_PER_STREAM * MAX_DRAW_STREAMS;
 
+// ── Kenshi RE animation blend constants (RE 2026-06-25, HIGH confidence, 6+ batches) ──
+// Clip blend-out
+static constexpr float ANIM_BLEND_OUT_START     = 0.96f;  // start fade at 96% of clip_length
+// Manual-control weight ramp (e.g. player taking control from AI)
+static constexpr float ANIM_MANUAL_INIT_WEIGHT  = 0.05f;  // initial weight when entering manual
+static constexpr float ANIM_MANUAL_WEIGHT_RAMP  = 0.01f;  // weight increment per logic tick (10Hz → ~10s to full)
+// Ragdoll→anim recovery
+static constexpr float ANIM_RAGDOLL_WEIGHT      = 0.05f;  // initial blend weight on recovery
+static constexpr float ANIM_RAGDOLL_SPEED       = 0.01f;  // blend speed per tick
+static constexpr float ANIM_RAGDOLL_WINDOW      = 5.0f;   // max recovery window in seconds
+static constexpr float ANIM_RAGDOLL_SEC_WEIGHT  = 0.4f;   // secondary anim weight during recovery
+// Locomotion playback speed clamp
+static constexpr float ANIM_LOCO_SPEED_MIN      = 0.4f;   // min playback speed (slow walk)
+static constexpr float ANIM_LOCO_SPEED_MAX      = 1.0f;   // max playback speed (run)
+// Sync window for finisher/combo moves
+static constexpr float ANIM_SYNC_WINDOW         = 0.1f;   // accept sync if within 0.1s of sync_time
+
 // Per-NPC animation state — 16 bytes, matches std430 AnimState in skinning.comp
 struct AnimNpcState {
     uint32_t slot;
@@ -183,7 +200,10 @@ public:
             uint32_t cid = states_[i].clip_id;
             float dur = (cid < (uint32_t)clips_count_) ? clips_[cid].duration_s : 1.0f;
             states_[i].time_s += dt;
-            if (states_[i].time_s >= dur) states_[i].time_s -= dur;
+            // Kenshi RE progress wrap: >2.0 → hard reset; >1.0 → floor-wrap.
+            float prog = (dur > 0.f) ? states_[i].time_s / dur : 0.f;
+            if (prog > 2.0f) states_[i].time_s = 0.f;
+            else if (states_[i].time_s >= dur) states_[i].time_s -= dur;
         }
     }
 

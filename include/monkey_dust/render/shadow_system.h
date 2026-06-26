@@ -31,27 +31,27 @@ static inline Vec4 ShadowVec4Transform(Vec4 v, Mat4 m) {
 
 
 // ─────────────────────────────────────────────────────────
-// ShadowSystem — 3-cascade CSM for the directional sun.
+// ShadowSystem — 4-cascade CSM for the directional sun.
 //
-// Cascades (dist from camera): near 0-20 m, mid 20-60 m, far 60-150 m.
-// Per cascade: 1024×1024 GL_DEPTH_COMPONENT24 depth texture.
+// Cascades (dist from camera): near 0-20 m, mid 20-60 m, far 60-150 m, ultra 150-350 m.
+// Per cascade: 1024×1024 depth texture.
 //
 // Per-frame flow (caller side):
-//   1. Update(camera, sun_dir)               — recompute lightViewProj[3]
+//   1. Update(camera, sun_dir)               — recompute lightViewProj[4]
 //   2. transform_ssbo.Bind(0); bones.Bind(4) — caller pre-binds SSBOs
 //   3. RenderShadowPass(active_count)        — shadow cull + depth pass
 //   4. (inside DrawNPCs, shader enabled):
-//      BindShadowMaps(shader)                — tex units 5/6/7 + uniforms
+//      BindShadowMaps(shader)                — tex units 5/6/7/8 + uniforms
 //
 // SSBOs used internally: binding 6 = shadow visible, 7 = shadow indirect
-// Texture units assigned: 5/6/7 = cascade 0/1/2
+// Texture units assigned: 5/6/7/8 = cascade 0/1/2/3
 // ─────────────────────────────────────────────────────────
 
 class ShadowSystem {
 public:
-    static constexpr int   NUM_CASCADES = 3;
+    static constexpr int   NUM_CASCADES = 4;
     static constexpr int   MAP_SIZE     = 1024;
-    static constexpr float SPLITS[4]    = { 0.1f, 20.0f, 60.0f, 150.0f };
+    static constexpr float SPLITS[5]    = { 0.1f, 20.0f, 60.0f, 150.0f, 350.0f }; // VBfA-OPT-2
 
     static ShadowSystem& Get() {
         static ShadowSystem inst;
@@ -59,7 +59,7 @@ public:
     }
 
     Mat4  lightViewProj[NUM_CASCADES]  = {};
-    float cascade_splits[NUM_CASCADES] = { SPLITS[1], SPLITS[2], SPLITS[3] };
+    float cascade_splits[NUM_CASCADES] = { SPLITS[1], SPLITS[2], SPLITS[3], SPLITS[4] };
 
     // Read-only access to cascade depth textures (SDL_GPU sampler binding, Step 11).
     const GpuDepthTexture& GetCascadeDepth(int k) const { return shadow_depth_[k]; }
@@ -122,7 +122,7 @@ public:
             float maxDistSq; float _p2[3];
             int   totalCount; int _p3[3];
         } ubo = { {cam_pos_.x, cam_pos_.y, cam_pos_.z}, 0.f,
-                   60.f*60.f, {}, active_npc_count, {} };
+                   150.f*150.f, {}, active_npc_count, {} }; // VBfA-OPT-2: extend to cascade 2 far
         GpuComputePass::StorageBindings b;
         b.cmd = cmd;
         b.rw_buffers[0] = { shadow_vis_buf_.SDLBuffer(), false };

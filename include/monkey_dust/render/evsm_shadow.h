@@ -34,7 +34,7 @@ class EvsmShadow {
 public:
     static EvsmShadow& Get() { static EvsmShadow inst; return inst; }
 
-    static constexpr int   NUM_CASCADES    = 3;
+    static constexpr int   NUM_CASCADES    = 4; // VBfA-OPT-2: 4-cascade EVSM
     static constexpr int   DEFAULT_MAP_SIZE = 1024;
     static constexpr float DEFAULT_WARP_C   = 40.f;
 

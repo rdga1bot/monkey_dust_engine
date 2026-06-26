@@ -21,10 +21,11 @@
 // 128   light_vp[0]       mat4   64B
 // 192   light_vp[1]       mat4   64B
 // 256   light_vp[2]       mat4   64B
-// 320   cascade_splits    vec4   16B
-// 336   evsm_warp_c       float   4B
-// 340   _pad[3]           float  12B
-// 352   total
+// 320   light_vp[3]       mat4   64B  (VBfA-OPT-2: 4th cascade)
+// 384   cascade_splits    vec4   16B
+// 400   evsm_warp_c       float   4B
+// 404   _pad[3]           float  12B
+// 416   total
 struct alignas(16) DeferredAmbientUBO {
     float sun_dir[4];            //   0
     float sun_color[4];          //  16
@@ -34,12 +35,12 @@ struct alignas(16) DeferredAmbientUBO {
     float shadow_height_scalar;  //  56
     float shadow_height_offset;  //  60
     float inv_view_proj[16];     //  64
-    float light_vp[3][16];       // 128
-    float cascade_splits[4];     // 320
-    float evsm_warp_c;           // 336
-    float _pad[3];               // 340
+    float light_vp[4][16];       // 128
+    float cascade_splits[4];     // 384
+    float evsm_warp_c;           // 400
+    float _pad[3];               // 404
 };
-static_assert(sizeof(DeferredAmbientUBO) == 352,
+static_assert(sizeof(DeferredAmbientUBO) == 416,
               "DeferredAmbientUBO size must match deferred_lighting.frag std140");
 
 namespace md {
@@ -87,8 +88,8 @@ void DeferredLightingSystem::Init(SDL_GPUDevice* dev, int w, int h) {
     sampler_linear_ = SDL_CreateGPUSampler(dev, &si);
 
     // Fullscreen triangle pipeline
-    // frag samplers → set=2 binding 0..5: RT0, RT1, Depth, EVSM0, EVSM1, EVSM2
-    // frag UBO      → set=3 binding=0: DeferredAmbientUBO (352B)
+    // frag samplers → set=2 binding 0..6: RT0, RT1, Depth, EVSM0-3
+    // frag UBO      → set=3 binding=0: DeferredAmbientUBO (416B)
     GpuPipeline::Desc d;
     d.vert_path           = "shaders/deferred_lighting.vert";
     d.frag_path           = "shaders/deferred_lighting.frag";
@@ -100,7 +101,7 @@ void DeferredLightingSystem::Init(SDL_GPUDevice* dev, int w, int h) {
     d.raster.cull_back    = false;
     d.vert_uniform_bufs   = 0;
     d.frag_uniform_bufs   = 1;
-    d.frag_samplers       = 6;   // slots 0-2: RT0/RT1/Depth; slots 3-5: EVSM×3
+    d.frag_samplers       = 7;   // slots 0-2: RT0/RT1/Depth; slots 3-6: EVSM×4
     d.has_depth_target    = false;
     d.depth_only          = false;
 
@@ -144,16 +145,17 @@ void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
         SDL_BindGPUFragmentSamplers(pass, 0, b, 3);
     }
 
-    // ── slots 3-5: EVSM moment maps → SPIR-V set=2 binding=3/4/5 ────────────
+    // ── slots 3-6: EVSM moment maps → SPIR-V set=2 binding=3/4/5/6 ─────────
     const md::EvsmShadow& evsm = md::EvsmShadow::Get();
     const bool evsm_ready = evsm.IsReady() && depth_tex;
     {
         SDL_GPUTexture* fallback = gbuf.RT0();  // safe dummy (never sampled if !evsm_ready)
-        SDL_GPUTextureSamplerBinding b[3] = {};
+        SDL_GPUTextureSamplerBinding b[4] = {};
         b[0] = { evsm_ready ? evsm.MomentTex(0) : fallback, sampler_linear_ };
         b[1] = { evsm_ready ? evsm.MomentTex(1) : fallback, sampler_linear_ };
         b[2] = { evsm_ready ? evsm.MomentTex(2) : fallback, sampler_linear_ };
-        SDL_BindGPUFragmentSamplers(pass, 3, b, 3);   // slots 3,4,5
+        b[3] = { evsm_ready ? evsm.MomentTex(3) : fallback, sampler_linear_ };
+        SDL_BindGPUFragmentSamplers(pass, 3, b, 4);   // slots 3,4,5,6
     }
 
     // ── frag UBO slot=0 → SPIR-V set=3 binding=0: DeferredAmbientUBO ────────
@@ -189,7 +191,7 @@ void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
         ubo.cascade_splits[0] = ss.cascade_splits[0];  // 20.0m
         ubo.cascade_splits[1] = ss.cascade_splits[1];  // 60.0m
         ubo.cascade_splits[2] = ss.cascade_splits[2];  // 150.0m
-        ubo.cascade_splits[3] = 0.f;
+        ubo.cascade_splits[3] = ss.cascade_splits[3];  // 350.0m (VBfA-OPT-2)
 
         ubo.evsm_warp_c = evsm_ready ? evsm.WarpC() : 40.f;
 

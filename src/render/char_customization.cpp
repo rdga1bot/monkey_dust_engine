@@ -25,6 +25,7 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     for (int i = 0; i < MAX_SKIN_BONES; ++i) {
         out.bone[i][0] = 1.f; out.bone[i][1] = 1.f; out.bone[i][2] = 1.f;
         out.pos [i][0] = 1.f; out.pos [i][1] = 1.f; out.pos [i][2] = 1.f;
+        out.rot [i]    = 0.f;
     }
 
     if (bone_count <= 0) return;
@@ -47,9 +48,7 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     // slider=100 → factor=1.0 → no deformation (mesh baked at slider=100).
     float H   = cl(body[2]  / 100.f);  // Height
     float Fr  = cl(body[3]  / 100.f);  // Frame
-    // body[4] = Posture (neutral=35, range 0-70). Full spine lean needs bone rotation
-    // (not in CharScales). Small positional tilt applied below via pelvis pos.
-    float Pt  = body[4] / 35.f;        // Posture: 1.0 at neutral=35
+    float Pt  = body[4] / 35.f;        // Posture: 1.0 at neutral=35; 0=hunch, 2=erect
     float SS  = cl(body[5]  /  67.5f); // Shoulder set — neutral=67.5
     float NP  = cl(body[6]  /  52.5f); // Neck position — neutral=52.5
     float LL  = cl(body[7]  / 100.f);  // Leg length
@@ -120,13 +119,17 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     setBS(12, H, comp(Hips,0.6f)*Fr, comp(Hips,0.6f)*St*Fr);
     setBS(13, H, Wa*Fr, St*Fr);
     out.pos[13][0] = H;  // Spine1 from Spine
-    // Posture: scale spine Z position (forward lean). Bone rotation unavailable in CharScales,
-    // so this gives subtle shift rather than true tilt — better than nothing.
-    float PtZ = 1.f + (Pt - 1.f) * 0.5f;  // ±50% of bind Z at extremes
-    out.pos[13][2] = PtZ;
     setBS(14, H, comp(Ch,0.45f)*Fr, comp(Ch,0.9f)*Fr);
-    out.pos[14][0] = H;
-    out.pos[14][2] = PtZ;
+    out.pos[14][0] = H;  // Spine2 from Spine1
+
+    // Posture lean: Pt=1 neutral, Pt<1 slouched (forward), Pt>1 erect (backward).
+    // lean_rad > 0 = forward hunch; lean_rad < 0 = erect/backward.
+    {
+        float lean_rad = (1.f - Pt) * 0.18f;  // ±10.3° at slider extremes
+        out.rot[12] = lean_rad * 0.25f;  // Spine base — small contribution
+        out.rot[13] = lean_rad * 0.45f;  // Spine1 — main lean
+        out.rot[14] = lean_rad * 0.30f;  // Spine2 upper — smaller contribution
+    }
 
     // ── Arms ──────────────────────────────────────────────────────────────────
     // Kenshi UI clamps arm bulk to ~30 minimum; below that LBS collapses arm verts

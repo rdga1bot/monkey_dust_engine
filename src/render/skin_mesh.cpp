@@ -482,6 +482,19 @@ void SkinMesh::GetFinalBonesScaled(int clip_idx, float time_s,
         lt[1] *= scales.pos[i][1];
         lt[2] *= scales.pos[i][2];
 
+        // Apply extra local-X rotation (CharScales::rot) — used for Posture spine lean.
+        // Compose: lq = lq ⊗ rx  (post-multiply = tilt in bone's own local frame)
+        if (scales.rot[i] != 0.f) {
+            float half = scales.rot[i] * 0.5f;
+            float sx = sinf(half), cx = cosf(half);
+            // rx = (sx, 0, 0, cx) in (x,y,z,w) quaternion notation
+            float q0 = lq[0]*cx + lq[3]*sx;
+            float q1 = lq[1]*cx - lq[2]*sx;
+            float q2 = lq[2]*cx + lq[1]*sx;
+            float q3 = lq[3]*cx - lq[0]*sx;
+            lq[0]=q0; lq[1]=q1; lq[2]=q2; lq[3]=q3;
+        }
+
         mat4_from_trs(local, lt, lq, bind_s_[i]);
 
         int pi = parent_[i];

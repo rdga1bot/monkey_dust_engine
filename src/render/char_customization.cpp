@@ -122,13 +122,15 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     setBS(14, H, comp(Ch,0.45f)*Fr, comp(Ch,0.9f)*Fr);
     out.pos[14][0] = H;  // Spine2 from Spine1
 
-    // Posture lean: Pt=1 neutral, Pt<1 slouched (forward), Pt>1 erect (backward).
-    // lean_rad > 0 = forward hunch; lean_rad < 0 = erect/backward.
+    // Posture lean: Pt=1 neutral, Pt<1 slouch (forward), Pt>1 erect (backward).
+    // Realistic kyphosis: thoracic spine curves forward; head compensates to stay level.
     {
-        float lean_rad = (1.f - Pt) * 0.18f;  // ±10.3° at slider extremes
-        out.rot[12] = lean_rad * 0.25f;  // Spine base — small contribution
-        out.rot[13] = lean_rad * 0.45f;  // Spine1 — main lean
-        out.rot[14] = lean_rad * 0.30f;  // Spine2 upper — smaller contribution
+        float lean_rad = (1.f - Pt) * 0.22f;  // ±12.6° max at slider 0/99
+        out.rot[12] = lean_rad * 0.15f;   // Spine (lumbar) — small
+        out.rot[13] = lean_rad * 0.50f;   // Spine1 (thoracic) — main kyphosis
+        out.rot[14] = lean_rad * 0.35f;   // Spine2 (upper thoracic)
+        out.rot[20] = lean_rad * 0.15f;   // Neck follows spine
+        out.rot[21] = -lean_rad * 0.60f;  // Head compensates: face stays level
     }
 
     // ── Arms ──────────────────────────────────────────────────────────────────

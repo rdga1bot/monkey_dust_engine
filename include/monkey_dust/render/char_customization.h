@@ -12,12 +12,13 @@ static constexpr int CHARCC_FACE_N = 24;
 // Per-bone scale factors computed from body[]/face[] slider values.
 // bone[i] = vertex/geometry scale (setBoneSize equivalent).
 // pos[i]  = translation scale applied to bind-pose bone offset (setBonePositionalSize).
-// rot[i]  = extra local-X rotation in radians (0=none); composited onto animation quat.
+// rot[i]  = extra local-Y rotation in radians (0=none); composited onto animation quat.
+//   Biped rig: Y = sagittal axis. Positive = forward flex (hunch), negative = extension.
 // All values default to {1,1,1}/{1,1,1}/0 = identity (no deformation).
 struct CharScales {
     float bone[MAX_SKIN_BONES][3];  // vertex scale per bone (x/y/z)
     float pos [MAX_SKIN_BONES][3];  // translation scale per bone (x/y/z)
-    float rot [MAX_SKIN_BONES];     // extra rotation around local X axis (radians)
+    float rot [MAX_SKIN_BONES];     // extra rotation around local Y axis (radians)
 };
 
 // Compute CharScales from body[18]+face[24] slider values.

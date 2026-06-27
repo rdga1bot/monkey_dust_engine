@@ -4,7 +4,6 @@
 #include <monkey_dust/render/char_customization.h>
 #include <monkey_dust/render/skin_mesh.h>
 #include <cstring>
-#include <cmath>
 
 // ── CharCustomization_ComputeScales ──────────────────────────────────────────
 // Direct port of SetBoneScalesFromDef() bone formulas.
@@ -48,13 +47,11 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     // slider=100 → factor=1.0 → no deformation (mesh baked at slider=100).
     float H   = cl(body[2]  / 100.f);  // Height
     float Fr  = cl(body[3]  / 100.f);  // Frame
-    // Kenshi XML: no mid= → neutral = (min+max)/2.
-    // Posture:      min=0,  max=70  → neutral=35
-    // Shoulder set: min=45, max=90  → neutral=67.5
-    // Neck position: min=25, max=80 → neutral=52.5
-    float Po  = cl(body[4]  /  35.0f);  // Posture
-    float SS  = cl(body[5]  /  67.5f);  // Shoulder set — neutral=67.5, not 100
-    float NP  = cl(body[6]  /  52.5f);  // Neck position — neutral=52.5, not 100
+    // body[4] = Posture (neutral=35, range 0-70). Full spine lean needs bone rotation
+    // (not in CharScales). Small positional tilt applied below via pelvis pos.
+    float Pt  = body[4] / 35.f;        // Posture: 1.0 at neutral=35
+    float SS  = cl(body[5]  /  67.5f); // Shoulder set — neutral=67.5
+    float NP  = cl(body[6]  /  52.5f); // Neck position — neutral=52.5
     float LL  = cl(body[7]  / 100.f);  // Leg length
     float Sh  = cl(body[8]  / 100.f);  // Shoulders
     float Ab  = cl(body[9]  / 100.f);  // Arm bulk
@@ -74,7 +71,7 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     float overall_XZ = legXZ;  // used by thighs/calves
     float leg_Y = cl(H + LL - 1.f);
 
-    setBS(1, H, cl(Hips * Fr), cl(Hips * Fr));
+    setBS(1, H, comp(Hips,0.6f)*Fr, comp(Hips,0.6f)*Fr);
 
     // Thighs [2,7]: setBoneSize + setBonePositionalSize Y (lateral)
     setBS(2, leg_Y * 0.95f, overall_XZ, overall_XZ);
@@ -84,117 +81,115 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     // RE's setBonePositionalSize Y-component maps to bind_t[][0] (~0 for thigh bones
     // in this rig), so it has no visible effect here — applied for axis consistency.
     float thigh_pos = cl(Fr * (2.f - H) * Hips);
-    out.pos[2][0] = thigh_pos;
-    out.pos[7][0] = thigh_pos;
+    out.pos[2][1] = thigh_pos;
+    out.pos[7][1] = thigh_pos;
 
-    // Calves [3,8]: XZ quadratic + positional X (bind_t X=0.439)
+    // Calves [3,8]: posScale[0] = thigh bone length scale = leg_Y*0.95.
+    // Kenshi RE: Calf has no explicit setBonePositionalSize because OGRE's setBoneSize on
+    // Thigh propagates automatically to child joints. Our engine has no propagation → simulate.
+    // ty formula in game.h: (s_leg_y-0.95)*0.9 = 0.855*(leg_Y-1) exactly matches this extension.
+    float thigh_scale = leg_Y * 0.95f;
     float calf_XZ = cl((2.f - LgS) * LgB * Fr);
-    setBS(3, leg_Y * calf_XZ * 0.95f, calf_XZ*calf_XZ, calf_XZ*calf_XZ);
-    setBS(8, leg_Y * calf_XZ * 0.95f, calf_XZ*calf_XZ, calf_XZ*calf_XZ);
-    out.pos[3][0] = leg_Y;
-    out.pos[8][0] = leg_Y;
+    if (calf_XZ < 0.30f) calf_XZ = 0.30f;  // prevent near-zero LBS collapse at min bulk
+    // wy = thigh_scale only — leg bulk controls girth, not calf length (was thigh_scale*calf_XZ)
+    // wx/wz = linear calf_XZ — quadratic (calf_XZ²) caused inflated-ball look at high bulk
+    setBS(3, thigh_scale, calf_XZ, calf_XZ);
+    setBS(8, thigh_scale, calf_XZ, calf_XZ);
+    out.pos[3][0] = thigh_scale;
+    out.pos[8][0] = thigh_scale;
 
-    // Feet [4,9]: positional X (bind_t X=0.461)
-    float FtH = cl(Ft * H);
-    setBS(4, cl(LL * FtH), cl(FtH*FtH), cl(FtH*FtH));
-    setBS(9, cl(LL * FtH), cl(FtH*FtH), cl(FtH*FtH));
-    out.pos[4][0] = leg_Y;
-    out.pos[9][0] = leg_Y;
+    // Feet [4,9]: Kenshi RE — setBoneSize on Foot NOT found in leg slider function.
+    // Only Feet slider (Ft) scales foot vertex geometry. H does NOT scale foot verts
+    // (adding H caused foot to appear bloated at H=120 and confused bone-based grounding).
+    // pos[4/9] propagates the calf extension so foot bone tracks the stretched calf tip.
+    float FtS = cl(Ft);
+    setBS(4, cl(LL * FtS), cl(FtS*FtS), cl(FtS*FtS));
+    setBS(9, cl(LL * FtS), cl(FtS*FtS), cl(FtS*FtS));
+    out.pos[4][0] = thigh_scale;  // foot tracks calf bone length extension
+    out.pos[9][0] = thigh_scale;
 
     // Toes [5,10]
-    float FtH2 = FtH * FtH;
+    float FtS2 = FtS * FtS;
     for (int ji = 5; ji <= 10; ji += 5) {
-        out.bone[ji][0] = FtH2; out.bone[ji][1] = FtH2; out.bone[ji][2] = FtH2;
+        out.bone[ji][0] = FtS2; out.bone[ji][1] = FtS2; out.bone[ji][2] = FtS2;
     }
-    out.pos[5][2]  = FtH;
-    out.pos[10][2] = FtH;
+    out.pos[5][2]  = FtS;
+    out.pos[10][2] = FtS;
 
     // ── Torso ─────────────────────────────────────────────────────────────────
-    // fVar17=H is comp()'d with 0.6 for spine width; Waist/Stomach used direct.
-
-    // Spine [12]: Vector3(comp(Hips,0.6)*Fr, H, comp(Hips,0.6)*Stomach*Fr)
     setBS(12, H, comp(Hips,0.6f)*Fr, comp(Hips,0.6f)*St*Fr);
-
-    // Spine1 [13]: Vector3(Waist*Fr, H, Stomach*Fr) — no extra comp()
     setBS(13, H, Wa*Fr, St*Fr);
-    out.pos[13][0] = H;  // Spine1 from Spine (bind X=0.141)
-
-    // Spine2 [14]: Vector3(comp(Chest,0.45)*Fr, H, comp(Chest,0.9)*Fr)
+    out.pos[13][0] = H;  // Spine1 from Spine
+    // Posture: scale spine Z position (forward lean). Bone rotation unavailable in CharScales,
+    // so this gives subtle shift rather than true tilt — better than nothing.
+    float PtZ = 1.f + (Pt - 1.f) * 0.5f;  // ±50% of bind Z at extremes
+    out.pos[13][2] = PtZ;
     setBS(14, H, comp(Ch,0.45f)*Fr, comp(Ch,0.9f)*Fr);
-    out.pos[14][0] = H;  // Spine2 from Spine1 (bind X=0.157)
+    out.pos[14][0] = H;
+    out.pos[14][2] = PtZ;
 
     // ── Arms ──────────────────────────────────────────────────────────────────
-    // Engine note: bone[i][j] only scales vertex skinning — it does NOT propagate through
-    // the skeleton hierarchy. pos[i][j] is the only way to move a bone relative to parent.
-    // We must manually simulate OGRE's parent-scale propagation via pos[].
+    // Kenshi UI clamps arm bulk to ~30 minimum; below that LBS collapses arm verts
+    // to bone center and idle-pose angle makes them appear horizontal (T-pose spread).
+    float Ab_eff = Ab < 0.30f ? 0.30f : Ab;
+    float AbFr = Ab_eff * Fr;
+    float AbZ  = comp(Ab_eff, 1.5f) * Fr;
 
-    float AbFr = Ab * Fr;
-    float AbZ  = comp(Ab, 1.5f) * Fr;
-
-    // as UpperArm pre-multiplication = Vector3(AbFr, H, AbZ).
+    // Clavicle length (wy) = shoulder width (Sh), NOT arm bulk.
+    // Arm bulk drove clavicle outward, creating a sphere at the shoulder at high Ab.
     for (int ji = 15; ji <= 25; ji += 10) {
-        out.bone[ji][0] = AbFr; out.bone[ji][1] = H; out.bone[ji][2] = AbZ;
+        out.bone[ji][0] = Sh; out.bone[ji][1] = 1.f; out.bone[ji][2] = 1.f;
     }
-    // Clavicle positional from Spine2: bind_t=(+0.209 up, ±0.021 lat, -0.081 fwd).
-    // KenshiLib confirmed: setPosture(posture, neck, shoulders) calls
-    //   setBonePositionalSize(Clavicle, Vector3(SS, 1, 1))
-    // In OGRE: Clavicle X-pos = Spine2_X_scale(H) × bind_t[0] × SS — hierarchy auto-propagates.
-    // Our engine has no auto-propagation → multiply manually: H × SS.
-    // [0] = H * SS:               vertical position (OGRE-equivalent: Spine2 height × shoulder set)
-    // [1] = comp(Ch,0.45) * Fr:   lateral (chest width propagation, 0.021m component)
-    // [2] = comp(Ch,0.9)  * Fr:   depth/forward (chest depth propagation, 0.081m dominant component)
     float ChW = comp(Ch, 0.45f) * Fr;
     float ChD = comp(Ch, 0.9f)  * Fr;
     out.pos[15][0] = H * SS;  out.pos[15][1] = ChW;  out.pos[15][2] = ChD;
     out.pos[25][0] = H * SS;  out.pos[25][1] = ChW;  out.pos[25][2] = ChD;
 
+    // RE only confirmed Z (depth) = comp(Ab,1.5) for UpperArm — no extra Fr multiplier.
+    // Arm LENGTH (wy) tracks HEIGHT only. Arm girth (wx,wz) tracks Ab linearly.
+    // pos[child][0] = parent wy = H, same pattern as calf pos = thigh_scale.
     for (int ji = 16; ji <= 26; ji += 10) {
-        out.bone[ji][0] = AbFr*AbFr; out.bone[ji][1] = H*AbFr; out.bone[ji][2] = AbZ*AbFr;
+        out.bone[ji][0] = H;    // wy: arm length = height only
+        out.bone[ji][1] = AbFr; // wx: width — linear bulk×frame (no H, no square)
+        out.bone[ji][2] = AbZ;  // wz: depth = comp(Ab,1.5)*Fr — RE confirmed, no extra *Ab
     }
-    // UpperArm positional from Clavicle: Kenshi setBonePositionalSize(UpperArm, (Sh*comp(Ch,0.45),1,1)).
-    // setBonePositionalSize is absolute — does NOT compound with parent Clavicle bone scale (AbFr).
     float arm_pos = cl(Sh * comp(Ch, 0.45f));
     out.pos[16][0] = arm_pos;
     out.pos[26][0] = arm_pos;
 
-    // Forearms [17,27]: setBoneSize = Vector3(AbFr, H, AbFr) *= AbFr = (AbFr², H·AbFr, AbFr²).
     for (int ji = 17; ji <= 27; ji += 10) {
-        out.bone[ji][0] = AbFr*AbFr; out.bone[ji][1] = H*AbFr; out.bone[ji][2] = AbFr*AbFr;
+        out.bone[ji][0] = H;    // wy: same height-driven length
+        out.bone[ji][1] = AbFr; // wx: linear (no H, no square)
+        out.bone[ji][2] = AbFr; // wz: linear (was AbFr² — too aggressive)
     }
-    // Forearm positional from UpperArm — OGRE auto-propagates UpperArm X-scale (AbFr²).
-    // Our engine has no auto-propagation → simulate: pos[17][0] = AbFr².
-    out.pos[17][0] = AbFr*AbFr;
-    out.pos[27][0] = AbFr*AbFr;
+    out.pos[17][0] = H;
+    out.pos[27][0] = H;
 
-    // → (AbFr·Hn², H·Hn², AbFr·Hn²). Direct port, same local axes as Kenshi.
     for (int ji = 18; ji <= 28; ji += 10) {
-        out.bone[ji][0] = AbFr*Hn*Hn; out.bone[ji][1] = H*Hn*Hn; out.bone[ji][2] = AbFr*Hn*Hn;
+        out.bone[ji][0] = H*Hn*Hn;   // wy: hand length tracks height + hand size
+        out.bone[ji][1] = AbFr*Hn;   // wx: removed extra H
+        out.bone[ji][2] = AbFr*Hn*Hn;// wz
     }
-    // Hand positional from Forearm — same propagation logic as Forearm from UpperArm.
-    out.pos[18][0] = AbFr*AbFr;
-    out.pos[28][0] = AbFr*AbFr;
+    out.pos[18][0] = H;
+    out.pos[28][0] = H;
 
     // ── Head/Neck ─────────────────────────────────────────────────────────────
-    float Nc  = cl(face[2]  / 100.f);  // Neck (overall neck scale — face[2])
-    float Nw  = cl(face[3]  / 100.f);  // Neck width
-    float Nl  = cl(face[4]  / 100.f);  // Neck length
-    float jaw = cl(face[17] / 100.f);  // Jaw
+    float Nc  = cl(face[2]  / 100.f);
+    float Nw  = cl(face[3]  / 100.f);
+    float Nl  = cl(face[4]  / 100.f);
+    float jaw = cl(face[17] / 100.f);
 
-    // Neck [20]: original Vector3(NeckWidth*Fr, NeckLength/100, "Neck"-slider*Fr) —
-    // Z uses the dedicated "Neck" slider (Nc), not "Jaw"; vertical bones swap X/Y in
-    // our rig (confirmed via legs/pelvis/head), so length (orig Y) lands in bone[][0].
     setBS(20, Nl, Nw*Fr, Nc*Fr);
-    out.pos[20][0] = H;               // Neck from Spine2 (bind X=0.297)
-    out.pos[20][1] = comp(NP, 0.4f);  // Neck position: vertical attach offset
+    // NP controls neck HEIGHT (how far along spine the neck is) — not lateral offset.
+    // pos[20][1] (lateral Y) was wrong: bind_t Y ≈ 0 so it had zero visible effect.
+    out.pos[20][0] = H * comp(NP, 0.4f);
 
-    // Head [21]
-    float Hd  = cl(face[0] / 100.f);  // Head size
+    float Hd  = cl(face[0] / 100.f);
     float FrH = comp(Fr, 0.25f);
-    float Hsp = cl(face[1] / 100.f);  // Head shape
+    float Hsp = cl(face[1] / 100.f);
     setBS(21, FrH*Hd, FrH*Hd*Hsp, FrH*Hd);
-    out.pos[21][0] = H;               // Head from Neck (bind X=0.138)
+    out.pos[21][0] = H;
 
-    // Jaw [23]
     if (23 < MAX_SKIN_BONES) {
         out.bone[23][0] = FrH*Hd;
         out.bone[23][1] = FrH*Hd*Hsp*jaw;

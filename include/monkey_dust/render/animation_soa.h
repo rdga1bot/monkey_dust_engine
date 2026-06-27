@@ -133,9 +133,9 @@ public:
         memset(states_, 0, sizeof(states_));
         for (int i = 0; i < MAX_ANIMATED_NPC; ++i)
             states_[i].slot = (uint32_t)i;
-        // BoneQsT = 48 bytes (Q=16 + s=16 + T=16); finalBones: MAX_ANIMATED_NPC * MAX_BONES * 48
-        // Written by skinning.comp; read by animated.vert via qst_to_mat4().
-        bones_ssbo_.Init(MAX_ANIMATED_NPC * MAX_BONES * 48,
+        // mat4 = 64 bytes (16 floats); finalBones: MAX_ANIMATED_NPC * MAX_BONES * 64
+        // Written by CPU LBS (OzzAnimator::Sample); read by animated.vert directly as mat4.
+        bones_ssbo_.Init(MAX_ANIMATED_NPC * MAX_BONES * 64,
                          SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ);
         // anim_state_ring_ is written by CPU each frame — ring-buffered.
         anim_state_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState)), 5);

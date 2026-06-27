@@ -345,7 +345,9 @@ bool SkinMesh::LoadGLB(const char* path) {
                     float qv[4]={0,0,0,1};
                     cgltf_accessor_read_float(vals_acc,(cgltf_size)k,qv,4);
                     if (tr.count <= k) {
-                        tr.kf[k] = {t_k, 0,0,0, qv[0],qv[1],qv[2],qv[3]};
+                        // Use bind_t so positional scales (setBonePositionalSize) work on
+                        // rotation-only bones. A later translation channel overwrites tx/ty/tz.
+                        tr.kf[k] = {t_k, bind_t_[bi][0],bind_t_[bi][1],bind_t_[bi][2], qv[0],qv[1],qv[2],qv[3]};
                         tr.count = k+1;
                     } else {
                         tr.kf[k].t=t_k; tr.kf[k].qx=qv[0]; tr.kf[k].qy=qv[1]; tr.kf[k].qz=qv[2]; tr.kf[k].qw=qv[3];

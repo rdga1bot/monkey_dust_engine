@@ -216,7 +216,7 @@
       <div class="hero-meta-item"><span class="dot">●</span> Linux · Intel HD 520 (AVX2)</div>
       <div class="hero-meta-item"><span class="dot">●</span> 1280×720 · 60 FPS</div>
       <div class="hero-meta-item"><span class="dot">●</span> SDL3 + SDL_GPU (Vulkan)</div>
-      <div class="hero-meta-item"><span class="dot">●</span> 1557 GTests · Proprietary</div>
+      <div class="hero-meta-item"><span class="dot">●</span> 1557 GTests · Game: Proprietary · Engine: MIT · Tools: GPL-3.0</div>
     </div>
   </div>
 
@@ -2122,10 +2122,18 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
 <section class="doc-section" id="license">
   <h2>© Ліцензія</h2>
   <div class="callout danger">
-    <div class="callout-title">Proprietary Software — All Rights Reserved</div>
+    <div class="callout-title">Game Source Code — Proprietary</div>
     <p>Copyright (c) 2024–2026 monkey_dust project author.</p>
-    <p>Несанкціоноване копіювання, модифікація, розповсюдження або використання суворо заборонено. Повний текст: <code>LICENSE</code> у корені репо.</p>
+    <p>Код гри (<code>monkey_dust/game/</code>) є власницьким програмним забезпеченням. Несанкціоноване копіювання, модифікація або розповсюдження суворо заборонено. Повний текст: <code>LICENSE</code> у корені репо.</p>
+    <p>Рушій (<code>engine/</code>) та інструменти (<code>tools/</code>) є відкритим програмним забезпеченням — MIT та GPL-3.0 відповідно (див. таблицю нижче).</p>
   </div>
+  <h3>Ліцензії компонентів monorepo</h3>
+  <table>
+    <tr><th>Репо / компонент</th><th>Ліцензія</th><th>Примітки</th></tr>
+    <tr><td><code>monkey_dust/</code> (гра)</td><td>Proprietary</td><td>Приватний репозиторій; всі права захищені</td></tr>
+    <tr><td><code>engine/</code> (рушій)</td><td>MIT</td><td>Публічний субмодуль; вільне використання з атрибуцією</td></tr>
+    <tr><td><code>tools/</code> (редактор)</td><td>GPL-3.0</td><td>Публічний субмодуль; похідні роботи мають успадковувати GPL</td></tr>
+  </table>
   <h3>Сторонні компоненти (дозвільні ліцензії)</h3>
   <table>
     <tr><th>Бібліотека</th><th>Ліцензія</th><th>Використання</th></tr>

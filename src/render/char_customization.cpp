@@ -124,14 +124,16 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     out.pos[14][0] = H;  // Spine2 from Spine1
 
     // Posture lean: Pt=1 neutral, Pt<1 slouch (forward), Pt>1 erect (backward).
-    // Realistic kyphosis: thoracic spine curves forward; head compensates to stay level.
+    // Kenshi natural range 0-70 (neutral=35); editor slider goes to 99 → clamp erect to ±0.22.
+    // S-curve: lumbar (rot[12]) opposes thoracic direction — lordosis vs kyphosis.
     {
-        float lean_rad = (1.f - Pt) * 0.22f;  // ±12.6° max at slider 0/99
-        out.rot[12] = lean_rad * 0.15f;   // Spine (lumbar) — small
-        out.rot[13] = lean_rad * 0.50f;   // Spine1 (thoracic) — main kyphosis
-        out.rot[14] = lean_rad * 0.35f;   // Spine2 (upper thoracic)
-        out.rot[20] = lean_rad * 0.15f;   // Neck follows spine
-        out.rot[21] = -lean_rad * 0.60f;  // Head compensates: face stays level
+        float lean_rad = (1.f - Pt) * 0.22f;
+        if (lean_rad < -0.22f) lean_rad = -0.22f;  // cap to Kenshi natural max (slider 70)
+        out.rot[12] = -lean_rad * 0.20f;  // Spine (lumbar): lordosis opposes thoracic → S-curve
+        out.rot[13] =  lean_rad * 0.55f;  // Spine1 (thoracic): main kyphosis arc
+        out.rot[14] =  lean_rad * 0.40f;  // Spine2 (upper thoracic)
+        out.rot[20] =  lean_rad * 0.10f;  // Neck: small follow
+        out.rot[21] = -lean_rad * 0.85f;  // Head: cancels accumulated 0.85*lean → stays level
     }
 
     // ── Arms ──────────────────────────────────────────────────────────────────

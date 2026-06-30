@@ -267,6 +267,7 @@ bool SkinMesh::LoadGLB(const char* path) {
             // Bone name for upper/lower body masking
             if (node->name) strncpy(bone_names[i], node->name, 31);
             else bone_names[i][0] = '\0';
+            bone_hash_[i] = BoneHash(bone_names[i]);  // KEN-MORPH-1
             // Find parent index within joints array
             parent_[i] = -1;
             if (node->parent) {
@@ -393,6 +394,38 @@ int SkinMesh::ClipIndexByName(const char* name) const {
     return -1;
 }
 
+// KEN-MORPH-1: MurmurHash3_x86_32 with Kenshi bone-name seed 0x3a8efa67.
+uint32_t SkinMesh::BoneHash(const char* key) {
+    const uint8_t* data = (const uint8_t*)key;
+    int len = 0; while (key[len]) ++len;
+    const int nblocks = len / 4;
+    uint32_t h = 0x3a8efa67u;
+    const uint32_t c1 = 0xcc9e2d51u, c2 = 0x1b873593u;
+    for (int i = 0; i < nblocks; ++i) {
+        uint32_t k; memcpy(&k, data + i*4, 4);
+        k *= c1; k = (k<<15)|(k>>17); k *= c2;
+        h ^= k; h = (h<<13)|(h>>19); h = h*5 + 0xe6546b64u;
+    }
+    const uint8_t* tail = data + nblocks*4;
+    uint32_t k = 0;
+    switch (len & 3) {
+        case 3: k ^= (uint32_t)tail[2] << 16; // fallthrough
+        case 2: k ^= (uint32_t)tail[1] << 8;  // fallthrough
+        case 1: k ^= tail[0]; k *= c1; k = (k<<15)|(k>>17); k *= c2; h ^= k; break;
+        default: break;
+    }
+    h ^= (uint32_t)len;
+    h ^= h>>16; h *= 0x85ebca6bu; h ^= h>>13; h *= 0xc2b2ae35u; h ^= h>>16;
+    return h;
+}
+
+int SkinMesh::FindBoneByName(const char* name) const {
+    const uint32_t h = BoneHash(name);
+    for (int i = 0; i < bone_count; ++i)
+        if (bone_hash_[i] == h && strcmp(bone_names[i], name) == 0) return i;
+    return -1;
+}
+
 // ── GetFinalBones ────────────────────────────────────────────────────────────
 
 void SkinMesh::GetFinalBones(int clip_idx, float time_s, float* out) const {
@@ -507,10 +540,13 @@ void SkinMesh::GetFinalBonesScaled(int clip_idx, float time_s,
         float sw[16];
         memcpy(sw, world[i], 64);
         const float* bs = scales.bone[i];
+        float as0 = bs[0], as1 = bs[1], as2 = bs[2];
+        // KEN-MORPH-1: amputee override — scale *= 0.8 per RE analysis
+        if (i < 32 && ((scales.amputee_mask >> i) & 1u)) { as0 *= 0.8f; as1 *= 0.8f; as2 *= 0.8f; }
         for (int r = 0; r < 4; ++r) {
-            sw[r    ] *= bs[0];
-            sw[4 + r] *= bs[1];
-            sw[8 + r] *= bs[2];
+            sw[r    ] *= as0;
+            sw[4 + r] *= as1;
+            sw[8 + r] *= as2;
         }
         mat4_mul(out + i*16, sw, inv_bind_[i]);
     }

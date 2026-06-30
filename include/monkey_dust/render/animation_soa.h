@@ -3,6 +3,7 @@
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/gpu_ring_buffer.h>
 #include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/char_customization.h>  // KEN-MORPH-1: CharScales
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -139,12 +140,17 @@ public:
                          SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ);
         // anim_state_ring_ is written by CPU each frame — ring-buffered.
         anim_state_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState)), 5);
+        // KEN-MORPH-1: morph scale SSBO (per-NPC per-bone vec4: xyz=scale, w=0; sentinel=0)
+        memset(morph_cpu_, 0, sizeof(morph_cpu_));
+        morph_dirty_ = true;  // force zero-fill on first UploadMorphSDLGPU
+        morph_buf_.Init(MAX_ANIMATED_NPC * MAX_BONES * 4 * (int)sizeof(float),
+                        SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ);
         // Skinning compute pipeline — loaded once, dispatched each frame.
-        // SDL_GPU: rw[0]=FinalBones(write), ro[0]=AnimState(read); no UBO (time in state).
+        // SDL_GPU: rw[0]=FinalBones(write), ro[0..3]=AnimState+ClipBuf+SkelBuf+MorphBuf.
         GpuComputePipeline::Desc skin_desc;
         skin_desc.glsl_path                     = "shaders/skinning.comp";
         skin_desc.num_readwrite_storage_buffers = 1;  // FinalBones
-        skin_desc.num_readonly_storage_buffers  = 3;  // NpcGpuAnim + ClipBuf + SkelBuf
+        skin_desc.num_readonly_storage_buffers  = 4;  // NpcGpuAnim + ClipBuf + SkelBuf + MorphBuf
         skin_pipeline_.Create(skin_desc);
         LoadDefaults();
     }
@@ -331,6 +337,32 @@ public:
     bool ClipDataReady() const { return clip_data_ready_; }
 #endif
 
+    // KEN-MORPH-1: set per-bone morph scales for a given NPC slot.
+    // Copies CharScales::bone[] into morph_cpu_[slot] as vec4 (xyz=scale, w=0).
+    // Call once after character creation or body slider change.
+    void SetBoneMorphScales(int slot, const CharScales& cs, int bone_count) {
+        if (slot < 0 || slot >= MAX_ANIMATED_NPC) return;
+        float* dst = morph_cpu_[slot];
+        int n = bone_count < MAX_BONES ? bone_count : MAX_BONES;
+        for (int i = 0; i < n; ++i) {
+            dst[i*4+0] = cs.bone[i][0];
+            dst[i*4+1] = cs.bone[i][1];
+            dst[i*4+2] = cs.bone[i][2];
+            dst[i*4+3] = 0.f;
+        }
+        morph_dirty_ = true;
+    }
+
+#ifdef MD_SDL_GPU
+    // Upload morph scale buffer to GPU if dirty (call before DispatchSkinning each frame).
+    void UploadMorphSDLGPU(SDL_GPUCommandBuffer* cmd) {
+        if (morph_dirty_ && morph_buf_.SDLBuffer())
+            morph_buf_.UploadInCmd(cmd, morph_cpu_, (int)sizeof(morph_cpu_));
+        morph_dirty_ = false;
+    }
+    SDL_GPUBuffer* SDLMorphBuffer() const { return morph_buf_.SDLBuffer(); }
+#endif
+
     void Shutdown() {
         skin_pipeline_.Destroy();
         bones_ssbo_.Shutdown();
@@ -338,6 +370,7 @@ public:
         clip_buf_.Shutdown();
         skel_buf_.Shutdown();
         npc_anim_ring_.Shutdown();
+        morph_buf_.Shutdown();
     }
 
     // Accessors for editor panels (replaces direct field access — БОРГ-7/8).
@@ -363,6 +396,13 @@ private:
     SSBO          skel_buf_;           // inv_bind + bind_pose + parent + process_order
     GpuRingBuffer npc_anim_ring_;      // per-NPC NpcGpuAnim (ring-buffered, per frame)
     bool          clip_data_ready_ = false;
+
+    // KEN-MORPH-1: per-NPC per-bone vertex scale (setBoneSize equivalent for GPU path).
+    // Layout: morph_cpu_[slot][bone*4 + 0..2] = scale xyz; [bone*4+3] = 0 (reserved).
+    // Sentinel: (0,0,0,0) = no morph (identity). Init to zeros → shader skips.
+    SSBO  morph_buf_;                                      // GPU vec4[MAX_ANIMATED_NPC * MAX_BONES]
+    alignas(16) float morph_cpu_[MAX_ANIMATED_NPC][MAX_BONES * 4];  // CPU staging (512 KB, BSS)
+    bool  morph_dirty_ = false;
 
     void LoadDefaults() {
         clips_count_ = 3;

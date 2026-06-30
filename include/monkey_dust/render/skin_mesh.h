@@ -140,6 +140,11 @@ public:
 
     int ClipCount()            const { return clip_count_; }
     int ClipIndexByName(const char* name) const;
+
+    // KEN-MORPH-1: bone-name lookup by MurmurHash3_x86_32 (seed=0x3a8efa67).
+    // FindBoneByName returns index or -1; hashes precomputed in LoadGLB.
+    static uint32_t BoneHash(const char* name);
+    int FindBoneByName(const char* name) const;
     const char* ClipName(int i) const { return (i>=0&&i<clip_count_)?clips_[i].name:""; }
     float ClipDuration(int i)  const { return (i>=0&&i<clip_count_)?clips_[i].duration:0.f; }
 
@@ -196,6 +201,8 @@ private:
     float bind_s_[MAX_SKIN_BONES][3] = {};
     // Topological processing order (parent always before child)
     int   process_order_[MAX_SKIN_BONES] = {};
+    // KEN-MORPH-1: bone name hashes precomputed in LoadGLB for O(1) lookup
+    uint32_t bone_hash_[MAX_SKIN_BONES] = {};
 
     SkinClip clips_[MAX_SKIN_CLIPS];
     int      clip_count_ = 0;

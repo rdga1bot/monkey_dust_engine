@@ -27,6 +27,7 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
         out.pos [i][0] = 1.f; out.pos [i][1] = 1.f; out.pos [i][2] = 1.f;
         out.rot [i]    = 0.f;
     }
+    out.amputee_mask = 0;
 
     if (bone_count <= 0) return;
 

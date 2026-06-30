@@ -123,17 +123,20 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
     setBS(14, H, comp(Ch,0.45f)*Fr, comp(Ch,0.9f)*Fr);
     out.pos[14][0] = H;  // Spine2 from Spine1
 
-    // Posture lean: Pt=1 neutral, Pt<1 slouch (forward), Pt>1 erect (backward).
-    // Kenshi natural range 0-70 (neutral=35); editor slider goes to 99 → clamp erect to ±0.22.
-    // S-curve: lumbar (rot[12]) opposes thoracic direction — lordosis vs kyphosis.
+    // Posture: Kenshi range 0-70, neutral=35. HIGH slider = hunch, LOW = erect.
+    // RE: animation scrub timePos = animLength * pct * 0.01 (HIGH confidence).
+    // Sign: (Pt-1) — positive lean_rad = forward hunch (HIGH body[4]); negative = erect.
+    // S-curve: lumbar opposes thoracic (lordosis vs kyphosis). Head droops, not compensated.
     {
-        float lean_rad = (1.f - Pt) * 0.22f;
-        if (lean_rad < -0.22f) lean_rad = -0.22f;  // cap to Kenshi natural max (slider 70)
-        out.rot[12] = -lean_rad * 0.20f;  // Spine (lumbar): lordosis opposes thoracic → S-curve
+        float lean_raw = Pt - 1.f;  // >0 at HIGH body[4] = hunch; <0 at LOW = erect
+        float lean_rad = lean_raw >= 0.f ? lean_raw * 0.40f : lean_raw * 0.25f;
+        if (lean_rad >  0.40f) lean_rad =  0.40f;  // cap hunch: slider 70→99 beyond Kenshi
+        if (lean_rad < -0.25f) lean_rad = -0.25f;  // cap erect: subtle military stance
+        out.rot[12] = -lean_rad * 0.15f;  // Spine (lumbar): lordosis — opposes thoracic → S-curve
         out.rot[13] =  lean_rad * 0.55f;  // Spine1 (thoracic): main kyphosis arc
         out.rot[14] =  lean_rad * 0.40f;  // Spine2 (upper thoracic)
-        out.rot[20] =  lean_rad * 0.10f;  // Neck: small follow
-        out.rot[21] = -lean_rad * 0.85f;  // Head: cancels accumulated 0.85*lean → stays level
+        out.rot[20] =  lean_rad * 0.35f;  // Neck: significant forward drop during hunch
+        out.rot[21] =  lean_rad * 0.25f;  // Head: droops forward with spine (NOT compensated)
     }
 
     // ── Arms ──────────────────────────────────────────────────────────────────

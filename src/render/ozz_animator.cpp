@@ -490,15 +490,16 @@ void OzzAnimator::BlendAdditive(float* out_bones,
     sc.models.resize(skel_->num_joints());
 
     const ozz::animation::Animation* anim = anims_[add_clip].get();
-    if (sc.ctx_a.max_tracks() < anim->num_tracks())
-        sc.ctx_a.Resize(anim->num_tracks());
+    // Use ctx_b so we don't corrupt ctx_a which holds the base animation's cache.
+    if (sc.ctx_b.max_tracks() < anim->num_tracks())
+        sc.ctx_b.Resize(anim->num_tracks());
 
     const float dur_add = anim->duration();
     const float ratio = (dur_add > 0.05f) ? fmodf(add_t, dur_add) / dur_add : 0.f;
 
     ozz::animation::SamplingJob sj;
     sj.animation = anim;
-    sj.context   = &sc.ctx_a;
+    sj.context   = &sc.ctx_b;
     sj.ratio     = ratio;
     sj.output    = ozz::make_span(sc.locals_a);
     if (!sj.Run()) return;

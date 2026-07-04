@@ -233,3 +233,9 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
     )
     message(STATUS "[monkey_dust] PCH: ENABLED (stdlib only, ~2MB)")
 endif()
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+option(MONKEY_DUST_BUILD_TESTS "Build engine tests" OFF)
+if(MONKEY_DUST_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

@@ -403,18 +403,20 @@ static SenseThresholdQualifier parse_sense_qualifier(const char* s) {
 }
 
 static uint8_t parse_sense_type(const char* s) {
-    if (strcmp(s, "Visual")     == 0) return 0u;
-    if (strcmp(s, "Audio")      == 0) return 1u;
-    if (strcmp(s, "Smell")      == 0) return 2u;
-    if (strcmp(s, "Vibration")  == 0) return 3u;
-    if (strcmp(s, "Touch")      == 0) return 4u;
-    if (strcmp(s, "Peripheral") == 0) return 5u;
-    if (strcmp(s, "Motion")     == 0) return 6u;
-    if (strcmp(s, "Anxiety")    == 0) return 7u;
-    if (strcmp(s, "Background") == 0) return 8u;
+    if (strcmp(s, "Visual")        == 0) return 0u;
+    if (strcmp(s, "AudioCombat")   == 0) return 1u;
+    if (strcmp(s, "AudioMovement") == 0) return 2u;
+    if (strcmp(s, "Audio")         == 0) return 1u;  // legacy → AudioCombat
+    if (strcmp(s, "Smell")         == 0) return 3u;
+    if (strcmp(s, "Vibration")     == 0) return 4u;
+    if (strcmp(s, "Touch")         == 0) return 5u;
+    if (strcmp(s, "Peripheral")    == 0) return 6u;
+    if (strcmp(s, "Motion")        == 0) return 7u;
+    if (strcmp(s, "Anxiety")       == 0) return 8u;
+    if (strcmp(s, "Background")    == 0) return 9u;
     return 0u;
 }
-// Returns 0-8, or def when field absent. Accepts integer or SenseType name string.
+// Returns 0-9, or def when field absent. Accepts integer or SenseType name string.
 static uint8_t read_sense_idx_r(const char* obj, const char* obj_end, uint8_t def = 0u) {
     int v = read_int_r(obj, obj_end, "\"sense\"", -1);
     if (v >= 0) return (v < MAX_SENSES) ? static_cast<uint8_t>(v) : 0u;

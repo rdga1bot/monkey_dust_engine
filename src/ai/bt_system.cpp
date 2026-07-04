@@ -66,7 +66,8 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
     auto hint_view = reg.view<AgentState, DirectorHintComponent>();
     hint_view.each([&](entt::entity, AgentState& as, DirectorHintComponent& hint) {
         // C13: clear per-frame signals before BT tick
-        as.frame_flags = 0;
+        as.frame_flags   = 0;
+        as.npc_tick_cost = 0;  // VBfA: reset per-NPC work budget each tick
         // Stale hint expiry — prevents Director hints from blocking BT indefinitely
         if (hint.role_pending) {
             if (++hint.pending_ticks > DirectorHintComponent::MAX_PENDING_TICKS) {
@@ -79,7 +80,8 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
     // Phase 2: clear frame_flags for entities with no DirectorHintComponent
     auto bare_view = reg.view<AgentState>(entt::exclude<DirectorHintComponent>);
     bare_view.each([](entt::entity, AgentState& as) {
-        as.frame_flags = 0;
+        as.frame_flags   = 0;
+        as.npc_tick_cost = 0;
     });
 
     // Phase 3: tick active behavior trees with distance-based LOD.
@@ -90,6 +92,8 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
     bt_view.each([&](entt::entity e, AgentState& as, BehaviorTreeComponent& btc) {
         if (!btc.enabled || !btc.tree || !btc.tree->isValid()) return;
         if (as.lcflags.test(lcf::IS_SUSPENDED)) return;  // Batch 11 P8: suspension gate
+        if (as.npc_dormant) return;                       // VBfA: external area-manager sleep
+        if (as.npc_tick_cost >= NPC_TICK_COST_MAX) return; // VBfA: per-NPC over-work guard
 
         const uint32_t eid = entt::to_integral(e);
 
@@ -127,6 +131,7 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
                 cost = BtBudgetCost::kScheduleNpc;
         }
         if (!AIBudget::Get().TryConsume(cost)) return;  // budget exhausted: skip BT
+        as.npc_tick_cost += static_cast<uint16_t>(cost * 100.f);  // VBfA: accumulate work
 
         btc.tree->tick(ctx, e, nowMs);
     });

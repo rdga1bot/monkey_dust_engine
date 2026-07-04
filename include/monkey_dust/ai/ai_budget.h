@@ -66,3 +66,10 @@ namespace BtBudgetCost {
     static constexpr float kGuard         = 1.0f;  // default combat NPC
     static constexpr float kBerserker     = 1.5f;  // high-priority / boss tier
 }
+
+// ── Per-NPC over-work guard (VBfA RE: NPC+0x1750 checked against 2800) ───────
+// npc_tick_cost is incremented by cost*100 each BT tick. At normal rates
+// (one tick per entity per frame) this never fires. It catches pathological
+// re-entry (e.g. entity added to registry twice) and provides a hook for
+// future sub-tick work tracking (BT node count instrumentation).
+static constexpr uint16_t NPC_TICK_COST_MAX = 2800u;

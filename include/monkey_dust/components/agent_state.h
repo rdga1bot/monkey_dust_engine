@@ -548,6 +548,18 @@ struct AgentState {
     uint8_t                _pad_b33[1]       = {};
     // Kenshi RE: prison_time @+0x5b — jail sentence countdown (seconds); 0 = free
     float                  prison_timer      = 0.f;
+    // ── VBfA crowd-perf fields (RE 2026-07-04) ─────────────────────────────────
+    // npc_dormant: external suspend flag — set by area/zone manager to fully
+    //   skip BT tick without destroying entity. Cleared by the same system.
+    //   Different from IS_SUSPENDED (internal BT state) and MotivationType::Dormant
+    //   (ultra-low-rate 19s tick). npc_dormant = true → zero BT cost, zero tick.
+    uint8_t  npc_dormant   = 0;
+    // npc_tick_cost: per-tick work accumulator; reset in BTSystem phases 1+2.
+    //   Incremented each time BT actually runs (after all LOD/dormant gates).
+    //   Provides per-entity over-work detection: if ≥ NPC_TICK_COST_MAX, BT skipped.
+    //   At normal rates (1 tick/entity/frame) this never fires — acts as a safety
+    //   guard against pathological re-entry. VBfA threshold: 2800.
+    uint16_t npc_tick_cost = 0;
 };
 
 // ── AgentStateSnapshot ────────────────────────────────────────────────────────

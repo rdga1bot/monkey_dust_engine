@@ -235,7 +235,9 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
 endif()
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+# Only build engine-standalone tests when this is the top-level project.
+# When engine/ is a subdirectory of monkey_dust, tests are in the parent's tests/.
 option(MONKEY_DUST_BUILD_TESTS "Build engine tests" OFF)
-if(MONKEY_DUST_BUILD_TESTS)
+if(MONKEY_DUST_BUILD_TESTS AND CMAKE_PROJECT_NAME STREQUAL "monkey_dust_engine")
     add_subdirectory(tests)
 endif()

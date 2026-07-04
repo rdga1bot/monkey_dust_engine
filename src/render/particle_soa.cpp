@@ -94,9 +94,15 @@ int ParticleSoA::BuildVertices(ParticleVertex* out, int max_out,
 
 bool ParticleSoA::ShouldEmit(float ox, float oy, float oz, float extent,
                               float cam_x, float cam_y, float cam_z,
-                              float vis_dist_max) {
-    float cull_r = extent * PARTICLE_BOUNDING_RADIUS_MULT;
-    float eff_dist = vis_dist_max + PARTICLE_VIS_PADDING + cull_r;
+                              float vis_dist_max, float min_dist) {
     float dx = ox - cam_x, dy = oy - cam_y, dz = oz - cam_z;
-    return (dx*dx + dy*dy + dz*dz) <= (eff_dist * eff_dist);
+    float dist_sq = dx*dx + dy*dy + dz*dz;
+    // VBfA crowd gate: suppress NPC hit effects when pool >70% full and emitter
+    // is very close — prevents 100× NPCs fighting at 5m each flooding the pool.
+    if (min_dist > 0.f && ParticleSoA::Get().active_count >= PARTICLE_CROWD_THRESHOLD) {
+        if (dist_sq < min_dist * min_dist) return false;
+    }
+    float cull_r   = extent * PARTICLE_BOUNDING_RADIUS_MULT;
+    float eff_dist = vis_dist_max + PARTICLE_VIS_PADDING + cull_r;
+    return dist_sq <= (eff_dist * eff_dist);
 }

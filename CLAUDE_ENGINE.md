@@ -18,8 +18,11 @@ BT VM, scripting (Lua), platform abstraction (SDL3/audio/input/math).
 
 ## Forbidden (in addition to global §2.2 constraints)
 - **DO NOT** `#include` anything from `game/` or `tools/`. CORE split-readiness rule.
-- **DO NOT** hardcode component names (Health, AIAgent, Faction…) — those are game.
-- **DO NOT** add game-specific constants (MAX_QUESTS, MAX_FACTIONS) — those are game.
+- Note: `Health`, `AIAgent`, `Faction`, `Squad`, `StatSheet`, `Equipment` etc. now live IN
+  `engine/include/monkey_dust/components/` (41 components total, moved via M_SPLIT + KEN-MIGRATION
+  DECOUPLE phases) — they are game-agnostic data structs, not gameplay logic. What stays game-only:
+  concrete gameplay *systems* wiring these components together (BT leaf implementations, quest/dialog
+  content, save-format specifics).
 
 ## Build
 ```bash
@@ -28,7 +31,7 @@ ninja -C build monkey_dust_engine
 ```
 Output: `libmonkey_dust_engine.a` + headers in `engine/include/monkey_dust/`.
 
-## Recently added (DECOUPLE-1, 2026-06-05)
+## World registry (moved from game/ in DECOUPLE-1, 2026-06-05)
 - `engine/include/monkey_dust/world/biome_def.h` — BiomeDef struct + kBiomeTable[] + ForZone()
 - `engine/include/monkey_dust/world/world_registry.h` + `engine/src/world/world_registry.cpp`
   — WorldRegistry singleton; LoadFromTerrainConfig(), GenerateSettlements()

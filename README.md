@@ -19,7 +19,7 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Be
 | SSAO | Half-res R8 compute pass; 16-tap hemisphere kernel |
 | SMAA | 3-pass fullscreen triangle (edge → blend → final) |
 | Point / strip lights | Icosphere additive pass; capsule-SDF strip lights |
-| GPU skinning | AnimationSoA; SSBO skeletal bones (MAX\_BONES=6); compute dispatch |
+| GPU skinning | AnimationSoA; SSBO skeletal bones (MAX\_BONES=64, Kenshi uses 30 of 64); compute dispatch |
 | Particles | ParticleSoA CPU-sim; SMOKE/SPARK/BLOOD types |
 | Material system | O3DE-inspired: JSON → `GpuPipeline::Desc`; **parent inheritance** (`"parent": "base_pbr"`); `shader_features` bitmask; `MaterialTypeRegistry` (MAX=32) |
 | Terrain POM | Parallax Occlusion Mapping + self-shadow; per-vertex geomorphing L0→L1; `DrawRaw(int lod)` / `DrawRawPOM(int lod)` — lod=0 full-res (64×64), lod=1/2/3 uses `chunk.ibo_lod[lod-1]` (32/16/8 quads); POM only at lod=0; editor uses distance-based per-chunk LOD |
@@ -40,12 +40,19 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Be
 - FlowDurableTrigger — ref-counted durable triggers with duration decay
 
 ### ECS — EnTT
-15 engine-side components: `WorldTransform` · `AIAgent` · `Health` · `Combat` · `Renderable` · `Building` · `Inventory` · `ProjectileComponent` · `SenseComponent` · `AgentState` · `NpcMemoryComponent` · `BehaviorTreeComponent` · `DirectorHintComponent` · `FlareSpriteAnim` · `NpcInteractionComponent`
+41 engine-side components in `engine/include/monkey_dust/components/`, incl.: `WorldTransform` (via
+`ai_agent.h`) · `AIAgent` · `Health` · `Combat` · `Renderable` · `Building` · `Inventory` ·
+`ProjectileComponent` · `SenseComponent` · `AgentState` · `NpcMemoryComponent` ·
+`BehaviorTreeComponent` (`bt_component.h`/`bt_components.h`) · `FlareSpriteAnim` ·
+`NpcInteractionComponent` · plus Kenshi-migration additions: `StatSheet`, `Equipment`, `Faction`,
+`Squad`, `RaceDef`, `NpcNeeds`, `NpcRelationship`, `BleedComponent`, `BountyComponent`,
+`InjuryState`, `MorphComponent`, `PrisonerComponent`, `ScheduleComponent`, `StealthComponent`,
+`WeaponComponent`, and more.
 
 ### Physics & Animation
 - **Jolt Physics** — `JoltWorld`: `CharacterVirtual` (max_bodies=512); `TempAllocatorImpl` 8 MB
-- **ozz-animation** — `OzzAnimPlayer`: blend trees, `Eval/EvalBlend`; 30-joint Biped rig
-- **DetourCrowd** — `CrowdSystem` ORCA; max_agents=64
+- **ozz-animation** — `OzzAnimator`: Init/Blend/Sample/BlendAdditive; T2 async LOD tier, skeleton built runtime from GLB
+- **DetourCrowd** — `CrowdSystem` ORCA; MAX_AGENTS=512
 - **Foot IK** (M59) — analytic 2-bone foot placement; TerrainQuery ray-cast
 
 ### Terrain
@@ -133,12 +140,19 @@ ninja -C build monkey_dust_engine
 
 ## Tests
 
+This submodule's own test target is a small plain-C++ (no GTest) smoke-test pair:
+
 ```bash
-ninja -C build md_tests
-./build/tests/md_tests          # 1557 tests across 206+ suites
+ninja -C build md_tests          # meta-target, depends on flare_ini_parser + flare_tile_map
+./build/tests/flare_ini_parser
+./build/tests/flare_tile_map
 ```
 
-Suites: FNV · AgentBlackboard · FlowGraph · DirectorSystem · PowerSlotManager · NpcConfig · HotReload · FlowVar · AI Patterns C1–C20 · BT VM · Batch 3–31 · M47–M59 (NavLod, ReplaySnapshot, AllianceMatrix, SenseSystem, BT Archetypes, CombatDispatch, DeferredLighting, DialogQuest, FootIK) · O3DE-1–4 (MaterialDesc, MdPrefabRegistry, SaveVersionChain, MdModuleRegistry) · ZLD-1–2 (MdIniReader, MdFeature) · FL-3–4 (MdStatusRegistry, MdEventScheduler) · KEN-1–8 (SkinMesh, OzzAnimPlayer, JoltWorld, CrowdSystem) · VBfA-R1–9 · VBfA-AI1–6
+> The large GTest suite (1724 tests across 200+ suites — FNV · AgentBlackboard · FlowGraph ·
+> DirectorSystem · BT VM · Batch 3–31 · M47–M59 · O3DE-1–4 · ZLD-1–2 · FL-3–4 · KEN-1–8 ·
+> VBfA-R1–9 · VBfA-AI1–6, etc.) lives in the private parent
+> [`monkey_dust`](https://github.com/rdga1bot/monkey_dust) game repo's `tests/` directory, not in
+> this engine submodule.
 
 ---
 
@@ -151,19 +165,27 @@ engine/
     audio/                 ← AudioSystem
     building/              ← BuildSystem, ProductionChain
     combat/                ← damage_calc, hit_zones, power_def
-    components/            ← 14 ECS components
+    compat/                ← md_dirent.h (POSIX dirent shim)
+    components/            ← 41 ECS components
     ecs/                   ← Registry (EnTT singleton)
+    editor/                ← EditorPanelRegistry (MAX_PANELS=16)
     flare/                 ← tile map, sprite animation, renderer
-    math_types.h           ← Vec3/Mat4 (GLM switch -DUSE_GLM)
-    nav/                   ← PathCache
+    hot/                   ← hot-reloadable module interfaces (editor_module.h, gameplay_module.h)
+    math/                  ← md_fast_math.h, sin_lut.h (rsqrtps fast-math helpers)
+    platform/math_types.h  ← Vec3/Mat4 (GLM switch -DUSE_GLM)
+    nav/                   ← PathCache, CrowdSystem
+    net/                   ← ReplaySnapshot (16B npc state + 1048B frame ring)
+    nodegraph/             ← PCG node graph (noise/scatter/terrain tile gen)
+    physics/               ← JoltWorld, Ragdoll
     platform/              ← input/audio/window/md_fs/md_log/md_hints/timing_system
     render/                ← GPU HAL, ring buffer, shadow, SSAO, SMAA …
     save/                  ← SaveSystem v10 · SaveVersionChain
     scripting/             ← LuaSystem, LuaEventBus, FlowGraph
+    spatial/               ← world_bvh.h
+    tools/                 ← graphics_settings.h, hot_reload.h (editor-adjacent, engine-owned)
     world/                 ← FactionSystem, WorldSimulation, TransformSoA, SettlementPlacer, MdStatusRegistry, MdPrefabRegistry …
     prefab/                ← MdPrefabRegistry (data-driven NPC archetypes)
     module/                ← MdModuleRegistry (plug-in lifecycle)
-    asset/                 ← (reserved: MdAssetHandle when asset pipeline scales)
   src/                     ← implementation units
   tests/                   ← Google Test suite
 ```

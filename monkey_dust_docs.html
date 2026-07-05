@@ -70,7 +70,6 @@
   .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 20px; transition: border-color .2s; }
   .card:hover { border-color: var(--accent); }
   .card-icon { font-size: 24px; margin-bottom: 10px; }
-  .card-icon svg { width: 28px; height: 28px; color: var(--accent); display: block; }
   .card-title { font-weight: 600; color: var(--text-head); font-size: 14px; margin-bottom: 6px; }
   .card-desc { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
 
@@ -135,7 +134,7 @@
 <div id="sidebar">
   <div class="sidebar-logo">
     <div class="title">monkey_dust</div>
-    <div class="subtitle">Developer Docs · v26.3 · 2026-07-05</div>
+    <div class="subtitle">Developer Docs · v26.3 · DECOUPLE phase 2 — tools/ повністю відокремлено від game/ · 2026-06-06</div>
   </div>
   <div class="sidebar-search">
     <input type="text" id="search-input" placeholder="Пошук..." oninput="filterNav(this.value)">
@@ -222,14 +221,14 @@
   </div>
 
   <div class="card-grid">
-    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="card-title">SDL_GPU Exclusive</div><div class="card-desc">Vulkan через SDL_GPU HAL. SPIR-V шейдери (#version 460). MD_OPENGL43_ENABLED видалено повністю (FIX-8: −1449 рядків).</div></div>
-    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div><div class="card-title">Isometric Flare</div><div class="card-desc">Flare-сумісні мапи: TileMapRenderer (3D ізометрія) + TileMap2DRenderer (2D SDL_GPU). Multi-atlas, billboard, FRINGE.</div></div>
-    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="12" y2="12"/><line x1="12" y1="12" x2="6" y2="17"/><line x1="12" y1="12" x2="18" y2="17"/></svg></div><div class="card-title">ECS (EnTT)</div><div class="card-desc">500+ NPC, всі компоненти — чистий POD. Collect→apply патерн. Split-ready engine/include/monkey_dust/.</div></div>
-    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="7" r="2"/><circle cx="19" cy="7" r="2"/><circle cx="5" cy="17" r="2"/><circle cx="19" cy="17" r="2"/><circle cx="12" cy="12" r="2"/><line x1="7" y1="7" x2="10" y2="12"/><line x1="17" y1="7" x2="14" y2="12"/><line x1="7" y1="17" x2="10" y2="12"/><line x1="17" y1="17" x2="14" y2="12"/></svg></div><div class="card-title">AI Systems</div><div class="card-desc">Stackless BT VM + BTSystem + BTJsonLoader + DirectorSystem + FlowGraph + SenseSystem. Extended AI patterns (C1–C20).</div></div>
-    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="3"/><path d="M12 8v6"/><path d="M8 11h8"/><path d="M10 14l-2 7"/><path d="M14 14l2 7"/></svg></div><div class="card-title">Kenshi Character Editor</div><div class="card-desc">Posture · Shoulder set · Neck pos — повні 3D кватерніонні дельти з GLB-анімацій. 29 morph targets. Hair/skin/eye.</div></div>
-    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div><div class="card-title">FCS Binary Parser</div><div class="card-desc">Kenshi gamedata.base + .mod: 137 фракцій, 348 міст, leveldata.level 20 world coords. python3 private/md_mod_import.py.</div></div>
-    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="3" r="2"/><circle cx="4" cy="21" r="2"/><circle cx="12" cy="21" r="2"/><circle cx="20" cy="21" r="2"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="12" y1="10" x2="5" y2="19"/><line x1="12" y1="10" x2="19" y2="19"/></svg></div><div class="card-title">BT VM повний</div><div class="card-desc">BTNodePool 32KB arena · BTSystem ECS driver · BTJsonLoader strstr parser · 30+ node types · data/bt/ JSON trees.</div></div>
-    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49M7.76 7.76a6 6 0 0 0 0 8.49"/></svg></div><div class="card-title">9 Improvements</div><div class="card-desc">ACES tonemapping · Live BT reload · NpcMemory · Dirty TINST · Dirty SSBO · WorldSim 1Hz · MaterialDesc · UtilityScorer · md::fs</div></div>
+    <div class="card"><div class="card-icon">⚡</div><div class="card-title">SDL_GPU Exclusive</div><div class="card-desc">Vulkan через SDL_GPU HAL. SPIR-V шейдери (#version 460). MD_OPENGL43_ENABLED видалено повністю (FIX-8: −1449 рядків).</div></div>
+    <div class="card"><div class="card-icon">🗺️</div><div class="card-title">Isometric Flare</div><div class="card-desc">Flare-сумісні мапи: TileMapRenderer (3D ізометрія) + TileMap2DRenderer (2D SDL_GPU). Multi-atlas, billboard, FRINGE.</div></div>
+    <div class="card"><div class="card-icon">🧩</div><div class="card-title">ECS (EnTT)</div><div class="card-desc">500+ NPC, всі компоненти — чистий POD. Collect→apply патерн. Split-ready engine/include/monkey_dust/.</div></div>
+    <div class="card"><div class="card-icon">🧠</div><div class="card-title">AI Systems</div><div class="card-desc">Stackless BT VM + BTSystem + BTJsonLoader + DirectorSystem + FlowGraph + SenseSystem. Extended AI patterns (C1–C20).</div></div>
+    <div class="card"><div class="card-icon">🔒</div><div class="card-title">Security Audit</div><div class="card-desc">10 fixes: Lua 8MB sandbox, CRC32 SaveHeader v8, POSIX mkdir, _mm_pause spinlock, MAX_BONES 128→6.</div></div>
+    <div class="card"><div class="card-icon">👾</div><div class="card-title">Extended AI Patterns</div><div class="card-desc">20 Extended AI patterns — MotivationType, RoleRegistry, AwarenessState, FlowDurableTrigger, BTJsonLoader, BTNodePool.</div></div>
+    <div class="card"><div class="card-icon">🤖</div><div class="card-title">BT VM повний</div><div class="card-desc">BTNodePool 32KB arena · BTSystem ECS driver · BTJsonLoader strstr parser · 30+ node types · data/bt/ JSON trees.</div></div>
+    <div class="card"><div class="card-icon">🔬</div><div class="card-title">9 Improvements</div><div class="card-desc">ACES tonemapping · Live BT reload · NpcMemory · Dirty TINST · Dirty SSBO · WorldSim 1Hz · MaterialDesc · UtilityScorer · md::fs</div></div>
   </div>
 </section>
 

@@ -20,6 +20,10 @@ struct CharScales {
     float    pos [MAX_SKIN_BONES][3];  // translation scale per bone (x/y/z)
     float    rot [MAX_SKIN_BONES];     // extra rotation around local Y axis (radians)
     uint32_t amputee_mask;             // KEN-MORPH-1: bit i set → bone i amputated (scale *= 0.8)
+    // Full quaternion delta override (xyzw). identity = {0,0,0,1}.
+    // When qrot_delta[i][3] < 1.0, applied post-multiply in bone local space.
+    // Takes precedence over rot[i] for the same bone.
+    float    qrot_delta[MAX_SKIN_BONES][4];
 };
 
 // Compute CharScales from body[18]+face[24] slider values.

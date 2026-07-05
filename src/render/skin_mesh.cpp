@@ -515,13 +515,19 @@ void SkinMesh::GetFinalBonesScaled(int clip_idx, float time_s,
         lt[1] *= scales.pos[i][1];
         lt[2] *= scales.pos[i][2];
 
-        // Apply extra local-Y rotation (CharScales::rot) — used for Posture spine lean.
-        // Testing Y axis (along-bone direction = twist/sagittal in Biped bind pose).
-        // Compose: lq = lq ⊗ ry  (post-multiply = tilt in bone's own local frame)
-        if (scales.rot[i] != 0.f) {
+        // Apply extra local-Y rotation (CharScales::rot) — legacy Y-only path.
+        // Skipped when qrot_delta is set (full quaternion takes over for that bone).
+        const float* qd = scales.qrot_delta[i];
+        if (qd[3] < 0.9999f) {
+            // Full quaternion delta: post-multiply lq * qd (delta in bone's own local frame).
+            float q0 = lq[3]*qd[0] + lq[0]*qd[3] + lq[1]*qd[2] - lq[2]*qd[1];
+            float q1 = lq[3]*qd[1] - lq[0]*qd[2] + lq[1]*qd[3] + lq[2]*qd[0];
+            float q2 = lq[3]*qd[2] + lq[0]*qd[1] - lq[1]*qd[0] + lq[2]*qd[3];
+            float q3 = lq[3]*qd[3] - lq[0]*qd[0] - lq[1]*qd[1] - lq[2]*qd[2];
+            lq[0]=q0; lq[1]=q1; lq[2]=q2; lq[3]=q3;
+        } else if (scales.rot[i] != 0.f) {
             float half = scales.rot[i] * 0.5f;
             float sy = sinf(half), cy = cosf(half);
-            // ry = (0, sy, 0, cy) in (x,y,z,w) quaternion notation
             float q0 = lq[0]*cy - lq[2]*sy;
             float q1 = lq[3]*sy + lq[1]*cy;
             float q2 = lq[0]*sy + lq[2]*cy;

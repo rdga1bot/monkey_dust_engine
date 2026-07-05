@@ -26,6 +26,8 @@ void CharCustomization_ComputeScales(const float body[CHARCC_BODY_N],
         out.bone[i][0] = 1.f; out.bone[i][1] = 1.f; out.bone[i][2] = 1.f;
         out.pos [i][0] = 1.f; out.pos [i][1] = 1.f; out.pos [i][2] = 1.f;
         out.rot [i]    = 0.f;
+        out.qrot_delta[i][0] = 0.f; out.qrot_delta[i][1] = 0.f;
+        out.qrot_delta[i][2] = 0.f; out.qrot_delta[i][3] = 1.f;
     }
     out.amputee_mask = 0;
 

@@ -123,18 +123,65 @@
   .breadcrumb { font-size: 12px; color: var(--text-dim); margin-bottom: 24px; display: flex; gap: 6px; align-items: center; }
   .breadcrumb .sep { color: var(--border); }
 
+  /* Explicit emoji font stack — prevents □ fallback when Inter doesn't carry the glyph */
+  .card-icon, .nav-icon {
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Android Emoji', sans-serif;
+  }
+
+  /* Tables: horizontal scroll wrapper (JS-injected .table-scroll div) */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 16px 0; border-radius: 8px; }
+  .table-scroll table { margin: 0; min-width: 540px; }
+
+  /* Mobile hamburger toggle */
+  #menu-toggle {
+    display: none;
+    position: fixed; top: 14px; left: 14px; z-index: 300;
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    width: 42px; height: 42px; cursor: pointer;
+    align-items: center; justify-content: center;
+    font-size: 20px; color: var(--text-head);
+    box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    transition: background .15s;
+  }
+  #menu-toggle:hover { background: var(--bg3); }
+
+  /* Sidebar slide-in + dimmer overlay for mobile */
+  #sidebar-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.55); z-index: 98;
+    backdrop-filter: blur(2px);
+  }
+
   @media (max-width: 768px) {
-    #sidebar { transform: translateX(-100%); }
-    #content { margin-left: 0; padding: 24px 20px 80px; }
+    #menu-toggle { display: flex; }
+    #sidebar { transform: translateX(-100%); transition: transform .25s cubic-bezier(.4,0,.2,1); z-index: 99; }
+    #sidebar.open { transform: translateX(0); }
+    #sidebar-overlay.open { display: block; }
+    #content { margin-left: 0; padding: 24px 16px 80px; }
+    #content h1 { font-size: 26px; }
+    #content h2 { font-size: 20px; }
+    .hero { padding: 20px 16px; }
+    .card-grid { grid-template-columns: 1fr 1fr; }
+    .step { flex-direction: column; gap: 10px; }
+    .step-num { margin-top: 0; }
+  }
+
+  @media (max-width: 480px) {
+    .card-grid { grid-template-columns: 1fr; }
+    .hero-meta { gap: 8px; }
+    #content { padding: 20px 12px 80px; }
   }
 </style>
 </head>
 <body>
 
+<button id="menu-toggle" aria-label="Відкрити меню навігації">☰</button>
+<div id="sidebar-overlay" aria-hidden="true"></div>
+
 <div id="sidebar">
   <div class="sidebar-logo">
     <div class="title">monkey_dust</div>
-    <div class="subtitle">Developer Docs · v26.3 · DECOUPLE phase 2 — tools/ повністю відокремлено від game/ · 2026-06-06</div>
+    <div class="subtitle">Developer Docs · v26.3 · 2026-07-05</div>
   </div>
   <div class="sidebar-search">
     <input type="text" id="search-input" placeholder="Пошук..." oninput="filterNav(this.value)">
@@ -206,7 +253,7 @@
 <section class="doc-section" id="intro">
   <div class="breadcrumb"><span>Документація</span> <span class="sep">›</span> Огляд</div>
   <div class="hero">
-    <div class="version-badge">v26.3 · DECOUPLE phase 2 — tools/ відокремлено від game/ · C++17 · SDL3 + SDL_GPU (Vulkan) · EnTT · Recast/Detour · Jolt Physics · AVX2</div>
+    <div class="version-badge">v26.3 · C++17 · SDL3 + SDL_GPU (Vulkan) · EnTT · Jolt · Recast · 1557 тестів · 2026-07-05</div>
     <h1>monkey_dust</h1>
     <p style="font-size:17px;color:var(--text);margin-bottom:0;">
       Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Бекенд: SDL3 + SDL_GPU (Vulkan), виключний — OpenGL/Raylib повністю видалено (FIX-8). AI архітектура натхненна механіками Alien: Isolation. Kenshi asset pipeline (KEN-1–8): cgltf GLB, ozz-animation, Jolt CharacterVirtual, DetourCrowd. Terrain atlas <code>world_hmap.r32</code> (67 MB, 4096 зон). Цільове залізо: Intel HD 520 (AVX2).
@@ -225,8 +272,8 @@
     <div class="card"><div class="card-icon">🗺️</div><div class="card-title">Isometric Flare</div><div class="card-desc">Flare-сумісні мапи: TileMapRenderer (3D ізометрія) + TileMap2DRenderer (2D SDL_GPU). Multi-atlas, billboard, FRINGE.</div></div>
     <div class="card"><div class="card-icon">🧩</div><div class="card-title">ECS (EnTT)</div><div class="card-desc">500+ NPC, всі компоненти — чистий POD. Collect→apply патерн. Split-ready engine/include/monkey_dust/.</div></div>
     <div class="card"><div class="card-icon">🧠</div><div class="card-title">AI Systems</div><div class="card-desc">Stackless BT VM + BTSystem + BTJsonLoader + DirectorSystem + FlowGraph + SenseSystem. Extended AI patterns (C1–C20).</div></div>
-    <div class="card"><div class="card-icon">🔒</div><div class="card-title">Security Audit</div><div class="card-desc">10 fixes: Lua 8MB sandbox, CRC32 SaveHeader v8, POSIX mkdir, _mm_pause spinlock, MAX_BONES 128→6.</div></div>
-    <div class="card"><div class="card-icon">👾</div><div class="card-title">Extended AI Patterns</div><div class="card-desc">20 Extended AI patterns — MotivationType, RoleRegistry, AwarenessState, FlowDurableTrigger, BTJsonLoader, BTNodePool.</div></div>
+    <div class="card"><div class="card-icon">🧬</div><div class="card-title">Kenshi Character Editor</div><div class="card-desc">Posture · Shoulder set · Neck pos — повні 3D кватерніонні дельти з GLB-анімацій. 29 morph targets. Hair/skin/eye.</div></div>
+    <div class="card"><div class="card-icon">📦</div><div class="card-title">FCS Binary Parser</div><div class="card-desc">Kenshi gamedata.base + .mod: 137 фракцій, 348 міст, leveldata.level 20 world coords. python3 private/md_mod_import.py.</div></div>
     <div class="card"><div class="card-icon">🤖</div><div class="card-title">BT VM повний</div><div class="card-desc">BTNodePool 32KB arena · BTSystem ECS driver · BTJsonLoader strstr parser · 30+ node types · data/bt/ JSON trees.</div></div>
     <div class="card"><div class="card-icon">🔬</div><div class="card-title">9 Improvements</div><div class="card-desc">ACES tonemapping · Live BT reload · NpcMemory · Dirty TINST · Dirty SSBO · WorldSim 1Hz · MaterialDesc · UtilityScorer · md::fs</div></div>
   </div>
@@ -2157,6 +2204,7 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
 <button id="scroll-top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
 
 <script>
+// ── Scroll: back-to-top + active nav link ───────────────────────────────────
 window.addEventListener('scroll', () => {
   document.getElementById('scroll-top').classList.toggle('visible', window.scrollY > 300);
   document.querySelectorAll('.doc-section').forEach(s => {
@@ -2169,12 +2217,35 @@ window.addEventListener('scroll', () => {
   });
 });
 
+// ── Nav search filter ────────────────────────────────────────────────────────
 function filterNav(q) {
   q = q.toLowerCase();
   document.querySelectorAll('.nav-link').forEach(a => {
     a.style.display = (!q || a.textContent.toLowerCase().includes(q)) ? '' : 'none';
   });
 }
+
+// ── Mobile hamburger sidebar ─────────────────────────────────────────────────
+(function() {
+  const toggle  = document.getElementById('menu-toggle');
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  function open()  { sidebar.classList.add('open');  overlay.classList.add('open'); }
+  function close() { sidebar.classList.remove('open'); overlay.classList.remove('open'); }
+  toggle.addEventListener('click', open);
+  overlay.addEventListener('click', close);
+  // Close sidebar when a nav link is tapped (links navigate to anchor)
+  document.querySelectorAll('.nav-link').forEach(l => l.addEventListener('click', close));
+})();
+
+// ── Wrap tables for horizontal scroll on narrow viewports ────────────────────
+document.querySelectorAll('#content table').forEach(t => {
+  if (t.parentNode.classList.contains('table-scroll')) return;
+  const w = document.createElement('div');
+  w.className = 'table-scroll';
+  t.parentNode.insertBefore(w, t);
+  w.appendChild(t);
+});
 </script>
 </body>
 </html>

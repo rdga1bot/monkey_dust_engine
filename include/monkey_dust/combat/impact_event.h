@@ -1,9 +1,8 @@
 #pragma once
 // ImpactEvent (VBfA-AI6) — discrete hit-reaction knockback component.
 //
-// Source: Viking Battle for Asgard animation metadata (FRAMES_TO_IMPACT,
-// Z_OFFSET_TO_IMPACT, X_OFFSET_TO_IMPACT) reverse-engineered 2026-05-19.
-// VBfA did NOT use continuous rigid-body physics for hit reactions —
+// Design inspired by animation-metadata-driven hit reactions (FRAMES_TO_IMPACT,
+// Z_OFFSET_TO_IMPACT, X_OFFSET_TO_IMPACT) rather than continuous rigid-body physics —
 // every attack stored a pre-computed displacement vector applied over N frames.
 // This gives deterministic, cheap reactions for 1000+ NPCs simultaneously.
 //

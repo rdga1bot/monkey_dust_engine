@@ -13,7 +13,7 @@ enum class DirectorStage : uint8_t {
 };
 
 // ── ThreatState ───────────────────────────────────────────────────────────────
-// 6 discrete states confirmed by AI.exe RE (FUN_008b6770 string table).
+// 6 discrete states — finer-grained than DirectorStage's continuous menace fill.
 // More granular than DirectorStage: DirectorStage drives menace fill logic,
 // ThreatState drives per-NPC animation selection and BT branch choice.
 // Mapping: MenaceToThreatState() below converts float menace → ThreatState.

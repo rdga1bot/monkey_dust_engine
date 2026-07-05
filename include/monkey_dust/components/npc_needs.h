@@ -21,7 +21,7 @@ struct NpcNeeds {
 static_assert(sizeof(NpcNeeds) == 16, "NpcNeeds must be 16 bytes");
 
 // SurvivalConfig — global balance constants for the survival simulation.
-// Loaded from config once; not per-entity. Kenshi RE: thunk_FUN_14086b2b0 offsets.
+// Loaded from config once; not per-entity.
 struct SurvivalConfig {
     // Hunger / starvation
     float starvation_time_s        = 86400.f; // seconds until death from starvation (~24 h)

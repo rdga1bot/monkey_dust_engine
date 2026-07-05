@@ -1,7 +1,6 @@
 #pragma once
 // md_pool.h — Named typed fixed-size pool allocator.
 //
-// Port of AI.exe.c pattern: FUN_00995ab0(name, count, elem_size, align)
 // Each subsystem declares its own pool with a debug name, fixed capacity,
 // and element type. Zero malloc — all storage is inline.
 //

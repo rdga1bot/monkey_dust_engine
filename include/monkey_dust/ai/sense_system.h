@@ -26,7 +26,7 @@ static constexpr float SENSE_AUDIO_RADIUS_M = 15.0f;
 static constexpr float SENSE_PI             = 3.14159265f;
 static constexpr float SENSE_RAD2DEG        = 180.0f / SENSE_PI;
 
-// VBfA FUN_00468840: inverse 4th-power distance falloff.
+// Inverse 4th-power distance falloff.
 // (range/dist)^4 — double distance → 1/16th activation.
 // Used for audio/smell/vibration where ultra-local effect is desired.
 // Linear (old): 1 - dist/range   → gentle slope
@@ -145,7 +145,7 @@ inline void SenseSystemUpdate(float now_ms) {
         }
 
         // ── Audio (index 1): VBfA r⁴ falloff. AI-4: audio_range_mult + noise_mult.
-        // VBfA FUN_00468840: (range/dist)^4 — 2× farther → 1/16 activation.
+        // (range/dist)^4 — 2× farther → 1/16 activation.
         // Replaces linear (1 - dist/range) which was too generous at long range.
         float eff_audio_range = SENSE_AUDIO_RADIUS_M * audio_range_mult;
         // B-1: AudioMovement index=2 uses full stealth; AudioCombat index=1 less affected.

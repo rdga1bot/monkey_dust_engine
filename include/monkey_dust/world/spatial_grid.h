@@ -139,8 +139,7 @@ public:
         return found;
     }
 
-    // ── VBfA ELEMENTS_WITHIN_RADIUS pattern ──────────────────────────────────
-    // Source: viking.exe.c lines 131887-131913 (FUN_0060ec20, 46 callsites)
+    // ── VBfA-style ELEMENTS_WITHIN_RADIUS pattern ─────────────────────────────
     // Returns all entities whose cell overlaps the AABB [wx_min..wx_max] × [wz_min..wz_max].
     // No per-entity distance filter — caller does secondary clip if needed.
     // Matches VBfA: double loop over cell range, output entity list.

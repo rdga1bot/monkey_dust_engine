@@ -74,8 +74,8 @@ enum class SquadActivity : uint8_t {
     Working                 = 26, // VBfA-R: labour / crafting task
     Alerted                 = 27, // VBfA-R: suspicious, weapon half-drawn
     Dead                    = 28, // VBfA-R: squad wiped out
-    // ── RE-confirmed from AI.exe.c (2026-05-28) ──────────────────────────────
-    // AT_SQUAD_* string constants found in serialization function FUN_009343b0.
+    // ── Extended activity set (2026-05-28) ───────────────────────────────────
+    // AT_SQUAD_* naming matches the reference game's activity taxonomy.
     IdleMain                = 29, // AT_SQUAD_ACT_IDLE_MAIN
     IdlePatrolToPos         = 30, // AT_SQUAD_ACT_IDLE_PATROL_TO_POS
     GuardStartup            = 31, // AT_SQUAD_ACTIVITY_GUARD_STARTUP

@@ -108,8 +108,8 @@ inline float CalcDamage(const WeaponStats& wpn, const ArmorStats& armor,
 }
 
 // VBfA-R: combo and stagger timing per weapon speed class (fast/medium/slow).
-// Kenshi RE (kenshi_x64.exe.c, thunk_FUN_14086b2b0): damage_1/99 lerp by skill,
-// ko thresholds by toughness, bleed/clot rates stored 10× in config (×0.1 at load).
+// damage_1/99 lerp by skill, ko thresholds by toughness,
+// bleed/clot rates stored 10× in config (×0.1 at load).
 struct CombatConfig {
     // Combo / stagger timing
     float combo_window_fast   = 1.000f;

@@ -14,8 +14,8 @@ struct ViewCone {
 };
 
 // ── SenseType ─────────────────────────────────────────────────────────────────
-// B-4: Audio split — RE-confirmed (AI.exe FUN_006ca0f0): HEARD_COMBAT=1,
-// HEARD_MOVEMENT=2 are separate entries with different activation thresholds.
+// B-4: Audio split — HEARD_COMBAT=1, HEARD_MOVEMENT=2 are separate entries
+// with different activation thresholds.
 // Total: 10 sense types (was 9). sizeof(SenseComponent) updated to 112.
 // JSON "sense" field accepts name string or integer index (0-9).
 enum class SenseType : uint8_t {
@@ -33,8 +33,8 @@ enum class SenseType : uint8_t {
 };
 static constexpr uint8_t MAX_SENSES = static_cast<uint8_t>(SenseType::COUNT);
 
-// ── Sensory activation thresholds (RE-confirmed, AI.exe FUN_006c7160) ────────
-// 4-level system confirmed across AI.exe ("TRACE/LOWER/ACTIVATED/UPPER_THRESHOLD").
+// ── Sensory activation thresholds ─────────────────────────────────────────────
+// 4-level system: trace / lower / activated / upper threshold.
 // These are the activation [0..1] breakpoints, not menace levels.
 static constexpr float SENSE_LOWER_THRESHOLD     = 0.25f; // below → ignore stimulus
 static constexpr float SENSE_ACTIVATED_THRESHOLD = 0.55f; // investigate / alert

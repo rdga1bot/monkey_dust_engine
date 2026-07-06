@@ -3,13 +3,15 @@
 #include <cmath>
 #include <entt/entt.hpp>
 
-// Kenshi zone size — RE-confirmed Ogre Terrain::setTerrainScale(): horizontal_scale
-// = 294912.0 world units over a 64-zone grid → 294912/64 = 4608m/zone (re_docs/kenshi/terrain.md).
-// Previous 500.0f was an unverified community guess, never reconciled against RE data.
-static constexpr float CHUNK_SIZE            = 4608.0f;
-// Reduced from 3: CHUNK_SIZE grew ~9.2x, so radius=3 would load ~85x more area than
-// before. Re-check against Intel HD 520 budget before raising.
-static constexpr int   CHUNK_LOAD_RADIUS     = 1;
+// Kenshi zone size. Ogre Terrain::setTerrainScale() gives horizontal_scale=294912.0
+// world UNITS (re_docs/kenshi/terrain.md), but Kenshi's engine unit is 1 unit = 0.1m
+// (decimetre), not 1m — confirmed by cross-checking against the real map size
+// (29.491km x 29.491km, measured from save-file coordinates by the Kenshi community;
+// 294912/10 = 29491.2m matches to 5 sig figs). Real zone size = 29491.2/64 = 460.8m.
+// (A prior version of this fix used 4608.0f, treating the raw units as metres
+// directly — 10x too large; corrected after the world looked wrong at that scale.)
+static constexpr float CHUNK_SIZE            = 460.8f;
+static constexpr int   CHUNK_LOAD_RADIUS     = 3;
 static constexpr int   MAX_CHUNKS_ACTIVE     = (CHUNK_LOAD_RADIUS * 2 + 1)
                                               * (CHUNK_LOAD_RADIUS * 2 + 1); // 49
 static constexpr int   MAX_ENTITIES_PER_CHUNK = 2048;

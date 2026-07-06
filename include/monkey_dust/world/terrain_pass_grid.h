@@ -3,11 +3,13 @@
 // terrain_chunk.h includes this file and adds TerrainPassGrid as a field.
 #include <cstdint>
 #include <cstring>
+#include <monkey_dust/world/chunk_def.h>
 
 // Grid resolution matches TERRAIN_GRID in terrain_chunk.h (64 cells per axis).
-// PASS_CELL_SIZE = CHUNK_SIZE(500m) / PASS_GRID_N(64) = 7.8125m per cell.
+// PASS_CELL_SIZE = CHUNK_SIZE / PASS_GRID_N(64); derived from CHUNK_SIZE directly
+// (not a duplicated literal) so the two stay in sync if CHUNK_SIZE ever changes again.
 static constexpr int   PASS_GRID_N     = 64;
-static constexpr float PASS_CELL_SIZE  = 500.f / (float)PASS_GRID_N;  // 7.8125m
+static constexpr float PASS_CELL_SIZE  = CHUNK_SIZE / (float)PASS_GRID_N;
 
 // Forward declaration — TerrainPassGrid_Build receives a NavMesh by const ref.
 class NavMesh;

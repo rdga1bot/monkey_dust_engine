@@ -64,7 +64,7 @@ bool  TerrainAtlas_HasEdits();
 // ── Master heightmap API ─────────────────────────────────────────────────────
 // Low-resolution macro geography layer blended under procedural noise.
 // world_extent_x/z: total world size in metres the heightmap covers.
-// For a 64-zone atlas: world_extent = 64 * CHUNK_SIZE = 32000m.
+// For a 64-zone atlas: world_extent = 64 * CHUNK_SIZE = 294912m.
 bool  TerrainMaster_Load(const char* path, float world_extent_x, float world_extent_z);
 bool  TerrainMaster_Loaded();
 // World-space height sample (wx,wz in metres; bilinear)

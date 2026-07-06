@@ -9,12 +9,12 @@
 // morph_y filled by TerrainGen_Build; consumed by terrain_pom.vert.
 #define TERRAIN_GEOMORPH_ENABLED 1
 
-// Terrain grid: 64×64 quads = 65×65 vertices per chunk (CHUNK_SIZE=500m → 7.8m/quad)
+// Terrain grid: 64×64 quads = 65×65 vertices per chunk (CHUNK_SIZE=4608m → 72m/quad)
 static constexpr int   TERRAIN_GRID  = 64;
 static constexpr int   TERRAIN_VERTS = (TERRAIN_GRID + 1) * (TERRAIN_GRID + 1); // 4225
 static constexpr int   TERRAIN_TRIS  = TERRAIN_GRID * TERRAIN_GRID * 2;         // 8192
 static constexpr int   TERRAIN_IDX   = TERRAIN_TRIS * 3;                         // 24576
-static constexpr float TERRAIN_STEP  = CHUNK_SIZE / TERRAIN_GRID;               // 7.8m
+static constexpr float TERRAIN_STEP  = CHUNK_SIZE / TERRAIN_GRID;               // 72m
 
 // LOD levels (same VBO, coarser IBO — steps of 2/4/8 vertices)
 static constexpr int   TERRAIN_LOD_LEVELS    = 3;

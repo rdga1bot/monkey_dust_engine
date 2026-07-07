@@ -1,5 +1,6 @@
 // PropRenderer — per-instance rock prop draw (up to MAX_PROPS per frame, no malloc).
 #include <monkey_dust/render/prop_renderer.h>
+#include <monkey_dust/render/prop_tex_shared.h>
 #include <cstring>
 #include <cstdio>
 
@@ -7,27 +8,32 @@
 #include <SDL3/SDL_gpu.h>
 #endif
 
-bool PropRenderer::Init(const char* glb_path) {
+bool PropRenderer::Init(const char* glb_path, float layer) {
     if (!glb_path) {
         fprintf(stdout, "[PropRenderer] No GLB path supplied — prop draw disabled\n");
         return false;
     }
 
-    if (!mesh_.LoadGLB(glb_path)) {
+    if (!mesh_.LoadGLB(glb_path, layer)) {
         fprintf(stdout, "[PropRenderer] GLB load failed — prop draw disabled\n");
         return false;
     }
+
+    PropTexShared::Get().Init();  // idempotent; shared across all PropRenderer/ClutterRenderer instances
 
 #ifdef MD_SDL_GPU
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/prop.vert";
     pd.frag_path = "shaders/prop.frag";
 
-    // PropVertex: pos(loc=0, offset=0, F3) + normal(loc=1, offset=12, F3), stride=24
-    pd.layout.count      = 2;
-    pd.layout.stride     = 24;
+    // PropVertex: pos(loc=0,off=0,F3) + normal(loc=1,off=12,F3) + uv(loc=2,off=24,F2)
+    // + layer(loc=3,off=32,F1), stride=36.
+    pd.layout.count      = 4;
+    pd.layout.stride     = 36;
     pd.layout.attribs[0] = { 0,  0, GpuAttribFmt::F3 };  // aPos
     pd.layout.attribs[1] = { 1, 12, GpuAttribFmt::F3 };  // aNormal
+    pd.layout.attribs[2] = { 2, 24, GpuAttribFmt::F2 };  // aUV
+    pd.layout.attribs[3] = { 3, 32, GpuAttribFmt::F1 };  // aLayer
 
     pd.raster.depth_test  = true;
     pd.raster.depth_write = true;
@@ -36,6 +42,7 @@ bool PropRenderer::Init(const char* glb_path) {
 
     pd.vert_uniform_bufs = 1;  // slot 0: PropVert UBO (80 bytes: mat4 vp + vec4 model_pos_scale)
     pd.frag_uniform_bufs = 1;  // slot 0: PropFrag UBO (32 bytes: sun_dir_str + ambient)
+    pd.frag_samplers     = 2;  // 0=tex_rock, 1=tex_veg (PropTexShared)
 
     if (!pipeline_.Create(pd)) {
         fprintf(stderr, "[PropRenderer] Pipeline creation failed\n");
@@ -97,6 +104,16 @@ void PropRenderer::DrawRaw(
         : SDL_GPU_INDEXELEMENTSIZE_32BIT;
     SDL_GPUBufferBinding ib { mesh_.ibo.SDLBuffer(), 0u };
     SDL_BindGPUIndexBuffer(rp, &ib, idx_size);
+
+    // Bind rock+veg samplers (PropTexShared) — aLayer picks between them in prop.frag.
+    PropTexShared& pt = PropTexShared::Get();
+    if (pt.ready) {
+        SDL_GPUTextureSamplerBinding sb[2] = {
+            { pt.tex_rock->SDLTexture(), pt.tex_rock->SDLSampler() },
+            { pt.tex_veg->SDLTexture(),  pt.tex_veg->SDLSampler()  },
+        };
+        SDL_BindGPUFragmentSamplers(rp, 0, sb, 2);
+    }
 
     // Push fragment UBO once (sun params are shared for all props).
     SDL_PushGPUFragmentUniformData(cmd, 0, sun32, 32);

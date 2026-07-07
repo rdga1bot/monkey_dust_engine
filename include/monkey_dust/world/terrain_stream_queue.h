@@ -5,6 +5,8 @@
 #include <cstring>
 #include <monkey_dust/world/terrain_chunk.h>
 #include <monkey_dust/world/terrain_gen.h>
+#include <monkey_dust/world/clutter_gen.h>
+#include <monkey_dust/world/world_registry.h>
 #include <monkey_dust/physics/jolt_world.h>
 
 // ── TerrainStreamQueue ────────────────────────────────────────────────────────
@@ -30,6 +32,13 @@ struct TerrainBuildSlot {
     uint16_t      staged_i [TERRAIN_IDX];
     TerrainVertex staged_sv[TERRAIN_SKIRT_VERTS];
     uint16_t      staged_si[TERRAIN_SKIRT_IDX];
+
+    // KEN-CLUTTER Tier 2: per-slot clutter staging (variable count, unlike the
+    // fixed-size terrain grid above — see clutter_vc/clutter_ic).
+    PropVertex clutter_v[CLUTTER_MAX_VERTS];
+    uint16_t   clutter_i[CLUTTER_MAX_IDX];
+    int        clutter_vc = 0;
+    int        clutter_ic = 0;
 
     std::atomic<bool> ready    {false};
     std::atomic<bool> consumed {true};   // true = slot is free
@@ -87,6 +96,8 @@ public:
                 TerrainGen_UploadFrom(*s.chunk,
                                       s.staged_v, s.staged_i,
                                       s.staged_sv, s.staged_si);
+                ClutterGen_UploadFrom(*s.chunk, s.clutter_v, s.clutter_vc,
+                                      s.clutter_i, s.clutter_ic);
                 fn(s);
             }
             s.consumed.store(true, std::memory_order_release);
@@ -118,6 +129,16 @@ private:
                 memcpy(s.staged_i,  TerrainGen_StagedIndices(),       sizeof(s.staged_i));
                 memcpy(s.staged_sv, TerrainGen_StagedSkirtVerts(),    sizeof(s.staged_sv));
                 memcpy(s.staged_si, TerrainGen_StagedSkirtIndices(),  sizeof(s.staged_si));
+
+                // KEN-CLUTTER Tier 2: bake dense clutter on this same worker thread
+                // (heavy enough now — thousands of merged verts — that it must NOT
+                // run on the main thread like the cheap PropGen_Build still does).
+                ClutterGen_Build(*s.chunk, WorldRegistry::Get().GetBiomeAt(s.atlas_ex, s.atlas_ez));
+                int cvc = ClutterGen_StagedVertCount(), cic = ClutterGen_StagedIndexCount();
+                memcpy(s.clutter_v, ClutterGen_StagedVerts(),   sizeof(PropVertex) * (size_t)cvc);
+                memcpy(s.clutter_i, ClutterGen_StagedIndices(), sizeof(uint16_t)   * (size_t)cic);
+                s.clutter_vc = cvc;
+                s.clutter_ic = cic;
 
                 s.ready.store(true, std::memory_order_release);
                 pending_.fetch_sub(1, std::memory_order_release);

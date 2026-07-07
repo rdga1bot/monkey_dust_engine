@@ -56,7 +56,10 @@ enum ChunkPropType : uint8_t {
     kPropYucca     = 3,  // yucca          (~1.7 m)
     kPropCanyonRock= 4,  // canyon_rock    (~1.3 m, small stony plant)
     kPropDeadTree  = 5,  // dead_tree      (~1.8 m)
-    kPropTypeCount = 6
+    kPropBones     = 6,  // bones          (ribcage, ~1.5 m, wasteland dressing)
+    kPropRuinJunk  = 7,  // ruin_junk      (concrete rubble chunk, ~1 m)
+    kPropSpike     = 8,  // spike_bloom    (hazard plant/spike cluster, ~2 m, rare — heavy mesh)
+    kPropTypeCount = 9
 };
 
 struct ChunkPropInstance {
@@ -88,6 +91,14 @@ struct TerrainChunk {
     int              prop_count = 0;    // valid entries in props[]
     float            ground_layers[4] = {0.f, 1.f, 2.f, 3.f}; // GroundTexLayer indices (per biome)
     bool             loaded = false;
+
+    // KEN-CLUTTER Tier 2: dense ground clutter (pebbles/small rocks/small plants)
+    // baked into ONE static mesh per chunk by ClutterGen_Build/Upload — one draw
+    // call regardless of instance count (mirrors Kenshi's Forests::BatchedGeometry).
+    GpuStaticBuffer  clutter_vbo;
+    GpuStaticBuffer  clutter_ibo;
+    int              clutter_index_count = 0;
+    bool             clutter_loaded = false;
 
     // Sample height at local chunk coords (0..CHUNK_SIZE).
     // Bilinear interpolation between grid cells.

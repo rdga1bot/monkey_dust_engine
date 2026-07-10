@@ -3,6 +3,7 @@
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/gpu_ring_buffer.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/platform/math_types.h>
 #include <cstdint>
@@ -49,7 +50,7 @@ public:
     void     Init();
     uint32_t Alloc(entt::entity e, float x, float z, uint8_t faction_id = 0);
     void     Free(entt::entity e);
-    void     FlushAoStoSoA(entt::registry& reg);
+    void     FlushAoStoSoA(MdRegistry& reg);
     // Upload CPU transforms → GPU, bind both SSBOs.
     void     UploadToGPU();
     // Call once per frame AFTER all draw/compute that read transform_ring_.

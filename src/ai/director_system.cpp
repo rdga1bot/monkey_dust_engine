@@ -3,6 +3,7 @@
 #include <monkey_dust/ai/fnv.h>
 #include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/platform/md_log.h>
@@ -234,11 +235,11 @@ void DirectorSystem::Tick(float dt) {
 
     // 1. Find max visual activation — stop early once max_menaces NPCs found.
     float max_activation = 0.f;
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
     {
         const int max_m = pr.max_menaces > 0 ? pr.max_menaces : 1;
         int found = 0;
-        auto view = reg.view<SenseComponent>();
+        auto view = reg.View<SenseComponent>();
         for (auto [e, sc] : view.each()) {
             if (sc.activation[0] > max_activation)
                 max_activation = sc.activation[0];
@@ -270,7 +271,7 @@ void DirectorSystem::Tick(float dt) {
     const bool stage_changed  = stage_ != last_bc_stage_;
     if (menace_changed || stage_changed) {
         // Broadcast only to entities that have an AgentBlackboard (cold component).
-        auto view = reg.view<AgentBlackboard>();
+        auto view = reg.View<AgentBlackboard>();
         for (auto [e, bb] : view.each()) {
             bb_set_float(bb, K_MENACE, menace_);
             bb_set_int  (bb, K_STAGE,  static_cast<int32_t>(stage_));

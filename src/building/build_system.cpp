@@ -121,14 +121,14 @@ entt::entity BuildSystem::Place(float wx, float wz, uint32_t def_id, Inventory& 
         if (player_inv.Count(def->build_cost[i].item_id) < def->build_cost[i].amount) return entt::null;
     for (int i=0; i<def->build_cost_count; ++i)
         player_inv.Take(def->build_cost[i].item_id, def->build_cost[i].amount);
-    auto& reg = Registry::Get(); auto e = reg.create();
+    auto& reg = MdRegistry::Get(); auto e = reg.Create();
     Building b={}; b.def_id=def_id; b.grid_x=gx; b.grid_z=gz;
     b.size_x=def->size_x; b.size_z=def->size_z;
     b.chain=def->chain; b.progress_s=0.0f; b.active=def->chain.valid;
-    reg.emplace<Building>(e, b);
+    reg.Emplace<Building>(e, b);
     float cx=wx+(def->size_x-1)*0.5f, cz=wz+(def->size_z-1)*0.5f;
-    reg.emplace<WorldTransform>(e, cx, 0.0f, cz, 0.0f);
-    if (def->chain.valid) { Inventory inv={}; inv.Clear(); reg.emplace<Inventory>(e, inv); }
+    reg.Emplace<WorldTransform>(e, cx, 0.0f, cz, 0.0f);
+    if (def->chain.valid) { Inventory inv={}; inv.Clear(); reg.Emplace<Inventory>(e, inv); }
     for (int dx=0; dx<def->size_x; ++dx)
         for (int dz=0; dz<def->size_z; ++dz)
             grid_[gx+dx][gz+dz]=e;
@@ -143,9 +143,9 @@ entt::entity BuildSystem::Place(float wx, float wz, uint32_t def_id, Inventory& 
 }
 
 void BuildSystem::Demolish(entt::entity e, Inventory& player_inv) {
-    auto& reg = Registry::Get();
-    if (!reg.valid(e) || !reg.all_of<Building>(e)) return;
-    auto& b = reg.get<Building>(e);
+    auto& reg = MdRegistry::Get();
+    if (!reg.Valid(e) || !reg.AllOf<Building>(e)) return;
+    auto& b = reg.Get<Building>(e);
     const BuildingDef* def = GetDef(b.def_id);
     for (int dx=0; dx<b.size_x; ++dx)
         for (int dz=0; dz<b.size_z; ++dz) {
@@ -157,16 +157,16 @@ void BuildSystem::Demolish(entt::entity e, Inventory& player_inv) {
         if (refund>0) player_inv.Add(def->build_cost[i].item_id, refund);
     }
     if (NavSystem::Get().IsReady()) {
-        const auto& tr = reg.get<WorldTransform>(e);
+        const auto& tr = reg.Get<WorldTransform>(e);
         NavSystem::Get().EnqueueRebuild(tr.x, tr.z, nullptr, 0, nullptr, 0);
     }
-    reg.destroy(e);
+    reg.Destroy(e);
 }
 
 void BuildSystem::RebuildGridFromEntities() {
     for (int x=0; x<MAX_GRID; ++x) for (int z=0; z<MAX_GRID; ++z) grid_[x][z]=entt::null;
-    auto& reg = Registry::Get();
-    reg.view<Building>().each([&](entt::entity e, const Building& b) {
+    auto& reg = MdRegistry::Get();
+    reg.View<Building>().each([&](entt::entity e, const Building& b) {
         for (int dx=0; dx<b.size_x; ++dx) for (int dz=0; dz<b.size_z; ++dz) {
             int gx=b.grid_x+dx, gz=b.grid_z+dz;
             if (gx>=0&&gx<MAX_GRID&&gz>=0&&gz<MAX_GRID) grid_[gx][gz]=e;
@@ -176,8 +176,8 @@ void BuildSystem::RebuildGridFromEntities() {
 }
 
 void BuildSystem::Tick(float dt_s) {
-    auto& reg = Registry::Get();
-    reg.view<Building, Inventory>().each([&](entt::entity be, Building& b, Inventory& inv) {
+    auto& reg = MdRegistry::Get();
+    reg.View<Building, Inventory>().each([&](entt::entity be, Building& b, Inventory& inv) {
         if (!b.active || !b.chain.valid) return;
         if (b.chain.storage_capacity > 0) {
             int stored=0;
@@ -207,8 +207,8 @@ void BuildSystem::Tick(float dt_s) {
         } else {
             b.chain.state = ProductionState::IDLE;
         }
-        if (reg.all_of<WorldTransform>(be)) {
-            const auto& btr = reg.get<WorldTransform>(be);
+        if (reg.AllOf<WorldTransform>(be)) {
+            const auto& btr = reg.Get<WorldTransform>(be);
             ParticleSoA::Get().Emit(btr.x, btr.y+1.5f, btr.z, 0.3f,1.5f,0.3f,180,180,180,200,1.5f,0.12f,3,ParticleType::SMOKE);
         }
     });

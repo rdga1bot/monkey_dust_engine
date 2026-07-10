@@ -1,6 +1,7 @@
 #include <monkey_dust/ecs/hierarchy_utils.h>
 #include <monkey_dust/components/hierarchy.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 
 namespace Hierarchy {
 
@@ -17,21 +18,21 @@ static void RemoveFromChildrenList(entt::registry& reg, entt::entity parent, ent
 }
 
 void ClearParent(entt::entity child) {
-    auto& reg = Registry::Get();
-    if (!reg.all_of<ParentRef>(child)) return;
-    entt::entity parent = reg.get<ParentRef>(child).parent;
-    RemoveFromChildrenList(reg, parent, child);
-    reg.remove<ParentRef>(child);
+    auto& reg = MdRegistry::Get();
+    if (!reg.AllOf<ParentRef>(child)) return;
+    entt::entity parent = reg.Get<ParentRef>(child).parent;
+    RemoveFromChildrenList(reg.Raw(), parent, child);
+    reg.Remove<ParentRef>(child);
 }
 
 bool SetParent(entt::entity child, entt::entity parent) {
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
     ClearParent(child);  // detach from any previous parent first
 
-    auto& cr = reg.get_or_emplace<ChildrenRef>(parent);
+    auto& cr = reg.GetOrEmplace<ChildrenRef>(parent);
     if (cr.count >= HIERARCHY_MAX_CHILDREN) return false;
     cr.children[cr.count++] = child;
-    reg.emplace_or_replace<ParentRef>(child, ParentRef{parent});
+    reg.EmplaceOrReplace<ParentRef>(child, ParentRef{parent});
     return true;
 }
 
@@ -54,7 +55,7 @@ static void OnParentRefDestroyed(entt::registry& r, entt::entity child) {
 }
 
 void RegisterDestroyHooks() {
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get().Raw();
     reg.on_destroy<ChildrenRef>().connect<&OnChildrenRefDestroyed>();
     reg.on_destroy<ParentRef>().connect<&OnParentRefDestroyed>();
 }

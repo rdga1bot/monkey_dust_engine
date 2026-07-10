@@ -1,5 +1,6 @@
 #include <monkey_dust/world/chunk_manager.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/transform_soa.h>
 #include <monkey_dust/platform/timing_system.h>
 #include <monkey_dust/platform/md_log.h>
@@ -40,10 +41,10 @@ bool ChunkManager::SaveChunk(int idx) {
     uint32_t count = (uint32_t)cd.entity_count;
     fwrite(&count, sizeof(count), 1, f);
 
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
     for (int i = 0; i < cd.entity_count; ++i) {
         entt::entity e = cd.entities[i];
-        if (!reg.valid(e)) continue;
+        if (!reg.Valid(e)) continue;
         if (save_entity_fn_)
             save_entity_fn_(reg, e, f);
     }
@@ -197,12 +198,12 @@ void ChunkManager::LoadChunkFromStaging(ChunkLoadStaging& stg) {
     snprintf(cd.filename, sizeof(cd.filename),
              "%s/chunk_%d_%d.bin", chunks_dir_, stg.coord.x, stg.coord.z);
 
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
 
     for (int i = 0; i < stg.tree_count &&
          cd.entity_count < MAX_ENTITIES_PER_CHUNK; ++i)
     {
-        entt::entity e = reg.create();
+        entt::entity e = reg.Create();
         if (spawn_tree_fn_) spawn_tree_fn_(reg, stg.trees[i]);
         cd.entities[cd.entity_count++] = e;
     }
@@ -210,7 +211,7 @@ void ChunkManager::LoadChunkFromStaging(ChunkLoadStaging& stg) {
     for (int i = 0; i < stg.npc_count &&
          cd.entity_count < MAX_ENTITIES_PER_CHUNK; ++i)
     {
-        entt::entity e = reg.create();
+        entt::entity e = reg.Create();
         if (spawn_npc_fn_) spawn_npc_fn_(reg, stg.npcs[i]);
         cd.entities[cd.entity_count++] = e;
     }
@@ -268,11 +269,11 @@ void ChunkManager::UnloadChunk(int idx) {
     }
     if (cd.dirty) SaveChunk(idx);
 
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
     for (int i = 0; i < cd.entity_count; ++i) {
-        if (!reg.valid(cd.entities[i])) continue;
+        if (!reg.Valid(cd.entities[i])) continue;
         if (destroy_entity_fn_) destroy_entity_fn_(reg, cd.entities[i]);
-        reg.destroy(cd.entities[i]);
+        reg.Destroy(cd.entities[i]);
     }
 
     MD_LOG(MD_LOG_INFO, "[ChunkManager] Unloaded %d_%d", cd.coord.x, cd.coord.z);

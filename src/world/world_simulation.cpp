@@ -4,6 +4,7 @@
 #include <monkey_dust/world/faction_system.h>
 #include <monkey_dust/building/power_grid.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/platform/md_log.h>
 
 // 1 Hz world-state tick. Call with LOGIC_TICK_S (0.1f) each logic tick.
@@ -119,8 +120,8 @@ void WorldSimulation::Tick(float delta_s) noexcept {
     // E-1: ShopInventory restock — advance restock_timer_s for all shops each logic second.
     // ShopInventory::TickRestock(delta_s) returns true when shop restocks; we call once/s.
     {
-        auto& reg = Registry::Get();
-        reg.view<ShopInventory>().each([](ShopInventory& shop) {
+        auto& reg = MdRegistry::Get();
+        reg.View<ShopInventory>().each([](ShopInventory& shop) {
             shop.TickRestock(1.0f);  // 1s per WorldSimulation tick
         });
     }

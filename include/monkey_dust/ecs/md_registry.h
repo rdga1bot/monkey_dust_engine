@@ -69,6 +69,11 @@ public:
         return Raw().replace<T>(e, std::forward<Args>(args)...);
     }
 
+    template<typename T, typename... Args>
+    T& EmplaceOrReplace(MdEntity e, Args&&... args) {
+        return Raw().emplace_or_replace<T>(e, std::forward<Args>(args)...);
+    }
+
     template<typename T, typename Fn>
     void Patch(MdEntity e, Fn fn) { Raw().patch<T>(e, fn); }
 

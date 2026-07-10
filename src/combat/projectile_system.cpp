@@ -3,6 +3,7 @@
 #include <monkey_dust/components/health.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <entt/entt.hpp>
 #include <array>
 #include <cmath>
@@ -12,13 +13,13 @@ static constexpr int MAX_DESTROY_PER_TICK = 32;
 namespace md {
 
 void ProjectileSystem::Tick(float dt) {
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
 
     // Collect entities to destroy — avoid mutation during view iteration.
     std::array<entt::entity, MAX_DESTROY_PER_TICK> to_destroy{};
     int destroy_count = 0;
 
-    reg.view<ProjectileComponent, WorldTransform>().each(
+    reg.View<ProjectileComponent, WorldTransform>().each(
         [&](entt::entity pe, ProjectileComponent& pc, WorldTransform& pt) {
             if (destroy_count >= MAX_DESTROY_PER_TICK) return;
 
@@ -41,7 +42,7 @@ void ProjectileSystem::Tick(float dt) {
             static entt::entity hit_ents[8];
             int hit_count = 0;
 
-            reg.view<WorldTransform, Health>().each(
+            reg.View<WorldTransform, Health>().each(
                 [&](entt::entity te, const WorldTransform& tr, const Health&) {
                     if (hit || te == pe || te == pc.owner || hit_count >= 8) return;
                     float dx = tr.x - pc.x, dz = tr.z - pc.z;
@@ -50,8 +51,8 @@ void ProjectileSystem::Tick(float dt) {
 
             if (hit_count > 0) {
                 for (int i = 0; i < hit_count; ++i) {
-                    if (!reg.valid(hit_ents[i]) || !reg.all_of<Health>(hit_ents[i])) continue;
-                    auto& hp = reg.get<Health>(hit_ents[i]);
+                    if (!reg.Valid(hit_ents[i]) || !reg.AllOf<Health>(hit_ents[i])) continue;
+                    auto& hp = reg.Get<Health>(hit_ents[i]);
                     hp.hp[1] -= pc.damage;  // Torso (index 1)
                     if (hp.hp[1] < 0.0f) hp.hp[1] = 0.0f;
                     hp.UpdateIncap();
@@ -65,7 +66,7 @@ void ProjectileSystem::Tick(float dt) {
         });
 
     for (int i = 0; i < destroy_count; ++i) {
-        if (reg.valid(to_destroy[i])) reg.destroy(to_destroy[i]);
+        if (reg.Valid(to_destroy[i])) reg.Destroy(to_destroy[i]);
     }
 }
 

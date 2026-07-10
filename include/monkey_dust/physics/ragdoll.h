@@ -20,6 +20,7 @@
 #include <Jolt/Skeleton/Skeleton.h>
 #include <Jolt/Skeleton/SkeletonPose.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/physics/jolt_world.h>
 
 // Max simultaneous ragdolls (LOD ≤30m cap).
@@ -70,8 +71,8 @@ public:
 private:
     RagdollSystem() = default;
 
-    void Activate  (entt::entity e, entt::registry& reg);
-    void Deactivate(entt::entity e, entt::registry& reg);
+    void Activate  (entt::entity e, MdRegistry& reg);
+    void Deactivate(entt::entity e, MdRegistry& reg);
 
     JPH::Ref<JPH::RagdollSettings> settings_;
     JPH::Ref<JPH::Skeleton>        skeleton_;

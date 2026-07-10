@@ -5,6 +5,7 @@
 #include <monkey_dust/components/projectile.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/platform/md_log.h>
 #include <cmath>
 #include <cstring>
@@ -17,10 +18,10 @@ bool PowerSystem::Use(entt::entity caster, int power_id, float tx, float tz) {
         MD_LOG(MD_LOG_WARNING, "PowerSystem: unknown power id=%d", power_id);
         return false;
     }
-    auto& reg = Registry::Get();
-    if (!reg.valid(caster) || !reg.all_of<WorldTransform>(caster)) return false;
+    auto& reg = MdRegistry::Get();
+    if (!reg.Valid(caster) || !reg.AllOf<WorldTransform>(caster)) return false;
 
-    const auto& tr = reg.get<WorldTransform>(caster);
+    const auto& tr = reg.Get<WorldTransform>(caster);
     float cx = tr.x, cz = tr.z;
 
     if (strcmp(def->dmg_type, "melee") == 0) {
@@ -38,7 +39,7 @@ bool PowerSystem::Use(entt::entity caster, int power_id, float tx, float tz) {
 
 void PowerSystem::DoMelee(entt::entity caster, float cx, float cz,
                            float radius, float damage) {
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
     float r2 = radius * radius;
 
     // Collect hits first to avoid mutating registry mid-view.
@@ -46,7 +47,7 @@ void PowerSystem::DoMelee(entt::entity caster, float cx, float cz,
     static HitRecord hits[64];
     int hit_count = 0;
 
-    reg.view<WorldTransform, Health>().each(
+    reg.View<WorldTransform, Health>().each(
         [&](entt::entity e, const WorldTransform& t, const Health&) {
             if (e == caster || hit_count >= 64) return;
             float dx = t.x - cx, dz = t.z - cz;
@@ -54,8 +55,8 @@ void PowerSystem::DoMelee(entt::entity caster, float cx, float cz,
         });
 
     for (int i = 0; i < hit_count; ++i) {
-        if (!reg.valid(hits[i].e) || !reg.all_of<Health>(hits[i].e)) continue;
-        auto& hp = reg.get<Health>(hits[i].e);
+        if (!reg.Valid(hits[i].e) || !reg.AllOf<Health>(hits[i].e)) continue;
+        auto& hp = reg.Get<Health>(hits[i].e);
         hp.hp[1] -= damage;  // Torso (index 1)
         if (hp.hp[1] < 0.0f) hp.hp[1] = 0.0f;
         hp.UpdateIncap();
@@ -67,7 +68,7 @@ void PowerSystem::SpawnProjectile(entt::entity caster,
                                    float tx, float tz,
                                    int power_id) {
     const PowerDef* def = PowerManager::Get().Find(power_id);
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
 
     constexpr float PROJ_SPEED = 8.0f; // m/s
     float dx = tx - cx, dz = tz - cz;
@@ -88,9 +89,9 @@ void PowerSystem::SpawnProjectile(entt::entity caster,
     pc.elapsed_s  = 0.0f;
     pc.radius     = 0.4f;
 
-    auto proj = reg.create();
-    reg.emplace<ProjectileComponent>(proj, pc);
-    reg.emplace<WorldTransform>(proj, WorldTransform{cx, 0.0f, cz, 0.0f});
+    auto proj = reg.Create();
+    reg.Emplace<ProjectileComponent>(proj, pc);
+    reg.Emplace<WorldTransform>(proj, WorldTransform{cx, 0.0f, cz, 0.0f});
 }
 
 } // namespace md

@@ -84,9 +84,9 @@ uint32_t TransformSoA::Alloc(entt::entity e, float x, float z, uint8_t faction_i
 }
 
 void TransformSoA::Free(entt::entity e) {
-    auto& reg = Registry::Get();
-    if (!reg.valid(e) || !reg.all_of<WorldTransform>(e)) return;
-    auto& tr  = reg.get<WorldTransform>(e);
+    auto& reg = MdRegistry::Get();
+    if (!reg.Valid(e) || !reg.AllOf<WorldTransform>(e)) return;
+    auto& tr  = reg.Get<WorldTransform>(e);
     uint32_t slot = tr.slot;
     if (slot == INVALID_SLOT || slot >= (uint32_t)active_count) return;
     tr.slot = INVALID_SLOT;
@@ -102,16 +102,16 @@ void TransformSoA::Free(entt::entity e) {
         MarkFactionDirty(slot);
         entt::entity moved = slot_to_entity[last];
         slot_to_entity[slot] = moved;
-        if (reg.valid(moved) && reg.all_of<WorldTransform>(moved))
-            reg.get<WorldTransform>(moved).slot = slot;
+        if (reg.Valid(moved) && reg.AllOf<WorldTransform>(moved))
+            reg.Get<WorldTransform>(moved).slot = slot;
     }
     px[last]      = DUMMY_POS;
     pz[last]      = DUMMY_POS;
     slot_to_entity[last] = entt::null;
 }
 
-void TransformSoA::FlushAoStoSoA(entt::registry& reg) {
-    reg.view<WorldTransform>().each([](const WorldTransform& tr) {
+void TransformSoA::FlushAoStoSoA(MdRegistry& reg) {
+    reg.View<WorldTransform>().each([](const WorldTransform& tr) {
         if (MD_UNLIKELY(tr.slot == INVALID_SLOT ||
                         tr.slot >= (uint32_t)TransformSoA::Get().active_count))
             return;

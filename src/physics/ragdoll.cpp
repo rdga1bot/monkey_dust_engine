@@ -3,6 +3,7 @@
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/platform/md_log.h>
 
 #ifndef JPH_DEBUG_RENDERER
@@ -103,13 +104,13 @@ bool RagdollSystem::Init(const char* /*glb_path*/) {
     return true;
 }
 
-void RagdollSystem::Activate(entt::entity e, entt::registry& reg) {
+void RagdollSystem::Activate(entt::entity e, MdRegistry& reg) {
     if (!settings_) return;
 
-    const WorldTransform* tr = reg.try_get<WorldTransform>(e);
+    const WorldTransform* tr = reg.TryGet<WorldTransform>(e);
     if (!tr) return;
 
-    auto& rc = reg.get_or_emplace<RagdollComponent>(e);
+    auto& rc = reg.GetOrEmplace<RagdollComponent>(e);
     if (rc.active) return;
 
     JPH::Ragdoll* rd = settings_->CreateRagdoll(
@@ -135,8 +136,8 @@ void RagdollSystem::Activate(entt::entity e, entt::registry& reg) {
     rc.time_active_s = 0.f;
 }
 
-void RagdollSystem::Deactivate(entt::entity e, entt::registry& reg) {
-    auto* rc = reg.try_get<RagdollComponent>(e);
+void RagdollSystem::Deactivate(entt::entity e, MdRegistry& reg) {
+    auto* rc = reg.TryGet<RagdollComponent>(e);
     if (!rc || !rc->active || !rc->ragdoll) return;
     rc->ragdoll->RemoveFromPhysicsSystem();
     delete rc->ragdoll;
@@ -147,11 +148,11 @@ void RagdollSystem::Deactivate(entt::entity e, entt::registry& reg) {
 void RagdollSystem::Tick(float dt, float player_x, float player_z) {
     if (!settings_) return;
 
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
     const float lod2 = LOD_RADIUS_M * LOD_RADIUS_M;
 
     // Activate dead NPCs within LOD range; deactivate those beyond.
-    auto view = reg.view<LimbHealth, WorldTransform>();
+    auto view = reg.View<LimbHealth, WorldTransform>();
     for (auto [e, lh, tr] : view.each()) {
         if (!lh.incapacitated) continue;
 
@@ -159,7 +160,7 @@ void RagdollSystem::Tick(float dt, float player_x, float player_z) {
         float dz = tr.z - player_z;
         float d2 = dx * dx + dz * dz;
 
-        auto* rc = reg.try_get<RagdollComponent>(e);
+        auto* rc = reg.TryGet<RagdollComponent>(e);
         bool  in_range = (d2 <= lod2);
 
         if (in_range && (!rc || !rc->active)) {
@@ -170,7 +171,7 @@ void RagdollSystem::Tick(float dt, float player_x, float player_z) {
     }
 
     // Advance timers on active ragdolls; remove after SLEEP_SETTLE_S.
-    auto rc_view = reg.view<RagdollComponent>();
+    auto rc_view = reg.View<RagdollComponent>();
     for (auto [e, rc] : rc_view.each()) {
         if (!rc.active) continue;
         rc.time_active_s += dt;
@@ -195,8 +196,8 @@ static void jolt_to_mat4(JPH::RVec3 pos, JPH::Quat rot, float* m) {
 }
 
 bool RagdollSystem::GetSegmentWorlds(entt::entity e, float out_seg[6][16]) const {
-    auto& reg = Registry::Get();
-    const auto* rc = reg.try_get<RagdollComponent>(e);
+    auto& reg = MdRegistry::Get();
+    const auto* rc = reg.TryGet<RagdollComponent>(e);
     if (!rc || !rc->active || !rc->ragdoll) return false;
 
     const auto& ids = rc->ragdoll->GetBodyIDs();
@@ -231,8 +232,8 @@ bool RagdollSystem::GetBoneMatrices(entt::entity e, float* out, int bone_count) 
 
 void RagdollSystem::DeactivateChunk(float min_x, float min_z,
                                     float max_x, float max_z) {
-    auto& reg = Registry::Get();
-    auto view = reg.view<RagdollComponent, WorldTransform>();
+    auto& reg = MdRegistry::Get();
+    auto view = reg.View<RagdollComponent, WorldTransform>();
     for (auto [e, rc, tr] : view.each()) {
         if (!rc.active) continue;
         if (tr.x >= min_x && tr.x <= max_x && tr.z >= min_z && tr.z <= max_z)

@@ -73,25 +73,25 @@ void CrowdSystem::Update(float dt) {
     if (crowd_) crowd_->update(dt, nullptr);
 }
 
-void CrowdSystem::FlushRange(entt::registry& reg, int start, int end) const {
+void CrowdSystem::FlushRange(MdRegistry& reg, int start, int end) const {
     if (!crowd_) return;
     if (end > MAX_AGENTS) end = MAX_AGENTS;
     for (int i = start; i < end; ++i) {
         if (agent_entity_[i] == entt::null) continue;
-        if (!reg.valid(agent_entity_[i])) continue;
+        if (!reg.Valid(agent_entity_[i])) continue;
         const dtCrowdAgent* ag = crowd_->getAgent(i);
         if (!ag || !ag->active) continue;
 
-        if (reg.all_of<WorldTransform>(agent_entity_[i])) {
-            auto& tr = reg.get<WorldTransform>(agent_entity_[i]);
+        if (reg.AllOf<WorldTransform>(agent_entity_[i])) {
+            auto& tr = reg.Get<WorldTransform>(agent_entity_[i]);
             tr.x = ag->npos[0];
             tr.z = ag->npos[2];
             // Keep Y on terrain surface as agent moves (DetourCrowd npos[1] may be
             // stale/zero when navmesh is flat; TerrainQuery is always authoritative).
             tr.y = TerrainQuery::Get().GetHeight(tr.x, tr.z);
         }
-        if (reg.all_of<NavAgent>(agent_entity_[i])) {
-            auto& nav = reg.get<NavAgent>(agent_entity_[i]);
+        if (reg.AllOf<NavAgent>(agent_entity_[i])) {
+            auto& nav = reg.Get<NavAgent>(agent_entity_[i]);
             float vx = ag->vel[0], vz = ag->vel[2];
             float speed = sqrtf(vx*vx + vz*vz);
             if (speed > 0.2f) {
@@ -111,7 +111,7 @@ void CrowdSystem::FlushRange(entt::registry& reg, int start, int end) const {
     }
 }
 
-void CrowdSystem::FlushToNavAgent(entt::registry& reg) const {
+void CrowdSystem::FlushToNavAgent(MdRegistry& reg) const {
     FlushRange(reg, 0, MAX_AGENTS);
 }
 

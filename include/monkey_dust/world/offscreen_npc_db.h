@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 
 // OffscreenNpcDatabase — 44B-per-slot bulk storage for NPCs outside loaded chunks.
@@ -57,13 +58,13 @@ public:
 
     // Materialise offscreen NPCs whose zone is being loaded near (px, pz).
     // Re-creates ECS entities; removes them from the offscreen pool.
-    void Spawn(entt::registry& reg, float player_x, float player_z,
+    void Spawn(MdRegistry& reg, float player_x, float player_z,
                float spawn_radius_m = 600.f);
 
     // Dematerialise a live ECS entity (chunk unload or LOD cull).
     // Copies WorldTransform, LimbHealth, NpcNeeds → compact slot.
     // Does not destroy the entity — caller is responsible.
-    bool Capture(entt::entity e, entt::registry& reg, uint16_t zone_id);
+    bool Capture(entt::entity e, MdRegistry& reg, uint16_t zone_id);
 
     // Remove all offscreen NPCs belonging to a given zone.
     void PurgeZone(uint16_t zone_id) noexcept;

@@ -60,6 +60,11 @@ public:
     void Remove(MdEntity e) { Raw().remove<T>(e); }
 
     template<typename T, typename... Args>
+    T& GetOrEmplace(MdEntity e, Args&&... args) {
+        return Raw().get_or_emplace<T>(e, std::forward<Args>(args)...);
+    }
+
+    template<typename T, typename... Args>
     T& Replace(MdEntity e, Args&&... args) {
         return Raw().replace<T>(e, std::forward<Args>(args)...);
     }

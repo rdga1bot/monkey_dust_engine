@@ -58,7 +58,7 @@ public:
         float ambient[4];         // xyz=colour, w=unused
         float world_params[4];    // xy=origin_xz, z=world_to_uv, w=unused
         float ground_layers_a[4]; // xyzw = base,slope,cliff,grass GroundTexLayer indices
-        float ground_layers_b[4]; // xy = dirt,road GroundTexLayer indices; z=fog_far; w=unused
+        float ground_layers_b[4]; // xy = dirt,road GroundTexLayer indices; z=fog_density (FOG_EXP2 constant, was fog_far under the old linear scheme); w=unused
         float fog_color_near[4];  // xyz=fog colour, w=fog_near
         float blend_layers[4];    // xyz=crossfade target base,slope,cliff; w=SLOT-B base index (used per-chunk, see terrain_gen.cpp — NOT a free/unused slot)
         // x=1.0 -> override ground_layers_a/b via the per-zone SSBO lookup
@@ -80,7 +80,10 @@ public:
         float world_origin_x;
         float world_origin_z;
         float world_to_uv;
-        float _pad0;
+        // Dithered LOD-tier crossfade (task #43) — 0=normal/fully visible,
+        // 1=fully discarded. See terrain_pom.slang's DitherPattern4x4.
+        // Was an unused _pad0 slot.
+        float lod_blend;
         float cam_pos_ws[4];    // xyz=camera world position, w=unused
         // 96 bytes total
     };
@@ -92,7 +95,7 @@ public:
         float sun_dir_str[4];   // 16 bytes
         float ambient[4];       // 16 bytes
         float world_params[4];  // 16 bytes
-        float pom_params[4];    // x=height_scale, y=layers_min, z=layers_max, w=fog_far
+        float pom_params[4];    // x=height_scale, y=layers_min, z=layers_max, w=fog_density (FOG_EXP2 constant, was fog_far)
         float ground_layers_a[4]; // xyzw = base,slope,cliff,grass GroundTexLayer indices
         float ground_layers_b[4]; // xy=dirt,road GroundTexLayer indices; zw=unused
         float fog_color_near[4];  // xyz=fog colour, w=fog_near
@@ -167,13 +170,16 @@ public:
     // Drop-in replacement for DrawRaw. Passes camera world position for tangent-space
     // view vector used in POM ray marching. Falls back to DrawRaw if POM not ready.
     // lod: 0=full 64×64, 1=32×32, 2=16×16, 3=8×8 (uniform across all chunks).
-    // fog_far_override > 0 replaces GraphicsSettings' fog_far (tuned for normal
-    // ground-level gameplay view distances). vDist is full 3D camera distance,
-    // so an aerial camera (e.g. the editor's 3D World tab, kilometres up) makes
-    // even chunks nearly overhead exceed the normal fog_far, saturating fog_t
-    // to 1.0 and showing solid fog colour instead of the real chunk texture —
-    // same root cause fixed for the batch API, see SetBatchGroundLayers's doc
-    // comment. Pass 0 (default) for normal gameplay behaviour, unchanged.
+    // fog_density_override > 0 replaces GraphicsSettings' fog_density (tuned
+    // for normal ground-level gameplay view distances). vDist is full 3D
+    // camera distance, so an aerial camera (e.g. the editor's 3D World tab,
+    // kilometres up) makes even chunks nearly overhead exceed the normal
+    // fog falloff, saturating fog_t to 1.0 and showing solid fog colour
+    // instead of the real chunk texture — same root cause fixed for the
+    // batch API, see SetBatchGroundLayers's doc comment. Pass a much
+    // smaller density (e.g. 0.00005 vs default 0.001) for aerial views —
+    // EXP2 fog visibility scales roughly as 1/density. Pass 0 (default)
+    // for normal gameplay behaviour, unchanged.
     void DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                     const TerrainChunk& chunk,
                     const float* vp16,
@@ -183,7 +189,13 @@ public:
                     float world_origin_z = 0.f,
                     float world_to_uv    = 1.f / 8000.f,
                     int   lod            = 0,
-                    float fog_far_override = 0.f);
+                    float fog_density_override = 0.f,
+                    // task #43: dithered LOD-tier crossfade fraction,
+                    // 0=fully visible (default), 1=fully discarded. Draw a
+                    // chunk twice near a LOD boundary with complementary
+                    // values on each adjacent tier — see terrain_pom.slang's
+                    // DitherPattern4x4/clip().
+                    float lod_blend      = 0.f);
 
     bool IsReady()    const;
     bool IsPomReady() const;
@@ -213,23 +225,23 @@ public:
     // from the last DrawRawChunk call (often all-zero), which showed as a
     // solid wrong-colour (green) plane. Call this once after BeginRawBatch
     // to push a real set of 6 GroundTexLayer indices before a manual draw.
-    // fog_far_override > 0 replaces BeginRawBatch's fog_far (tuned for normal
-    // gameplay view distances, a few km) — a whole-world background mesh
-    // viewed from an aerial editor camera can be tens of km away, which
-    // saturates fog_t to 1.0 under the normal fog_far and washes the entire
-    // mesh out to a solid fog-colour plane (confirmed via GPU debug: ground
-    // texture/UV sampling were both correct, only the final fog mix was wrong).
-    // Pass 0 (default) to leave fog_far untouched.
+    // fog_density_override > 0 replaces BeginRawBatch's fog_density (tuned
+    // for normal gameplay view distances, a few km) — a whole-world
+    // background mesh viewed from an aerial editor camera can be tens of km
+    // away, which saturates fog_t to 1.0 under the normal density and washes
+    // the entire mesh out to a solid fog-colour plane (confirmed via GPU
+    // debug: ground texture/UV sampling were both correct, only the final
+    // fog mix was wrong). Pass 0 (default) to leave fog_density untouched.
     void SetBatchGroundLayers(SDL_GPUCommandBuffer* cmd, const float ground_layers[6],
-                              float fog_far_override = 0.f);
+                              float fog_density_override = 0.f);
 
-    // Same fog_far problem as above, for the LOD1 individual-chunk path: DrawRawChunk
-    // DOES set ground_layers correctly per chunk, but copies fog_far from
+    // Same fog problem as above, for the LOD1 individual-chunk path: DrawRawChunk
+    // DOES set ground_layers correctly per chunk, but copies fog_density from
     // batch_fubo_base_ unchanged — so it's ALSO 100% fogged (solid fog colour)
     // whenever the aerial editor camera's altitude alone exceeds the normal
-    // gameplay fog_far, regardless of horizontal distance to the chunk. Call
-    // once after BeginRawBatch, before the DrawRawChunk loop, to fix.
-    void SetBatchFogFar(SDL_GPUCommandBuffer* cmd, float fog_far);
+    // gameplay fog falloff, regardless of horizontal distance to the chunk.
+    // Call once after BeginRawBatch, before the DrawRawChunk loop, to fix.
+    void SetBatchFogDensity(SDL_GPUCommandBuffer* cmd, float fog_density);
 
     // Upload the per-zone (64x64=4096) ground-layer lookup table: 6 uint32
     // per zone (base,slope,cliff,grass,dirt,road GroundTexLayer indices),
@@ -251,7 +263,7 @@ public:
     // Biome crossfade (blend_layers.xyz/tex_biome_blend) is not applied on
     // this path — hard per-zone boundary, documented simplification (see
     // terrain_forward.slang).
-    void SetBatchZoneLookup(SDL_GPUCommandBuffer* cmd, bool enable, float fog_far_override = 0.f);
+    void SetBatchZoneLookup(SDL_GPUCommandBuffer* cmd, bool enable, float fog_density_override = 0.f);
 
 private:
     GpuPipeline pipeline_;

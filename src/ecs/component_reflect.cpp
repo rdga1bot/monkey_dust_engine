@@ -92,7 +92,7 @@ void RegisterCoreComponents() {
         MD_FIELD(WorldTransform, x,     F32),
         MD_FIELD(WorldTransform, y,     F32),
         MD_FIELD(WorldTransform, z,     F32),
-        MD_FIELD(WorldTransform, rot_y, F32),
+        MD_FIELD_RANGE(WorldTransform, rot_y, F32, 1.f, -180.f, 180.f),
         MD_FIELD(WorldTransform, slot,  U32),
     };
     r.Register("world_transform", wt_fields,

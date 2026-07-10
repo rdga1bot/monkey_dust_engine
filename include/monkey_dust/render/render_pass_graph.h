@@ -25,8 +25,17 @@
 //   { "passes": { "shadow": true, "ssao": false } }
 //
 // MAX_PASSES = 16, MAX_RESOURCE_BINDINGS = 4 per pass.
+//
+// Render graph step 3.2: resource declarations above were pure name-hash
+// tokens with no live GPU handle (render-graph audit finding — see
+// docs/FULL_AUDIT.md). DeclareTextureDesc/ResolveTexture/GetTexture add a
+// companion table (RGResourceEntry, keyed by the SAME resource_hash) that
+// actually owns a texture via GpuTexturePool — so a pass can ask this graph
+// for its input/output texture instead of each system managing its own
+// SDL_GPUTexture* independently.
 
 #include <cstdint>
+#include <monkey_dust/render/gpu_texture_pool.h>
 
 namespace md {
 
@@ -55,6 +64,17 @@ struct RenderPassEntry {
     RGResourceBinding writes[MAX_RESOURCE_BINDINGS] = {};
     int               read_count  = 0;
     int               write_count = 0;
+};
+
+// ── Resource entry (step 3.2: live texture handle) ────────────────────────────
+// Companion table to RGResourceBinding, keyed by the same FNV-1a hash — the
+// binding struct above stays hash-only (unchanged, still just validates
+// ordering); this struct is where an actual GpuTexturePool-backed texture
+// lives once a pass calls ResolveTexture() for that resource name.
+struct RGResourceEntry {
+    uint32_t        hash    = 0;
+    RGTextureDesc   desc    = {};
+    SDL_GPUTexture* live_tex = nullptr;
 };
 
 // ── Singleton registry ────────────────────────────────────────────────────────
@@ -97,13 +117,40 @@ public:
     // Reset to registered defaults.
     void Reset();
 
+    // ── Step 3.2: live resource handles ──────────────────────────────────────
+    static constexpr int MAX_RESOURCES = 32;
+
+    // Register (or update) a resource's texture description. Call once per
+    // resource name before the first ResolveTexture() for it — typically
+    // right after the DeclareRead/DeclareWrite calls that reference it.
+    void DeclareTextureDesc(const char* resource_name, const RGTextureDesc& desc);
+
+    // Acquires (from GpuTexturePool) and caches the live texture for a
+    // resource this frame. Safe to call multiple times per frame for the
+    // same name (returns the same cached handle) — only the first call in
+    // a frame actually hits the pool. Returns nullptr if no desc was
+    // declared for this name, or the pool is exhausted.
+    SDL_GPUTexture* ResolveTexture(SDL_GPUDevice* dev, const char* resource_name);
+
+    // Returns the currently-resolved texture for a resource, or nullptr if
+    // ResolveTexture hasn't been called for it yet this frame.
+    SDL_GPUTexture* GetTexture(const char* resource_name) const;
+
+    // Releases every resolved texture back to GpuTexturePool and clears the
+    // cached handles. Call once per frame, after all passes have run.
+    void ReleaseFrame();
+
 private:
     static uint32_t Hash(const char* s);
     int FindByHash(uint32_t h) const;
+    int FindResourceByHash(uint32_t h) const;
 
     RenderPassEntry passes_ [MAX_PASSES] = {};
     bool            defaults_[MAX_PASSES] = {};
     int             count_ = 0;
+
+    RGResourceEntry resources_[MAX_RESOURCES] = {};
+    int             resource_count_ = 0;
 };
 
 } // namespace md

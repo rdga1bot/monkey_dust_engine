@@ -48,6 +48,13 @@ struct FieldDesc {
     FieldType   type;
     uint16_t    offset;     // offsetof(ComponentType, field)
     uint16_t    size;       // sizeof(field)
+    // UI hints for F32 fields only (editor property panels). ui_min > ui_max
+    // is the "unclamped" sentinel (a valid range always has min < max) —
+    // MD_FIELD's default leaves these unset, so plain 4-arg registrations
+    // stay unclamped with a sane default drag speed.
+    float       ui_speed = 0.1f;
+    float       ui_min   = 1.f;
+    float       ui_max   = 0.f;
 };
 
 // ── Per-component metadata ────────────────────────────────────────────────────
@@ -98,6 +105,14 @@ private:
     { #field_name, ::md::FieldType::ftype,       \
       (uint16_t)offsetof(StructType, field_name), \
       (uint16_t)sizeof(((StructType*)nullptr)->field_name) }
+
+// Variant with explicit ImGui drag speed + clamp range (F32 fields).
+// Usage: MD_FIELD_RANGE(WorldTransform, rot_y, F32, 1.f, -180.f, 180.f)
+#define MD_FIELD_RANGE(StructType, field_name, ftype, speed, lo, hi) \
+    { #field_name, ::md::FieldType::ftype,       \
+      (uint16_t)offsetof(StructType, field_name), \
+      (uint16_t)sizeof(((StructType*)nullptr)->field_name), \
+      speed, lo, hi }
 
 // ── Built-in registrations ────────────────────────────────────────────────────
 // Registers engine-owned components (WorldTransform, SenseComponent, etc.).

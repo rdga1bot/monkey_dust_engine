@@ -1,5 +1,6 @@
 #pragma once
 #include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/world/terrain_chunk.h>
 
 // POM parameters — defined outside TerrainRenderer to avoid nested-class
@@ -51,7 +52,7 @@ public:
     };
 
     // Fragment UBO: sun(32) + world_params(16) + ground_layers_a/b(32) + fog_color_near(16)
-    // + blend_layers(16) = 112 bytes.
+    // + blend_layers(16) + use_zone_lookup(16) = 128 bytes.
     struct TerrainFragUBO {
         float sun_dir_str[4];     // xyz=dir, w=strength
         float ambient[4];         // xyz=colour, w=unused
@@ -59,8 +60,18 @@ public:
         float ground_layers_a[4]; // xyzw = base,slope,cliff,grass GroundTexLayer indices
         float ground_layers_b[4]; // xy = dirt,road GroundTexLayer indices; z=fog_far; w=unused
         float fog_color_near[4];  // xyz=fog colour, w=fog_near
-        float blend_layers[4];    // xyz=crossfade target base,slope,cliff; w=unused
-        // 112 bytes total
+        float blend_layers[4];    // xyz=crossfade target base,slope,cliff; w=SLOT-B base index (used per-chunk, see terrain_gen.cpp — NOT a free/unused slot)
+        // x=1.0 -> override ground_layers_a/b via the per-zone SSBO lookup
+        // (see UploadZoneGroundLayers/SetBatchZoneLookup); 0.0 = normal
+        // per-chunk/per-batch ground_layers_a/b (unchanged existing path).
+        // yzw unused/reserved. MUST be explicitly zeroed by BeginRawBatch —
+        // batch_fubo_base_ is a persistent member reused across draws, and
+        // DrawRawChunk copies it verbatim without touching this field, so a
+        // stale 1.0 from an earlier synthesis/compact-LOD2 draw this same
+        // frame would otherwise silently leak into subsequent per-chunk draws.
+        float use_zone_lookup[4];
+        // 128 bytes total — exactly the Intel HD 520 frag UBO ceiling (same
+        // as TerrainPomFragUBO below); no headroom left for more fields.
     };
 
     // Vertex UBO for POM pipeline: TerrainVertUBO (80 bytes) + cam_pos_ws (16 bytes) = 96 bytes.
@@ -220,6 +231,28 @@ public:
     // once after BeginRawBatch, before the DrawRawChunk loop, to fix.
     void SetBatchFogFar(SDL_GPUCommandBuffer* cmd, float fog_far);
 
+    // Upload the per-zone (64x64=4096) ground-layer lookup table: 6 uint32
+    // per zone (base,slope,cliff,grass,dirt,road GroundTexLayer indices),
+    // flat layout index = zone_idx*6 + layer, zone_idx = zy*64+zx (matches
+    // the EDITOR_TNKN=64 bitmask convention used elsewhere). Built once by
+    // the caller (World3D editor's synthesis-mesh init) via
+    // TerrainGen_ResolveBiome() per zone — same biome resolution the
+    // correctly-working per-chunk LOD0/1 path already uses. count_uints
+    // must be exactly 64*64*6 = 24576.
+    void UploadZoneGroundLayers(const uint32_t* data, int count_uints);
+
+    // Toggle the per-fragment zone-lookup ground-texture path for the
+    // current batch (packed into TerrainFragUBO.blend_layers.w, currently
+    // unused — zero struct-size change) instead of the fixed
+    // ground_layers_a/b pushed by SetBatchGroundLayers. Used by the
+    // editor's synthesis/compact-LOD2 background draws, which have no
+    // single "current biome" for their whole (multi-zone) draw call — see
+    // SetBatchGroundLayers's doc comment for the bug this replaces.
+    // Biome crossfade (blend_layers.xyz/tex_biome_blend) is not applied on
+    // this path — hard per-zone boundary, documented simplification (see
+    // terrain_forward.slang).
+    void SetBatchZoneLookup(SDL_GPUCommandBuffer* cmd, bool enable, float fog_far_override = 0.f);
+
 private:
     GpuPipeline pipeline_;
     GpuTexture  tex_colour_;        // Kenshi colour overlay (forward pass slot 0)
@@ -240,6 +273,9 @@ private:
 
     // Shared LOD IBOs — one per LOD level, built in Init(), reused by all chunks.
     GpuStaticBuffer lod_ibo_shared_[TERRAIN_LOD_LEVELS];
+
+    // Per-zone ground-layer lookup (see UploadZoneGroundLayers/SetBatchZoneLookup).
+    SSBO zone_layers_ssbo_;
 
     // Optional colour override — UseColourOverride() swaps for one batch.
     SDL_GPUTexture* col_override_tex_ = nullptr;

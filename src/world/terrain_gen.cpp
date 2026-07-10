@@ -87,6 +87,10 @@ static const BiomeDef& s_resolve_biome(int zx, int zy) {
     return biomes.ForZone(nullptr);
 }
 
+const BiomeDef& TerrainGen_ResolveBiome(int zx, int zy) {
+    return s_resolve_biome(zx, zy);
+}
+
 // ── Terrain Atlas ─────────────────────────────────────────────────────────────
 static constexpr uint32_t ATLAS_MAGIC  = 0x414D4800u;
 static constexpr int      ATLAS_ZONES  = 64;

@@ -11,19 +11,24 @@
 // be registered before any batch that reads/writes the same resource,
 // same violation-detection shape as RenderPassGraph::Validate().
 //
-// Scope note (read before extending): as of this writing there are only
-// two real batches in the whole codebase (sense_system's cone-falloff
-// eval, npc_render's T2 animation blend) and they run on different
-// cadences (logic tick vs render frame) — they never actually contend
-// for the same tick. So Run() executes batches sequentially, in
-// registration order, on the calling thread; it does NOT yet dispatch
-// non-conflicting batches onto separate OS threads. That's real future
-// work, justified once multiple non-conflicting batches actually coexist
-// in the same tick (see docs/ARCHITECTURE_PLAN_7_9.md's guidance: add
-// more gather->job->scatter candidates first, e.g. TickPhysics's
-// integration pass or TickNavigation's waypoint advance, each verified
-// safe the same way eval_sense_job/eval_t2 were, before this scheduler
-// has anything real to parallelize).
+// Scope note (read before extending): as of this writing there are three
+// real gather->job->scatter batches in the codebase (sense_system's
+// cone-falloff eval, npc_render's T2 animation blend, logic_tick's
+// TickNavigation waypoint-advance — eval_nav_waypoint_job). Sense and
+// waypoint-advance both run on the logic-tick cadence; T2 blend runs on
+// the render-frame cadence — sense/waypoint never contend for the same
+// tick's registration order today because neither is actually routed
+// through JobGraph::AddBatch/Run() yet (each still calls JobSystem::Submit
+// directly, same as before conversion). So Run() executes batches
+// sequentially, in registration order, on the calling thread; it does
+// NOT yet dispatch non-conflicting batches onto separate OS threads.
+// That's real future work, justified once callers actually register
+// through AddBatch() instead of calling Submit() directly — evaluated
+// and rejected for TickPhysics's integration pass (game/src/logic_tick.cpp):
+// its per-entity loops call Jolt's `character->SetLinearVelocity`/
+// `GetPosition` and `Registry::try_get` directly inside the iteration
+// (non-POD JPH::Character* pointers, no clean POD gather step) — same
+// class of risk as the BT VM's registry embedding, not safe to convert.
 //
 // MAX_BATCHES=16, MAX_TAGS=8 per batch — fixed arrays, no heap.
 

@@ -227,6 +227,96 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
 
 }
 
+void GpuStaticBuffer::InitEmpty(unsigned int target, uint32_t size) {
+#ifdef MD_SDL_GPU
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    SDL_GPUBufferUsageFlags usage = (target == 0x8893u)
+                                    ? SDL_GPU_BUFFERUSAGE_INDEX
+                                    : SDL_GPU_BUFFERUSAGE_VERTEX;
+    SDL_GPUBufferCreateInfo buf_info = {};
+    buf_info.usage = usage;
+    buf_info.size  = size;
+    sdl_buf_ = SDL_CreateGPUBuffer(dev, &buf_info);
+    if (!sdl_buf_)
+        MD_LOG(MD_LOG_WARNING, "[GpuStaticBuffer] InitEmpty: SDL_CreateGPUBuffer failed: %s", SDL_GetError());
+#else
+    (void)target; (void)size;
+#endif
+}
+
+bool GpuUploadBatch::Begin(uint32_t total_bytes) {
+    cursor_ = 0; total_bytes_ = total_bytes; item_count_ = 0;
+#ifdef MD_SDL_GPU
+    transfer_ = nullptr; map_ = nullptr;
+    if (total_bytes == 0) return true;
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    SDL_GPUTransferBufferCreateInfo tbuf_info = {};
+    tbuf_info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbuf_info.size  = total_bytes;
+    transfer_ = SDL_CreateGPUTransferBuffer(dev, &tbuf_info);
+    if (!transfer_) {
+        MD_LOG(MD_LOG_WARNING, "[GpuUploadBatch] SDL_CreateGPUTransferBuffer failed: %s", SDL_GetError());
+        return false;
+    }
+    map_ = (uint8_t*)SDL_MapGPUTransferBuffer(dev, transfer_, false);
+    if (!map_) {
+        MD_LOG(MD_LOG_WARNING, "[GpuUploadBatch] SDL_MapGPUTransferBuffer failed: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(dev, transfer_);
+        transfer_ = nullptr;
+        return false;
+    }
+    return true;
+#else
+    return true;
+#endif
+}
+
+void GpuUploadBatch::Add(GpuStaticBuffer& buf, unsigned int target, const void* data, uint32_t size) {
+    buf.InitEmpty(target, size);
+#ifdef MD_SDL_GPU
+    if (!map_ || item_count_ >= MAX_ITEMS || cursor_ + size > total_bytes_) return;
+    if (data && size) memcpy(map_ + cursor_, data, size);
+    items_[item_count_++] = { buf.SDLBuffer(), cursor_, size };
+    cursor_ += size;
+#else
+    (void)buf; (void)target; (void)data; (void)size;
+#endif
+}
+
+void GpuUploadBatch::End() {
+#ifdef MD_SDL_GPU
+    if (!transfer_) return;
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    SDL_UnmapGPUTransferBuffer(dev, transfer_);
+
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+    if (!cmd) {
+        MD_LOG(MD_LOG_WARNING, "[GpuUploadBatch] AcquireCmd failed: %s", SDL_GetError());
+        SDL_ReleaseGPUTransferBuffer(dev, transfer_);
+        transfer_ = nullptr;
+        return;
+    }
+    SDL_GPUCopyPass* pass = SDL_BeginGPUCopyPass(cmd);
+    for (int i = 0; i < item_count_; ++i) {
+        if (!items_[i].dst || items_[i].size == 0) continue;
+        SDL_GPUTransferBufferLocation src = {};
+        src.transfer_buffer = transfer_;
+        src.offset          = items_[i].offset;
+        SDL_GPUBufferRegion dst = {};
+        dst.buffer = items_[i].dst;
+        dst.offset = 0;
+        dst.size   = items_[i].size;
+        SDL_UploadToGPUBuffer(pass, &src, &dst, false);
+    }
+    SDL_EndGPUCopyPass(pass);
+    if (!SDL_SubmitGPUCommandBuffer(cmd))
+        MD_LOG(MD_LOG_WARNING, "[GpuUploadBatch] submit failed: %s", SDL_GetError());
+
+    SDL_ReleaseGPUTransferBuffer(dev, transfer_);
+    transfer_ = nullptr;
+#endif
+}
+
 void GpuStaticBuffer::Shutdown() {
 #ifdef MD_SDL_GPU
     if (sdl_buf_) {
@@ -348,11 +438,13 @@ bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSam
 }
 
 #ifdef MD_SDL_GPU
-// ── DDS (BC3/DXT5) 2D texture array loader ───────────────────────────────────
+// ── DDS (BC1/DXT1 or BC3/DXT5) 2D texture array loader ───────────────────────
 
-// Returns height(12), width(16), mip_count(28), is_bc3, data_offset.
+// Returns height(12), width(16), mip_count(28), is_bc3/is_bc1, data_offset.
+// BC1 support added for Kenshi's terrain _NML.dds files, which are DXT1 (not
+// DXT5 like the _DIF.dds diffuse array) -- confirmed via FourCC byte.
 static bool s_parse_dds(const uint8_t* buf, uint32_t len,
-                         int& w, int& h, int& mips, bool& is_bc3, uint32_t& data_off)
+                         int& w, int& h, int& mips, bool& is_bc3, bool& is_bc1, uint32_t& data_off)
 {
     if (len < 128 || buf[0]!='D'||buf[1]!='D'||buf[2]!='S'||buf[3]!=' ') return false;
     auto r32 = [&](uint32_t o) { uint32_t v; memcpy(&v, buf+o, 4); return v; };
@@ -363,19 +455,28 @@ static bool s_parse_dds(const uint8_t* buf, uint32_t len,
     uint32_t pf_flags = r32(80);
     uint32_t fourcc   = r32(84);
     is_bc3   = (pf_flags & 4u) && (fourcc == 0x35545844u); // DDPF_FOURCC && 'DXT5'
+    is_bc1   = (pf_flags & 4u) && (fourcc == 0x31545844u); // DDPF_FOURCC && 'DXT1'
     data_off = 128;
     return true;
 }
 
-static size_t s_bc3_mip_bytes(int w, int h)
+static size_t s_bc_mip_bytes(int w, int h, int bytes_per_block)
 {
     int bw = (w+3)/4, bh = (h+3)/4;
-    return (size_t)bw * bh * 16;
+    return (size_t)bw * bh * (size_t)bytes_per_block;
 }
 
 bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
                                    const GpuSamplerDesc& /*s*/)
 {
+    // Note: the passed sampler desc's mip fields are intentionally not used
+    // here (unlike CreateSDLSampler(), which gates max_lod on gen_mipmap) —
+    // this loader always uploads a full real mip chain straight from the DDS
+    // file's own mips, so the sampler below hardcodes max_lod=ref_mips-1
+    // (the correct range for that chain) regardless of the caller's
+    // gen_mipmap flag. Verified via GPU debug: forcing max_lod=0 here (mip0
+    // only) did not change the render, confirming mip selection was never
+    // the issue in this array's sampling path.
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     if (!dev || count < 1 || !paths) return false;
 
@@ -384,7 +485,7 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
     if (!layers) return false;
     memset(layers, 0, (size_t)count * sizeof(LayerData));
 
-    int ref_w = 0, ref_h = 0, ref_mips = 0; bool ref_bc3 = false;
+    int ref_w = 0, ref_h = 0, ref_mips = 0; bool ref_bc3 = false, ref_bc1 = false;
     uint32_t ref_doff = 0;
     bool ok = true;
 
@@ -394,19 +495,19 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
             MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: missing %s", paths[i]);
             ok = false; break;
         }
-        int w, h, m; bool bc3; uint32_t doff;
-        if (!s_parse_dds((const uint8_t*)layers[i].buf, layers[i].len, w, h, m, bc3, doff)) {
+        int w, h, m; bool bc3, bc1; uint32_t doff;
+        if (!s_parse_dds((const uint8_t*)layers[i].buf, layers[i].len, w, h, m, bc3, bc1, doff)) {
             MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: bad header %s", paths[i]);
             ok = false; break;
         }
-        if (i == 0) { ref_w=w; ref_h=h; ref_mips=m; ref_bc3=bc3; ref_doff=doff; }
-        else if (w!=ref_w||h!=ref_h||m!=ref_mips||bc3!=ref_bc3) {
+        if (i == 0) { ref_w=w; ref_h=h; ref_mips=m; ref_bc3=bc3; ref_bc1=bc1; ref_doff=doff; }
+        else if (w!=ref_w||h!=ref_h||m!=ref_mips||bc3!=ref_bc3||bc1!=ref_bc1) {
             MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: layer %d size mismatch", i);
             ok = false; break;
         }
     }
-    if (ok && !ref_bc3) {
-        MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: only BC3/DXT5 supported");
+    if (ok && !ref_bc3 && !ref_bc1) {
+        MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: only BC1/DXT1 or BC3/DXT5 supported");
         ok = false;
     }
 
@@ -416,11 +517,12 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
     }
 
     // Compute per-mip byte sizes and total transfer size
+    const int block_bytes = ref_bc3 ? 16 : 8;  // BC3=16B/block, BC1=8B/block
     size_t mip_sz[32] = {};
     size_t layer_stride = 0;
     { int mw=ref_w, mh=ref_h;
       for (int m=0; m<ref_mips && m<32; ++m) {
-          mip_sz[m] = s_bc3_mip_bytes(mw, mh);
+          mip_sz[m] = s_bc_mip_bytes(mw, mh, block_bytes);
           layer_stride += mip_sz[m];
           mw = mw>1?mw/2:1; mh = mh>1?mh/2:1;
       }
@@ -429,7 +531,8 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
 
     SDL_GPUTextureCreateInfo ti = {};
     ti.type                 = SDL_GPU_TEXTURETYPE_2D_ARRAY;
-    ti.format               = SDL_GPU_TEXTUREFORMAT_BC3_RGBA_UNORM;
+    ti.format               = ref_bc3 ? SDL_GPU_TEXTUREFORMAT_BC3_RGBA_UNORM
+                                       : SDL_GPU_TEXTUREFORMAT_BC1_RGBA_UNORM;
     ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
     ti.width                = (Uint32)ref_w;
     ti.height               = (Uint32)ref_h;

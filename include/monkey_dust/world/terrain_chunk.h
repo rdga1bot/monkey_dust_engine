@@ -7,22 +7,33 @@
 
 // Geomorphing: blends vertex Y toward coarser-LOD target beyond 420m (ramp 420–600m).
 // morph_y filled by TerrainGen_Build; consumed by terrain_pom.vert.
-#define TERRAIN_GEOMORPH_ENABLED 1
+//
+// NOTE: this flag is a SEPARATE preprocessor from shaders/terrain_pom.vert's
+// own `TERRAIN_GEOMORPH_ENABLED` (C++ vs GLSL, no shared preprocessor —
+// confirmed by independent audit, docs/ENGINE_AUDIT.md/TERRAIN_FIX_PROMPT.md).
+// This one only gates whether morph_y is COMPUTED on the CPU (currently
+// always on); the shader's flag independently gates whether the GPU
+// actually USES it (currently off). Flipping this one alone does nothing
+// visually — see shaders/terrain_pom.vert:9's matching comment.
+#define TERRAIN_MORPH_DATA_ENABLED 1
 
-// Terrain grid: 64×64 quads = 65×65 vertices per chunk (CHUNK_SIZE=460.8m → 7.2m/quad)
-static constexpr int   TERRAIN_GRID  = 64;
-static constexpr int   TERRAIN_VERTS = (TERRAIN_GRID + 1) * (TERRAIN_GRID + 1); // 4225
-static constexpr int   TERRAIN_TRIS  = TERRAIN_GRID * TERRAIN_GRID * 2;         // 8192
-static constexpr int   TERRAIN_IDX   = TERRAIN_TRIS * 3;                         // 24576
-static constexpr float TERRAIN_STEP  = CHUNK_SIZE / TERRAIN_GRID;               // 7.2m
+// Terrain grid: 128×128 quads = 129×129 vertices per chunk (CHUNK_SIZE=460.8m
+// -> 3.6m/quad). Matches Kenshi's own real in-engine resolution (RE-confirmed:
+// raw 258x258 tile fetch downsampled internally to 129x129/zone,
+// re_docs/kenshi/terrain.md) — was 64/65 (coarser than Kenshi itself).
+static constexpr int   TERRAIN_GRID  = 128;
+static constexpr int   TERRAIN_VERTS = (TERRAIN_GRID + 1) * (TERRAIN_GRID + 1); // 16641
+static constexpr int   TERRAIN_TRIS  = TERRAIN_GRID * TERRAIN_GRID * 2;         // 32768
+static constexpr int   TERRAIN_IDX   = TERRAIN_TRIS * 3;                         // 98304
+static constexpr float TERRAIN_STEP  = CHUNK_SIZE / TERRAIN_GRID;               // 3.6m
 
 // LOD levels (same VBO, coarser IBO — steps of 2/4/8 vertices)
 static constexpr int   TERRAIN_LOD_LEVELS    = 3;
 static constexpr int   TERRAIN_LOD_STEPS[3]  = { 2, 4, 8 };
 static constexpr int   TERRAIN_LOD_IDX[3]    = {
-    (TERRAIN_GRID/2) * (TERRAIN_GRID/2) * 6,  // 6144  (32×32 quads)
-    (TERRAIN_GRID/4) * (TERRAIN_GRID/4) * 6,  // 1536  (16×16 quads)
-    (TERRAIN_GRID/8) * (TERRAIN_GRID/8) * 6   //  384  (8×8 quads)
+    (TERRAIN_GRID/2) * (TERRAIN_GRID/2) * 6,  // 24576 (64×64 quads)
+    (TERRAIN_GRID/4) * (TERRAIN_GRID/4) * 6,  //  6144 (32×32 quads)
+    (TERRAIN_GRID/8) * (TERRAIN_GRID/8) * 6   //  1536 (16×16 quads)
 };
 // Camera-to-chunk-centre distance thresholds to switch LOD levels
 static constexpr float TERRAIN_LOD_DIST[3]   = { 600.f, 1200.f, 2000.f };
@@ -37,7 +48,7 @@ struct TerrainVertex {
     float nx, ny, nz;         // normal                offset 12
     float u, v;               // UV (world-space)      offset 24
     float splat[4];           // [grass,rock,dirt,snow] offset 32
-    float morph_y;            // geomorph target Y for L0→L1; guarded by TERRAIN_GEOMORPH_ENABLED
+    float morph_y;            // geomorph target Y for L0→L1; guarded by TERRAIN_MORPH_DATA_ENABLED
 };
 static_assert(sizeof(TerrainVertex) == 52, "TerrainVertex size mismatch");
 
@@ -80,8 +91,8 @@ struct TerrainChunk {
     float           center_x = 0.f;    // world-space centre (set by TerrainGen_Build)
     float           center_z = 0.f;
     GpuStaticBuffer vbo;               // TerrainVertex * TERRAIN_VERTS
-    GpuStaticBuffer ibo;               // uint16_t * TERRAIN_IDX  (L0: 64×64)
-    GpuStaticBuffer ibo_lod[3];        // L1: 32×32, L2: 16×16, L3: 8×8
+    GpuStaticBuffer ibo;               // uint16_t * TERRAIN_IDX  (L0: 128×128)
+    GpuStaticBuffer ibo_lod[3];        // L1: 64×64, L2: 32×32, L3: 16×16
     GpuStaticBuffer skirt_vbo;         // TerrainVertex * TERRAIN_SKIRT_VERTS (Item 7)
     GpuStaticBuffer skirt_ibo;         // uint16_t * TERRAIN_SKIRT_IDX
     NavMesh          navmesh;
@@ -89,8 +100,28 @@ struct TerrainChunk {
     TerrainPassGrid  pass_grid;         // L2-inspired O(1) passability bitmask
     ChunkPropInstance props[CHUNK_MAX_PROPS];
     int              prop_count = 0;    // valid entries in props[]
-    float            ground_layers[4] = {0.f, 1.f, 2.f, 3.f}; // GroundTexLayer indices (per biome)
+    // GroundTexLayer indices: 0=base,1=slope,2=cliff (per biome), 3=grass,4=dirt,5=road (global)
+    float            ground_layers[6] = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f};
+    // Procedural biome crossfade targets: xyz=slot A (base/slope/cliff of the
+    // FIRST grid-adjacent neighbour chunk whose resolved biome differs),
+    // w=slot B (base index only of the SECOND differing neighbour, for
+    // chunks at a 3-way zone corner -- one blended boundary isn't enough
+    // there, confirmed visually). Equal to ground_layers[0]/this chunk's own
+    // base when no such neighbour exists -- blend weight is then always 0
+    // regardless of the mask texture, so a stray nonzero sample still blends
+    // into itself (a no-op) rather than showing a wrong texture. See
+    // ARCHITECTURE note in terrain_gen.cpp's biome-assignment block for the
+    // real-Kenshi (blendmap.png/blendinfo.dat) precedent this mirrors.
+    float            blend_layers[4] = {0.f, 1.f, 2.f, 0.f};
     bool             loaded = false;
+    // Set true at the end of TerrainGen_Build — independent of `loaded` (which
+    // means "GPU buffers uploaded", set by TerrainGen_Upload). Lets callers
+    // that only need CPU heightmap data (e.g. the editor's full-world compact
+    // VBO bake) work correctly even for chunks that were never GPU-uploaded —
+    // see editor_world_3d_sdlgpu.cpp's windowed lazy-upload (GpuUploadBatch
+    // doc comment, gpu_hal.h, explains why eager per-chunk GPU upload for all
+    // 4096 chunks is not viable).
+    bool             heightmap_ready = false;
 
     // KEN-CLUTTER Tier 2: dense ground clutter (pebbles/small rocks/small plants)
     // baked into ONE static mesh per chunk by ClutterGen_Build/Upload — one draw

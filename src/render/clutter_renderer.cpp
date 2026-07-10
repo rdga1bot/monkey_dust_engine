@@ -1,4 +1,5 @@
 #include <monkey_dust/render/clutter_renderer.h>
+#include <monkey_dust/render/prop_tex_shared.h>
 #include <cstdio>
 
 #ifdef MD_SDL_GPU
@@ -6,17 +7,20 @@
 #endif
 
 bool ClutterRenderer::Init() {
+    PropTexShared::Get().Init();  // idempotent; shared across all PropRenderer/ClutterRenderer instances
 #ifdef MD_SDL_GPU
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/clutter.vert";
     pd.frag_path = "shaders/prop.frag";  // same Lambert + PropFrag UBO — no change needed
 
     // PropVertex layout (chunk.clutter_vbo already uses this): pos(loc=0,off=0,F3)
-    // + normal(loc=1,off=12,F3), stride=24.
-    pd.layout.count      = 2;
-    pd.layout.stride     = 24;
+    // + normal(loc=1,off=12,F3) + uv(loc=2,off=24,F2) + layer(loc=3,off=32,F1), stride=36.
+    pd.layout.count      = 4;
+    pd.layout.stride     = 36;
     pd.layout.attribs[0] = { 0,  0, GpuAttribFmt::F3 };
     pd.layout.attribs[1] = { 1, 12, GpuAttribFmt::F3 };
+    pd.layout.attribs[2] = { 2, 24, GpuAttribFmt::F2 };
+    pd.layout.attribs[3] = { 3, 32, GpuAttribFmt::F1 };
 
     pd.raster.depth_test  = true;
     pd.raster.depth_write = true;
@@ -25,6 +29,7 @@ bool ClutterRenderer::Init() {
 
     pd.vert_uniform_bufs = 1;  // slot 0: ClutterVert UBO (64 bytes: mat4 vp only)
     pd.frag_uniform_bufs = 1;  // slot 0: PropFrag UBO (32 bytes: sun_dir_str + ambient)
+    pd.frag_samplers     = 2;  // 0=tex_rock, 1=tex_veg (PropTexShared)
 
     if (!pipeline_.Create(pd)) {
         fprintf(stderr, "[ClutterRenderer] Pipeline creation failed\n");
@@ -62,6 +67,15 @@ void ClutterRenderer::DrawChunk(
 
     SDL_GPUBufferBinding ib { chunk.clutter_ibo.SDLBuffer(), 0u };
     SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+
+    PropTexShared& pt = PropTexShared::Get();
+    if (pt.ready) {
+        SDL_GPUTextureSamplerBinding sb[2] = {
+            { pt.tex_rock->SDLTexture(), pt.tex_rock->SDLSampler() },
+            { pt.tex_veg->SDLTexture(),  pt.tex_veg->SDLSampler()  },
+        };
+        SDL_BindGPUFragmentSamplers(rp, 0, sb, 2);
+    }
 
     SDL_PushGPUVertexUniformData(cmd, 0, vp16, 64);
     SDL_PushGPUFragmentUniformData(cmd, 0, sun32, 32);

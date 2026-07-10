@@ -2,21 +2,98 @@
 #include <monkey_dust/world/chunk_def.h>
 #include <monkey_dust/world/biome_system.h>
 #include <monkey_dust/world/biome_def.h>
-#include <monkey_dust/world/world_registry.h>
 #include <monkey_dust/world/terrain_pass_grid.h>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <cstdint>
-#include <climits>
+#include "stb_image.h"
+
+// ── Biomemap colour lookup (real Kenshi biome-selection mechanism) ───────────
+// game/data/textures/md_biomemap.png (1024x1024 RGB, converted 1:1 from
+// Kenshi's real tmp_/kenshi/data/newland/land/biomemap.png). CONFIRMED this
+// session (tools/md_gen_biome_table.py, not guessed): every real Kenshi
+// "Biomes" FCS entry (gamedata.base itemType=28) has an 'index' field — a
+// packed Windows COLORREF — that matches an exact pixel colour in this file
+// for 10+ directly-verified named regions (desert, Ashlands, Canyonlands,
+// Canyonlands Crater, ...). This replaces the old areasmap.tga-based
+// nearest-NAMED-zone approximation (kept ~59 named zones only, guessed
+// biome parameters by hand) with the real mechanism: sample this exact
+// chunk's biomemap colour directly, nearest-match against the real per-biome
+// FCS data via BiomeDef::ForColor — precise per-chunk, not per-named-zone.
+static uint8_t* s_biomemap     = nullptr;
+static int      s_biomemap_w   = 0, s_biomemap_h = 0;
+static bool     s_biomemap_tried = false;
+
+static void s_load_biomemap() {
+    if (s_biomemap_tried) return;
+    s_biomemap_tried = true;
+    int comp = 0;
+    s_biomemap = stbi_load("game/data/textures/md_biomemap.png", &s_biomemap_w, &s_biomemap_h, &comp, 3);
+    if (!s_biomemap)
+        fprintf(stderr, "[TerrainGen] md_biomemap.png not found — biome lookup falls back to default\n");
+}
+
+// zx,zy: 0..63 zone grid coords. Returns false (no data) if biomemap missing.
+// Mode (most frequent colour) over the zone's whole pixel block, not a
+// single centre-pixel sample — same noise-robustness rationale as the old
+// areasmap lookup this replaces (stray anti-aliased pixels at painted
+// region edges would otherwise flip an occasional chunk to the wrong biome).
+static bool s_biomemap_color(int zx, int zy, uint8_t out[3]) {
+    if (!s_biomemap) return false;
+    float scale = (float)s_biomemap_w / 64.0f;
+    int x0 = (int)(zx * scale), x1 = (int)((zx + 1) * scale);
+    int y0 = (int)(zy * scale), y1 = (int)((zy + 1) * scale);
+    if (x1 <= x0) x1 = x0 + 1;
+    if (y1 <= y0) y1 = y0 + 1;
+    if (x0 < 0) x0 = 0; if (x1 > s_biomemap_w) x1 = s_biomemap_w;
+    if (y0 < 0) y0 = 0; if (y1 > s_biomemap_h) y1 = s_biomemap_h;
+    if (x0 >= x1 || y0 >= y1) return false;
+
+    static constexpr int MAX_DISTINCT = 32;
+    uint8_t colors[MAX_DISTINCT][3];
+    int counts[MAX_DISTINCT] = {};
+    int n_distinct = 0;
+
+    for (int py = y0; py < y1; ++py) {
+        for (int px = x0; px < x1; ++px) {
+            const uint8_t* p = s_biomemap + ((size_t)py * s_biomemap_w + px) * 3;
+            int found = -1;
+            for (int i = 0; i < n_distinct; ++i) {
+                if (colors[i][0] == p[0] && colors[i][1] == p[1] && colors[i][2] == p[2]) { found = i; break; }
+            }
+            if (found < 0 && n_distinct < MAX_DISTINCT) {
+                found = n_distinct++;
+                colors[found][0] = p[0]; colors[found][1] = p[1]; colors[found][2] = p[2];
+            }
+            if (found >= 0) counts[found]++;
+        }
+    }
+    if (n_distinct == 0) return false;
+
+    int best = 0;
+    for (int i = 1; i < n_distinct; ++i) if (counts[i] > counts[best]) best = i;
+    out[0] = colors[best][0]; out[1] = colors[best][1]; out[2] = colors[best][2];
+    return true;
+}
+
+// Factored out so it can also be called for a chunk's 4 grid-neighbours
+// (biome crossfade target, see blend_layers in terrain_chunk.h).
+static const BiomeDef& s_resolve_biome(int zx, int zy) {
+    uint8_t col[3];
+    const BiomeRegistry& biomes = BiomeRegistry::Get();
+    if (s_biomemap_color(zx, zy, col))
+        return biomes.ForColor(col[0], col[1], col[2]);
+    return biomes.ForZone(nullptr);
+}
 
 // ── Terrain Atlas ─────────────────────────────────────────────────────────────
 static constexpr uint32_t ATLAS_MAGIC  = 0x414D4800u;
 static constexpr int      ATLAS_ZONES  = 64;
-static constexpr int      ATLAS_VERTS  = 65;           // TERRAIN_GRID+1
-static constexpr int      ATLAS_ZBLOCK = ATLAS_VERTS * ATLAS_VERTS; // 4225
+static constexpr int      ATLAS_VERTS  = 129;          // TERRAIN_GRID+1
+static constexpr int      ATLAS_ZBLOCK = ATLAS_VERTS * ATLAS_VERTS; // 16641
 
-static float   s_atlas_h   [ATLAS_ZONES * ATLAS_ZONES * ATLAS_ZBLOCK]; // ~66 MB BSS
+static float   s_atlas_h   [ATLAS_ZONES * ATLAS_ZONES * ATLAS_ZBLOCK]; // ~260 MB BSS
 static float   s_atlas_hmin[ATLAS_ZONES * ATLAS_ZONES];
 static float   s_atlas_hmax[ATLAS_ZONES * ATLAS_ZONES];
 static uint8_t s_atlas_dirty[ATLAS_ZONES * ATLAS_ZONES];
@@ -631,9 +708,20 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             s_verts_buf[vi].y = h;
             s_verts_buf[vi].z = wz;
 
-            // UV: repeat every ~8m so texture looks natural at any terrain scale
-            s_verts_buf[vi].u = wx * 0.125f;
-            s_verts_buf[vi].v = wz * 0.125f;
+            // UV: repeat every ~8m so texture looks natural at any terrain scale.
+            // Wrapped with fmodf at a large-but-bounded modulus (2048, an exact
+            // multiple of every downstream tiling multiplier used in the terrain
+            // shaders — *0.125 then *4.0 — so wrapping never introduces a seam)
+            // as a defensive precision margin against wx/wz being absolute world
+            // coordinates (up to a few thousand metres). NOTE: a suspected
+            // UV-magnitude/mip-precision bug was investigated as the cause of a
+            // "flat ground" report this session and ruled out by GPU debug (forcing
+            // mip0-only made no difference); the actual cause was an inherently
+            // low-contrast source texture (Kenshi's own swamp mud DDS) for that
+            // test zone, not a rendering bug. This wrap is kept as a reasonable,
+            // harmless precision margin, not a confirmed fix for anything.
+            s_verts_buf[vi].u = fmodf(wx * 0.125f, 2048.0f);
+            s_verts_buf[vi].v = fmodf(wz * 0.125f, 2048.0f);
 
             // Biome-aware splat weights with soft boundary blending.
             // Sample temperature/moisture at 2× the biome_scale for a second
@@ -760,32 +848,13 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
         else { nx = 0.0f; ny = 1.0f; nz = 0.0f; }
     }
 
-    // ── Variant C: slope-based splat (overwrites Variant B noise splat) ─────────
-    // splat[0]=flat  splat[1]=slope  splat[2]=cliff  splat[3]=0
-    // Matches BiomeDef tex0-3 semantic: flat/slope/cliff per biome.
-    for (int i = 0; i < TERRAIN_VERTS; ++i) {
-        float ny    = s_verts_buf[i].ny;          // 1=flat, 0=vertical
-        float flat_w  = ny * ny;
-        float slope_w = 4.f * ny * (1.f - ny);
-        float cliff_w = (1.f - ny) * (1.f - ny);
-        float sum = flat_w + slope_w + cliff_w;
-        if (sum > 1e-6f) { flat_w /= sum; slope_w /= sum; cliff_w /= sum; }
-
-        int col_ = i % (TERRAIN_GRID + 1);
-        int row_ = i / (TERRAIN_GRID + 1);
-        float lx = (float)col_ / TERRAIN_GRID;
-        float lz = (float)row_ / TERRAIN_GRID;
-        float et = lx < (1.f-lx) ? lx : (1.f-lx);
-        if (lz       < et) et = lz;
-        if ((1.f-lz) < et) et = 1.f-lz;
-        et /= 0.15f;
-        float f = et < 1.f ? et*et*(3.f-2.f*et) : 1.f;
-
-        s_verts_buf[i].splat[0] = flat_w  * f;
-        s_verts_buf[i].splat[1] = slope_w * f;
-        s_verts_buf[i].splat[2] = cliff_w * f;
-        s_verts_buf[i].splat[3] = 0.f;
-    }
+    // Slope/cliff splat weight is now computed PROCEDURALLY in the fragment
+    // shader from the (already edge-smoothed, via TerrainAtlas_SmoothBoundaries)
+    // vertex normal — matches the real Kenshi shader (terrainfp4.hlsl::main_fs:
+    // `weights = smoothstep(...)` from `slope = 1.0 - normal.y`), not a per-vertex
+    // baked weight. aSplat is no longer used by the atlas (real-terrain) path;
+    // kept only for the force_noise fallback path above (Variant B, unrelated
+    // to matching Kenshi) and for vertex-layout compatibility.
 
     // ── Cross-chunk normal stitching ──────────────────────────────────────────
     // Edge vertices only have normals from triangles within this chunk.
@@ -910,9 +979,11 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     }
 
     // ── Geomorph targets (L0→L1 transition) ──────────────────────────────────────
-    // Guarded: LOD IBO disabled in RD-4. Re-enable by setting TERRAIN_GEOMORPH_ENABLED 1
-    // in terrain_pom.vert. morph_y field kept in TerrainVertex for easy re-enable.
-#if TERRAIN_GEOMORPH_ENABLED
+    // Guarded by TERRAIN_MORPH_DATA_ENABLED (terrain_chunk.h) — CPU-side computation
+    // only; the GPU visual effect is a SEPARATE flag, shaders/terrain_pom.vert's own
+    // TERRAIN_GEOMORPH_ENABLED (currently 0). morph_y field kept in TerrainVertex
+    // ready to use once that shader flag is flipped.
+#if TERRAIN_MORPH_DATA_ENABLED
     for (int row = 0; row <= TERRAIN_GRID; ++row) {
         for (int col = 0; col <= TERRAIN_GRID; ++col) {
             int vi = s_idx(col, row);
@@ -972,20 +1043,75 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     out.center_z = p.world_offset_z + coord.z * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
     out.loaded   = false;  // Upload() sets this
 
-    // Biome ground-texture lookup — zone slug → GroundTexLayer indices per splat channel
+    // Biome ground-texture lookup — direct biomemap.png colour → real FCS
+    // Biomes entry (BiomeDef::ForColor), precise per-chunk. grass/dirt/road
+    // are now genuinely per-biome (real FCS data) — previously global
+    // constants shared by every biome, confirmed wrong this session (real
+    // biomes have distinct grass/dirt/road textures, e.g. desert's grass
+    // differs from Blister Sands' grass).
     if (p.zone_origin_x >= 0) {
         int zx = p.zone_origin_x + coord.x;
         int zy = p.zone_origin_z + coord.z;
-        int nz = 0;
-        const ZoneRecord* zones = WorldRegistry::Get().GetAll(nz);
-        const char* slug = nullptr;
-        for (int i = 0; i < nz; ++i)
-            if (zones[i].grid_x == zx && zones[i].grid_z == zy) { slug = zones[i].name; break; }
-        const BiomeDef& bd = BiomeDef::ForZone(slug);
-        out.ground_layers[0] = (float)bd.tex0;
-        out.ground_layers[1] = (float)bd.tex1;
-        out.ground_layers[2] = (float)bd.tex2;
-        out.ground_layers[3] = (float)bd.tex3;
+        s_load_biomemap();
+
+        const BiomeDef& bd = s_resolve_biome(zx, zy);
+        out.ground_layers[0] = (float)bd.tex_base;
+        out.ground_layers[1] = (float)bd.tex_slope;
+        out.ground_layers[2] = (float)bd.tex_cliff;
+        out.ground_layers[3] = (float)bd.tex_grass;
+        out.ground_layers[4] = (float)bd.tex_dirt;
+        out.ground_layers[5] = (float)bd.tex_road;
+
+        // monkey_dust ARCHITECTURE NOTE: real Kenshi cross-fades between up to
+        // 3 alternate per-page biome material sets via a SEPARATE blendmap.png
+        // (confirmed: data/newland/land/blendmap.png -- every RGBA channel is
+        // strictly binary 0/255, not pre-blurred; the smooth transition comes
+        // from the GPU's own bilinear sampling of that binary mask at runtime,
+        // not from the stored data). Material IDENTITY is a per-page constant
+        // (biomeData bounding-box uniform selecting diffuseMaps1/2/3), NOT
+        // something sampled continuously -- only the WEIGHT is a smooth
+        // per-pixel sample. We mirror that split: blend_layers below is a
+        // per-CHUNK constant (this chunk's one blend-target neighbour's
+        // biome, picked once here, like a page's fixed alternate material),
+        // while the actual blend WEIGHT comes from a LINEAR-filtered texture
+        // sampled per-pixel in the shader (tools/md_gen_biome_blendmap.py +
+        // tex_biome_blend). An earlier version tried to pack BOTH the target
+        // texture index and the weight into one NEAREST-filtered texture
+        // sampled per-pixel -- confirmed broken (large un-blended hard edges)
+        // because a per-pixel-sampled index can't be filtered/interpolated
+        // meaningfully, unlike a per-pixel weight.
+        // v4: a chunk at a 3-way zone corner has TWO differing boundaries to
+        // cross-fade, not one -- blending only the first (v3) left the
+        // second hard-edged (confirmed visually: a 3-biome chunk row showed
+        // one blended seam and one still-hard seam). Slot B reuses
+        // blend_layers.w (previously unused padding -- TerrainPomFragUBO is
+        // already at the Intel HD 520 128-byte hard cap) for just the
+        // second neighbour's BASE index, no slope/cliff variation for that
+        // slot -- a deliberate simplification since zone boundaries are
+        // primarily a base-colour effect. tools/md_gen_biome_blendmap.py's
+        // blend_dir2 MUST pick the same second neighbour with the same rule.
+        out.blend_layers[0] = out.ground_layers[0];
+        out.blend_layers[1] = out.ground_layers[1];
+        out.blend_layers[2] = out.ground_layers[2];
+        out.blend_layers[3] = out.ground_layers[0];  // slot B base; no-op default
+        static const int kDX[4] = { -1, 1, 0, 0 };
+        static const int kDZ[4] = {  0, 0,-1, 1 };
+        int found = 0;
+        for (int n = 0; n < 4 && found < 2; ++n) {
+            int nzx = zx + kDX[n], nzy = zy + kDZ[n];
+            if (nzx < 0 || nzx > 63 || nzy < 0 || nzy > 63) continue;
+            const BiomeDef& nbd = s_resolve_biome(nzx, nzy);
+            if (nbd.tex_base != bd.tex_base || nbd.tex_slope != bd.tex_slope || nbd.tex_cliff != bd.tex_cliff) {
+                if (found == 0) {
+                    out.blend_layers[0] = (float)nbd.tex_base;
+                    out.blend_layers[1] = (float)nbd.tex_slope;
+                    out.blend_layers[2] = (float)nbd.tex_cliff;
+                } else {
+                    out.blend_layers[3] = (float)nbd.tex_base;
+                }
+                ++found;
+            }
+        }
     }
 
     // ── 4. NavMesh (disabled) + PassGrid (lightweight, from heightmap slope) ────
@@ -1016,6 +1142,7 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             }
         }
     }
+    out.heightmap_ready = true;
     return true;
 }
 

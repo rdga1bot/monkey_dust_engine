@@ -15,6 +15,7 @@
 #include <monkey_dust/ai/sense_registry.h>
 #include <monkey_dust/ai/awareness_limits.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/platform/job_system.h>
 #include <cmath>
 #ifdef __AVX2__
 #  include <immintrin.h>
@@ -54,6 +55,73 @@ static inline float sense_cone_activation(const ViewCone& cone,
     return cone.dist_lo + t * (cone.dist_hi - cone.dist_lo);
 }
 
+// ARCHITECTURE_IDEAS.md #6 — visual/audio activation math parallelized across
+// JobSystem workers. Per JobSystem's own documented contract (job_system.h:
+// "jobs must not touch EnTT registry... Safe for: ... sense distance
+// queries"), each job operates ONLY on a flat POD SenseJobInput — no entt
+// access, no shared mutable state (unlike the naive "just parallelize
+// bt_view.each()" approach rejected earlier: AIBudget::TryConsume and
+// AwarenessLimits::g_frame's reaction caps are non-atomic check-then-add
+// counters that would race under concurrent writers — see ARCHITECTURE_IDEAS.md
+// #6 status). The reaction-cap logic (order-sensitive: "first N to activate
+// reserve the reaction") stays serial in the scatter phase below, in the
+// same entity-iteration order as before, so its semantics are unchanged —
+// only the per-entity floating-point activation math (cone/r⁴ falloff) runs
+// on worker threads.
+static constexpr int MAX_SENSE_JOBS = 512;
+
+struct SenseJobInput {
+    entt::entity e = entt::null;
+    float px = 0.f, pz = 0.f, rot_y = 0.f;
+    float player_x = 0.f, player_z = 0.f, player_stealth = 1.f;
+    uint8_t cone_set_idx = 0;
+    float vis_range_mult = 1.f, audio_range_mult = 1.f, fill_mult = 1.f;
+    float darkness_mult = 1.f, crouch_mult = 1.f, noise_mult = 1.f;
+    bool  is_crouching = false;
+    // outputs, written by eval_sense_job on a worker thread
+    float visual_act = 0.f;
+    float audio_act  = 0.f;
+};
+
+static SenseJobInput s_sense_jobs[MAX_SENSE_JOBS];
+static int           s_sense_count = 0;
+
+// Runs on a JobSystem worker thread. Pure math over j's POD fields —
+// no entt::registry access, no shared mutable state. See sense_wrap_angle/
+// sense_cone_activation/sense_falloff_r4 above (already free functions).
+inline void eval_sense_job(void* p) {
+    auto* j = static_cast<SenseJobInput*>(p);
+
+    float dx   = j->player_x - j->px, dz = j->player_z - j->pz;
+    float dist = md_dist2d(dx, dz);
+    float angle_to   = atan2f(dx, dz);
+    float angle_diff = fabsf(sense_wrap_angle(angle_to - j->rot_y)) * SENSE_RAD2DEG;
+
+    float visual_act = 0.f;
+    float eff_vis_range = AwarenessLimits::MAX_VISION_RANGE * j->vis_range_mult;
+    if (dist <= eff_vis_range) {
+        const ViewConeSet* vcs = SenseRegistry::Get().At(j->cone_set_idx);
+        if (vcs) {
+            float stance_factor = j->is_crouching ? j->crouch_mult : 1.f;
+            for (int c = 0; c < vcs->cone_count; ++c) {
+                ViewCone scaled = vcs->cones[c];
+                scaled.length_m *= j->vis_range_mult;
+                float contrib = sense_cone_activation(scaled, dist, angle_diff);
+                contrib *= j->fill_mult * j->darkness_mult * stance_factor;
+                if (contrib > visual_act) visual_act = contrib;
+            }
+        }
+    }
+    visual_act *= j->player_stealth;
+
+    float eff_audio_range = SENSE_AUDIO_RADIUS_M * j->audio_range_mult;
+    float audio_act = sense_falloff_r4(dist, eff_audio_range) * j->fill_mult * j->noise_mult
+                    * j->player_stealth;
+
+    j->visual_act = visual_act;
+    j->audio_act  = audio_act;
+}
+
 inline void SenseSystemUpdate(float now_ms) {
     // VBfA-AI2: reset per-tick reaction caps (prevents O(n²) alert cascades)
     AwarenessLimits::g_frame.Reset();
@@ -76,6 +144,10 @@ inline void SenseSystemUpdate(float now_ms) {
 
     auto uint32_now = static_cast<uint32_t>(now_ms);
 
+    // ── Gather (serial, main thread): flatten per-entity inputs; cooldown
+    // throttle stays here since it mutates sc.sense_cooldown_frames per-entity
+    // (cheap, and keeps the "who gets a job this tick" decision in one place).
+    s_sense_count = 0;
     reg.view<SenseComponent, WorldTransform, AgentState>().each([&](
         entt::entity e, SenseComponent& sc,
         const WorldTransform& wt, AgentState& as)
@@ -85,48 +157,60 @@ inline void SenseSystemUpdate(float now_ms) {
         // CATHODE RE §7: NPC_SenseLimiter — per-NPC budget throttle.
         // If cooldown > 0, skip sense queries and decrement. Yields ~15% CPU at 300 NPCs.
         if (sc.sense_cooldown_frames > 0) { --sc.sense_cooldown_frames; return; }
-
-        float dx   = pwt->x - wt.x, dz = pwt->z - wt.z;
-        float dist = md_dist2d(dx, dz);  // PERF-14: rsqrtps instead of sqrtf
-        float angle_to   = atan2f(dx, dz);
-        float angle_diff = fabsf(sense_wrap_angle(angle_to - wt.rot_y)) * SENSE_RAD2DEG;
+        if (s_sense_count >= MAX_SENSE_JOBS) return;  // budget hit — remaining NPCs skip this tick
 
         // AI-4: read optional SenseModifiers (CATHODE RE §6.4 config-driven ranges).
         // If no SenseModifiers component, defaults (1.0) apply — same as before.
         const SenseModifiers* sm = reg.try_get<SenseModifiers>(e);
-        float vis_range_mult    = sm ? sm->visual_range_mult    : 1.f;
-        float audio_range_mult  = sm ? sm->audio_range_mult     : 1.f;
-        float fill_mult         = sm ? sm->activation_fill_mult : 1.f;
-        float darkness_mult     = sm ? sm->darkness_mult        : 1.f;
-        float crouch_mult       = sm ? sm->crouch_mult          : 1.f;
-        float noise_mult        = sm ? sm->noise_mult           : 1.f;
 
-        // ── Visual (index 0) ─────────────────────────────────────────────────
-        // VBfA-AI2: hard range cap. AI-4: apply visual_range_mult from SenseModifiers.
-        float visual_act = 0.f;
-        float eff_vis_range = AwarenessLimits::MAX_VISION_RANGE * vis_range_mult;
-        if (dist <= eff_vis_range) {
-            const ViewConeSet* vcs = SenseRegistry::Get().At(sc.cone_set_idx);
-            if (vcs) {
-                // AI-4: target crouching → apply crouch_mult; darkness → darkness_mult.
-                // LocomotionState not directly accessible here; use stance from AgentState flags.
-                float stance_factor = as.locomotion_state == LocomotionState::Crouching
-                                      ? crouch_mult : 1.f;
-                for (int c = 0; c < vcs->cone_count; ++c) {
-                    // Scale cone length by vis_range_mult; apply fill_mult + darkness + stance.
-                    ViewCone scaled = vcs->cones[c];
-                    scaled.length_m *= vis_range_mult;
-                    float contrib = sense_cone_activation(scaled, dist, angle_diff);
-                    contrib *= fill_mult * darkness_mult * stance_factor;
-                    if (contrib > visual_act) visual_act = contrib;
-                }
-            }
-        }
+        SenseJobInput& j = s_sense_jobs[s_sense_count++];
+        j.e              = e;
+        j.px             = wt.x;
+        j.pz             = wt.z;
+        j.rot_y          = wt.rot_y;
+        j.player_x       = pwt->x;
+        j.player_z       = pwt->z;
+        j.player_stealth = player_stealth;
+        j.cone_set_idx   = sc.cone_set_idx;
+        j.vis_range_mult    = sm ? sm->visual_range_mult    : 1.f;
+        j.audio_range_mult  = sm ? sm->audio_range_mult     : 1.f;
+        j.fill_mult         = sm ? sm->activation_fill_mult : 1.f;
+        j.darkness_mult     = sm ? sm->darkness_mult        : 1.f;
+        j.crouch_mult       = sm ? sm->crouch_mult          : 1.f;
+        j.noise_mult        = sm ? sm->noise_mult           : 1.f;
+        j.is_crouching      = (as.locomotion_state == LocomotionState::Crouching);
+        j.visual_act = 0.f;
+        j.audio_act  = 0.f;
+    });
 
-        visual_act *= player_stealth;  // B-1: stealth reduces visual detectability
+    // ── Parallel (JobSystem workers): pure math over POD SenseJobInput —
+    // no registry access, matches job_system.h's documented safe use case.
+    // NumWorkers()==0 means JobSystem::Init() was never called (e.g. test
+    // binaries with no game bootstrap) -- Submit()/Flush() on an
+    // uninitialized JobSystem (null mutex/condvars) hangs forever, since
+    // inflight_ is incremented but no worker thread exists to decrement it.
+    // Fall back to synchronous evaluation on the calling thread instead of
+    // hard-requiring every consumer to call JobSystem::Init() first.
+    if (JobSystem::Get().NumWorkers() > 0) {
+        for (int i = 0; i < s_sense_count; ++i)
+            JobSystem::Get().Submit(eval_sense_job, &s_sense_jobs[i]);
+        JobSystem::Get().Flush();
+    } else {
+        for (int i = 0; i < s_sense_count; ++i)
+            eval_sense_job(&s_sense_jobs[i]);
+    }
+
+    // ── Scatter (serial, main thread): write results back to SenseComponent,
+    // apply the order-sensitive reaction-cap logic in the SAME iteration
+    // order as the gather pass — semantics identical to the pre-parallel
+    // version, just split into gather/compute/scatter phases.
+    for (int i = 0; i < s_sense_count; ++i) {
+        const SenseJobInput& j = s_sense_jobs[i];
+        SenseComponent& sc = reg.get<SenseComponent>(j.e);
+
         bool vis_was_hi = sc.activation[0] >= sc.threshold_hi;
-        sc.activation[0] = visual_act;
-        if (!vis_was_hi && visual_act >= sc.threshold_hi) {
+        sc.activation[0] = j.visual_act;
+        if (!vis_was_hi && j.visual_act >= sc.threshold_hi) {
             // VBfA-AI2: cap at MAX_REACT_TO_PLAYER per tick.
             if (AwarenessLimits::g_frame.reacted_to_player
                     < AwarenessLimits::MAX_REACT_TO_PLAYER) {
@@ -136,7 +220,7 @@ inline void SenseSystemUpdate(float now_ms) {
                 ++AwarenessLimits::g_frame.reacted_to_player;
 
                 // CATHODE RE §7.8: raise awareness watermark when NPC fully detects player.
-                AgentBlackboard* bb = reg.try_get<AgentBlackboard>(e);
+                AgentBlackboard* bb = reg.try_get<AgentBlackboard>(j.e);
                 if (bb && bb->awareness_watermark < AwarenessState::Aware) {
                     bb->awareness_watermark = AwarenessState::Aware;
                     bb->watermark_ms = uint32_now;
@@ -144,16 +228,9 @@ inline void SenseSystemUpdate(float now_ms) {
             }
         }
 
-        // ── Audio (index 1): VBfA r⁴ falloff. AI-4: audio_range_mult + noise_mult.
-        // (range/dist)^4 — 2× farther → 1/16 activation.
-        // Replaces linear (1 - dist/range) which was too generous at long range.
-        float eff_audio_range = SENSE_AUDIO_RADIUS_M * audio_range_mult;
-        // B-1: AudioMovement index=2 uses full stealth; AudioCombat index=1 less affected.
-        float audio_act = sense_falloff_r4(dist, eff_audio_range) * fill_mult * noise_mult
-                        * player_stealth;
-        bool  aud_was_hi = sc.activation[1] >= sc.threshold_hi;
-        sc.activation[1] = audio_act;
-        if (!aud_was_hi && audio_act >= sc.threshold_hi) {
+        bool aud_was_hi = sc.activation[1] >= sc.threshold_hi;
+        sc.activation[1] = j.audio_act;
+        if (!aud_was_hi && j.audio_act >= sc.threshold_hi) {
             if (AwarenessLimits::g_frame.reacted_to_combat
                     < AwarenessLimits::MAX_REACT_TO_COMBAT) {
                 sc.last_activated_ms[1] = uint32_now;
@@ -169,9 +246,9 @@ inline void SenseSystemUpdate(float now_ms) {
             __m256 one8  = _mm256_set1_ps(1.f);
             float* a = sc.activation;
             _mm256_storeu_ps(a, _mm256_min_ps(_mm256_max_ps(_mm256_loadu_ps(a), zero8), one8));
-            for (int i = 8; i < MAX_SENSES; ++i) {
-                if (a[i] < 0.f) a[i] = 0.f;
-                if (a[i] > 1.f) a[i] = 1.f;
+            for (int k = 8; k < MAX_SENSES; ++k) {
+                if (a[k] < 0.f) a[k] = 0.f;
+                if (a[k] > 1.f) a[k] = 1.f;
             }
         }
 #elif defined(__SSE__)
@@ -181,18 +258,18 @@ inline void SenseSystemUpdate(float now_ms) {
             float* a = sc.activation;
             _mm_storeu_ps(a + 0, _mm_min_ps(_mm_max_ps(_mm_loadu_ps(a + 0), zero4), one4));
             _mm_storeu_ps(a + 4, _mm_min_ps(_mm_max_ps(_mm_loadu_ps(a + 4), zero4), one4));
-            for (int i = 8; i < MAX_SENSES; ++i) {
-                if (a[i] < 0.f) a[i] = 0.f;
-                if (a[i] > 1.f) a[i] = 1.f;
+            for (int k = 8; k < MAX_SENSES; ++k) {
+                if (a[k] < 0.f) a[k] = 0.f;
+                if (a[k] > 1.f) a[k] = 1.f;
             }
         }
 #else
-        for (int i = 0; i < MAX_SENSES; ++i) {
-            if (sc.activation[i] < 0.f) sc.activation[i] = 0.f;
-            if (sc.activation[i] > 1.f) sc.activation[i] = 1.f;
+        for (int k = 0; k < MAX_SENSES; ++k) {
+            if (sc.activation[k] < 0.f) sc.activation[k] = 0.f;
+            if (sc.activation[k] > 1.f) sc.activation[k] = 1.f;
         }
 #endif
-    });
+    }
 
     // B-3: NoiseEmitter pass — fill activation[AudioCombat=1] and activation[AudioMovement=2]
     // from nearby noise sources. Separate from the player detection path above.

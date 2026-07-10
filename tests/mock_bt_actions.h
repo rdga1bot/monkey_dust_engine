@@ -11,16 +11,16 @@ namespace md::test {
 inline int  g_mock_tick_count = 0;
 inline bool g_mock_cond_value = true;
 
-inline BTStatus mock_act_success(md::EngineContext&, entt::entity) {
+inline BTStatus mock_act_success(md::EngineContext&, MdEntity) {
     ++g_mock_tick_count; return BTStatus::Success;
 }
-inline BTStatus mock_act_failure(md::EngineContext&, entt::entity) {
+inline BTStatus mock_act_failure(md::EngineContext&, MdEntity) {
     ++g_mock_tick_count; return BTStatus::Failure;
 }
-inline BTStatus mock_act_running(md::EngineContext&, entt::entity) {
+inline BTStatus mock_act_running(md::EngineContext&, MdEntity) {
     ++g_mock_tick_count; return BTStatus::Running;
 }
-inline bool mock_cond_true(md::EngineContext&, entt::entity) {
+inline bool mock_cond_true(md::EngineContext&, MdEntity) {
     return g_mock_cond_value;
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 #include <monkey_dust/ecs/engine_context.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/bt_components.h>
 #include <entt/entt.hpp>
@@ -47,7 +48,11 @@ public:
     // Must be connected to entt::registry::on_destroy<BehaviorTreeComponent>().
     static void OnComponentDestroy(entt::registry& reg, entt::entity e);
 
-    // Convenience: connect destroy listener to a registry.
+    // Convenience: connect destroy listener to a registry. Takes a plain
+    // entt::registry& (not MdRegistry&) because unit tests construct their
+    // own independent entt::registry instances for isolation — MdRegistry
+    // can only ever wrap the one global singleton (Registry::Get()), so it
+    // can't stand in for an arbitrary registry here.
     static void ConnectRegistry(entt::registry& reg) {
         reg.on_destroy<BehaviorTreeComponent>().connect<&BTSystem::OnComponentDestroy>();
     }

@@ -80,6 +80,8 @@ public:
     template<typename... T>
     auto View() { return Raw().view<T...>(); }
 
+    void Clear() { Raw().clear(); }
+
     // Escape hatch for call sites not yet retrofitted onto the typed API
     // above (e.g. entt::to_integral, custom storage<> access).
     entt::registry& Raw() { return Registry::Get(); }

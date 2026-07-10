@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 
 // ─────────────────────────────────────────────────────────
@@ -120,15 +121,15 @@ public:
 
         float r2 = r * r;
         int   found = 0;
-        auto& reg = Registry::Get();
+        auto& reg = MdRegistry::Get();
 
         for (int cx = cx0; cx <= cx1 && found < max_out; ++cx) {
             for (int cz = cz0; cz <= cz1 && found < max_out; ++cz) {
                 const GridCell& cell = cells_[cx][cz];
                 for (int i = 0; i < cell.count && found < max_out; ++i) {
                     entt::entity c = cell.entities[i];
-                    if (reg.valid(c) && reg.all_of<WorldTransform>(c)) {
-                        const auto& et = reg.get<WorldTransform>(c);
+                    if (reg.Valid(c) && reg.AllOf<WorldTransform>(c)) {
+                        const auto& et = reg.Get<WorldTransform>(c);
                         float ddx = et.x - wx, ddz = et.z - wz;
                         if (ddx*ddx + ddz*ddz > r2) continue;
                     }
@@ -194,9 +195,9 @@ public:
                     const HashEntry* he = hash_find(c);
                     if (he && (he->world_y < ylo || he->world_y > yhi)) continue;
                     // XZ distance
-                    if (Registry::Get().valid(c) &&
-                        Registry::Get().all_of<WorldTransform>(c)) {
-                        const auto& et = Registry::Get().get<WorldTransform>(c);
+                    if (MdRegistry::Get().Valid(c) &&
+                        MdRegistry::Get().AllOf<WorldTransform>(c)) {
+                        const auto& et = MdRegistry::Get().Get<WorldTransform>(c);
                         float ddx = et.x - wx, ddz = et.z - wz;
                         if (ddx*ddx + ddz*ddz > r2) continue;
                     }

@@ -22,6 +22,7 @@
 //   - Called once per logic tick, BEFORE JoltWorld::Step
 
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/world/spatial_grid.h>
 #include <monkey_dust/components/nav_agent.h>
@@ -46,16 +47,16 @@ public:
         static Push s_pushes[MAX_PUSH];
         int npushes = 0;
 
-        auto& reg = Registry::Get();
+        auto& reg = MdRegistry::Get();
 
         // Collect: gather push vectors without modifying positions.
-        reg.view<WorldTransform, NavAgent>()
+        reg.View<WorldTransform, NavAgent>()
            .each([&](entt::entity a, const WorldTransform& ta, const NavAgent&) {
                entt::entity near[8];
                int nc = grid.QueryRadius(ta.x, ta.z, QUERY_R, near, 8);
                for (int i = 0; i < nc && npushes < MAX_PUSH - 1; ++i) {
-                   if (!reg.valid(near[i]) || near[i] == a) continue;
-                   const auto* tb = reg.try_get<WorldTransform>(near[i]);
+                   if (!reg.Valid(near[i]) || near[i] == a) continue;
+                   const auto* tb = reg.TryGet<WorldTransform>(near[i]);
                    if (!tb) continue;
                    float dx = ta.x - tb->x;
                    float dz = ta.z - tb->z;
@@ -70,8 +71,8 @@ public:
 
         // Apply: all position mutations happen after the view.each completes.
         for (int i = 0; i < npushes; ++i) {
-            if (!reg.valid(s_pushes[i].e)) continue;
-            auto* t = reg.try_get<WorldTransform>(s_pushes[i].e);
+            if (!reg.Valid(s_pushes[i].e)) continue;
+            auto* t = reg.TryGet<WorldTransform>(s_pushes[i].e);
             if (t) { t->x += s_pushes[i].dx; t->z += s_pushes[i].dz; }
         }
     }

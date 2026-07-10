@@ -18,6 +18,7 @@
 // already funnel through one or few controlled call sites, or onto new code
 // written from the start to call MarkDirty()/patch() explicitly.
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <entt/entt.hpp>
 
 template <typename T>
@@ -27,7 +28,7 @@ public:
     static void Connect() {
         auto& self = Instance();
         if (self.connected_) return;
-        auto& reg = Registry::Get();
+        auto& reg = MdRegistry::Get().Raw();
         reg.on_construct<T>().template connect<&DirtyTracker<T>::OnChanged>();
         reg.on_update<T>().template connect<&DirtyTracker<T>::OnChanged>();
         self.connected_ = true;

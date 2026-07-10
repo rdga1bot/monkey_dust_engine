@@ -9,6 +9,7 @@
 // Inventory (items). Effects emit to LuaEventBus or apply inline.
 
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/faction_system.h>
 #include <monkey_dust/components/stat_sheet.h>
 #include <cstdint>
@@ -117,7 +118,7 @@ public:
     static bool Evaluate(const DialogLine& line,
                          entt::entity speaker, entt::entity target,
                          uint32_t speaker_faction_id) noexcept {
-        auto& reg = Registry::Get();
+        auto& reg = MdRegistry::Get();
         for (int i = 0; i < (int)line.cond_count; ++i) {
             const DialogCondition& c = line.conds[i];
             switch (c.type) {
@@ -131,7 +132,7 @@ public:
                 if (rel >= (int8_t)c.param_b) return false;
             } break;
             case DialogCondType::IsHostile:
-                if (!reg.valid(target)) return false;
+                if (!reg.Valid(target)) return false;
                 // Check via FactionSystem (speaker hostile to target's faction)
                 break;
             case DialogCondType::IsPlayer:
@@ -145,16 +146,16 @@ public:
                 // Would check Inventory — skipped if no Inventory component
                 break;
             case DialogCondType::SkillAbove:
-                if (reg.valid(target)) {
-                    const auto* ss = reg.try_get<StatSheet>(target);
+                if (reg.Valid(target)) {
+                    const auto* ss = reg.TryGet<StatSheet>(target);
                     if (ss && (int)(*ss)[static_cast<Skill>(c.param_a)] <= (int)c.param_b)
                         return false;
                 }
                 break;
             // D-2: CompareOp-based conditions (Kenshi RE: "compare by" operator)
             case DialogCondType::SkillCompare: {
-                if (!reg.valid(target)) return false;
-                const auto* ss = reg.try_get<StatSheet>(target);
+                if (!reg.Valid(target)) return false;
+                const auto* ss = reg.TryGet<StatSheet>(target);
                 int val = ss ? (int)(*ss)[static_cast<Skill>(c.param_a)] : 0;
                 if (!ApplyCompareOp(c.compare_op, val, (int)c.param_b)) return false;
             } break;

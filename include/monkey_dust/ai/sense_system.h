@@ -15,6 +15,7 @@
 #include <monkey_dust/ai/sense_registry.h>
 #include <monkey_dust/ai/awareness_limits.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/platform/job_system.h>
 #include <cmath>
 #ifdef __AVX2__
@@ -126,20 +127,20 @@ inline void SenseSystemUpdate(float now_ms) {
     // VBfA-AI2: reset per-tick reaction caps (prevents O(n²) alert cascades)
     AwarenessLimits::g_frame.Reset();
 
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
 
     entt::entity player = entt::null;
-    reg.view<AgentState>().each([&](entt::entity e, const AgentState& as) {
+    reg.View<AgentState>().each([&](entt::entity e, const AgentState& as) {
         if (player == entt::null && as.lcflags.test(lcf::IS_PLAYER))
             player = e;
     });
     if (player == entt::null) return;
 
-    const WorldTransform* pwt = reg.try_get<WorldTransform>(player);
+    const WorldTransform* pwt = reg.TryGet<WorldTransform>(player);
     if (!pwt) return;
 
     // B-1: StealthComponent on player reduces all observer activation fills.
-    const StealthComponent* psc = reg.try_get<StealthComponent>(player);
+    const StealthComponent* psc = reg.TryGet<StealthComponent>(player);
     float player_stealth = psc ? psc->stealth_factor : 1.f;
 
     auto uint32_now = static_cast<uint32_t>(now_ms);
@@ -148,7 +149,7 @@ inline void SenseSystemUpdate(float now_ms) {
     // throttle stays here since it mutates sc.sense_cooldown_frames per-entity
     // (cheap, and keeps the "who gets a job this tick" decision in one place).
     s_sense_count = 0;
-    reg.view<SenseComponent, WorldTransform, AgentState>().each([&](
+    reg.View<SenseComponent, WorldTransform, AgentState>().each([&](
         entt::entity e, SenseComponent& sc,
         const WorldTransform& wt, AgentState& as)
     {
@@ -161,7 +162,7 @@ inline void SenseSystemUpdate(float now_ms) {
 
         // AI-4: read optional SenseModifiers (CATHODE RE §6.4 config-driven ranges).
         // If no SenseModifiers component, defaults (1.0) apply — same as before.
-        const SenseModifiers* sm = reg.try_get<SenseModifiers>(e);
+        const SenseModifiers* sm = reg.TryGet<SenseModifiers>(e);
 
         SenseJobInput& j = s_sense_jobs[s_sense_count++];
         j.e              = e;
@@ -206,7 +207,7 @@ inline void SenseSystemUpdate(float now_ms) {
     // version, just split into gather/compute/scatter phases.
     for (int i = 0; i < s_sense_count; ++i) {
         const SenseJobInput& j = s_sense_jobs[i];
-        SenseComponent& sc = reg.get<SenseComponent>(j.e);
+        SenseComponent& sc = reg.Get<SenseComponent>(j.e);
 
         bool vis_was_hi = sc.activation[0] >= sc.threshold_hi;
         sc.activation[0] = j.visual_act;
@@ -220,7 +221,7 @@ inline void SenseSystemUpdate(float now_ms) {
                 ++AwarenessLimits::g_frame.reacted_to_player;
 
                 // CATHODE RE §7.8: raise awareness watermark when NPC fully detects player.
-                AgentBlackboard* bb = reg.try_get<AgentBlackboard>(j.e);
+                AgentBlackboard* bb = reg.TryGet<AgentBlackboard>(j.e);
                 if (bb && bb->awareness_watermark < AwarenessState::Aware) {
                     bb->awareness_watermark = AwarenessState::Aware;
                     bb->watermark_ms = uint32_now;
@@ -273,12 +274,12 @@ inline void SenseSystemUpdate(float now_ms) {
 
     // B-3: NoiseEmitter pass — fill activation[AudioCombat=1] and activation[AudioMovement=2]
     // from nearby noise sources. Separate from the player detection path above.
-    reg.view<NoiseEmitter, WorldTransform>().each([&](
+    reg.View<NoiseEmitter, WorldTransform>().each([&](
         const NoiseEmitter& ne, const WorldTransform& nwt)
     {
         if (ne.noise_radius_m <= 0.f) return;
         float r2 = ne.noise_radius_m * ne.noise_radius_m;
-        reg.view<SenseComponent, WorldTransform>().each([&](
+        reg.View<SenseComponent, WorldTransform>().each([&](
             SenseComponent& sc, const WorldTransform& owt)
         {
             float dx = nwt.x - owt.x, dz = nwt.z - owt.z;
@@ -298,13 +299,13 @@ inline void SenseSystemUpdate(float now_ms) {
     });
 
     // B-3: SmellEmitter pass — fill activation[Smell=3] from nearby smell sources.
-    reg.view<SmellEmitter, WorldTransform>().each([&](
+    reg.View<SmellEmitter, WorldTransform>().each([&](
         const SmellEmitter& se, const WorldTransform& swt)
     {
         if (se.smell_radius_m <= 0.f) return;
         float r2 = se.smell_radius_m * se.smell_radius_m;
         float intensity = (float)se.intensity / 255.f;
-        reg.view<SenseComponent, WorldTransform>().each([&](
+        reg.View<SenseComponent, WorldTransform>().each([&](
             SenseComponent& sc, const WorldTransform& owt)
         {
             float dx = swt.x - owt.x, dz = swt.z - owt.z;

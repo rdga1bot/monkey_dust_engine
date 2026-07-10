@@ -1,5 +1,6 @@
 #pragma once
 #include <monkey_dust/ai/fnv.h>
+#include <monkey_dust/platform/md_log.h>
 #include <cstdint>
 
 // ── Pattern 1: MotivationType ─────────────────────────────────────────────────
@@ -614,7 +615,11 @@ inline const BlackboardEntry* bb_find(const AgentBlackboard& s, uint32_t key) no
 inline BlackboardEntry* bb_insert(AgentBlackboard& s, uint32_t key, uint8_t type) noexcept {
     BlackboardEntry* e = bb_find(s, key);
     if (e) return e;
-    if (s.bb_count >= MAX_BB_ENTRIES) return nullptr;
+    if (s.bb_count >= MAX_BB_ENTRIES) {
+        MD_LOG(MD_LOG_WARNING, "[AgentBlackboard] full (MAX_BB_ENTRIES=%d) — key=%u write dropped",
+               MAX_BB_ENTRIES, key);
+        return nullptr;
+    }
     e = &s.bb[s.bb_count++];
     e->key  = key;
     e->type = type;

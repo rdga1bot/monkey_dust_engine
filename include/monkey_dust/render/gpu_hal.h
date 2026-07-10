@@ -479,6 +479,12 @@ public:
     // gl_target: GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER (used for usage hint).
     // SDL_GPU path maps GL_ELEMENT_ARRAY_BUFFER → INDEX usage, rest → VERTEX.
     void Init(unsigned int gl_target, const void* data, uint32_t size_bytes);
+    // Creates the GPU-side buffer only, no data upload — pair with GpuUploadBatch::Add()
+    // (gpu_hal.h below) to fill it. Use when uploading many small buffers at once
+    // (e.g. per-chunk terrain VBO/IBO/skirt/LOD) — Init()'s own per-call transfer
+    // buffer + command buffer submit does not scale to thousands of calls (see
+    // GpuUploadBatch doc comment).
+    void InitEmpty(unsigned int gl_target, uint32_t size_bytes);
     void Shutdown();
 
     // OpenGL bind helpers (no-op in SDL_GPU-only builds).
@@ -498,6 +504,39 @@ private:
 #ifdef MD_SDL_GPU
     SDL_GPUBuffer* sdl_buf_ = nullptr;
 #endif
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuUploadBatch — merges N GpuStaticBuffer uploads into ONE transfer buffer +
+// ONE command buffer submit, instead of GpuStaticBuffer::Init's one-of-each
+// per call. Needed whenever a loop uploads many small buffers back to back
+// (e.g. a chunk's vbo+ibo+3×ibo_lod+skirt_vbo+skirt_ibo = 7 buffers, repeated
+// per chunk): 4096 chunks × 7 unbatched Init() calls (each its own
+// CreateGPUTransferBuffer + AcquireCommandBuffer + Submit) was enough one-shot
+// command-buffer churn to corrupt Intel ANV driver-internal state and abort
+// mid-vkAllocateCommandBuffers (observed: editor's full 64×64 world 3D View
+// tab, "malloc(): corrupted top size" right as the last chunks finish).
+// Usage: Begin(total_bytes) → Add() once per buffer (Add() creates the GPU-side
+// buffer via InitEmpty and copies into the batch's mapped region) → End()
+// (one copy pass, one submit). MAX_ITEMS fixed array — no heap allocation.
+class GpuUploadBatch {
+public:
+    static constexpr int MAX_ITEMS = 16;
+
+    bool Begin(uint32_t total_bytes);
+    void Add(GpuStaticBuffer& buf, unsigned int gl_target, const void* data, uint32_t size_bytes);
+    void End();
+
+private:
+#ifdef MD_SDL_GPU
+    SDL_GPUTransferBuffer* transfer_ = nullptr;
+    uint8_t*               map_      = nullptr;
+    struct Item { SDL_GPUBuffer* dst; uint32_t offset; uint32_t size; };
+    Item items_[MAX_ITEMS];
+#endif
+    uint32_t cursor_      = 0;
+    uint32_t total_bytes_ = 0;
+    int      item_count_  = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

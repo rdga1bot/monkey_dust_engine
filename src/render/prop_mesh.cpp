@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 
-bool PropMesh::LoadGLB(const char* path) {
+bool PropMesh::LoadGLB(const char* path, float layer) {
     loaded = false;
     if (!path) return false;
 
@@ -49,12 +49,14 @@ bool PropMesh::LoadGLB(const char* path) {
         return false;
     }
 
-    // Find POSITION and NORMAL accessors.
+    // Find POSITION, NORMAL and (optional) TEXCOORD_0 accessors.
     cgltf_accessor* pos_acc  = nullptr;
     cgltf_accessor* norm_acc = nullptr;
+    cgltf_accessor* uv_acc   = nullptr;
     for (cgltf_size ai = 0; ai < prim->attributes_count; ++ai) {
         if (prim->attributes[ai].type == cgltf_attribute_type_position) pos_acc  = prim->attributes[ai].data;
         if (prim->attributes[ai].type == cgltf_attribute_type_normal)   norm_acc = prim->attributes[ai].data;
+        if (prim->attributes[ai].type == cgltf_attribute_type_texcoord) uv_acc   = prim->attributes[ai].data;
     }
 
     cgltf_size vert_count = pos_acc->count;
@@ -64,15 +66,17 @@ bool PropMesh::LoadGLB(const char* path) {
         return false;
     }
 
-    // Build interleaved VBO: PropVertex { pos(12) + norm(12) }.
+    // Build interleaved VBO: PropVertex { pos(12) + norm(12) + uv(8) + layer(4) }.
     static PropVertex s_verts[131072];
     float y_min =  1e30f, y_max = -1e30f;
     for (cgltf_size i = 0; i < vert_count; ++i) {
-        float p[3] = {0.f, 0.f, 0.f};
-        float n[3] = {0.f, 1.f, 0.f};
+        float p[3]  = {0.f, 0.f, 0.f};
+        float n[3]  = {0.f, 1.f, 0.f};
+        float uv[2] = {0.f, 0.f};
         cgltf_accessor_read_float(pos_acc,  i, p, 3);
         cgltf_accessor_read_float(norm_acc, i, n, 3);
-        s_verts[i] = { p[0], p[1], p[2], n[0], n[1], n[2] };
+        if (uv_acc) cgltf_accessor_read_float(uv_acc, i, uv, 2);
+        s_verts[i] = { p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1], layer };
         if (p[1] < y_min) y_min = p[1];
         if (p[1] > y_max) y_max = p[1];
     }

@@ -19,7 +19,9 @@ public:
 
     // Init: load GLB mesh + create pipeline.
     // path=nullptr → no-op, returns false (graceful for missing assets).
-    bool Init(const char* glb_path);
+    // layer: PropVertex::layer written for every vertex — 0=rock diffuse,
+    // 1=vegetation atlas (see PropTexShared).
+    bool Init(const char* glb_path, float layer = 0.0f);
     void Shutdown();
 
     bool IsReady() const { return mesh_.loaded; }

@@ -61,7 +61,11 @@ bool ChunkManager::SaveChunk(int idx) {
 bool ChunkManager::TryEnqueuePending(ChunkCoord c) {
     int h    = pending_head_.load(std::memory_order_relaxed);
     int next = (h + 1) % MAX_STAGING;
-    if (next == pending_tail_.load(std::memory_order_acquire)) return false;
+    if (next == pending_tail_.load(std::memory_order_acquire)) {
+        MD_LOG(MD_LOG_WARNING, "[ChunkManager] pending ring full (MAX_STAGING=%d) — chunk (%d,%d) load request dropped",
+               MAX_STAGING, c.x, c.z);
+        return false;
+    }
     pending_[h] = {c.x, c.z, true};
     pending_head_.store(next, std::memory_order_release);
     return true;
@@ -95,7 +99,11 @@ void ChunkManager::IOWorkerLoop() {
                 break;
             }
         }
-        if (slot < 0) continue;
+        if (slot < 0) {
+            MD_LOG(MD_LOG_WARNING, "[ChunkManager] no free staging slot (MAX_STAGING=%d) — chunk (%d,%d) IO result discarded, not requeued",
+                   MAX_STAGING, coord.x, coord.z);
+            continue;
+        }
 
         ChunkLoadStaging& stg = staging_[slot];
         stg.coord      = coord;

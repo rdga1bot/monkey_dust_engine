@@ -7,8 +7,15 @@ static void s_upload_core(TerrainChunk& chunk,
                           const PropVertex* verts, int vert_count,
                           const uint16_t*   idx,   int idx_count)
 {
-    chunk.clutter_vbo.Init(0x8892u, verts, sizeof(PropVertex) * (uint32_t)vert_count);
-    chunk.clutter_ibo.Init(0x8893u, idx,   sizeof(uint16_t)   * (uint32_t)idx_count);
+    // Batched (see GpuUploadBatch doc comment, gpu_hal.h) — one transfer buffer
+    // + one submit for both buffers instead of two separate ones per chunk.
+    uint32_t vbytes = sizeof(PropVertex) * (uint32_t)vert_count;
+    uint32_t ibytes = sizeof(uint16_t)   * (uint32_t)idx_count;
+    GpuUploadBatch batch;
+    batch.Begin(vbytes + ibytes);
+    batch.Add(chunk.clutter_vbo, 0x8892u, verts, vbytes);
+    batch.Add(chunk.clutter_ibo, 0x8893u, idx,   ibytes);
+    batch.End();
     chunk.clutter_index_count = idx_count;
     chunk.clutter_loaded      = true;
 }

@@ -3,17 +3,22 @@
 #include <cstdio>
 #include <cstring>
 
-// Text format (one directive per line, whitespace-separated fields):
+// Text format (one directive per line):
 //   tex_count <N>
-//   tex <index> <diffuse_path> <normal_path>
+//   tex <index>|<diffuse_path>|<normal_path>   ('|'-delimited: real Kenshi
+//       filenames can contain spaces, e.g. "Smallish sharpGravel_DIF.dds" --
+//       confirmed by direct crash repro: whitespace-split parsing silently
+//       truncated that one path, InitFromDDSArray failed for ALL layers at
+//       once as a result, and the renderer segfaulted on the first frame.)
 //   biome_count <N>
 //   biome <slug> <tex_base> <tex_slope> <tex_cliff> <tex_grass> <tex_dirt> <tex_road>
 //               <fog_r> <fog_g> <fog_b> <sky_r> <sky_g> <sky_b>
 //               <legend_r> <legend_g> <legend_b>
-// Lines starting with '#' and blank lines are ignored. Paths/slugs must not
-// contain spaces. This is a generic parser — the real biome data lives in
-// a private file outside this repo (see the private generator that emits
-// this format for the authoritative field-by-field rationale).
+// Lines starting with '#' and blank lines are ignored. Slugs must not
+// contain spaces (biome lines are still whitespace-split). This is a
+// generic parser — the real biome data lives in a private file outside
+// this repo (see the private generator that emits this format for the
+// authoritative field-by-field rationale).
 
 bool BiomeRegistry::LoadFromFile(const char* path) {
     FILE* f = fopen(path, "r");
@@ -35,14 +40,22 @@ bool BiomeRegistry::LoadFromFile(const char* path) {
             continue; // informational only; arrays are fixed-size
         }
         if (!strncmp(p, "tex ", 4)) {
-            int idx = 0;
-            char dif[MAX_PATH_LEN] = {0};
-            char nml[MAX_PATH_LEN] = {0};
-            if (sscanf(p + 4, "%d %159s %159s", &idx, dif, nml) == 3 &&
-                idx >= 0 && idx < MAX_TEXTURES) {
-                strncpy(tex_paths_[idx], dif, MAX_PATH_LEN - 1);
-                strncpy(nml_paths_[idx], nml, MAX_PATH_LEN - 1);
-                if (idx + 1 > tex_count_) tex_count_ = idx + 1;
+            // '|'-delimited (not whitespace/sscanf %s): real filenames can
+            // contain spaces, see format-comment above for the crash this fixed.
+            char* rest = p + 4;
+            char* bar1 = strchr(rest, '|');
+            char* bar2 = bar1 ? strchr(bar1 + 1, '|') : nullptr;
+            if (bar1 && bar2) {
+                *bar1 = '\0'; *bar2 = '\0';
+                int idx = atoi(rest);
+                char* dif = bar1 + 1;
+                char* nml = bar2 + 1;
+                for (char* c = nml; *c; ++c) if (*c == '\n' || *c == '\r') { *c = '\0'; break; }
+                if (idx >= 0 && idx < MAX_TEXTURES) {
+                    strncpy(tex_paths_[idx], dif, MAX_PATH_LEN - 1);
+                    strncpy(nml_paths_[idx], nml, MAX_PATH_LEN - 1);
+                    if (idx + 1 > tex_count_) tex_count_ = idx + 1;
+                }
             }
             continue;
         }

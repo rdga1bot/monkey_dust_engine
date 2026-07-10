@@ -492,16 +492,20 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
     for (int i = 0; i < count && ok; ++i) {
         layers[i].buf = md::fs_read_alloc(paths[i], &layers[i].len);
         if (!layers[i].buf) {
+            fprintf(stderr, "[GpuTexture] DDS array: missing (i=%d) '%s'\n", i, paths[i] ? paths[i] : "(null)");
             MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: missing %s", paths[i]);
             ok = false; break;
         }
         int w, h, m; bool bc3, bc1; uint32_t doff;
         if (!s_parse_dds((const uint8_t*)layers[i].buf, layers[i].len, w, h, m, bc3, bc1, doff)) {
+            fprintf(stderr, "[GpuTexture] DDS array: bad header (i=%d) '%s'\n", i, paths[i]);
             MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: bad header %s", paths[i]);
             ok = false; break;
         }
         if (i == 0) { ref_w=w; ref_h=h; ref_mips=m; ref_bc3=bc3; ref_bc1=bc1; ref_doff=doff; }
         else if (w!=ref_w||h!=ref_h||m!=ref_mips||bc3!=ref_bc3||bc1!=ref_bc1) {
+            fprintf(stderr, "[GpuTexture] DDS array: size mismatch (i=%d) '%s' w=%d h=%d m=%d bc3=%d bc1=%d vs ref w=%d h=%d m=%d bc3=%d bc1=%d\n",
+                    i, paths[i], w, h, m, bc3, bc1, ref_w, ref_h, ref_mips, ref_bc3, ref_bc1);
             MD_LOG(MD_LOG_WARNING, "[GpuTexture] DDS array: layer %d size mismatch", i);
             ok = false; break;
         }

@@ -185,9 +185,20 @@ inline void SenseSystemUpdate(float now_ms) {
 
     // ── Parallel (JobSystem workers): pure math over POD SenseJobInput —
     // no registry access, matches job_system.h's documented safe use case.
-    for (int i = 0; i < s_sense_count; ++i)
-        JobSystem::Get().Submit(eval_sense_job, &s_sense_jobs[i]);
-    JobSystem::Get().Flush();
+    // NumWorkers()==0 means JobSystem::Init() was never called (e.g. test
+    // binaries with no game bootstrap) -- Submit()/Flush() on an
+    // uninitialized JobSystem (null mutex/condvars) hangs forever, since
+    // inflight_ is incremented but no worker thread exists to decrement it.
+    // Fall back to synchronous evaluation on the calling thread instead of
+    // hard-requiring every consumer to call JobSystem::Init() first.
+    if (JobSystem::Get().NumWorkers() > 0) {
+        for (int i = 0; i < s_sense_count; ++i)
+            JobSystem::Get().Submit(eval_sense_job, &s_sense_jobs[i]);
+        JobSystem::Get().Flush();
+    } else {
+        for (int i = 0; i < s_sense_count; ++i)
+            eval_sense_job(&s_sense_jobs[i]);
+    }
 
     // ── Scatter (serial, main thread): write results back to SenseComponent,
     // apply the order-sensitive reaction-cap logic in the SAME iteration

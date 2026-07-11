@@ -1,6 +1,7 @@
 #pragma once
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_entity.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/components/health.h>
 #include <monkey_dust/combat/damage_calc.h>
 
@@ -25,14 +26,14 @@ static constexpr float SEVER_THRESHOLD_CUT = 35.f; // min effective damage to se
 // damage — effective damage (post-armour)
 // type   — must be DamageType::Cut to allow severance
 // hit_dir — normalised world-space direction of the hit (for detach velocity)
-bool LimbSeverance_TryApply(entt::registry& reg, MdEntity e,
+bool LimbSeverance_TryApply(MdRegistry& reg, MdEntity e,
                              int limb, float damage, DamageType type,
                              const float hit_dir[3]);
 
 // Equip a prosthetic on a severed limb.
 // prosthetic_max_hp — HP granted by the prosthetic.
 // Returns false if limb is not severed or index out of range.
-bool LimbSeverance_Equip(entt::registry& reg, MdEntity e,
+bool LimbSeverance_Equip(MdRegistry& reg, MdEntity e,
                           int limb, float prosthetic_max_hp);
 
 // Detached limb entity — spawned by LimbSeverance_TryApply.

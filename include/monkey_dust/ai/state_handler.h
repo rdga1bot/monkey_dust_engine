@@ -1,5 +1,6 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <cstdint>
 #include <entt/entt.hpp>
 #include <monkey_dust/components/agent_state.h>
@@ -53,8 +54,8 @@ public:
 
     // Apply flag change to entity's EntityStateFlag bitmask + dispatch handlers.
     void Apply(MdEntity e, EntityStateFlag flag, bool set,
-               entt::registry& reg) const noexcept {
-        auto* as = reg.try_get<AgentState>(e.Raw());
+               MdRegistry& reg) const noexcept {
+        auto* as = reg.TryGet<AgentState>(e);
         if (!as) return;
 
         uint32_t bit = static_cast<uint32_t>(flag);
@@ -69,8 +70,8 @@ public:
 
     // Test: does the entity have the flag set?
     static bool Test(MdEntity e, EntityStateFlag flag,
-                     const entt::registry& reg) noexcept {
-        const auto* as = reg.try_get<AgentState>(e.Raw());
+                     const MdRegistry& reg) noexcept {
+        const auto* as = reg.TryGet<AgentState>(e);
         if (!as) return false;
         return (as->entity_state & static_cast<uint32_t>(flag)) != 0u;
     }

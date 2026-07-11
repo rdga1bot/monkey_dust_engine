@@ -78,7 +78,7 @@
             uint8_t threshold = static_cast<uint8_t>((nd.data >> 8) & 0xFFu);
             uint8_t mode      = static_cast<uint8_t>(nd.data & 0x1u);
             uint8_t val = (nd.type == BTNodeType::RelationshipTrustCheck)
-                          ? rel->GetTrust(tgt) : rel->GetFear(tgt);
+                          ? rel->GetTrust(e, tgt) : rel->GetFear(e, tgt);
             bool ok = (mode == 0) ? (val >= threshold) : (val < threshold);
             result = ok ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;

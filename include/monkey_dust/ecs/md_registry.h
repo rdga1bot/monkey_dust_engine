@@ -145,9 +145,19 @@ public:
     template<typename T, typename Fn>
     void Patch(MdEntity e, Fn fn) { Raw().patch<T>(e.Raw(), fn); }
 
+    // B3.3: the underlying view is cached per unique T... signature (one
+    // function-local static per template instantiation) rather than
+    // rebuilt on every call. For entt this is a no-op today — a view is
+    // just storage<T>* pointers, cheap to fetch and stable across
+    // Registry::Clear() (clear() empties storage in place, it doesn't
+    // destroy/recreate the pool) — so a cached view still iterates
+    // whatever's live at call time. This is prep for B3.4: flecs::query
+    // <T...> registers with the world at construction and is meant to be
+    // built once and reused, not rebuilt every call; caching now means
+    // the swap in B3.4 doesn't also have to introduce caching under it.
     template<typename... T>
     auto View() {
-        auto v = Raw().view<T...>();
+        static auto v = Raw().view<T...>();
         return MdView<decltype(v), T...>(v);
     }
 

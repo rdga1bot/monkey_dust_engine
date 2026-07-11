@@ -583,6 +583,16 @@ class GpuTexture {
 public:
     bool InitFromFile  (const char* path,              const GpuSamplerDesc& s = {});
     bool InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSamplerDesc& s = {});
+    // Allocates a COLOR_TARGET|SAMPLER texture with NO data upload (SDL_GPU
+    // only) — for render-to-texture targets whose first write is a render
+    // pass, not CPU data (e.g. TerrainRenderer::BakeAlbedo). InitFromMemory's
+    // zero-fill-then-upload does its own synchronous acquire/copy/submit
+    // cycle per call; calling it once per chunk (81+) measurably regressed
+    // startup time (confirmed: ~4s baseline -> ~16s) for content that gets
+    // overwritten by the very next render pass anyway. mip levels (if
+    // s.gen_mipmap) are left uninitialized until the caller's own render
+    // pass + SDL_GenerateMipmapsForGPUTexture populate them.
+    bool InitRenderTarget(int w, int h, const GpuSamplerDesc& s = {});
     // Load a 2D texture array from multiple BC3/DXT5 DDS files (SDL_GPU only).
     // All files must have identical dimensions, format, and mip count.
     bool InitFromDDSArray(const char* const* paths, int count, const GpuSamplerDesc& s = {});

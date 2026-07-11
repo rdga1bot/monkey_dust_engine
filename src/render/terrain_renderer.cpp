@@ -36,7 +36,7 @@ bool TerrainRenderer::Init() {
 
     pd.vert_uniform_bufs = 1;  // slot 0: TerrainVertUBO (80 bytes)
     pd.frag_uniform_bufs = 1;  // slot 0: TerrainFragUBO (64 bytes)
-    pd.frag_samplers     = 5;  // b0=kenshi colour overlay, b1=ground DDS array, b2=detail tint, b3=overlay mask, b4=biome blend (matches terrain_forward.frag)
+    pd.frag_samplers     = 6;  // b0=kenshi colour overlay, b1=ground DDS array, b2=detail tint, b3=overlay mask, b4=biome blend, b5=baked per-chunk albedo (matches terrain_forward.frag)
     pd.frag_storage_bufs = 1;  // b0 (set=1 in slang binding namespace): per-zone ground-layer lookup (zone_ground_layers_), used only when TerrainFragUBO.blend_layers.w>0.5 (synthesis/compact-LOD2 background draws — see SetBatchZoneLookup)
     // NOTE: normal-map array (tex_ground_nml_array_) is a POM-only pilot for
     // now (see biome_def.h's kGroundNmlPaths comment + CLAUDE_STATE plan) —
@@ -203,6 +203,129 @@ bool TerrainRenderer::InitBiomeBlend(const char* path)
 #endif
 }
 
+bool TerrainRenderer::InitAlbedoBake()
+{
+#ifdef MD_SDL_GPU
+    GpuPipeline::Desc pd;
+    pd.vert_path = "shaders/terrain_albedo_bake.vert";
+    pd.frag_path = "shaders/terrain_albedo_bake.frag";
+    // Same TerrainVertex layout/stride as the runtime chunk vbo (52 bytes) —
+    // only pos/normal/uv are consumed (see terrain_albedo_bake.slang's VSIn
+    // comment); splat/morph_y at offsets 32/48 are simply not read.
+    pd.layout.count      = 3;
+    pd.layout.stride     = 52;
+    pd.layout.attribs[0] = { 0,  0, GpuAttribFmt::F3 };  // aPos
+    pd.layout.attribs[1] = { 1, 12, GpuAttribFmt::F3 };  // aNormal
+    pd.layout.attribs[2] = { 2, 24, GpuAttribFmt::F2 };  // aUV
+
+    pd.raster.depth_test  = false;
+    pd.raster.depth_write = false;
+    pd.raster.cull_back   = false;
+    pd.has_depth_target   = false;
+    pd.color_format       = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+
+    pd.vert_uniform_bufs = 1;  // BakeVertUBO
+    pd.frag_uniform_bufs = 1;  // BakeFragUBO
+    pd.frag_samplers     = 3; // tex_ground, tex_overlay_mask, tex_biome_blend
+
+    if (!albedo_bake_pipeline_.Create(pd)) {
+        fprintf(stderr, "[TerrainRenderer] albedo bake pipeline failed to create\n");
+        return false;
+    }
+    albedo_bake_ready_ = true;
+    return true;
+#else
+    return false;
+#endif
+}
+
+void TerrainRenderer::BakeAlbedo(SDL_GPUCommandBuffer* cmd, TerrainChunk& chunk,
+                                  float world_origin_x, float world_origin_z, float world_to_uv)
+{
+#ifdef MD_SDL_GPU
+    if (!albedo_bake_ready_ || !cmd || !chunk.loaded) return;
+    if (!chunk.vbo.SDLBuffer() || !chunk.ibo.SDLBuffer()) return;
+
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (!dev) return;
+
+    if (!chunk.albedo_tex.Valid()) {
+        GpuSamplerDesc sd;
+        sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP;
+        sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+        sd.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        sd.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        sd.gen_mipmap = true;
+        // InitRenderTarget (not InitFromMemory): allocates COLOR_TARGET|
+        // SAMPLER with no data upload — the render pass right below writes
+        // mip 0 directly, so a zero-fill upload first would be wasted work.
+        // InitFromMemory's per-call synchronous acquire/copy/submit cycle,
+        // done once per chunk (81+), measurably regressed startup time
+        // (confirmed: ~4s baseline -> ~16s) before this fix.
+        if (!chunk.albedo_tex.InitRenderTarget(ALBEDO_BAKE_SIZE, ALBEDO_BAKE_SIZE, sd))
+            return;
+    }
+
+    SDL_GPUColorTargetInfo col = {};
+    col.texture     = chunk.albedo_tex.SDLTexture();
+    col.load_op     = SDL_GPU_LOADOP_DONT_CARE;
+    col.store_op    = SDL_GPU_STOREOP_STORE;
+    SDL_GPURenderPass* rp = SDL_BeginGPURenderPass(cmd, &col, 1, nullptr);
+    if (!rp) return;
+
+    SDL_BindGPUGraphicsPipeline(rp, albedo_bake_pipeline_.SDLPipeline());
+
+    SDL_GPUBufferBinding vb { chunk.vbo.SDLBuffer(), 0u };
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_GPUBufferBinding ib { chunk.ibo.SDLBuffer(), 0u };
+    SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+
+    BakeVertUBO vubo;
+    vubo.chunk_origin_x = chunk.center_x - CHUNK_SIZE * 0.5f;
+    vubo.chunk_origin_z = chunk.center_z - CHUNK_SIZE * 0.5f;
+    vubo.chunk_size     = CHUNK_SIZE;
+    vubo._pad           = 0.f;
+    SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
+
+    BakeFragUBO fubo;
+    fubo.world_params[0] = world_origin_x; fubo.world_params[1] = world_origin_z;
+    fubo.world_params[2] = world_to_uv;    fubo.world_params[3] = 0.f;
+    fubo.ground_layers_a[0] = chunk.ground_layers[0]; fubo.ground_layers_a[1] = chunk.ground_layers[1];
+    fubo.ground_layers_a[2] = chunk.ground_layers[2]; fubo.ground_layers_a[3] = chunk.ground_layers[3];
+    fubo.ground_layers_b[0] = chunk.ground_layers[4]; fubo.ground_layers_b[1] = chunk.ground_layers[5];
+    fubo.ground_layers_b[2] = 0.f; fubo.ground_layers_b[3] = 0.f;
+    fubo.blend_layers[0] = chunk.blend_layers[0]; fubo.blend_layers[1] = chunk.blend_layers[1];
+    fubo.blend_layers[2] = chunk.blend_layers[2]; fubo.blend_layers[3] = chunk.blend_layers[3];
+    SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
+
+    SDL_GPUTextureSamplerBinding bindings[3];
+    bool ga = ground_array_ready_ && tex_ground_array_.Valid()
+              && tex_ground_array_.SDLTexture() && tex_ground_array_.SDLSampler();
+    bindings[0].texture = ga ? tex_ground_array_.SDLTexture() : nullptr;
+    bindings[0].sampler = ga ? tex_ground_array_.SDLSampler() : nullptr;
+    bool mv = overlay_mask_ready_ && tex_overlay_mask_.Valid()
+              && tex_overlay_mask_.SDLTexture() && tex_overlay_mask_.SDLSampler();
+    bindings[1].texture = mv ? tex_overlay_mask_.SDLTexture() : fallback_mask_tex_;
+    bindings[1].sampler = mv ? tex_overlay_mask_.SDLSampler() : fallback_mask_sampler_;
+    bool bv = biome_blend_ready_ && tex_biome_blend_.Valid()
+              && tex_biome_blend_.SDLTexture() && tex_biome_blend_.SDLSampler();
+    bindings[2].texture = bv ? tex_biome_blend_.SDLTexture() : fallback_blend_tex_;
+    bindings[2].sampler = bv ? tex_biome_blend_.SDLSampler() : fallback_blend_sampler_;
+    if (!bindings[0].texture || !bindings[0].sampler) { SDL_EndGPURenderPass(rp); return; }
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 3);
+
+    SDL_DrawGPUIndexedPrimitives(rp, (uint32_t)TERRAIN_IDX, 1, 0, 0, 0);
+    SDL_EndGPURenderPass(rp);
+
+    // Regenerate mips from the just-baked mip-0 content — the ones created
+    // at texture-allocation time (see the gen_mipmap comment above) are from
+    // the zero-fill placeholder, not this chunk's real albedo.
+    SDL_GenerateMipmapsForGPUTexture(cmd, chunk.albedo_tex.SDLTexture());
+
+    chunk.albedo_baked = true;
+#endif
+}
+
 void TerrainRenderer::Shutdown() {
     ShutdownPOM();
     tex_colour_.Shutdown();
@@ -253,7 +376,7 @@ bool TerrainRenderer::InitPOM(const char* detail_path, const PomParams& p)
     pd.has_depth_target   = true;
     pd.vert_uniform_bufs  = 1;   // slot 0: TerrainPomVertUBO (96 bytes)
     pd.frag_uniform_bufs  = 1;   // slot 0: TerrainPomFragUBO (96 bytes)
-    pd.frag_samplers      = 6;   // b0=tex_colour, b1=tex_ground(array), b2=tex_detail, b3=tex_overlay_mask, b4=tex_biome_blend, b5=tex_ground_nml(array)
+    pd.frag_samplers      = 7;   // b0=tex_colour, b1=tex_ground(array), b2=tex_detail, b3=tex_overlay_mask, b4=tex_biome_blend, b5=tex_ground_nml(array), b6=baked per-chunk albedo
 
     fprintf(stderr, "[TerrainRenderer] creating POM pipeline...\n");
     if (!pom_pipeline_.Create(pd)) {
@@ -345,7 +468,7 @@ void TerrainRenderer::ShutdownPOM()
 }
 
 #ifdef MD_SDL_GPU
-void TerrainRenderer::FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const
+void TerrainRenderer::FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[7]) const
 {
     // binding 0: Kenshi overlay (world colour — biome identity)
     bool ov = tex_colour_.Valid() && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
@@ -377,6 +500,10 @@ void TerrainRenderer::FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[6]
               && tex_ground_nml_array_.SDLTexture() && tex_ground_nml_array_.SDLSampler();
     out[5].texture = na ? tex_ground_nml_array_.SDLTexture() : nullptr;
     out[5].sampler = na ? tex_ground_nml_array_.SDLSampler() : nullptr;
+    // binding 6: baked per-chunk albedo (see BakeAlbedo) — default fallback,
+    // DrawRawPOM overwrites with chunk.albedo_tex per-draw when baked.
+    out[6].texture = fallback_tex_;
+    out[6].sampler = fallback_sampler_;
 }
 #endif
 
@@ -429,6 +556,8 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
     vubo.cam_pos_ws[1]  = cam_y;
     vubo.cam_pos_ws[2]  = cam_z;
     vubo.cam_pos_ws[3]  = 0.f;  // w unused; geomorph is per-vertex in shader
+    vubo.chunk_origin_x = chunk.center_x - CHUNK_SIZE * 0.5f;
+    vubo.chunk_origin_z = chunk.center_z - CHUNK_SIZE * 0.5f;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
 
     TerrainPomFragUBO fubo;
@@ -459,10 +588,14 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
     fubo.fog_color_near[2] = fog.fog_color[2]; fubo.fog_color_near[3] = fog.fog_near;
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[6];
+    SDL_GPUTextureSamplerBinding bindings[7];
     FillPomSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 6);
+    if (chunk.albedo_baked && chunk.albedo_tex.Valid()) {
+        bindings[6].texture = chunk.albedo_tex.SDLTexture();
+        bindings[6].sampler = chunk.albedo_tex.SDLSampler();
+    }
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 7);
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
 #endif
@@ -498,7 +631,7 @@ bool TerrainRenderer::InitKenshiOverlay(const char* path)
 
 
 #ifdef MD_SDL_GPU
-void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const
+void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const
 {
     // UseColourOverride() swaps texture for a batch (VT local composite).
     if (col_override_tex_ && col_override_smp_) {
@@ -531,6 +664,10 @@ void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) c
               && tex_biome_blend_.SDLTexture() && tex_biome_blend_.SDLSampler();
     out[4].texture = bv ? tex_biome_blend_.SDLTexture() : fallback_blend_tex_;
     out[4].sampler = bv ? tex_biome_blend_.SDLSampler() : fallback_blend_sampler_;
+    // b5: baked per-chunk albedo (see BakeAlbedo) — default fallback,
+    // DrawRaw overwrites with chunk.albedo_tex per-draw when baked.
+    out[5].texture = fallback_tex_;
+    out[5].sampler = fallback_sampler_;
 }
 #endif
 
@@ -571,6 +708,8 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     vubo.lod_blend      = lod_blend;
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
+    vubo.chunk_origin_x = chunk.center_x - CHUNK_SIZE * 0.5f;
+    vubo.chunk_origin_z = chunk.center_z - CHUNK_SIZE * 0.5f;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
 
     const auto& fog = GraphicsSettings::Get();
@@ -591,10 +730,14 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     fubo.blend_layers[2] = chunk.blend_layers[2]; fubo.blend_layers[3] = chunk.blend_layers[3];
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[5];
+    SDL_GPUTextureSamplerBinding bindings[6];
     FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 5);
+    if (chunk.albedo_baked && chunk.albedo_tex.Valid()) {
+        bindings[5].texture = chunk.albedo_tex.SDLTexture();
+        bindings[5].sampler = chunk.albedo_tex.SDLSampler();
+    }
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 6);
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
 
@@ -637,6 +780,8 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     vubo.lod_blend      = 0.f;
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
+    vubo.chunk_origin_x = chunk.center_x - CHUNK_SIZE * 0.5f;
+    vubo.chunk_origin_z = chunk.center_z - CHUNK_SIZE * 0.5f;
     cb.PushVertexUniforms(0, &vubo, sizeof(vubo));
 
     const auto& fog = GraphicsSettings::Get();
@@ -657,10 +802,14 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     fubo.blend_layers[2] = chunk.blend_layers[2]; fubo.blend_layers[3] = chunk.blend_layers[3];
     cb.PushFragmentUniforms(0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[5];
+    SDL_GPUTextureSamplerBinding bindings[6];
     FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    cb.BindFragmentSamplers(0, bindings, 5);
+    if (chunk.albedo_baked && chunk.albedo_tex.Valid()) {
+        bindings[5].texture = chunk.albedo_tex.SDLTexture();
+        bindings[5].sampler = chunk.albedo_tex.SDLSampler();
+    }
+    cb.BindFragmentSamplers(0, bindings, 6);
 
     SDL_DrawGPUIndexedPrimitives(cb.SDLPass(), TERRAIN_IDX, 1, 0, 0, 0);
 #endif
@@ -686,6 +835,12 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     vubo.lod_blend      = 0.f;
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
+    // No single chunk at BeginRawBatch time (per-chunk draws happen later
+    // via DrawRawChunk, the editor's zone-lookup batch path — out of scope
+    // for the albedo bake this phase, see terrain_forward.slang's
+    // use_lookup branch) — harmless, that branch never reads vAlbedoUV.
+    vubo.chunk_origin_x = 0.f;
+    vubo.chunk_origin_z = 0.f;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
 
     // Cache sun/world/fog params; ground_layers varies per chunk (per-biome)
@@ -708,10 +863,10 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     // this same frame into the normal per-chunk DrawRawChunk path below.
     batch_fubo_base_.use_zone_lookup[0] = 0.f;
 
-    SDL_GPUTextureSamplerBinding bindings[5];
+    SDL_GPUTextureSamplerBinding bindings[6];
     FillSamplerBindings(bindings);
     if (bindings[0].texture && bindings[0].sampler)
-        SDL_BindGPUFragmentSamplers(rp, 0, bindings, 5);
+        SDL_BindGPUFragmentSamplers(rp, 0, bindings, 6);
 
     // Always bound (cheap, read-only) — only actually read by the shader
     // when use_zone_lookup=1 (synthesis/compact-LOD2 draws). Harmless no-op

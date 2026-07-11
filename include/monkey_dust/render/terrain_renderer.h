@@ -50,7 +50,14 @@ public:
         // lod_blend, terrain_pom.slang task #43) — was the unused _pad slot.
         float lod_blend;
         float cam_pos_ws[4];    // xyz=camera world position, w=unused (fog distance)
-        // 96 bytes total
+        // Chunk-local albedo-bake UV origin (see BakeAlbedo/terrain_albedo_bake.slang):
+        // this chunk's own world-space corner, NOT the world overlay origin
+        // above — lets the runtime vertex shader compute the SAME 0..1
+        // chunk-local UV the bake pass rasterized into, so sampling the
+        // baked per-chunk texture lands on the right texel.
+        float chunk_origin_x;
+        float chunk_origin_z;
+        // 104 bytes total
     };
 
     // Fragment UBO: sun(32) + world_params(16) + ground_layers_a/b(32) + fog_color_near(16)
@@ -87,7 +94,11 @@ public:
         // Was an unused _pad0 slot.
         float lod_blend;
         float cam_pos_ws[4];    // xyz=camera world position, w=unused
-        // 96 bytes total
+        // Chunk-local albedo-bake UV origin — see TerrainVertUBO's field of
+        // the same name.
+        float chunk_origin_x;
+        float chunk_origin_z;
+        // 104 bytes total
     };
 
     // Fragment UBO for POM pipeline: 112 bytes + blend_layers (16 bytes) = 128 bytes
@@ -103,6 +114,26 @@ public:
         float fog_color_near[4];  // xyz=fog colour, w=fog_near
         float blend_layers[4];    // xyz=crossfade target base,slope,cliff; w=unused
         // 128 bytes total
+    };
+
+    // ── Albedo bake pipeline UBOs (terrain_albedo_bake.slang) ────────────────
+    // Own, independent pipeline/UBOs — does NOT touch the runtime forward/POM
+    // pipelines' sampler/UBO layout at all, so none of the "5 sync points"
+    // invariant applies here; only the runtime shaders' ONE new sampler
+    // (tex_albedo_baked) does, see FillSamplerBindings/FillPomSamplerBindings.
+    struct BakeVertUBO {
+        float chunk_origin_x;
+        float chunk_origin_z;
+        float chunk_size;
+        float _pad;
+        // 16 bytes total
+    };
+    struct BakeFragUBO {
+        float world_params[4];    // xy=overlay origin, z=world_to_uv, w unused
+        float ground_layers_a[4]; // xyzw = base,slope,cliff,grass
+        float ground_layers_b[4]; // xy = dirt,road; zw unused
+        float blend_layers[4];    // xyz=slot A base/slope/cliff, w=slot B base
+        // 64 bytes total
     };
 
     bool Init();
@@ -205,6 +236,23 @@ public:
                     // DitherPattern4x4/clip().
                     float lod_blend      = 0.f);
 
+    // Terrain surface construction rethink (2026-07-12): bakes the 6-9
+    // sample ground-texture blend (BlendGroundLayers, extracted verbatim
+    // into terrain_albedo_bake.slang) into chunk.albedo_tex ONCE, instead
+    // of recomputing it every fragment every frame in terrain_forward/
+    // terrain_pom. Call once per chunk, after InitGroundTextureArray/
+    // InitOverlayMask/InitBiomeBlend (needs their source textures) and
+    // after the chunk's own vbo/ibo are uploaded. Caller owns the command
+    // buffer lifecycle (acquire once, call this per chunk, submit once) —
+    // mirrors GpuUploadBatch's "one submit, not N" rationale.
+    // world_origin_x/z/world_to_uv: SAME world-space overlay UV convention
+    // as DrawRaw/DrawRawPOM's parameters of the same name (COL_OX/COL_OZ/
+    // COL_UV in npc_render.cpp) — must match so the baked tex_overlay_mask/
+    // tex_biome_blend samples address the same world position.
+    bool InitAlbedoBake();
+    void BakeAlbedo(SDL_GPUCommandBuffer* cmd, TerrainChunk& chunk,
+                     float world_origin_x, float world_origin_z, float world_to_uv);
+
     bool IsReady()    const;
     bool IsPomReady() const;
 
@@ -297,6 +345,13 @@ private:
     // Per-zone ground-layer lookup (see UploadZoneGroundLayers/SetBatchZoneLookup).
     SSBO zone_layers_ssbo_;
 
+    // Albedo bake pipeline (see BakeAlbedo) — small offscreen RGBA8 target,
+    // no depth. One pipeline shared by all chunks; each chunk owns its own
+    // baked GpuTexture (TerrainChunk::albedo_tex).
+    GpuPipeline albedo_bake_pipeline_;
+    bool        albedo_bake_ready_ = false;
+    static constexpr int ALBEDO_BAKE_SIZE = 256; // texels/side per chunk (460.8m chunk -> ~1.8m/texel)
+
     // Optional colour override — UseColourOverride() swaps for one batch.
     SDL_GPUTexture* col_override_tex_ = nullptr;
     SDL_GPUSampler* col_override_smp_ = nullptr;
@@ -313,7 +368,13 @@ private:
     SDL_GPUSampler* fallback_mask_sampler_   = nullptr;
     SDL_GPUTexture* fallback_blend_tex_      = nullptr;
     SDL_GPUSampler* fallback_blend_sampler_  = nullptr;
-    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const;      // forward (LOD1-3) — POM-only pilot, not touched yet
-    void FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const;  // POM (LOD0) — +b5 ground normal array
+    // out[5]/out[6] (last slot): baked albedo — filled with the fallback
+    // white texture by default; DrawRaw/DrawRawPOM overwrite it per-chunk
+    // with chunk.albedo_tex right after calling this (see BakeAlbedo doc
+    // comment) if the chunk has been baked. Batch draws (BeginRawBatch/
+    // DrawRawChunk, editor zone-lookup path) never overwrite it — harmless,
+    // that branch never samples tex_albedo_baked.
+    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const;      // forward (LOD1-3) — +b5 baked albedo
+    void FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[7]) const;  // POM (LOD0) — +b5 ground normal array, +b6 baked albedo
 #endif
 };

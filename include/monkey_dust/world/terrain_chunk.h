@@ -131,6 +131,17 @@ struct TerrainChunk {
     int              clutter_index_count = 0;
     bool             clutter_loaded = false;
 
+    // Terrain surface construction rethink (2026-07-12): the 6-9 sample
+    // ground-texture blend (BlendGroundLayers) is baked ONCE per chunk into
+    // this small offscreen texture instead of recomputed every fragment
+    // every frame (TerrainRenderer::BakeAlbedo, called once right after
+    // upload — same one-shot-per-chunk lifecycle as clutter_vbo/loaded
+    // above). Runtime terrain_forward/terrain_pom shaders sample it once
+    // instead of doing the full blend. See docs/OSS_TERRAIN_METHODS.md's
+    // Wicked Engine section for the reference pattern this mirrors.
+    GpuTexture       albedo_tex;
+    bool             albedo_baked = false;
+
     // Sample height at local chunk coords (0..CHUNK_SIZE).
     // Bilinear interpolation between grid cells.
     float SampleHeight(float lx, float lz) const;

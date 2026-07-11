@@ -26,6 +26,14 @@ static constexpr int CLUTTER_MAX_IDX   = 140000;
 // loads the small CPU-only source meshes used to build clutter. No GPU calls.
 bool ClutterGen_LoadSources();
 
+// Already-decoded RGBA8 pixels for game/data/textures/md_overlay_mask.png,
+// loaded once by ClutterGen_LoadSources() for CPU-side grass-density
+// sampling. Exposed so TerrainRenderer::InitOverlayMask can upload the SAME
+// decoded buffer to the GPU instead of running stbi_load a second time on
+// the same 4096x4096 file. Returns false (out params untouched) if
+// ClutterGen_LoadSources() hasn't run yet or the file failed to load.
+bool ClutterGen_GetGrassDensityRGBA(const uint8_t** out_pixels, int* out_w, int* out_h);
+
 // Worker thread: bake this chunk's clutter into the shared static staging
 // buffers. No GPU calls. Valid only until the next ClutterGen_Build call.
 void ClutterGen_Build(TerrainChunk& chunk, const char* biome_slug);

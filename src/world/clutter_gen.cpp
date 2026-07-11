@@ -61,6 +61,14 @@ static void s_load_grass_density() {
         fprintf(stderr, "[ClutterGen] md_overlay_mask.png not found — density-driven placement disabled (biome-only fill_prob)\n");
 }
 
+bool ClutterGen_GetGrassDensityRGBA(const uint8_t** out_pixels, int* out_w, int* out_h) {
+    if (!s_grass_density) return false;
+    *out_pixels = s_grass_density;
+    *out_w = s_gd_w;
+    *out_h = s_gd_h;
+    return true;
+}
+
 // World size the stitched overlay atlas spans 1:1 (matches KENSHI_WORLD_SIZE
 // in npc_render.cpp/editor_world_3d_sdlgpu.cpp: 64 zones * CHUNK_SIZE).
 static constexpr float kOverlayWorldSizeM = 64.f * CHUNK_SIZE;

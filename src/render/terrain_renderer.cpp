@@ -1,5 +1,6 @@
 #include <monkey_dust/render/terrain_renderer.h>
 #include <monkey_dust/world/biome_def.h>
+#include <monkey_dust/world/clutter_gen.h>
 #include <monkey_dust/tools/graphics_settings.h>
 #include <cstdio>
 #include <cstring>
@@ -144,7 +145,19 @@ bool TerrainRenderer::InitOverlayMask(const char* path)
     sd.flip_v     = false;
 
     tex_overlay_mask_.Shutdown();
-    if (!tex_overlay_mask_.InitFromFile(path, sd)) {
+
+    // ClutterGen_LoadSources() (called at startup before any terrain/scene
+    // init) already decoded this exact 4096x4096 PNG for CPU-side grass-
+    // density sampling — reuse those pixels instead of a second stbi_load
+    // of the same file (was doubling this texture's decode cost every
+    // startup). Falls back to InitFromFile for callers that never went
+    // through ClutterGen_LoadSources (e.g. editor tools).
+    const uint8_t* px = nullptr;
+    int pw = 0, ph = 0;
+    bool ok = ClutterGen_GetGrassDensityRGBA(&px, &pw, &ph)
+                  ? tex_overlay_mask_.InitFromMemory(px, pw, ph, sd)
+                  : tex_overlay_mask_.InitFromFile(path, sd);
+    if (!ok) {
         fprintf(stderr, "[TerrainRenderer] overlay mask failed: %s\n", path);
         overlay_mask_ready_ = false;
         return false;

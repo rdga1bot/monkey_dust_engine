@@ -1,7 +1,7 @@
 # monkey_dust — Engine
 
 Open-source C++17 game engine library for a Flare-inspired isometric RPG sandbox.
-Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Behavior Tree VM**, **ozz-animation**, and **Jolt Physics**.
+Built around **SDL3 + SDL\_GPU (Vulkan)**, **flecs ECS**, a custom stackless **Behavior Tree VM**, **ozz-animation**, and **Jolt Physics**.
 
 > **Full documentation →** [rdga1bot.github.io/monkey\_dust\_engine/monkey\_dust\_docs.html](https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html)
 
@@ -39,7 +39,10 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **EnTT ECS**, a custom stackless **Be
 - NpcInteractionComponent (M58) — `dialog_faction_id` + `interaction_range` (2.5 m) + `cooldown_ms`; 20 bytes
 - FlowDurableTrigger — ref-counted durable triggers with duration decay
 
-### ECS — EnTT
+### ECS — flecs
+Backed by flecs (archetype-based) behind the `MdRegistry`/`MdEntity` facade — no call site touches
+flecs directly. `AllianceMatrix` and `NpcRelationshipComponent` use real flecs relation pairs
+(`(HostileWith/FriendlyWith, group)`, `(Trust/Fear, other)`) instead of fixed arrays/matrices.
 41 engine-side components in `engine/include/monkey_dust/components/`, incl.: `WorldTransform` (via
 `ai_agent.h`) · `AIAgent` · `Health` · `Combat` · `Renderable` · `Building` · `Inventory` ·
 `ProjectileComponent` · `SenseComponent` · `AgentState` · `NpcMemoryComponent` ·
@@ -132,7 +135,7 @@ ninja -C build monkey_dust_engine
 > The engine library itself is shader-agnostic — it loads pre-compiled SPIR-V at runtime via `GpuPipeline::Create(desc)`.
 
 **Dependencies** (bring your own or via CMake FetchContent):
-`SDL3` · `EnTT` · `Recast/Detour` · `ozz-animation` · `JoltPhysics` · `miniaudio` · `Lua 5.4`
+`SDL3` · `flecs` · `Recast/Detour` · `ozz-animation` · `JoltPhysics` · `miniaudio` · `Lua 5.4`
 
 > **ImGui is NOT an engine dependency.** Dear ImGui and all extensions (imnodes, imgui-node-editor, ImGuiColorTextEdit, imguizmo, imgui-flame-graph, imgui-command-palette) live in `tools/third_party/`. The engine library has zero UI dependencies and is split-ready.
 
@@ -167,7 +170,7 @@ engine/
     combat/                ← damage_calc, hit_zones, power_def
     compat/                ← md_dirent.h (POSIX dirent shim)
     components/            ← 41 ECS components
-    ecs/                   ← Registry (EnTT singleton)
+    ecs/                   ← Registry (flecs::world singleton)
     editor/                ← EditorPanelRegistry (MAX_PANELS=16)
     flare/                 ← tile map, sprite animation, renderer
     hot/                   ← hot-reloadable module interfaces (editor_module.h, gameplay_module.h)

@@ -20,6 +20,7 @@
 #include <Jolt/Skeleton/Skeleton.h>
 #include <Jolt/Skeleton/SkeletonPose.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/physics/jolt_world.h>
 
 // Max simultaneous ragdolls (LOD ≤30m cap).
@@ -55,12 +56,12 @@ public:
     // World transforms (column-major mat4) for each of the 6 ragdoll segments.
     // out_seg[0]=Torso [1]=Head [2]=LArm [3]=RArm [4]=LLeg [5]=RLeg
     // Returns false if entity has no active ragdoll.
-    bool GetSegmentWorlds(entt::entity e, float out_seg[6][16]) const;
+    bool GetSegmentWorlds(MdEntity e, float out_seg[6][16]) const;
 
     // Retrieve bone world matrices for GPU skinning upload (30 bones × Mat4).
     // out_matrices: caller-allocated float[bone_count * 16].
     // Returns false if entity has no active ragdoll.
-    bool GetBoneMatrices(entt::entity e, float* out_matrices, int bone_count) const;
+    bool GetBoneMatrices(MdEntity e, float* out_matrices, int bone_count) const;
 
     bool IsReady() const { return settings_ != nullptr; }
 
@@ -70,8 +71,8 @@ public:
 private:
     RagdollSystem() = default;
 
-    void Activate  (entt::entity e, entt::registry& reg);
-    void Deactivate(entt::entity e, entt::registry& reg);
+    void Activate  (MdEntity e, MdRegistry& reg);
+    void Deactivate(MdEntity e, MdRegistry& reg);
 
     JPH::Ref<JPH::RagdollSettings> settings_;
     JPH::Ref<JPH::Skeleton>        skeleton_;

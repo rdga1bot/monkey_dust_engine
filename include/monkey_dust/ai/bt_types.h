@@ -11,6 +11,7 @@
 #include <monkey_dust/ai/alien_config.h>
 #include <monkey_dust/ai/vent_lock.h>
 #include <monkey_dust/ai/npc_development.h>
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 #include <cstdint>
 
@@ -790,8 +791,8 @@ enum class BTNodeType : uint16_t {
 };
 
 // Leaf functions accept engine context; game side casts to GameState& (which inherits EngineContext)
-using BTConditionFunc = bool    (*)(md::EngineContext&, entt::entity);
-using BTActionFunc    = BTStatus(*)(md::EngineContext&, entt::entity);
+using BTConditionFunc = bool    (*)(md::EngineContext&, MdEntity);
+using BTActionFunc    = BTStatus(*)(md::EngineContext&, MdEntity);
 
 // BTNode: 24 bytes, cache-line friendly, flat array — no heap
 // data encoding per node type:

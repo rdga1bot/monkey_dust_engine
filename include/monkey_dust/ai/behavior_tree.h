@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/ai/bt_types.h>
 
 class BehaviorTree {
@@ -359,7 +360,7 @@ public:
 
     bool isValid() const { return m_root != INVALID && m_nodeCount > 0; }
 
-    BTStatus tick(md::EngineContext& ctx, entt::entity e, uint32_t nowMs);
+    BTStatus tick(md::EngineContext& ctx, MdEntity e, uint32_t nowMs);
     void     reset();
 
 private:

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <cmath>
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 
 // Kenshi zone size. Ogre Terrain::setTerrainScale() gives horizontal_scale=294912.0
@@ -37,7 +38,7 @@ enum class ChunkStreamState : uint8_t {
 
 struct ChunkData {
     ChunkCoord       coord;
-    entt::entity     entities[MAX_ENTITIES_PER_CHUNK];
+    MdEntity     entities[MAX_ENTITIES_PER_CHUNK];
     int              entity_count;
     ChunkStreamState stream_state;  // replaces bool loaded (backward compat below)
     bool             dirty;

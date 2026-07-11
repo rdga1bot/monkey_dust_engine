@@ -36,6 +36,7 @@ bool TerrainRenderer::Init() {
     pd.vert_uniform_bufs = 1;  // slot 0: TerrainVertUBO (80 bytes)
     pd.frag_uniform_bufs = 1;  // slot 0: TerrainFragUBO (64 bytes)
     pd.frag_samplers     = 5;  // b0=kenshi colour overlay, b1=ground DDS array, b2=detail tint, b3=overlay mask, b4=biome blend (matches terrain_forward.frag)
+    pd.frag_storage_bufs = 1;  // b0 (set=1 in slang binding namespace): per-zone ground-layer lookup (zone_ground_layers_), used only when TerrainFragUBO.blend_layers.w>0.5 (synthesis/compact-LOD2 background draws — see SetBatchZoneLookup)
     // NOTE: normal-map array (tex_ground_nml_array_) is a POM-only pilot for
     // now (see biome_def.h's kGroundNmlPaths comment + CLAUDE_STATE plan) —
     // forward.frag (LOD1-3) intentionally NOT touched yet.
@@ -79,6 +80,12 @@ bool TerrainRenderer::Init() {
             }
         lod_ibo_shared_[li].Init(0x8893u, s_tmp, sizeof(uint16_t)*TERRAIN_LOD_IDX[li]);
     }
+
+    // Per-zone (64x64=4096) ground-layer lookup — see UploadZoneGroundLayers.
+    // 6 uint32 per zone (base,slope,cliff,grass,dirt,road GroundTexLayer
+    // indices), flat index = zone_idx*6 + layer. Allocated empty here;
+    // populated once by the caller (World3D editor's synthesis-mesh init).
+    zone_layers_ssbo_.Init(64 * 64 * 6 * (int)sizeof(uint32_t));
 #endif
     return true;
 }
@@ -190,6 +197,7 @@ void TerrainRenderer::Shutdown() {
     tex_ground_nml_array_.Shutdown();
     tex_loaded_         = false;
     ground_array_ready_ = false;
+    zone_layers_ssbo_.Shutdown();
 
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
@@ -368,7 +376,8 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
                                   float world_origin_z,
                                   float world_to_uv,
                                   int   lod,
-                                  float fog_far_override)
+                                  float fog_density_override,
+                                  float lod_blend)
 {
     if (!IsPomReady() || !chunk.loaded) {
         DrawRaw(rp, cmd, chunk, vp16, sun, world_origin_x, world_origin_z, world_to_uv, lod);
@@ -402,7 +411,7 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
     vubo.world_origin_x = world_origin_x;
     vubo.world_origin_z = world_origin_z;
     vubo.world_to_uv    = world_to_uv;
-    vubo._pad0          = 0.f;
+    vubo.lod_blend      = lod_blend;
     vubo.cam_pos_ws[0]  = cam_x;
     vubo.cam_pos_ws[1]  = cam_y;
     vubo.cam_pos_ws[2]  = cam_z;
@@ -420,7 +429,7 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
     fubo.pom_params[0]  = pom_params_.height_scale;
     fubo.pom_params[1]  = (float)pom_params_.layers_min;
     fubo.pom_params[2]  = (float)pom_params_.layers_max;
-    fubo.pom_params[3]  = (fog_far_override > 0.f) ? fog_far_override : fog.fog_far;
+    fubo.pom_params[3]  = (fog_density_override > 0.f) ? fog_density_override : fog.fog_density;
     fubo.ground_layers_a[0] = chunk.ground_layers[0];  // base
     fubo.ground_layers_a[1] = chunk.ground_layers[1];  // slope
     fubo.ground_layers_a[2] = chunk.ground_layers[2];  // cliff
@@ -561,7 +570,7 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     fubo.ground_layers_a[0] = chunk.ground_layers[0]; fubo.ground_layers_a[1] = chunk.ground_layers[1];
     fubo.ground_layers_a[2] = chunk.ground_layers[2]; fubo.ground_layers_a[3] = chunk.ground_layers[3];
     fubo.ground_layers_b[0] = chunk.ground_layers[4]; fubo.ground_layers_b[1] = chunk.ground_layers[5];
-    fubo.ground_layers_b[2] = fog.fog_far; fubo.ground_layers_b[3] = 0.f;
+    fubo.ground_layers_b[2] = fog.fog_density; fubo.ground_layers_b[3] = 0.f;
     fubo.fog_color_near[0] = fog.fog_color[0]; fubo.fog_color_near[1] = fog.fog_color[1];
     fubo.fog_color_near[2] = fog.fog_color[2]; fubo.fog_color_near[3] = fog.fog_near;
     fubo.blend_layers[0] = chunk.blend_layers[0]; fubo.blend_layers[1] = chunk.blend_layers[1];
@@ -627,7 +636,7 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     fubo.ground_layers_a[0] = chunk.ground_layers[0]; fubo.ground_layers_a[1] = chunk.ground_layers[1];
     fubo.ground_layers_a[2] = chunk.ground_layers[2]; fubo.ground_layers_a[3] = chunk.ground_layers[3];
     fubo.ground_layers_b[0] = chunk.ground_layers[4]; fubo.ground_layers_b[1] = chunk.ground_layers[5];
-    fubo.ground_layers_b[2] = fog.fog_far; fubo.ground_layers_b[3] = 0.f;
+    fubo.ground_layers_b[2] = fog.fog_density; fubo.ground_layers_b[3] = 0.f;
     fubo.fog_color_near[0] = fog.fog_color[0]; fubo.fog_color_near[1] = fog.fog_color[1];
     fubo.fog_color_near[2] = fog.fog_color[2]; fubo.fog_color_near[3] = fog.fog_near;
     fubo.blend_layers[0] = chunk.blend_layers[0]; fubo.blend_layers[1] = chunk.blend_layers[1];
@@ -677,14 +686,24 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     batch_fubo_base_.ambient[2]=sun.ambient[2]; batch_fubo_base_.ambient[3]=0.f;
     batch_fubo_base_.world_params[0]=world_origin_x; batch_fubo_base_.world_params[1]=world_origin_z;
     batch_fubo_base_.world_params[2]=world_to_uv;    batch_fubo_base_.world_params[3]=0.f;
-    batch_fubo_base_.ground_layers_b[2] = fog.fog_far;
+    batch_fubo_base_.ground_layers_b[2] = fog.fog_density;
     batch_fubo_base_.fog_color_near[0] = fog.fog_color[0]; batch_fubo_base_.fog_color_near[1] = fog.fog_color[1];
     batch_fubo_base_.fog_color_near[2] = fog.fog_color[2]; batch_fubo_base_.fog_color_near[3] = fog.fog_near;
+    // Explicit reset — see TerrainFragUBO::use_zone_lookup's doc comment:
+    // must not leak a stale 1.0 from an earlier synthesis/compact-LOD2 draw
+    // this same frame into the normal per-chunk DrawRawChunk path below.
+    batch_fubo_base_.use_zone_lookup[0] = 0.f;
 
     SDL_GPUTextureSamplerBinding bindings[5];
     FillSamplerBindings(bindings);
     if (bindings[0].texture && bindings[0].sampler)
         SDL_BindGPUFragmentSamplers(rp, 0, bindings, 5);
+
+    // Always bound (cheap, read-only) — only actually read by the shader
+    // when use_zone_lookup=1 (synthesis/compact-LOD2 draws). Harmless no-op
+    // for the normal per-chunk LOD1 path above.
+    if (SDL_GPUBuffer* zbuf = zone_layers_ssbo_.SDLBuffer())
+        SDL_BindGPUFragmentStorageBuffers(rp, 0, &zbuf, 1);
 
     if (lod_ibo_shared_[lod_clamped-1].SDLBuffer()) {
         SDL_GPUBufferBinding ib { lod_ibo_shared_[lod_clamped-1].SDLBuffer(), 0u };
@@ -699,7 +718,7 @@ void TerrainRenderer::DrawRawChunk(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
 {
 #ifdef MD_SDL_GPU
     if (!chunk.loaded || !chunk.vbo.SDLBuffer()) return;
-    // Copies batch_fubo_base_'s sun/world/fog fields (incl. ground_layers_b[2]=fog_far
+    // Copies batch_fubo_base_'s sun/world/fog fields (incl. ground_layers_b[2]=fog_density
     // already set by BeginRawBatch) — only overwrite the per-chunk biome indices.
     TerrainFragUBO fubo = batch_fubo_base_;
     fubo.ground_layers_a[0] = chunk.ground_layers[0]; fubo.ground_layers_a[1] = chunk.ground_layers[1];
@@ -716,7 +735,7 @@ void TerrainRenderer::DrawRawChunk(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
 }
 
 void TerrainRenderer::SetBatchGroundLayers(SDL_GPUCommandBuffer* cmd, const float ground_layers[6],
-                                            float fog_far_override) {
+                                            float fog_density_override) {
 #ifdef MD_SDL_GPU
     batch_fubo_base_.ground_layers_a[0] = ground_layers[0];
     batch_fubo_base_.ground_layers_a[1] = ground_layers[1];
@@ -724,19 +743,42 @@ void TerrainRenderer::SetBatchGroundLayers(SDL_GPUCommandBuffer* cmd, const floa
     batch_fubo_base_.ground_layers_a[3] = ground_layers[3];
     batch_fubo_base_.ground_layers_b[0] = ground_layers[4];
     batch_fubo_base_.ground_layers_b[1] = ground_layers[5];
-    if (fog_far_override > 0.f) batch_fubo_base_.ground_layers_b[2] = fog_far_override;
+    if (fog_density_override > 0.f) batch_fubo_base_.ground_layers_b[2] = fog_density_override;
     SDL_PushGPUFragmentUniformData(cmd, 0, &batch_fubo_base_, sizeof(batch_fubo_base_));
 #else
-    (void)cmd; (void)ground_layers; (void)fog_far_override;
+    (void)cmd; (void)ground_layers; (void)fog_density_override;
 #endif
 }
 
-void TerrainRenderer::SetBatchFogFar(SDL_GPUCommandBuffer* cmd, float fog_far) {
+void TerrainRenderer::SetBatchFogDensity(SDL_GPUCommandBuffer* cmd, float fog_density) {
 #ifdef MD_SDL_GPU
-    batch_fubo_base_.ground_layers_b[2] = fog_far;
+    batch_fubo_base_.ground_layers_b[2] = fog_density;
     SDL_PushGPUFragmentUniformData(cmd, 0, &batch_fubo_base_, sizeof(batch_fubo_base_));
 #else
-    (void)cmd; (void)fog_far;
+    (void)cmd; (void)fog_density;
+#endif
+}
+
+void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uints) {
+#ifdef MD_SDL_GPU
+    if (count_uints != 64 * 64 * 6) {
+        fprintf(stderr, "[TerrainRenderer] UploadZoneGroundLayers: expected %d uints, got %d — skipped\n",
+                64 * 64 * 6, count_uints);
+        return;
+    }
+    zone_layers_ssbo_.Upload(data, count_uints * (int)sizeof(uint32_t));
+#else
+    (void)data; (void)count_uints;
+#endif
+}
+
+void TerrainRenderer::SetBatchZoneLookup(SDL_GPUCommandBuffer* cmd, bool enable, float fog_density_override) {
+#ifdef MD_SDL_GPU
+    batch_fubo_base_.use_zone_lookup[0] = enable ? 1.0f : 0.0f;
+    if (fog_density_override > 0.f) batch_fubo_base_.ground_layers_b[2] = fog_density_override;
+    SDL_PushGPUFragmentUniformData(cmd, 0, &batch_fubo_base_, sizeof(batch_fubo_base_));
+#else
+    (void)cmd; (void)enable; (void)fog_density_override;
 #endif
 }
 

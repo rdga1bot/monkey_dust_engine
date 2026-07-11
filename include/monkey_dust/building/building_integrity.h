@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 // building_integrity.h — Structural support graph (Phase 4, Task 4.7b)
 // Kenshi-style: every placed piece needs ground support. Unsupported → collapses.
 // BFS propagation on place/destroy. Max nodes = MAX_BUILDINGS (8192).
@@ -27,7 +28,7 @@ struct CollapseState {
 };
 
 struct BuildingNode {
-    entt::entity entity       = entt::null;
+    MdEntity entity       = entt::null;
     int16_t      gx           = 0;
     int16_t      gy           = 0;   // vertical layer (0 = ground)
     int16_t      gz           = 0;
@@ -42,7 +43,7 @@ public:
     static IntegrityGraph& Get() { static IntegrityGraph s; return s; }
 
     // Register a newly placed building piece.
-    void OnPlace(entt::entity e, int gx, int gy, int gz, bool is_foundation) {
+    void OnPlace(MdEntity e, int gx, int gy, int gz, bool is_foundation) {
         if (count_ >= INTEGRITY_MAX_NODES) return;
         BuildingNode& n = nodes_[count_++];
         n.entity        = e;
@@ -55,7 +56,7 @@ public:
     }
 
     // Remove a building piece (on demolish or collapse).
-    void OnDestroy(entt::entity e, entt::registry& reg) {
+    void OnDestroy(MdEntity e, entt::registry& reg) {
         int idx = FindIdx(e);
         if (idx < 0) return;
         // Swap-erase
@@ -87,7 +88,7 @@ public:
 private:
     IntegrityGraph() { memset(nodes_, 0, sizeof(nodes_)); }
 
-    int FindIdx(entt::entity e) const {
+    int FindIdx(MdEntity e) const {
         for (int i = 0; i < count_; ++i)
             if (nodes_[i].entity == e) return i;
         return -1;

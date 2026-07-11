@@ -9,6 +9,7 @@
 //   CrowdSystem::Get().Update(dt);
 //   CrowdSystem::Get().FlushToNavAgent(registry);
 
+#include <monkey_dust/ecs/md_registry.h>
 #include <entt/entt.hpp>
 
 class dtCrowd;
@@ -25,7 +26,7 @@ public:
     bool IsReady() const { return crowd_ != nullptr; }
 
     // Register an NPC entity. Returns agent index (0..MAX_AGENTS-1) or -1.
-    int  AddAgent(entt::entity e, float x, float z,
+    int  AddAgent(MdEntity e, float x, float z,
                   float radius = 0.35f, float max_speed = 3.5f);
     void RemoveAgent(int idx);
 
@@ -37,11 +38,11 @@ public:
 
     // Write crowd agent velocities into NavAgent::desired_vel / is_moving.
     // Call after Update(), before JoltWorld::Step().
-    void FlushToNavAgent(entt::registry& reg) const;
+    void FlushToNavAgent(MdRegistry& reg) const;
 
     // VBfA-AI7: flush a sub-range of agents [start, end) — thread-safe as long
     // as each entity appears in exactly one range (no aliasing between threads).
-    void FlushRange(entt::registry& reg, int start, int end) const;
+    void FlushRange(MdRegistry& reg, int start, int end) const;
 
     // Shortcut: position of agent idx (x, z).
     void GetPosition(int idx, float& x, float& z) const;
@@ -49,6 +50,6 @@ public:
 private:
     CrowdSystem() = default;
     dtCrowd* crowd_ = nullptr;
-    entt::entity agent_entity_[MAX_AGENTS] = {};
+    MdEntity agent_entity_[MAX_AGENTS] = {};
     const dtNavMesh* nav_mesh_ = nullptr;
 };

@@ -1,10 +1,18 @@
 #pragma once
 #include <monkey_dust/world/terrain_chunk.h>
+#include <monkey_dust/world/biome_def.h>
 
 // Generates a TerrainChunk (mesh + heightmap + navmesh) from params.
 // Call on a worker thread; GpuStaticBuffer::Init() must be deferred to main thread.
 // Returns false on allocation failure (navmesh OOM).
 bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParams& p);
+
+// Resolve the biome for a zone (zx,zy in 0..63) by sampling md_biomemap.png —
+// same resolution used internally for per-chunk ground_layers (s_resolve_biome).
+// Exposed so callers outside terrain_gen.cpp (e.g. the World3D editor's
+// synthesis/compact-LOD background meshes) can build their own per-zone
+// lookup tables without duplicating the biomemap-sampling logic.
+const BiomeDef& TerrainGen_ResolveBiome(int zx, int zy);
 
 // Upload VBO/IBO to GPU. Call from main (render) thread after TerrainGen_Build.
 // Implemented in engine/src/render/terrain_upload.cpp (GPU-aware TU, not linked

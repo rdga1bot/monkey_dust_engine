@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 
 // ─────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ static constexpr int   HASH_BUCKETS  = 193;       // prime — large-set hash
 static constexpr int   HASH_EMPTY    = -1;        // sentinel for empty slot
 
 struct GridCell {
-    entt::entity entities[MAX_PER_CELL];
+    MdEntity entities[MAX_PER_CELL];
     int          count    = 0;
     // PERF-8: 2-height tier tracking (VBfA RE: "base + base−0.96 for multi-floor").
     // Tracks Y range of all entities in this cell for quick height-layer rejection.
@@ -61,13 +62,13 @@ public:
     }
 
     // Insert entity at world position (XZ only). O(1).
-    void Insert(entt::entity e, float wx, float wz) {
+    void Insert(MdEntity e, float wx, float wz) {
         InsertH(e, wx, 0.f, wz);
     }
 
     // PERF-8: Insert with Y — enables height-filtered QueryRadiusH().
     // VBfA RE: 2-height grid (ground + ground-0.96m) for multi-floor scenarios.
-    void InsertH(entt::entity e, float wx, float wy, float wz) {
+    void InsertH(MdEntity e, float wx, float wy, float wz) {
         int cx, cz;
         WorldToCell(wx, wz, cx, cz);
         if (!InBounds(cx, cz)) return;
@@ -82,7 +83,7 @@ public:
 
     // Remove entity by entity handle — O(1), no world position needed.
     // CATHODE RE §7.3: hash lookup replaces O(n) cell scan.
-    void Remove(entt::entity e) {
+    void Remove(MdEntity e) {
         HashEntry* he = hash_find(e);
         if (!he) return;
         int cx = he->cx, cz = he->cz, idx = he->cell_idx;
@@ -93,7 +94,7 @@ public:
         // Swap-with-last in cell; update hash for swapped entity.
         int last = cell.count - 1;
         if (idx != last) {
-            entt::entity swapped = cell.entities[last];
+            MdEntity swapped = cell.entities[last];
             cell.entities[idx] = swapped;
             HashEntry* sh = hash_find(swapped);
             if (sh) sh->cell_idx = (int8_t)idx;
@@ -102,13 +103,13 @@ public:
     }
 
     // Legacy overload: remove by world position (kept for callers that have it).
-    void Remove(entt::entity e, float /*wx*/, float /*wz*/) { Remove(e); }
+    void Remove(MdEntity e, float /*wx*/, float /*wz*/) { Remove(e); }
 
     // Зібрати entities в радіусі r навколо (wx, wz).
     // out[] — вихідний фіксований масив, max_out — його розмір.
     // Повертає кількість знайдених.
     int QueryRadius(float wx, float wz, float r,
-                    entt::entity* out, int max_out) const
+                    MdEntity* out, int max_out) const
     {
         int cx0, cz0, cx1, cz1;
         WorldToCell(wx - r, wz - r, cx0, cz0);
@@ -120,15 +121,15 @@ public:
 
         float r2 = r * r;
         int   found = 0;
-        auto& reg = Registry::Get();
+        auto& reg = MdRegistry::Get();
 
         for (int cx = cx0; cx <= cx1 && found < max_out; ++cx) {
             for (int cz = cz0; cz <= cz1 && found < max_out; ++cz) {
                 const GridCell& cell = cells_[cx][cz];
                 for (int i = 0; i < cell.count && found < max_out; ++i) {
-                    entt::entity c = cell.entities[i];
-                    if (reg.valid(c) && reg.all_of<WorldTransform>(c)) {
-                        const auto& et = reg.get<WorldTransform>(c);
+                    MdEntity c = cell.entities[i];
+                    if (reg.Valid(c) && reg.AllOf<WorldTransform>(c)) {
+                        const auto& et = reg.Get<WorldTransform>(c);
                         float ddx = et.x - wx, ddz = et.z - wz;
                         if (ddx*ddx + ddz*ddz > r2) continue;
                     }
@@ -144,7 +145,7 @@ public:
     // No per-entity distance filter — caller does secondary clip if needed.
     // Matches VBfA: double loop over cell range, output entity list.
     int QueryRange(float wx_min, float wz_min, float wx_max, float wz_max,
-                   entt::entity* out, int max_out) const {
+                   MdEntity* out, int max_out) const {
         int cx0, cz0, cx1, cz1;
         WorldToCell(wx_min, wz_min, cx0, cz0);
         WorldToCell(wx_max, wz_max, cx1, cz1);
@@ -163,7 +164,7 @@ public:
     // Convenience AoE: square AABB centered at (cx,cz) with half-extent radius.
     // Faster than QueryRadius (no sqrt, no per-entity distance check).
     int QueryAoE(float cx_world, float cz_world, float radius,
-                 entt::entity* out, int max_out) const {
+                 MdEntity* out, int max_out) const {
         return QueryRange(cx_world - radius, cz_world - radius,
                           cx_world + radius, cz_world + radius,
                           out, max_out);
@@ -173,7 +174,7 @@ public:
     // [wy - y_range .. wy + y_range]. Exact per-entity Y check via stored world_y.
     // Use for: AoE in multi-floor buildings, floor-specific sense queries.
     int QueryRadiusH(float wx, float wy, float wz, float r, float y_range,
-                     entt::entity* out, int max_out) const {
+                     MdEntity* out, int max_out) const {
         int cx0, cz0, cx1, cz1;
         WorldToCell(wx - r, wz - r, cx0, cz0);
         WorldToCell(wx + r, wz + r, cx1, cz1);
@@ -189,14 +190,14 @@ public:
                 // Quick cell-level Y rejection (no per-entity cost)
                 if (cell.height_hi < ylo || cell.height_lo > yhi) continue;
                 for (int i = 0; i < cell.count && found < max_out; ++i) {
-                    entt::entity c = cell.entities[i];
+                    MdEntity c = cell.entities[i];
                     // Per-entity Y check via hash
                     const HashEntry* he = hash_find(c);
                     if (he && (he->world_y < ylo || he->world_y > yhi)) continue;
                     // XZ distance
-                    if (Registry::Get().valid(c) &&
-                        Registry::Get().all_of<WorldTransform>(c)) {
-                        const auto& et = Registry::Get().get<WorldTransform>(c);
+                    if (MdRegistry::Get().Valid(c) &&
+                        MdRegistry::Get().AllOf<WorldTransform>(c)) {
+                        const auto& et = MdRegistry::Get().Get<WorldTransform>(c);
                         float ddx = et.x - wx, ddz = et.z - wz;
                         if (ddx*ddx + ddz*ddz > r2) continue;
                     }
@@ -242,9 +243,9 @@ private:
     // CATHODE RE §7.3: 193-bucket open-addressing hash (linear probing).
     HashEntry hash_[HASH_BUCKETS];
 
-    void hash_put(entt::entity e, int16_t cx, int16_t cz,
+    void hash_put(MdEntity e, int16_t cx, int16_t cz,
                   int8_t cell_idx, float wy = 0.f) {
-        uint32_t id   = entt::to_integral(e);
+        uint32_t id   = e.ToIntegral();
         uint32_t slot = id % (uint32_t)HASH_BUCKETS;
         for (int i = 0; i < HASH_BUCKETS; ++i) {
             uint32_t s = (slot + (uint32_t)i) % (uint32_t)HASH_BUCKETS;
@@ -256,8 +257,8 @@ private:
     }
 
     // const overload for QueryRadiusH
-    const HashEntry* hash_find(entt::entity e) const {
-        uint32_t id   = entt::to_integral(e);
+    const HashEntry* hash_find(MdEntity e) const {
+        uint32_t id   = e.ToIntegral();
         uint32_t slot = id % (uint32_t)HASH_BUCKETS;
         for (int i = 0; i < HASH_BUCKETS; ++i) {
             uint32_t s = (slot + (uint32_t)i) % (uint32_t)HASH_BUCKETS;
@@ -266,7 +267,7 @@ private:
         }
         return nullptr;
     }
-    HashEntry* hash_find(entt::entity e) {
+    HashEntry* hash_find(MdEntity e) {
         return const_cast<HashEntry*>(
             const_cast<const SpatialGrid*>(this)->hash_find(e));
     }

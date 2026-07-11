@@ -5,19 +5,19 @@
 
 namespace md {
 
-PowerSlotManager::EntitySlots* PowerSlotManager::Find(entt::entity e) {
+PowerSlotManager::EntitySlots* PowerSlotManager::Find(MdEntity e) {
     for (int i = 0; i < count_; ++i)
         if (entries_[i].entity == e) return &entries_[i];
     return nullptr;
 }
 
-const PowerSlotManager::EntitySlots* PowerSlotManager::Find(entt::entity e) const {
+const PowerSlotManager::EntitySlots* PowerSlotManager::Find(MdEntity e) const {
     for (int i = 0; i < count_; ++i)
         if (entries_[i].entity == e) return &entries_[i];
     return nullptr;
 }
 
-PowerSlotManager::EntitySlots* PowerSlotManager::FindOrCreate(entt::entity e) {
+PowerSlotManager::EntitySlots* PowerSlotManager::FindOrCreate(MdEntity e) {
     if (auto* s = Find(e)) return s;
     if (count_ >= MAX_TRACKED) return nullptr;
     entries_[count_].entity = e;
@@ -26,19 +26,19 @@ PowerSlotManager::EntitySlots* PowerSlotManager::FindOrCreate(entt::entity e) {
     return s;
 }
 
-void PowerSlotManager::Assign(entt::entity e, int slot, int power_id) {
+void PowerSlotManager::Assign(MdEntity e, int slot, int power_id) {
     if (slot < 0 || slot >= NUM_SLOTS) return;
     auto* s = FindOrCreate(e);
     if (s) s->power_ids[slot] = power_id;
 }
 
-int PowerSlotManager::GetSlot(entt::entity e, int slot) const {
+int PowerSlotManager::GetSlot(MdEntity e, int slot) const {
     if (slot < 0 || slot >= NUM_SLOTS) return -1;
     const auto* s = Find(e);
     return s ? s->power_ids[slot] : -1;
 }
 
-float PowerSlotManager::CooldownRemaining(entt::entity e, int slot, float now_s) const {
+float PowerSlotManager::CooldownRemaining(MdEntity e, int slot, float now_s) const {
     if (slot < 0 || slot >= NUM_SLOTS) return 0.0f;
     const auto* s = Find(e);
     if (!s || s->power_ids[slot] < 0) return 0.0f;
@@ -50,7 +50,7 @@ float PowerSlotManager::CooldownRemaining(entt::entity e, int slot, float now_s)
     return remaining > 0.0f ? remaining : 0.0f;
 }
 
-bool PowerSlotManager::Use(entt::entity e, int slot, float tx, float tz, float now_s) {
+bool PowerSlotManager::Use(MdEntity e, int slot, float tx, float tz, float now_s) {
     if (slot < 0 || slot >= NUM_SLOTS) return false;
     auto* s = FindOrCreate(e);
     if (!s) return false;

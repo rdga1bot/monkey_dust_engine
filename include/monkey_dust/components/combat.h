@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/combat/damage_calc.h>
 #include <monkey_dust/combat/hit_zones.h>
 #include <entt/entt.hpp>
@@ -8,7 +9,7 @@ struct Combat {
     WeaponStats weapon;
     ArmorStats  armor;
     float       zone_hp[(int)HitZone::COUNT];
-    entt::entity target;
+    MdEntity target;
     float        last_attack_ms;
     float        death_timer;
     bool         is_dead;

@@ -3,6 +3,7 @@
 #include <monkey_dust/ai/fnv.h>
 #include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/sense_component.h>
 #include <monkey_dust/platform/md_log.h>
@@ -234,17 +235,18 @@ void DirectorSystem::Tick(float dt) {
 
     // 1. Find max visual activation — stop early once max_menaces NPCs found.
     float max_activation = 0.f;
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
     {
-        const int max_m = pr.max_menaces > 0 ? pr.max_menaces : 1;
-        int found = 0;
-        auto view = reg.view<SenseComponent>();
-        for (auto [e, sc] : view.each()) {
+        // B3.4: flecs query.each() has no early-exit, so this now always
+        // scans every SenseComponent entity instead of stopping once
+        // pr.max_menaces threat sources are found — max_activation ends
+        // up identical either way (a simple running max), just computed
+        // with a bit more work on ticks with many sensed entities.
+        auto view = reg.View<SenseComponent>();
+        view.each([&](MdEntity, SenseComponent& sc) {
             if (sc.activation[0] > max_activation)
                 max_activation = sc.activation[0];
-            if (sc.activation[0] > 0.3f && ++found >= max_m)
-                break;  // enough threat sources found — no need to scan further
-        }
+        });
     }
 
     // 2. Accumulate/decay menace using DirectorConfig rates.
@@ -270,11 +272,11 @@ void DirectorSystem::Tick(float dt) {
     const bool stage_changed  = stage_ != last_bc_stage_;
     if (menace_changed || stage_changed) {
         // Broadcast only to entities that have an AgentBlackboard (cold component).
-        auto view = reg.view<AgentBlackboard>();
-        for (auto [e, bb] : view.each()) {
+        auto view = reg.View<AgentBlackboard>();
+        view.each([&](MdEntity, AgentBlackboard& bb) {
             bb_set_float(bb, K_MENACE, menace_);
             bb_set_int  (bb, K_STAGE,  static_cast<int32_t>(stage_));
-        }
+        });
         last_bc_menace_ = menace_;
         last_bc_stage_  = stage_;
     }

@@ -4,7 +4,7 @@
 #include <monkey_dust/world/world_events.h>
 #include <monkey_dust/platform/md_log.h>
 
-void md::NpcDialogSystem::ApplyEffects(int line_idx, entt::entity /*speaker*/, entt::entity target) noexcept {
+void md::NpcDialogSystem::ApplyEffects(int line_idx, MdEntity /*speaker*/, MdEntity target) noexcept {
     if (line_idx < 0 || line_idx >= count_) return;
     DialogLine& line = lines_[line_idx];
 

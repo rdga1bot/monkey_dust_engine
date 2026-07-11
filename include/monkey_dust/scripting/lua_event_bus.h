@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 
 // LuaEventBus — maps named C++ events to registered Lua callback functions.
@@ -13,7 +14,7 @@ public:
 
     // Call all handlers registered for event_name(entity_id).
     // Pass entt::null for non-entity events (quest, dialog, etc.).
-    void Fire(const char* event_name, entt::entity entity_id = entt::null);
+    void Fire(const char* event_name, MdEntity entity_id = entt::null);
 
     void Clear();
 

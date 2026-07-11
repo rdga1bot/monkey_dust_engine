@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <cstdint>
 #include <entt/entt.hpp>
 #include <monkey_dust/components/agent_state.h>
@@ -11,7 +12,7 @@
 //
 // Example: on Frozen+Spawn set → fire "on_frozen_spawn" handler.
 
-using StateTransitionFn = void (*)(entt::entity, uint32_t new_state);
+using StateTransitionFn = void (*)(MdEntity, uint32_t new_state);
 
 struct StateTransitionRule {
     uint32_t          required;    // flags that MUST be set
@@ -45,7 +46,7 @@ public:
     void Clear() noexcept { count_ = 0; }
 
     // Evaluate all matching rules against new_state; fire each in priority order.
-    void Evaluate(entt::entity e, uint32_t new_state) const noexcept {
+    void Evaluate(MdEntity e, uint32_t new_state) const noexcept {
         for (uint8_t i = 0; i < count_; ++i) {
             const auto& r = rules_[i];
             bool req_ok  = (new_state & r.required)  == r.required;

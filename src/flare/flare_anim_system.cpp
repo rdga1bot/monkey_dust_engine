@@ -7,6 +7,7 @@
 #include <monkey_dust/components/nav_agent.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/platform/md_log.h>
 #include <cstring>
 
@@ -40,8 +41,8 @@ void FlareAnimSystem::Init() {
 
     BillboardRenderer::Get().Init();
 
-    auto& reg = Registry::Get();
-    reg.view<FlareActorComponent, FlareSpriteAnim>()
+    auto& reg = MdRegistry::Get();
+    reg.View<FlareActorComponent, FlareSpriteAnim>()
        .each([&](FlareActorComponent& fac, FlareSpriteAnim& sa) {
         if (sa.atlas_slot >= 0) return;
         const SpriteCategoryEntry* e =
@@ -56,8 +57,8 @@ void FlareAnimSystem::Init() {
 
 void FlareAnimSystem::Tick(float dt_ms) {
     if (!inited_) return;
-    auto& reg = Registry::Get();
-    reg.view<FlareActorComponent, FlareSpriteAnim, NavAgent, WorldTransform>()
+    auto& reg = MdRegistry::Get();
+    reg.View<FlareActorComponent, FlareSpriteAnim, NavAgent, WorldTransform>()
        .each([&](const FlareActorComponent&,
                  FlareSpriteAnim& sa,
                  const NavAgent& nav,
@@ -86,8 +87,8 @@ void FlareAnimSystem::Tick(float dt_ms) {
 
 void FlareAnimSystem::SubmitBillboards(float tile_world_size) {
     if (!inited_) return;
-    auto& reg = Registry::Get();
-    reg.view<FlareSpriteAnim, WorldTransform>()
+    auto& reg = MdRegistry::Get();
+    reg.View<FlareSpriteAnim, WorldTransform>()
        .each([&](const FlareSpriteAnim& sa, const WorldTransform& tr) {
         if (sa.atlas_slot < 0 || !sa.anim.set) return;
         const SpriteFrame* f = CurrentFrame(sa.anim);

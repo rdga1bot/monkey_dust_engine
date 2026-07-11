@@ -212,4 +212,57 @@ bool RenderPassGraph::Validate() const {
     return ok;
 }
 
+// ── Step 3.2: live resource handles ────────────────────────────────────────
+
+int RenderPassGraph::FindResourceByHash(uint32_t h) const {
+    for (int i = 0; i < resource_count_; ++i)
+        if (resources_[i].hash == h) return i;
+    return -1;
+}
+
+void RenderPassGraph::DeclareTextureDesc(const char* resource_name, const RGTextureDesc& desc) {
+    if (!resource_name) return;
+    uint32_t h = Hash(resource_name);
+    int idx = FindResourceByHash(h);
+    if (idx >= 0) { resources_[idx].desc = desc; return; }
+    if (resource_count_ >= MAX_RESOURCES) {
+        fprintf(stderr, "[RenderPassGraph] MAX_RESOURCES=%d reached, cannot declare '%s'\n",
+                MAX_RESOURCES, resource_name);
+        return;
+    }
+    auto& e = resources_[resource_count_++];
+    e.hash     = h;
+    e.desc     = desc;
+    e.live_tex = nullptr;
+}
+
+SDL_GPUTexture* RenderPassGraph::ResolveTexture(SDL_GPUDevice* dev, const char* resource_name) {
+    if (!resource_name) return nullptr;
+    int idx = FindResourceByHash(Hash(resource_name));
+    if (idx < 0) {
+        fprintf(stderr, "[RenderPassGraph] ResolveTexture: '%s' has no declared desc "
+                "(call DeclareTextureDesc first)\n", resource_name);
+        return nullptr;
+    }
+    auto& e = resources_[idx];
+    if (e.live_tex) return e.live_tex;  // already resolved this frame
+    e.live_tex = GpuTexturePool::Get().Acquire(dev, e.desc);
+    return e.live_tex;
+}
+
+SDL_GPUTexture* RenderPassGraph::GetTexture(const char* resource_name) const {
+    if (!resource_name) return nullptr;
+    int idx = FindResourceByHash(Hash(resource_name));
+    return (idx >= 0) ? resources_[idx].live_tex : nullptr;
+}
+
+void RenderPassGraph::ReleaseFrame() {
+    for (int i = 0; i < resource_count_; ++i) {
+        if (resources_[i].live_tex) {
+            GpuTexturePool::Get().Release(resources_[i].live_tex);
+            resources_[i].live_tex = nullptr;
+        }
+    }
+}
+
 } // namespace md

@@ -1,16 +1,17 @@
 #pragma once
 #include <monkey_dust/world/chunk_def.h>
 #include <monkey_dust/world/chunk_load_staging.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <entt/entt.hpp>
 #include <thread>
 #include <atomic>
 
 // Callbacks registered by game to spawn/save/destroy entities.
 // Engine only handles IO scheduling and chunk lifecycle — no game components.
-using ChunkSpawnTreeFn    = void(*)(entt::registry&, const StagedTree& t);
-using ChunkSpawnNpcFn     = void(*)(entt::registry&, const StagedNpc& n);
-using ChunkDestroyEntityFn= void(*)(entt::registry&, entt::entity e);
-using ChunkSaveEntityFn   = void(*)(entt::registry&, entt::entity e, void* file);
+using ChunkSpawnTreeFn    = void(*)(MdRegistry&, const StagedTree& t);
+using ChunkSpawnNpcFn     = void(*)(MdRegistry&, const StagedNpc& n);
+using ChunkDestroyEntityFn= void(*)(MdRegistry&, MdEntity e);
+using ChunkSaveEntityFn   = void(*)(MdRegistry&, MdEntity e, void* file);
 
 class ChunkManager {
 public:

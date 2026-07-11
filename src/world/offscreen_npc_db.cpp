@@ -146,13 +146,13 @@ int OffscreenNpcDatabase::LoadAllZones(const char* saves_dir) noexcept {
     return total;
 }
 
-bool OffscreenNpcDatabase::Capture(entt::entity e, entt::registry& reg,
+bool OffscreenNpcDatabase::Capture(MdEntity e, MdRegistry& reg,
                                    uint16_t zone_id) {
     if (count_ >= MAX_OFFSCREEN_NPCS) {
         MD_LOG(MD_LOG_WARNING, "OffscreenNpcDb: full (%d slots)", MAX_OFFSCREEN_NPCS);
         return false;
     }
-    if (!reg.valid(e)) return false;
+    if (!reg.Valid(e)) return false;
 
     OffscreenNpcState& slot = entries_[count_];
     memset(&slot, 0, sizeof(slot));
@@ -160,14 +160,14 @@ bool OffscreenNpcDatabase::Capture(entt::entity e, entt::registry& reg,
     slot.entity_uid = uid_counter_++;
     slot.task_type  = OffscreenTask::Patrol;
 
-    const WorldTransform* tr = reg.try_get<WorldTransform>(e);
+    const WorldTransform* tr = reg.TryGet<WorldTransform>(e);
     if (tr) {
         slot.position[0] = tr->x;
         slot.position[1] = tr->y;
         slot.position[2] = tr->z;
     }
 
-    const LimbHealth* lh = reg.try_get<LimbHealth>(e);
+    const LimbHealth* lh = reg.TryGet<LimbHealth>(e);
     if (lh) {
         // Pack HP as uint16 (hp / max * 65535), avoid div-by-zero
         auto pack = [](float hp, float mx) -> uint16_t {
@@ -188,7 +188,7 @@ bool OffscreenNpcDatabase::Capture(entt::entity e, entt::registry& reg,
         slot.hp_rarm = slot.hp_lleg = slot.hp_rleg = 0xFFFFu; // full HP
     }
 
-    const NpcNeeds* nd = reg.try_get<NpcNeeds>(e);
+    const NpcNeeds* nd = reg.TryGet<NpcNeeds>(e);
     if (nd) {
         slot.hunger  = (uint8_t)(nd->hunger  * 255.f);
         slot.fatigue = (uint8_t)(nd->fatigue * 255.f);
@@ -198,7 +198,7 @@ bool OffscreenNpcDatabase::Capture(entt::entity e, entt::registry& reg,
     return true;
 }
 
-void OffscreenNpcDatabase::Spawn(entt::registry& reg,
+void OffscreenNpcDatabase::Spawn(MdRegistry& reg,
                                  float player_x, float player_z,
                                  float spawn_radius_m) {
     const float r2 = spawn_radius_m * spawn_radius_m;
@@ -208,13 +208,13 @@ void OffscreenNpcDatabase::Spawn(entt::registry& reg,
         float dz = s.position[2] - player_z;
         if (dx * dx + dz * dz > r2) continue;
 
-        entt::entity ne = reg.create();
+        MdEntity ne = reg.Create();
 
         WorldTransform tr{};
         tr.x = s.position[0]; tr.y = s.position[1]; tr.z = s.position[2];
-        reg.emplace<WorldTransform>(ne, tr);
+        reg.Emplace<WorldTransform>(ne, tr);
 
-        auto& lh = reg.emplace<LimbHealth>(ne, LimbHealth::Make(60.f));
+        auto& lh = reg.Emplace<LimbHealth>(ne, LimbHealth::Make(60.f));
         auto unpack = [](uint16_t packed, float mx) -> float {
             return (float)packed / 65535.f * mx;
         };
@@ -226,7 +226,7 @@ void OffscreenNpcDatabase::Spawn(entt::registry& reg,
         lh.hp[5] = unpack(s.hp_rleg,  lh.max[5]);
         lh.UpdateIncap();
 
-        auto& nd = reg.emplace<NpcNeeds>(ne);
+        auto& nd = reg.Emplace<NpcNeeds>(ne);
         nd.hunger  = s.hunger  / 255.f;
         nd.fatigue = s.fatigue / 255.f;
 

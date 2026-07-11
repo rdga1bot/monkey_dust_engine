@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <cstdint>
 #include <cstring>
 #include <entt/entt.hpp>
@@ -18,7 +19,7 @@
 //   EditorPanelRegistry::Get().Clear();  // in tests
 
 using EditorPanelDrawFn     = void(*)(void);
-using EditorPanelSelectFn   = void(*)(entt::entity);
+using EditorPanelSelectFn   = void(*)(MdEntity);
 using EditorPanelDeselectFn = void(*)(void);
 
 struct EditorPanelEntry {
@@ -71,7 +72,7 @@ public:
     }
 
     // Notify all panels that entity e is now selected.
-    void NotifyEntitySelected(entt::entity e) const noexcept {
+    void NotifyEntitySelected(MdEntity e) const noexcept {
         for (int i = 0; i < count_; ++i)
             if (panels_[i].on_select) panels_[i].on_select(e);
     }

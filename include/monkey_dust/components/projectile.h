@@ -1,8 +1,9 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 
 struct ProjectileComponent {
-    entt::entity owner;      // caster entity (excluded from hit checks)
+    MdEntity owner;      // caster entity (excluded from hit checks)
     int          power_id;   // source power (for FX lookup)
     float        x, z;       // current world position (mirrored to WorldTransform)
     float        vx, vz;     // velocity m/s

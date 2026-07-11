@@ -25,6 +25,7 @@ jobs:
   build-docker:
     name: Build & Push Docker image
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write  # для ghcr.io push

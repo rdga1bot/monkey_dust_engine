@@ -65,7 +65,7 @@ void TransformSoA::Init() {
 #endif
 }
 
-uint32_t TransformSoA::Alloc(entt::entity e, float x, float z, uint8_t faction_id) {
+uint32_t TransformSoA::Alloc(MdEntity e, float x, float z, uint8_t faction_id) {
     if (active_count >= MAX_SLOTS) {
         MD_LOG(MD_LOG_WARNING, "[TransformSoA] Alloc: out of slots (%d)", MAX_SLOTS);
         return INVALID_SLOT;
@@ -83,10 +83,10 @@ uint32_t TransformSoA::Alloc(entt::entity e, float x, float z, uint8_t faction_i
     return slot;
 }
 
-void TransformSoA::Free(entt::entity e) {
-    auto& reg = Registry::Get();
-    if (!reg.valid(e) || !reg.all_of<WorldTransform>(e)) return;
-    auto& tr  = reg.get<WorldTransform>(e);
+void TransformSoA::Free(MdEntity e) {
+    auto& reg = MdRegistry::Get();
+    if (!reg.Valid(e) || !reg.AllOf<WorldTransform>(e)) return;
+    auto& tr  = reg.Get<WorldTransform>(e);
     uint32_t slot = tr.slot;
     if (slot == INVALID_SLOT || slot >= (uint32_t)active_count) return;
     tr.slot = INVALID_SLOT;
@@ -100,18 +100,18 @@ void TransformSoA::Free(entt::entity e) {
         dist_sq[slot] = dist_sq[last];
         faction[slot] = faction[last];
         MarkFactionDirty(slot);
-        entt::entity moved = slot_to_entity[last];
+        MdEntity moved = slot_to_entity[last];
         slot_to_entity[slot] = moved;
-        if (reg.valid(moved) && reg.all_of<WorldTransform>(moved))
-            reg.get<WorldTransform>(moved).slot = slot;
+        if (reg.Valid(moved) && reg.AllOf<WorldTransform>(moved))
+            reg.Get<WorldTransform>(moved).slot = slot;
     }
     px[last]      = DUMMY_POS;
     pz[last]      = DUMMY_POS;
     slot_to_entity[last] = entt::null;
 }
 
-void TransformSoA::FlushAoStoSoA(entt::registry& reg) {
-    reg.view<WorldTransform>().each([](const WorldTransform& tr) {
+void TransformSoA::FlushAoStoSoA(MdRegistry& reg) {
+    reg.View<WorldTransform>().each([](const WorldTransform& tr) {
         if (MD_UNLIKELY(tr.slot == INVALID_SLOT ||
                         tr.slot >= (uint32_t)TransformSoA::Get().active_count))
             return;
@@ -250,13 +250,13 @@ Mat4 TransformSoA::BuildSingleMatrix(uint32_t slot) const {
 }
 
 // Save v5 accessors (БОРГ-6)
-uint32_t TransformSoA::GetSlotForEntity(entt::entity e) const {
+uint32_t TransformSoA::GetSlotForEntity(MdEntity e) const {
     for (int i = 0; i < active_count; ++i)
         if (slot_to_entity[i] == e) return (uint32_t)i;
     return INVALID_SLOT;
 }
 
-void TransformSoA::AssignSlot(entt::entity e, uint32_t slot,
+void TransformSoA::AssignSlot(MdEntity e, uint32_t slot,
                                float x, float z, uint8_t faction_id) {
     if (slot >= MAX_SLOTS) {
         MD_LOG(MD_LOG_WARNING, "[TransformSoA] AssignSlot: slot %u out of range", slot);

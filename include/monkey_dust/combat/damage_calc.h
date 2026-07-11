@@ -167,22 +167,11 @@ inline float CalcDamageLerped(const CombatConfig& cfg, DamageType type,
 
 // VBfA-R: AoE damage hit (explosion, heavy slam, grenade).
 // Radii from VBfA: SMALL=1.5m, MEDIUM=3m, LARGE=6m.
-struct AoeHit {
-    float      origin[3];   // world-space centre
-    float      radius;      // blast radius (m)
-    float      damage;      // base damage at epicentre
-    DamageType type;
-    uint8_t    _pad[3];
-};
 namespace AoeRadius {
     static constexpr float Small  = 1.5f;
     static constexpr float Medium = 3.0f;
     static constexpr float Large  = 6.0f;
 }
-
-// Apply AoE damage to all entities with LimbHealth + WorldTransform within radius.
-// Damage falls off linearly from epicentre to edge. Hits torso limb.
-void AoeApply(entt::registry& reg, const AoeHit& h);
 
 // ── Global CombatConfig accessor ──────────────────────────────────────────────
 // Single mutable instance; loaded from config at startup, used by CalcDamageLerped/KoThreshold.

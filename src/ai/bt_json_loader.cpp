@@ -559,8 +559,8 @@ static float parse_gauge_amount(const char* s) {
 }
 
 // ── Fallback functions for unregistered actions/conditions ────────────────────
-static bool         s_cond_false  (md::EngineContext&, entt::entity) { return false; }
-static BTStatus     s_act_failure (md::EngineContext&, entt::entity) { return BTStatus::Failure; }
+static bool         s_cond_false  (md::EngineContext&, MdEntity) { return false; }
+static BTStatus     s_act_failure (md::EngineContext&, MdEntity) { return BTStatus::Failure; }
 
 // ── Split helper functions to avoid MSVC C1061 block-nesting limit (128) ─────
 // Each file is a standalone if-else-if chain returning INVALID when unmatched.

@@ -1,5 +1,6 @@
 #include <monkey_dust/net/replay_snapshot.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/components/agent_state.h>
 #include <cstdio>
@@ -39,15 +40,15 @@ void CaptureFromECS(ReplayBuffer& buf,
     frame.player_x     = player_x;
     frame.player_z     = player_z;
 
-    auto& reg = Registry::Get();
+    auto& reg = MdRegistry::Get();
     uint16_t n = 0;
-    reg.view<WorldTransform>().each([&](entt::entity e, const WorldTransform& wt) {
+    reg.View<WorldTransform>().each([&](MdEntity e, const WorldTransform& wt) {
         if (n >= (uint16_t)REPLAY_MAX_NPCS_PER_FRAME) return;
         ReplayNpcState& ns = frame.npcs[n];
         ns.x         = wt.x;
         ns.z         = wt.z;
-        ns.entity_id = (uint32_t)entt::to_integral(e);
-        const AgentState* as = reg.try_get<AgentState>(e);
+        ns.entity_id = e.ToIntegral();
+        const AgentState* as = reg.TryGet<AgentState>(e);
         if (as) {
             ns.motivation = (uint8_t)as->motivation;
             ns.awareness  = (uint8_t)as->awareness;

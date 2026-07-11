@@ -3,6 +3,7 @@
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/render/gpu_ring_buffer.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/platform/math_types.h>
 #include <cstdint>
@@ -39,7 +40,7 @@ public:
     alignas(64) float dist_sq [MAX_SLOTS]; // filled by BulkComputeDistSq
     uint8_t           faction [MAX_SLOTS];
 
-    entt::entity slot_to_entity[MAX_SLOTS]; // reverse slot → entity
+    MdEntity slot_to_entity[MAX_SLOTS]; // reverse slot → entity
     int          active_count = 0;
 
     // Ring-buffered transform upload (binding 0); faction stays single-buffer (binding 3).
@@ -47,9 +48,9 @@ public:
     SSBO          faction_ssbo_;
 
     void     Init();
-    uint32_t Alloc(entt::entity e, float x, float z, uint8_t faction_id = 0);
-    void     Free(entt::entity e);
-    void     FlushAoStoSoA(entt::registry& reg);
+    uint32_t Alloc(MdEntity e, float x, float z, uint8_t faction_id = 0);
+    void     Free(MdEntity e);
+    void     FlushAoStoSoA(MdRegistry& reg);
     // Upload CPU transforms → GPU, bind both SSBOs.
     void     UploadToGPU();
     // Call once per frame AFTER all draw/compute that read transform_ring_.
@@ -70,8 +71,8 @@ public:
 
     // Save v5 accessors (БОРГ-6)
     int      SlotCount() const { return active_count; }
-    uint32_t GetSlotForEntity(entt::entity e) const;
-    void     AssignSlot(entt::entity e, uint32_t slot, float x, float z, uint8_t faction_id);
+    uint32_t GetSlotForEntity(MdEntity e) const;
+    void     AssignSlot(MdEntity e, uint32_t slot, float x, float z, uint8_t faction_id);
 
     // Dirty-range tracking for faction SSBO.
     void MarkFactionDirty(uint32_t slot) noexcept {

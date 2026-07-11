@@ -23,15 +23,16 @@
 //     transform hierarchy.
 //   - Cart + pack animal: a physics constraint/joint (Jolt), not a rigid
 //     parent-child relation.
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 
 static constexpr int HIERARCHY_MAX_CHILDREN = 4;
 
 struct ParentRef {
-    entt::entity parent = entt::null;
+    MdEntity parent = entt::null;
 };
 
 struct ChildrenRef {
-    entt::entity children[HIERARCHY_MAX_CHILDREN] = {};
+    MdEntity children[HIERARCHY_MAX_CHILDREN] = {};
     int          count                             = 0;
 };

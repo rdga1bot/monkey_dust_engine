@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <cstdint>
 #include <cstring>
 #include <entt/entt.hpp>
@@ -23,14 +24,15 @@ enum class CrimeFlags : uint8_t {
 
 struct BountyRecord {
     uint32_t        faction_id  = 0;    // offended faction
-    entt::entity    target      = entt::null;
+    MdEntity    target      = entt::null;
     uint32_t        amount      = 0;    // cats (Kenshi currency)
     uint8_t         crime_flags = 0;    // bitmask of CrimeFlags
     // F-1: Kenshi RE — notorious flag + expire_hours (Kenshi RE: §factions)
     uint8_t         notorious   = 0;    // 1 = bounty is "notorious" (wanted poster level)
     uint16_t        expire_hours= 0;    // game-hours until bounty auto-expires (0=permanent)
 };
-static_assert(sizeof(BountyRecord) == 16, "BountyRecord must be 16 bytes");
+// B3.4: MdEntity grew 4→8 bytes (flecs::entity_t, was entt::entity).
+static_assert(sizeof(BountyRecord) == 24, "BountyRecord must be 24 bytes");
 
 struct FactionData {
     uint32_t id;
@@ -80,14 +82,14 @@ public:
 
     // ── Bounty API ────────────────────────────────────────────────────────────
     // Add or accumulate a bounty for target in faction. Returns new total.
-    uint32_t AddBounty(uint32_t faction_id, entt::entity target,
+    uint32_t AddBounty(uint32_t faction_id, MdEntity target,
                        uint32_t amount, uint8_t crime_flags);
 
     // Get current bounty amount (0 if none).
-    uint32_t GetBounty(uint32_t faction_id, entt::entity target) const;
+    uint32_t GetBounty(uint32_t faction_id, MdEntity target) const;
 
     // Clear bounty (paid or served sentence).
-    void ClearBounty(uint32_t faction_id, entt::entity target);
+    void ClearBounty(uint32_t faction_id, MdEntity target);
 
     // Iterate all active bounties (for guard AI).
     int BountyCount() const { return bounty_count_; }

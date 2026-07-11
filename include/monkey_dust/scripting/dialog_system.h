@@ -9,6 +9,7 @@
 // Inventory (items). Effects emit to LuaEventBus or apply inline.
 
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/faction_system.h>
 #include <monkey_dust/components/stat_sheet.h>
 #include <cstdint>
@@ -115,9 +116,9 @@ public:
     // Evaluate all conditions on `line` for the speaker→target pair.
     // Returns true only if ALL conditions pass (AND logic).
     static bool Evaluate(const DialogLine& line,
-                         entt::entity speaker, entt::entity target,
+                         MdEntity speaker, MdEntity target,
                          uint32_t speaker_faction_id) noexcept {
-        auto& reg = Registry::Get();
+        auto& reg = MdRegistry::Get();
         for (int i = 0; i < (int)line.cond_count; ++i) {
             const DialogCondition& c = line.conds[i];
             switch (c.type) {
@@ -131,7 +132,7 @@ public:
                 if (rel >= (int8_t)c.param_b) return false;
             } break;
             case DialogCondType::IsHostile:
-                if (!reg.valid(target)) return false;
+                if (!reg.Valid(target)) return false;
                 // Check via FactionSystem (speaker hostile to target's faction)
                 break;
             case DialogCondType::IsPlayer:
@@ -145,16 +146,16 @@ public:
                 // Would check Inventory — skipped if no Inventory component
                 break;
             case DialogCondType::SkillAbove:
-                if (reg.valid(target)) {
-                    const auto* ss = reg.try_get<StatSheet>(target);
+                if (reg.Valid(target)) {
+                    const auto* ss = reg.TryGet<StatSheet>(target);
                     if (ss && (int)(*ss)[static_cast<Skill>(c.param_a)] <= (int)c.param_b)
                         return false;
                 }
                 break;
             // D-2: CompareOp-based conditions (Kenshi RE: "compare by" operator)
             case DialogCondType::SkillCompare: {
-                if (!reg.valid(target)) return false;
-                const auto* ss = reg.try_get<StatSheet>(target);
+                if (!reg.Valid(target)) return false;
+                const auto* ss = reg.TryGet<StatSheet>(target);
                 int val = ss ? (int)(*ss)[static_cast<Skill>(c.param_a)] : 0;
                 if (!ApplyCompareOp(c.compare_op, val, (int)c.param_b)) return false;
             } break;
@@ -206,7 +207,7 @@ public:
     // Build the set of eligible lines for speaker→target.
     // out_indices: caller-allocated int[MAX_DIALOGUE_CHOICES].
     // Returns number of eligible lines (≤ MAX_DIALOGUE_CHOICES).
-    int GetEligible(entt::entity speaker, entt::entity target,
+    int GetEligible(MdEntity speaker, MdEntity target,
                     uint32_t speaker_faction_id,
                     int* out_indices) const noexcept {
         struct Scored { int idx; int score; };
@@ -218,7 +219,7 @@ public:
             if (l.repetition_lim > 0 && l.use_count >= l.repetition_lim) continue;
             if (!NpcConditionEvaluator::Evaluate(l, speaker, target, speaker_faction_id)) continue;
             // Chance roll (0..99 against chance_perm)
-            unsigned int roll = (unsigned int)(speaker) * 1664525u + 1013904223u;
+            unsigned int roll = speaker.ToIntegral() * 1664525u + 1013904223u;
             if ((int)(roll % 100u) >= (int)l.chance_perm) continue;
             buf[n++] = { i, (int)l.score_bonus };
         }
@@ -237,7 +238,7 @@ public:
     }
 
     // Apply effects of a chosen dialog line.
-    void ApplyEffects(int line_idx, entt::entity speaker, entt::entity target) noexcept;
+    void ApplyEffects(int line_idx, MdEntity speaker, MdEntity target) noexcept;
 
     const DialogLine* GetLine(int idx) const noexcept {
         if (idx < 0 || idx >= count_) return nullptr;

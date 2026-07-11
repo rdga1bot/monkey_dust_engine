@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 #include <cstdint>
 
@@ -26,7 +27,7 @@ enum class NpcRole : uint8_t {
 static constexpr int MAX_ROLES = static_cast<int>(NpcRole::COUNT);
 
 struct RoleSlot {
-    entt::entity owner    = entt::null;
+    MdEntity owner    = entt::null;
     uint32_t     query_id = 0;
 };
 
@@ -40,7 +41,7 @@ public:
     // Attempt to claim a role for entity e with given query_id.
     // Returns true (Success) only if the slot is currently free.
     // Already owning the same role (same entity) refreshes query_id and returns true.
-    bool claim(NpcRole role, uint32_t query_id, entt::entity e) noexcept {
+    bool claim(NpcRole role, uint32_t query_id, MdEntity e) noexcept {
         int idx = static_cast<int>(role);
         if (idx <= 0 || idx >= MAX_ROLES) return false;
         RoleSlot& s = m_slots[idx];
@@ -53,7 +54,7 @@ public:
     }
 
     // Release the slot owned by e. No-op if e doesn't own it.
-    void release(NpcRole role, entt::entity e) noexcept {
+    void release(NpcRole role, MdEntity e) noexcept {
         int idx = static_cast<int>(role);
         if (idx <= 0 || idx >= MAX_ROLES) return;
         if (m_slots[idx].owner == e)
@@ -61,7 +62,7 @@ public:
     }
 
     // Returns true if e currently owns the role slot.
-    bool is_performing(NpcRole role, entt::entity e) const noexcept {
+    bool is_performing(NpcRole role, MdEntity e) const noexcept {
         int idx = static_cast<int>(role);
         if (idx <= 0 || idx >= MAX_ROLES) return false;
         return m_slots[idx].owner == e;
@@ -75,7 +76,7 @@ public:
     }
 
     // Release all slots owned by e (e.g. on NPC death/despawn).
-    void release_all(entt::entity e) noexcept {
+    void release_all(MdEntity e) noexcept {
         for (int i = 1; i < MAX_ROLES; ++i)
             if (m_slots[i].owner == e)
                 m_slots[i] = RoleSlot{};

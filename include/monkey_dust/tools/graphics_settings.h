@@ -26,6 +26,12 @@ struct GraphicsSettings {
     // ── Display ───────────────────────────────────────────────────────────────
     float fog_near     = 1200.f;  // open-world: fog starts at 1200m (past LOD-1 at 600m)
     float fog_far      = 2800.f;  // fully sky at 2800m (hides streaming edge at ~3×500m)
+    // FOG_EXP2 density constant for terrain shaders (terrain_forward.slang/
+    // terrain_pom.slang) — RE-confirmed Kenshi value (re_docs/kenshi/terrain.md
+    // "Subsystem 8: Fog & Atmosphere", fog type 3 = EXP2, density 0.001).
+    // Non-terrain shaders (NPC/PBR/ground — game/src/render/npc_render.cpp)
+    // still use the older linear fog_near/fog_far pair, out of this scope.
+    float fog_density  = 0.001f;
     float fog_color[3] = {0.38f, 0.58f, 0.82f};  // matches sky clear color
     bool  fog_enabled  = true;
 

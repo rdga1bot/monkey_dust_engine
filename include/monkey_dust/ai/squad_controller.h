@@ -25,6 +25,7 @@
 //   SquadSystem::CreateSquad(members, count, home_x, home_z, faction_id)
 
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/components/nav_agent.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/world/world_transform.h>
@@ -114,7 +115,7 @@ struct SquadController {
     static constexpr float THINK_INTERVAL_MS = 2000.f;
     static constexpr float WANDER_INTERVAL_MS = 4000.f; // PatrolRagged retarget
 
-    entt::entity  members[MAX_MEMBERS]      = {};
+    MdEntity  members[MAX_MEMBERS]      = {};
     SquadMemType  member_roles[MAX_MEMBERS] = {};  // A-2: per-member role enum
     int           member_count              = 0;
 
@@ -149,13 +150,13 @@ public:
     // Create a squad entity and return its handle.
     // members[count]: pre-spawned NPC entities to include.
     // home_x/z:       spawn-centre used for activity distance checks.
-    static entt::entity CreateSquad(const entt::entity* members, int count,
+    static MdEntity CreateSquad(const MdEntity* members, int count,
                                     float home_x, float home_z,
                                     uint8_t faction_id,
                                     float patrol_radius = 40.f) {
-        auto& reg        = Registry::Get();
-        entt::entity sq  = reg.create();
-        auto& sc         = reg.emplace<SquadController>(sq);
+        auto& reg        = MdRegistry::Get();
+        MdEntity sq  = reg.Create();
+        auto& sc         = reg.Emplace<SquadController>(sq);
         sc.home_x        = home_x;
         sc.home_z        = home_z;
         sc.target_x      = home_x;
@@ -175,8 +176,8 @@ public:
     // dt_ms:    LOGIC_TICK_S * 1000
     // player_x/z: current player world position
     static void Update(float dt_ms, float player_x, float player_z) {
-        auto& reg = Registry::Get();
-        reg.view<SquadController>().each([&](entt::entity, SquadController& sc) {
+        auto& reg = MdRegistry::Get();
+        reg.View<SquadController>().each([&](MdEntity, SquadController& sc) {
             if (sc.member_count <= 0) return;
 
             // ── Squad thinks every THINK_INTERVAL_MS ─────────────────────────
@@ -301,7 +302,7 @@ public:
     }
 
 private:
-    static void BroadcastTarget(SquadController& sc, entt::registry& reg) {
+    static void BroadcastTarget(SquadController& sc, MdRegistry& reg) {
         const float tx = sc.target_x, tz = sc.target_z;
         const bool is_fight = (sc.activity == SquadActivity::Fight ||
                                sc.activity == SquadActivity::StandGround);
@@ -317,10 +318,10 @@ private:
             ? 6.2832f / (float)sc.member_count : 0.f;
 
         for (int i = 0; i < sc.member_count; ++i) {
-            entt::entity m = sc.members[i];
-            if (!reg.valid(m)) continue;
+            MdEntity m = sc.members[i];
+            if (!reg.Valid(m)) continue;
 
-            auto* bb = reg.try_get<AgentBlackboard>(m);
+            auto* bb = reg.TryGet<AgentBlackboard>(m);
             if (bb) {
                 bb_set_float(*bb, kSquadTx, tx);
                 bb_set_float(*bb, kSquadTz, tz);
@@ -330,7 +331,7 @@ private:
             // In Fight/StandGround: BT drives individual movement
             if (is_fight) continue;
 
-            auto* nav = reg.try_get<NavAgent>(m);
+            auto* nav = reg.TryGet<NavAgent>(m);
             if (!nav) continue;
 
             // Per-member angular offset so they don't converge to a single point.

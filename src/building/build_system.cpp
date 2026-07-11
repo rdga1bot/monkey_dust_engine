@@ -111,7 +111,7 @@ const BuildingDef* BuildSystem::GetDef(uint32_t id) const {
     return nullptr;
 }
 
-entt::entity BuildSystem::Place(float wx, float wz, uint32_t def_id, Inventory& player_inv) {
+MdEntity BuildSystem::Place(float wx, float wz, uint32_t def_id, Inventory& player_inv) {
     const BuildingDef* def = GetDef(def_id); if (!def) return entt::null;
     SnapToGrid(wx, wz); int gx, gz; WorldToGrid(wx, wz, gx, gz);
     for (int dx=0; dx<def->size_x; ++dx)
@@ -142,7 +142,7 @@ entt::entity BuildSystem::Place(float wx, float wz, uint32_t def_id, Inventory& 
     return e;
 }
 
-void BuildSystem::Demolish(entt::entity e, Inventory& player_inv) {
+void BuildSystem::Demolish(MdEntity e, Inventory& player_inv) {
     auto& reg = MdRegistry::Get();
     if (!reg.Valid(e) || !reg.AllOf<Building>(e)) return;
     auto& b = reg.Get<Building>(e);
@@ -166,7 +166,7 @@ void BuildSystem::Demolish(entt::entity e, Inventory& player_inv) {
 void BuildSystem::RebuildGridFromEntities() {
     for (int x=0; x<MAX_GRID; ++x) for (int z=0; z<MAX_GRID; ++z) grid_[x][z]=entt::null;
     auto& reg = MdRegistry::Get();
-    reg.View<Building>().each([&](entt::entity e, const Building& b) {
+    reg.View<Building>().each([&](MdEntity e, const Building& b) {
         for (int dx=0; dx<b.size_x; ++dx) for (int dz=0; dz<b.size_z; ++dz) {
             int gx=b.grid_x+dx, gz=b.grid_z+dz;
             if (gx>=0&&gx<MAX_GRID&&gz>=0&&gz<MAX_GRID) grid_[gx][gz]=e;
@@ -177,7 +177,7 @@ void BuildSystem::RebuildGridFromEntities() {
 
 void BuildSystem::Tick(float dt_s) {
     auto& reg = MdRegistry::Get();
-    reg.View<Building, Inventory>().each([&](entt::entity be, Building& b, Inventory& inv) {
+    reg.View<Building, Inventory>().each([&](MdEntity be, Building& b, Inventory& inv) {
         if (!b.active || !b.chain.valid) return;
         if (b.chain.storage_capacity > 0) {
             int stored=0;

@@ -185,7 +185,7 @@ void FactionSystem::ModRelation(uint32_t from, uint32_t to, int8_t delta) {
 
 // ── BountyRecord management ───────────────────────────────────────────────────
 
-uint32_t FactionSystem::AddBounty(uint32_t faction_id, entt::entity target,
+uint32_t FactionSystem::AddBounty(uint32_t faction_id, MdEntity target,
                                    uint32_t amount, uint8_t crime_flags) {
     for (int i = 0; i < bounty_count_; ++i) {
         if (bounties_[i].faction_id == faction_id && bounties_[i].target == target) {
@@ -203,7 +203,7 @@ uint32_t FactionSystem::AddBounty(uint32_t faction_id, entt::entity target,
     return amount;
 }
 
-uint32_t FactionSystem::GetBounty(uint32_t faction_id, entt::entity target) const {
+uint32_t FactionSystem::GetBounty(uint32_t faction_id, MdEntity target) const {
     for (int i = 0; i < bounty_count_; ++i) {
         if (bounties_[i].faction_id == faction_id && bounties_[i].target == target)
             return bounties_[i].amount;
@@ -211,7 +211,7 @@ uint32_t FactionSystem::GetBounty(uint32_t faction_id, entt::entity target) cons
     return 0;
 }
 
-void FactionSystem::ClearBounty(uint32_t faction_id, entt::entity target) {
+void FactionSystem::ClearBounty(uint32_t faction_id, MdEntity target) {
     for (int i = 0; i < bounty_count_; ++i) {
         if (bounties_[i].faction_id == faction_id && bounties_[i].target == target) {
             bounties_[i] = bounties_[--bounty_count_];

@@ -240,7 +240,7 @@ void DirectorSystem::Tick(float dt) {
         const int max_m = pr.max_menaces > 0 ? pr.max_menaces : 1;
         int found = 0;
         auto view = reg.View<SenseComponent>();
-        for (auto [e, sc] : view.each()) {
+        for (auto [e, sc] : view.Raw().each()) {
             if (sc.activation[0] > max_activation)
                 max_activation = sc.activation[0];
             if (sc.activation[0] > 0.3f && ++found >= max_m)
@@ -272,7 +272,7 @@ void DirectorSystem::Tick(float dt) {
     if (menace_changed || stage_changed) {
         // Broadcast only to entities that have an AgentBlackboard (cold component).
         auto view = reg.View<AgentBlackboard>();
-        for (auto [e, bb] : view.each()) {
+        for (auto [e, bb] : view.Raw().each()) {
             bb_set_float(bb, K_MENACE, menace_);
             bb_set_int  (bb, K_STAGE,  static_cast<int32_t>(stage_));
         }

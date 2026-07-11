@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/ai/bt_types.h>
 
 class BehaviorTree {

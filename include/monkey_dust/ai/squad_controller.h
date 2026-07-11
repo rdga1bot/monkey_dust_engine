@@ -115,7 +115,7 @@ struct SquadController {
     static constexpr float THINK_INTERVAL_MS = 2000.f;
     static constexpr float WANDER_INTERVAL_MS = 4000.f; // PatrolRagged retarget
 
-    entt::entity  members[MAX_MEMBERS]      = {};
+    MdEntity  members[MAX_MEMBERS]      = {};
     SquadMemType  member_roles[MAX_MEMBERS] = {};  // A-2: per-member role enum
     int           member_count              = 0;
 
@@ -150,12 +150,12 @@ public:
     // Create a squad entity and return its handle.
     // members[count]: pre-spawned NPC entities to include.
     // home_x/z:       spawn-centre used for activity distance checks.
-    static entt::entity CreateSquad(const entt::entity* members, int count,
+    static MdEntity CreateSquad(const MdEntity* members, int count,
                                     float home_x, float home_z,
                                     uint8_t faction_id,
                                     float patrol_radius = 40.f) {
         auto& reg        = MdRegistry::Get();
-        entt::entity sq  = reg.Create();
+        MdEntity sq  = reg.Create();
         auto& sc         = reg.Emplace<SquadController>(sq);
         sc.home_x        = home_x;
         sc.home_z        = home_z;
@@ -177,7 +177,7 @@ public:
     // player_x/z: current player world position
     static void Update(float dt_ms, float player_x, float player_z) {
         auto& reg = MdRegistry::Get();
-        reg.View<SquadController>().each([&](entt::entity, SquadController& sc) {
+        reg.View<SquadController>().each([&](MdEntity, SquadController& sc) {
             if (sc.member_count <= 0) return;
 
             // ── Squad thinks every THINK_INTERVAL_MS ─────────────────────────
@@ -318,7 +318,7 @@ private:
             ? 6.2832f / (float)sc.member_count : 0.f;
 
         for (int i = 0; i < sc.member_count; ++i) {
-            entt::entity m = sc.members[i];
+            MdEntity m = sc.members[i];
             if (!reg.Valid(m)) continue;
 
             auto* bb = reg.TryGet<AgentBlackboard>(m);

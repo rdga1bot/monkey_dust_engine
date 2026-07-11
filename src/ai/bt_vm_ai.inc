@@ -98,7 +98,7 @@
                 uint32_t min_u =  nd.data        & 0xFFFu;
                 if (tid < MAX_AGENT_TIMERS) {
                     uint32_t range = (max_u > min_u) ? (max_u - min_u) : 0u;
-                    uint32_t rng   = static_cast<uint32_t>(static_cast<uint64_t>(e)) ^ nowMs;
+                    uint32_t rng   = static_cast<uint32_t>(e.ToIntegral()) ^ nowMs;
                     rng = rng * 1664525u + 1013904223u;
                     uint32_t dur_u   = min_u + (range > 0u ? rng % range : 0u);
                     uint64_t new_end = static_cast<uint64_t>(nowMs)
@@ -115,7 +115,7 @@
             SquadMemberComponent* sm = MdRegistry::Get().TryGet<SquadMemberComponent>(e);
             if (sm) {
                 auto sig = static_cast<SquadSignal>(nd.data & 0xFFu);
-                uint32_t raw_id = static_cast<uint32_t>(static_cast<uint64_t>(e) & 0xFFFFFFFFu);
+                uint32_t raw_id = static_cast<uint32_t>(e.ToIntegral() & 0xFFFFFFFFu);
                 SquadSignalBus::Get().Set(sm->squad_id, sig, raw_id, nowMs);
             }
             result = BTStatus::Success;
@@ -171,7 +171,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            entt::entity target = static_cast<entt::entity>(en->val.e);
+            MdEntity target = static_cast<MdEntity>(en->val.e);
             AgentState*  as_t   = MdRegistry::Get().TryGet<AgentState>(target);
             if (!as_t) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
@@ -226,7 +226,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            MdEntity tgt = static_cast<MdEntity>(en->val.e);
             result = MdRegistry::Get().Valid(tgt) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
@@ -237,7 +237,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, NEXT_TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            entt::entity tgt = static_cast<entt::entity>(en->val.e);
+            MdEntity tgt = static_cast<MdEntity>(en->val.e);
             result = MdRegistry::Get().Valid(tgt) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
@@ -245,7 +245,7 @@
         // G4: ActionTriggerSound — fire NpcSoundBus event; always Success
         case BTNodeType::ActionTriggerSound: {
             NpcSoundBus::Get().Fire(static_cast<NpcSoundEvent>(nd.data),
-                                    static_cast<uint32_t>(static_cast<uint64_t>(e) & 0xFFFFFFFFu));
+                                    static_cast<uint32_t>(e.ToIntegral() & 0xFFFFFFFFu));
             result = BTStatus::Success;
             pc = nd.parent; continue;
         }
@@ -357,7 +357,7 @@
             if (char_type == 1 || char_type == 2) {
                 AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
                 const BlackboardEntry* ben = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
-                entt::entity tgt = ben ? static_cast<entt::entity>(ben->val.e) : entt::null;
+                MdEntity tgt = ben ? static_cast<MdEntity>(ben->val.e) : entt::null;
                 if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
                 AgentState* tas = MdRegistry::Get().TryGet<AgentState>(tgt);
                 target_ok = tas && tas->lcflags.test(lcf::IS_IN_VENT);
@@ -476,7 +476,7 @@
                 SquadMemberComponent* smc = MdRegistry::Get().TryGet<SquadMemberComponent>(e);
                 if (smc) SquadSignalBus::Get().Set(smc->squad_id,
                                                    SquadSignal::Warning,
-                                                   static_cast<uint32_t>(static_cast<uint64_t>(e)),
+                                                   static_cast<uint32_t>(e.ToIntegral()),
                                                    nowMs);
                 if (nd.childCount > 0) { pc = m_children[nd.childStart]; result = BTStatus::Running; continue; }
                 result = BTStatus::Failure; pc = nd.parent; continue;
@@ -514,7 +514,7 @@
                 result = BTStatus::Failure; pc = nd.parent; continue;
             }
             result = SuspiciousItemGroupRegistry::Get().IsFirstMember(
-                         gc->group_id, static_cast<uint32_t>(static_cast<uint64_t>(e)))
+                         gc->group_id, static_cast<uint32_t>(e.ToIntegral()))
                      ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }

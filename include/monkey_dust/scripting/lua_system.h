@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/ai/behavior_tree.h>
 #include <entt/entt.hpp>
 
@@ -37,7 +38,7 @@ public:
     void RegisterFunction(const char* name, lua_CFunction fn);
 
     // Calls named Lua function(entity_id) → BTStatus
-    BTStatus CallAction(const char* func_name, entt::entity e);
+    BTStatus CallAction(const char* func_name, MdEntity e);
 
     // Execute arbitrary Lua source; returns false on parse/runtime error. For tests only.
     bool Exec(const char* lua_code);

@@ -43,7 +43,7 @@ public:
     // grid: the scene SpatialGrid (rebuilt each tick by RebuildGrid).
     // dt:   logic tick delta time in seconds (LOGIC_TICK_S = 0.1f).
     void Update(SpatialGrid& grid, float dt) {
-        struct Push { entt::entity e; float dx, dz; };
+        struct Push { MdEntity e; float dx, dz; };
         static Push s_pushes[MAX_PUSH];
         int npushes = 0;
 
@@ -51,8 +51,8 @@ public:
 
         // Collect: gather push vectors without modifying positions.
         reg.View<WorldTransform, NavAgent>()
-           .each([&](entt::entity a, const WorldTransform& ta, const NavAgent&) {
-               entt::entity near[8];
+           .each([&](MdEntity a, const WorldTransform& ta, const NavAgent&) {
+               MdEntity near[8];
                int nc = grid.QueryRadius(ta.x, ta.z, QUERY_R, near, 8);
                for (int i = 0; i < nc && npushes < MAX_PUSH - 1; ++i) {
                    if (!reg.Valid(near[i]) || near[i] == a) continue;

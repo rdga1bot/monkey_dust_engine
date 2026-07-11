@@ -20,7 +20,7 @@ void LuaEventBus::Register(const char* event_name, const char* func_name) {
     MD_LOG(MD_LOG_INFO, "[LuaEventBus] %s → %s", event_name, func_name);
 }
 
-void LuaEventBus::Fire(const char* event_name, entt::entity entity_id) {
+void LuaEventBus::Fire(const char* event_name, MdEntity entity_id) {
     if (!event_name) return;
     for (int i = 0; i < count_; ++i) {
         if (strcmp(handlers_[i].event, event_name) == 0)

@@ -19,7 +19,7 @@ namespace AoeRadius {
 // AoeHit result: collects up to MAX_HITS entities within radius.
 struct AoeResult {
     static constexpr int MAX_HITS = 32;
-    entt::entity hits[MAX_HITS];
+    MdEntity hits[MAX_HITS];
     int          count = 0;
 };
 
@@ -28,7 +28,7 @@ inline AoeResult AoeHit(float ox, float oz, float radius) {
     AoeResult res{};
     auto& reg = MdRegistry::Get();
     float r2  = radius * radius;
-    reg.View<WorldTransform>().each([&](entt::entity e, const WorldTransform& tr) {
+    reg.View<WorldTransform>().each([&](MdEntity e, const WorldTransform& tr) {
         if (res.count >= AoeResult::MAX_HITS) return;
         float dx = tr.x - ox, dz = tr.z - oz;
         if (dx*dx + dz*dz <= r2)
@@ -45,7 +45,7 @@ inline void AoeApply(const AoeResult& aoe, float ox, float oz,
     auto& reg = MdRegistry::Get();
     WeaponStats wpn{ dmg, type, 0.f, 0u, 0.f };
     for (int i = 0; i < aoe.count; ++i) {
-        entt::entity e = aoe.hits[i];
+        MdEntity e = aoe.hits[i];
         if (!reg.Valid(e)) continue;
         Health* hp  = reg.TryGet<Health>(e);
         Combat* cmb = reg.TryGet<Combat>(e);

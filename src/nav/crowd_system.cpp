@@ -29,7 +29,7 @@ void CrowdSystem::Shutdown() {
     nav_mesh_ = nullptr;
 }
 
-int CrowdSystem::AddAgent(entt::entity e, float x, float z,
+int CrowdSystem::AddAgent(MdEntity e, float x, float z,
                            float radius, float max_speed) {
     if (!crowd_) return -1;
     dtCrowdAgentParams ap = {};

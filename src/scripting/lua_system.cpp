@@ -105,7 +105,7 @@ void LuaSystem::Shutdown() {
     if (L_) { lua_close(L_); L_ = nullptr; }
 }
 
-BTStatus LuaSystem::CallAction(const char* func_name, entt::entity e) {
+BTStatus LuaSystem::CallAction(const char* func_name, MdEntity e) {
     if (!L_) return BTStatus::Failure;
 
     lua_getglobal(L_, func_name);
@@ -114,7 +114,7 @@ BTStatus LuaSystem::CallAction(const char* func_name, entt::entity e) {
         return BTStatus::Failure;
     }
 
-    lua_pushinteger(L_, static_cast<lua_Integer>(static_cast<uint32_t>(e)));
+    lua_pushinteger(L_, static_cast<lua_Integer>(e.ToIntegral()));
     lua_sethook(L_, hook, LUA_MASKCOUNT, 50000);
 
     if (lua_pcall(L_, 1, 1, 0) != LUA_OK) {

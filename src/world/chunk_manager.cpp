@@ -43,7 +43,7 @@ bool ChunkManager::SaveChunk(int idx) {
 
     auto& reg = MdRegistry::Get();
     for (int i = 0; i < cd.entity_count; ++i) {
-        entt::entity e = cd.entities[i];
+        MdEntity e = cd.entities[i];
         if (!reg.Valid(e)) continue;
         if (save_entity_fn_)
             save_entity_fn_(reg, e, f);
@@ -203,7 +203,7 @@ void ChunkManager::LoadChunkFromStaging(ChunkLoadStaging& stg) {
     for (int i = 0; i < stg.tree_count &&
          cd.entity_count < MAX_ENTITIES_PER_CHUNK; ++i)
     {
-        entt::entity e = reg.Create();
+        MdEntity e = reg.Create();
         if (spawn_tree_fn_) spawn_tree_fn_(reg, stg.trees[i]);
         cd.entities[cd.entity_count++] = e;
     }
@@ -211,7 +211,7 @@ void ChunkManager::LoadChunkFromStaging(ChunkLoadStaging& stg) {
     for (int i = 0; i < stg.npc_count &&
          cd.entity_count < MAX_ENTITIES_PER_CHUNK; ++i)
     {
-        entt::entity e = reg.Create();
+        MdEntity e = reg.Create();
         if (spawn_npc_fn_) spawn_npc_fn_(reg, stg.npcs[i]);
         cd.entities[cd.entity_count++] = e;
     }

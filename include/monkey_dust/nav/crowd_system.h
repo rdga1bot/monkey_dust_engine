@@ -26,7 +26,7 @@ public:
     bool IsReady() const { return crowd_ != nullptr; }
 
     // Register an NPC entity. Returns agent index (0..MAX_AGENTS-1) or -1.
-    int  AddAgent(entt::entity e, float x, float z,
+    int  AddAgent(MdEntity e, float x, float z,
                   float radius = 0.35f, float max_speed = 3.5f);
     void RemoveAgent(int idx);
 
@@ -50,6 +50,6 @@ public:
 private:
     CrowdSystem() = default;
     dtCrowd* crowd_ = nullptr;
-    entt::entity agent_entity_[MAX_AGENTS] = {};
+    MdEntity agent_entity_[MAX_AGENTS] = {};
     const dtNavMesh* nav_mesh_ = nullptr;
 };

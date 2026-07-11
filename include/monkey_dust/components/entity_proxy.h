@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <cstdint>
 #include <entt/entt.hpp>
 
@@ -18,7 +19,7 @@ enum class ProxySpawnState : uint8_t {
 struct EntityProxyComponent {
     uint32_t       template_hash;   // fnv1a of template/prefab name
     float          x, z;            // desired world spawn position
-    entt::entity   live_entity;     // valid when state == Spawned
+    MdEntity   live_entity;     // valid when state == Spawned
     ProxySpawnState state;
     uint8_t        retry_count;
     uint8_t        _pad[2];
@@ -34,7 +35,7 @@ inline void proxy_request_spawn(EntityProxyComponent& p) noexcept {
     if (p.state == ProxySpawnState::Dormant)
         p.state = ProxySpawnState::Pending;
 }
-inline void proxy_on_spawned(EntityProxyComponent& p, entt::entity live) noexcept {
+inline void proxy_on_spawned(EntityProxyComponent& p, MdEntity live) noexcept {
     p.live_entity = live;
     p.state       = ProxySpawnState::Spawned;
     p.retry_count = 0;

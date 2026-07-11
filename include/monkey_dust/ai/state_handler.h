@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <cstdint>
 #include <entt/entt.hpp>
 #include <monkey_dust/components/agent_state.h>
@@ -13,7 +14,7 @@
 //   StateHandlerRegistry::Get().Apply(entity, EntityStateFlag::Frozen, true);
 
 struct StateHandlerContext {
-    entt::entity entity;
+    MdEntity entity;
     EntityStateFlag flag;
     bool set;      // true = flag being set; false = flag being cleared
 };
@@ -51,9 +52,9 @@ public:
     void Clear() noexcept { count_ = 0; }
 
     // Apply flag change to entity's EntityStateFlag bitmask + dispatch handlers.
-    void Apply(entt::entity e, EntityStateFlag flag, bool set,
+    void Apply(MdEntity e, EntityStateFlag flag, bool set,
                entt::registry& reg) const noexcept {
-        auto* as = reg.try_get<AgentState>(e);
+        auto* as = reg.try_get<AgentState>(e.Raw());
         if (!as) return;
 
         uint32_t bit = static_cast<uint32_t>(flag);
@@ -67,9 +68,9 @@ public:
     }
 
     // Test: does the entity have the flag set?
-    static bool Test(entt::entity e, EntityStateFlag flag,
+    static bool Test(MdEntity e, EntityStateFlag flag,
                      const entt::registry& reg) noexcept {
-        const auto* as = reg.try_get<AgentState>(e);
+        const auto* as = reg.try_get<AgentState>(e.Raw());
         if (!as) return false;
         return (as->entity_state & static_cast<uint32_t>(flag)) != 0u;
     }

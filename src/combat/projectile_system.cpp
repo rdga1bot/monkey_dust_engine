@@ -16,11 +16,11 @@ void ProjectileSystem::Tick(float dt) {
     auto& reg = MdRegistry::Get();
 
     // Collect entities to destroy — avoid mutation during view iteration.
-    std::array<entt::entity, MAX_DESTROY_PER_TICK> to_destroy{};
+    std::array<MdEntity, MAX_DESTROY_PER_TICK> to_destroy{};
     int destroy_count = 0;
 
     reg.View<ProjectileComponent, WorldTransform>().each(
-        [&](entt::entity pe, ProjectileComponent& pc, WorldTransform& pt) {
+        [&](MdEntity pe, ProjectileComponent& pc, WorldTransform& pt) {
             if (destroy_count >= MAX_DESTROY_PER_TICK) return;
 
             pc.elapsed_s += dt;
@@ -39,11 +39,11 @@ void ProjectileSystem::Tick(float dt) {
             bool  hit = false;
 
             // Collect hits to avoid inner mutation.
-            static entt::entity hit_ents[8];
+            static MdEntity hit_ents[8];
             int hit_count = 0;
 
             reg.View<WorldTransform, Health>().each(
-                [&](entt::entity te, const WorldTransform& tr, const Health&) {
+                [&](MdEntity te, const WorldTransform& tr, const Health&) {
                     if (hit || te == pe || te == pc.owner || hit_count >= 8) return;
                     float dx = tr.x - pc.x, dz = tr.z - pc.z;
                     if (dx*dx + dz*dz <= r2) hit_ents[hit_count++] = te;

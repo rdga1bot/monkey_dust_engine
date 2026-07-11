@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 
 // PowerSystem — activates a power for a caster entity.
@@ -11,13 +12,13 @@ public:
     static PowerSystem& Get() { static PowerSystem i; return i; }
 
     // Returns true if power exists and caster has a valid WorldTransform.
-    bool Use(entt::entity caster, int power_id, float tx, float tz);
+    bool Use(MdEntity caster, int power_id, float tx, float tz);
 
 private:
     PowerSystem() = default;
 
-    void DoMelee(entt::entity caster, float cx, float cz, float radius, float damage);
-    void SpawnProjectile(entt::entity caster, float cx, float cz,
+    void DoMelee(MdEntity caster, float cx, float cz, float radius, float damage);
+    void SpawnProjectile(MdEntity caster, float cx, float cz,
                          float tx, float tz, int power_id);
 };
 

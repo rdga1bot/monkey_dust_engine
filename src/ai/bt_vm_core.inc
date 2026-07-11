@@ -287,7 +287,7 @@
                     static_cast<uint8_t>((nd.data >> 24) & 0xFFu),
                 };
                 // LCG step seeded by entity id XOR frame_index
-                uint32_t rng = static_cast<uint32_t>(static_cast<uint64_t>(e))
+                uint32_t rng = static_cast<uint32_t>(e.ToIntegral())
                                ^ ctx.frame_index;
                 rng = rng * 1664525u + 1013904223u;
                 uint8_t  nc    = nd.childCount < 4u ? static_cast<uint8_t>(nd.childCount) : 4u;
@@ -409,7 +409,7 @@
         case BTNodeType::DecoratorPercentage:
             if (result == BTStatus::Running) {
                 // LCG seeded by entity XOR frame_index (same pattern as WeightedSelector)
-                uint32_t rng = static_cast<uint32_t>(static_cast<uint64_t>(e)) ^ ctx.frame_index;
+                uint32_t rng = static_cast<uint32_t>(e.ToIntegral()) ^ ctx.frame_index;
                 rng = rng * 1664525u + 1013904223u;
                 uint8_t pct = static_cast<uint8_t>(nd.data & 0xFFu);
                 if ((rng % 100u) < pct && nd.childCount > 0) {
@@ -427,7 +427,7 @@
             }
             {
                 if (nd.childCount == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
-                uint32_t rng = static_cast<uint32_t>(static_cast<uint64_t>(e)) ^ ctx.frame_index;
+                uint32_t rng = static_cast<uint32_t>(e.ToIntegral()) ^ ctx.frame_index;
                 rng = rng * 1664525u + 1013904223u;
                 uint16_t chosen = static_cast<uint16_t>(rng % nd.childCount);
                 pc = m_children[nd.childStart + chosen];

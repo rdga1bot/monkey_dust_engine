@@ -37,8 +37,8 @@ public:
     static BuildSystem& Get() { static BuildSystem inst; return inst; }
 
     int  LoadFromFile(const char* path);
-    entt::entity Place(float wx, float wz, uint32_t def_id, Inventory& player_inv);
-    void Demolish(entt::entity e, Inventory& player_inv);
+    MdEntity Place(float wx, float wz, uint32_t def_id, Inventory& player_inv);
+    void Demolish(MdEntity e, Inventory& player_inv);
     void Tick(float dt_s);
 
     static void WorldToGrid(float wx, float wz, int& gx, int& gz) {
@@ -70,5 +70,5 @@ private:
     BuildSystem();
     BuildingDef  defs_[MAX_BUILDING_DEFS];
     int          def_count_ = 0;
-    entt::entity grid_[MAX_GRID][MAX_GRID];
+    MdEntity grid_[MAX_GRID][MAX_GRID];
 };

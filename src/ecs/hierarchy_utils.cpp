@@ -8,8 +8,9 @@ namespace Hierarchy {
 static void RemoveFromChildrenList(entt::registry& reg, entt::entity parent, entt::entity child) {
     if (!reg.valid(parent) || !reg.all_of<ChildrenRef>(parent)) return;
     auto& cr = reg.get<ChildrenRef>(parent);
+    MdEntity mchild(child);
     for (int i = 0; i < cr.count; ++i) {
-        if (cr.children[i] == child) {
+        if (cr.children[i] == mchild) {
             cr.children[i] = cr.children[cr.count - 1];
             --cr.count;
             return;
@@ -17,15 +18,15 @@ static void RemoveFromChildrenList(entt::registry& reg, entt::entity parent, ent
     }
 }
 
-void ClearParent(entt::entity child) {
+void ClearParent(MdEntity child) {
     auto& reg = MdRegistry::Get();
     if (!reg.AllOf<ParentRef>(child)) return;
-    entt::entity parent = reg.Get<ParentRef>(child).parent;
-    RemoveFromChildrenList(reg.Raw(), parent, child);
+    MdEntity parent = reg.Get<ParentRef>(child).parent;
+    RemoveFromChildrenList(reg.Raw(), parent.Raw(), child.Raw());
     reg.Remove<ParentRef>(child);
 }
 
-bool SetParent(entt::entity child, entt::entity parent) {
+bool SetParent(MdEntity child, MdEntity parent) {
     auto& reg = MdRegistry::Get();
     ClearParent(child);  // detach from any previous parent first
 
@@ -42,7 +43,7 @@ bool SetParent(entt::entity child, entt::entity parent) {
 static void OnChildrenRefDestroyed(entt::registry& r, entt::entity parent) {
     auto& cr = r.get<ChildrenRef>(parent);
     for (int i = 0; i < cr.count; ++i) {
-        entt::entity child = cr.children[i];
+        entt::entity child = cr.children[i].Raw();
         if (r.valid(child) && r.all_of<ParentRef>(child)) r.remove<ParentRef>(child);
     }
 }
@@ -50,7 +51,7 @@ static void OnChildrenRefDestroyed(entt::registry& r, entt::entity parent) {
 // Child destroyed (or ParentRef removed) -> remove it from its parent's
 // ChildrenRef so the slot doesn't reference a dangling entity.
 static void OnParentRefDestroyed(entt::registry& r, entt::entity child) {
-    entt::entity parent = r.get<ParentRef>(child).parent;
+    entt::entity parent = r.get<ParentRef>(child).parent.Raw();
     RemoveFromChildrenList(r, parent, child);
 }
 

@@ -146,7 +146,7 @@ int OffscreenNpcDatabase::LoadAllZones(const char* saves_dir) noexcept {
     return total;
 }
 
-bool OffscreenNpcDatabase::Capture(entt::entity e, MdRegistry& reg,
+bool OffscreenNpcDatabase::Capture(MdEntity e, MdRegistry& reg,
                                    uint16_t zone_id) {
     if (count_ >= MAX_OFFSCREEN_NPCS) {
         MD_LOG(MD_LOG_WARNING, "OffscreenNpcDb: full (%d slots)", MAX_OFFSCREEN_NPCS);
@@ -208,7 +208,7 @@ void OffscreenNpcDatabase::Spawn(MdRegistry& reg,
         float dz = s.position[2] - player_z;
         if (dx * dx + dz * dz > r2) continue;
 
-        entt::entity ne = reg.Create();
+        MdEntity ne = reg.Create();
 
         WorldTransform tr{};
         tr.x = s.position[0]; tr.y = s.position[1]; tr.z = s.position[2];

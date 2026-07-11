@@ -12,7 +12,7 @@
 
 namespace md {
 
-bool PowerSystem::Use(entt::entity caster, int power_id, float tx, float tz) {
+bool PowerSystem::Use(MdEntity caster, int power_id, float tx, float tz) {
     const PowerDef* def = PowerManager::Get().Find(power_id);
     if (!def) {
         MD_LOG(MD_LOG_WARNING, "PowerSystem: unknown power id=%d", power_id);
@@ -37,18 +37,18 @@ bool PowerSystem::Use(entt::entity caster, int power_id, float tx, float tz) {
     return true;
 }
 
-void PowerSystem::DoMelee(entt::entity caster, float cx, float cz,
+void PowerSystem::DoMelee(MdEntity caster, float cx, float cz,
                            float radius, float damage) {
     auto& reg = MdRegistry::Get();
     float r2 = radius * radius;
 
     // Collect hits first to avoid mutating registry mid-view.
-    struct HitRecord { entt::entity e; };
+    struct HitRecord { MdEntity e; };
     static HitRecord hits[64];
     int hit_count = 0;
 
     reg.View<WorldTransform, Health>().each(
-        [&](entt::entity e, const WorldTransform& t, const Health&) {
+        [&](MdEntity e, const WorldTransform& t, const Health&) {
             if (e == caster || hit_count >= 64) return;
             float dx = t.x - cx, dz = t.z - cz;
             if (dx*dx + dz*dz <= r2) hits[hit_count++] = {e};
@@ -63,7 +63,7 @@ void PowerSystem::DoMelee(entt::entity caster, float cx, float cz,
     }
 }
 
-void PowerSystem::SpawnProjectile(entt::entity caster,
+void PowerSystem::SpawnProjectile(MdEntity caster,
                                    float cx, float cz,
                                    float tx, float tz,
                                    int power_id) {

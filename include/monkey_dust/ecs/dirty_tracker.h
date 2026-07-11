@@ -36,16 +36,16 @@ public:
 
     // Explicit mark for code paths that mutate T by direct reference and
     // can't rely on patch()/emplace_or_replace() firing on_update.
-    static void MarkDirty(entt::entity e) { Instance().Add(e); }
+    static void MarkDirty(MdEntity e) { Instance().Add(e); }
 
-    static bool IsDirty(entt::entity e) {
+    static bool IsDirty(MdEntity e) {
         auto& self = Instance();
         for (int i = 0; i < self.count_; ++i) if (self.dirty_[i] == e) return true;
         return false;
     }
 
     static int Count() { return Instance().count_; }
-    static entt::entity At(int i) { return Instance().dirty_[i]; }
+    static MdEntity At(int i) { return Instance().dirty_[i]; }
 
     // Call after a system has consumed this tick's dirty set.
     static void Clear() { Instance().count_ = 0; }
@@ -55,15 +55,19 @@ public:
 private:
     static DirtyTracker& Instance() { static DirtyTracker inst; return inst; }
 
-    static void OnChanged(entt::registry&, entt::entity e) { Instance().Add(e); }
+    // Signature dictated by EnTT's on_construct/on_update signal contract —
+    // stays entt::registry&/entt::entity, not MdRegistry&/MdEntity (same
+    // reasoning as BTSystem::ConnectRegistry — see md_entity.h's header
+    // comment).
+    static void OnChanged(entt::registry&, entt::entity e) { Instance().Add(MdEntity(e)); }
 
-    void Add(entt::entity e) {
+    void Add(MdEntity e) {
         if (count_ >= MAX_DIRTY) return;  // budget hit — caller falls back to full scan
         for (int i = 0; i < count_; ++i) if (dirty_[i] == e) return;  // already marked this tick
         dirty_[count_++] = e;
     }
 
-    entt::entity dirty_[MAX_DIRTY] = {};
-    int          count_            = 0;
-    bool         connected_        = false;
+    MdEntity dirty_[MAX_DIRTY] = {};
+    int      count_            = 0;
+    bool     connected_        = false;
 };

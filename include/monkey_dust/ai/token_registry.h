@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 // MdTokenRegistry — limits simultaneous NPC roles by token type.
 // Mirrors Alien: Isolation ConditionHasToken: at most N entities can hold a
 // given token concurrently.  Token IDs are FNV-1a hashes of name strings.
@@ -24,7 +25,7 @@ public:
     // Attempt to acquire token for entity e.
     // Returns true if e already holds it, or count < limit.
     // Returns false if at capacity.
-    bool AcquireToken(uint32_t token_id, entt::entity e) {
+    bool AcquireToken(uint32_t token_id, MdEntity e) {
         int slot = FindOrCreate(token_id);
         if (slot < 0) return false;
         TokenSlot& ts = slots_[slot];
@@ -42,7 +43,7 @@ public:
     }
 
     // Release token held by entity e (no-op if e doesn't hold it).
-    void ReleaseToken(uint32_t token_id, entt::entity e) {
+    void ReleaseToken(uint32_t token_id, MdEntity e) {
         int slot = Find(token_id);
         if (slot < 0) return;
         TokenSlot& ts = slots_[slot];
@@ -77,7 +78,7 @@ private:
         uint32_t   id                  = 0;
         uint8_t    count               = 0;
         uint8_t    limit               = DEFAULT_LIMIT;
-        entt::entity holders[MAX_HOLDERS];
+        MdEntity holders[MAX_HOLDERS];
     };
 
     MdTokenRegistry() { Reset(); }

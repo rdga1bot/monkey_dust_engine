@@ -1,4 +1,5 @@
 #pragma once
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 
 // PowerSlotManager — 4 power slots per entity with per-slot cooldowns.
@@ -11,15 +12,15 @@ public:
     static PowerSlotManager& Get() { static PowerSlotManager i; return i; }
 
     // Assign power_id to slot (0-3). Use -1 to clear.
-    void  Assign(entt::entity e, int slot, int power_id);
-    int   GetSlot(entt::entity e, int slot) const;
+    void  Assign(MdEntity e, int slot, int power_id);
+    int   GetSlot(MdEntity e, int slot) const;
 
     // Returns remaining cooldown in seconds (0 = ready).
-    float CooldownRemaining(entt::entity e, int slot, float now_s) const;
+    float CooldownRemaining(MdEntity e, int slot, float now_s) const;
 
     // Activate slot: validates cooldown, calls PowerSystem::Use, records timestamp.
     // Returns true if the power was successfully used.
-    bool  Use(entt::entity e, int slot, float tx, float tz, float now_s);
+    bool  Use(MdEntity e, int slot, float tx, float tz, float now_s);
 
     void  Clear();
 
@@ -30,7 +31,7 @@ private:
     static constexpr int NUM_SLOTS   = 4;
 
     struct EntitySlots {
-        entt::entity entity     = entt::null;
+        MdEntity entity     = entt::null;
         int          power_ids[NUM_SLOTS]  = {-1, -1, -1, -1};
         float        last_use_s[NUM_SLOTS] = {};
     };
@@ -38,9 +39,9 @@ private:
     EntitySlots  entries_[MAX_TRACKED] = {};
     int          count_ = 0;
 
-    EntitySlots*       Find(entt::entity e);
-    const EntitySlots* Find(entt::entity e) const;
-    EntitySlots*       FindOrCreate(entt::entity e);
+    EntitySlots*       Find(MdEntity e);
+    const EntitySlots* Find(MdEntity e) const;
+    EntitySlots*       FindOrCreate(MdEntity e);
 };
 
 } // namespace md

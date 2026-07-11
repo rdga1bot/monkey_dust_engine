@@ -10,8 +10,8 @@
 // Engine only handles IO scheduling and chunk lifecycle — no game components.
 using ChunkSpawnTreeFn    = void(*)(MdRegistry&, const StagedTree& t);
 using ChunkSpawnNpcFn     = void(*)(MdRegistry&, const StagedNpc& n);
-using ChunkDestroyEntityFn= void(*)(MdRegistry&, entt::entity e);
-using ChunkSaveEntityFn   = void(*)(MdRegistry&, entt::entity e, void* file);
+using ChunkDestroyEntityFn= void(*)(MdRegistry&, MdEntity e);
+using ChunkSaveEntityFn   = void(*)(MdRegistry&, MdEntity e, void* file);
 
 class ChunkManager {
 public:

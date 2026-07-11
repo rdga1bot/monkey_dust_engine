@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 #include <monkey_dust/platform/md_log.h>
 
@@ -15,7 +16,7 @@
 // entt::null in entity field = empty slot.
 
 struct NpcRelation {
-    entt::entity entity  = entt::null;
+    MdEntity entity  = entt::null;
     uint8_t      trust   = 128;   // 128=neutral
     uint8_t      fear    = 0;
     uint8_t      _pad[2] = {};
@@ -31,7 +32,7 @@ struct NpcRelationshipComponent {
 
     // Find or create a slot for `other`. Returns nullptr only if all slots are
     // occupied by different entities (caller can evict manually if needed).
-    NpcRelation* FindOrCreate(entt::entity other) noexcept {
+    NpcRelation* FindOrCreate(MdEntity other) noexcept {
         for (uint8_t i = 0; i < count; ++i)
             if (slots[i].entity == other) return &slots[i];
         if (count < MAX_RELATIONS) {
@@ -44,26 +45,26 @@ struct NpcRelationshipComponent {
         return &slots[MAX_RELATIONS - 1];
     }
 
-    const NpcRelation* Find(entt::entity other) const noexcept {
+    const NpcRelation* Find(MdEntity other) const noexcept {
         for (uint8_t i = 0; i < count; ++i)
             if (slots[i].entity == other) return &slots[i];
         return nullptr;
     }
 
-    void SetTrust(entt::entity other, uint8_t val) noexcept {
+    void SetTrust(MdEntity other, uint8_t val) noexcept {
         if (NpcRelation* r = FindOrCreate(other)) r->trust = val;
     }
-    void SetFear(entt::entity other, uint8_t val) noexcept {
+    void SetFear(MdEntity other, uint8_t val) noexcept {
         if (NpcRelation* r = FindOrCreate(other)) r->fear = val;
     }
 
     // Returns 128 (neutral) when no relation exists.
-    uint8_t GetTrust(entt::entity other) const noexcept {
+    uint8_t GetTrust(MdEntity other) const noexcept {
         const NpcRelation* r = Find(other);
         return r ? r->trust : 128u;
     }
     // Returns 0 (no fear) when no relation exists.
-    uint8_t GetFear(entt::entity other) const noexcept {
+    uint8_t GetFear(MdEntity other) const noexcept {
         const NpcRelation* r = Find(other);
         return r ? r->fear : 0u;
     }

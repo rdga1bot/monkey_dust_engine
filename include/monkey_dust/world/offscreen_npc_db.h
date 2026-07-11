@@ -64,7 +64,7 @@ public:
     // Dematerialise a live ECS entity (chunk unload or LOD cull).
     // Copies WorldTransform, LimbHealth, NpcNeeds → compact slot.
     // Does not destroy the entity — caller is responsible.
-    bool Capture(entt::entity e, MdRegistry& reg, uint16_t zone_id);
+    bool Capture(MdEntity e, MdRegistry& reg, uint16_t zone_id);
 
     // Remove all offscreen NPCs belonging to a given zone.
     void PurgeZone(uint16_t zone_id) noexcept;

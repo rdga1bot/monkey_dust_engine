@@ -1,5 +1,6 @@
 #pragma once
 #include <monkey_dust/ai/fnv.h>
+#include <monkey_dust/ecs/md_entity.h>
 #include <entt/entt.hpp>
 #include <cstdint>
 
@@ -15,7 +16,7 @@
 //   4=Variable — sets FlowVar key=params[param_offset] val=params[param_offset+1]
 
 // Callback invoked when an Action node fires.
-using FlowActionFunc = void(*)(uint32_t node_id, double now_s, entt::entity ctx, entt::registry& reg);
+using FlowActionFunc = void(*)(uint32_t node_id, double now_s, MdEntity ctx, entt::registry& reg);
 
 struct FlowNode {
     uint32_t id;           // FNV-1a hash of node name
@@ -141,7 +142,7 @@ struct FlowGraph {
     }
 
     // Process all expired triggers. Propagates connections; dispatches actions.
-    void Tick(double now_s, entt::entity context, entt::registry& reg);
+    void Tick(double now_s, MdEntity context, entt::registry& reg);
 
     // Load graph structure from a *.flow.json file.
     bool LoadFromJson(const char* path);
@@ -189,7 +190,7 @@ private:
     FlowNode* find_node(uint32_t id);
     FlowActionFunc find_action(uint32_t node_id) const;
     void propagate(uint32_t from_node_id, uint8_t from_port, double now_s,
-                   entt::entity ctx, entt::registry& reg);
+                   MdEntity ctx, entt::registry& reg);
 
     // P17: alias table (zeroed by Init())
     static constexpr int MAX_ALIASES = 8;

@@ -57,7 +57,19 @@ void BTSystem::Tick(md::EngineContext& ctx, flecs::world& reg, uint32_t nowMs) {
     // micro-optimization.
 
     // Phase 1: clear frame_flags + expire stale DirectorHints
-    auto hint_view = reg.query<AgentState, DirectorHintComponent>();
+    //
+    // Task #7/#8 concurrency-audit follow-up: these 3 queries used to be
+    // rebuilt (reg.query<...>()) on EVERY Tick() call — an on-the-fly
+    // query construction each time, the same hazardous pattern MdView
+    // avoids via a function-local static. Made static here too: every
+    // call site across the whole codebase (tests + tools/flare_demo)
+    // passes MdRegistry::Get().Raw() as `reg`, so it's provably always
+    // the same flecs::world singleton — caching against `reg` once is
+    // safe. BTSystem::Tick is not on the live game's critical path today
+    // (see bt_system.h — AISystem::Update bypasses it entirely) so this
+    // wasn't reachable from the concurrent JobGraph wave, but closing it
+    // now removes the landmine for whenever it IS wired in.
+    static auto hint_view = reg.query<AgentState, DirectorHintComponent>();
     hint_view.each([&](flecs::entity, AgentState& as, DirectorHintComponent& hint) {
         // C13: clear per-frame signals before BT tick
         as.frame_flags   = 0;
@@ -72,7 +84,7 @@ void BTSystem::Tick(md::EngineContext& ctx, flecs::world& reg, uint32_t nowMs) {
     });
 
     // Phase 2: clear frame_flags for entities with no DirectorHintComponent
-    auto bare_view = reg.query_builder<AgentState>().without<DirectorHintComponent>().build();
+    static auto bare_view = reg.query_builder<AgentState>().without<DirectorHintComponent>().build();
     bare_view.each([](flecs::entity, AgentState& as) {
         as.frame_flags   = 0;
         as.npc_tick_cost = 0;
@@ -82,7 +94,7 @@ void BTSystem::Tick(md::EngineContext& ctx, flecs::world& reg, uint32_t nowMs) {
     // Frame_flags already cleared in phases 1+2 for ALL entities regardless of LOD.
     const auto& tsoa = TransformSoA::Get();
     const uint32_t fi = frame_idx_;
-    auto bt_view = reg.query<AgentState, BehaviorTreeComponent>();
+    static auto bt_view = reg.query<AgentState, BehaviorTreeComponent>();
     bt_view.each([&](flecs::entity e, AgentState& as, BehaviorTreeComponent& btc) {
         if (!btc.enabled || !btc.tree || !btc.tree->isValid()) return;
         if (as.lcflags.test(lcf::IS_SUSPENDED)) return;  // Batch 11 P8: suspension gate

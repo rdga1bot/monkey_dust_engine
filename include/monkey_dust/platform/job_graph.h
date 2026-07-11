@@ -39,10 +39,29 @@
 // another thread, even with zero declared tag overlap. This graph's
 // Conflicts() has no way to see that hazard — verify it by hand, the same
 // way eval_sense_job/eval_t2/eval_nav_waypoint_job were each manually
-// confirmed registry-free before being made JobSystem-parallel. Rejected
-// for TickNeedsAndInjuries<->TickAI specifically: TickAI's BT VM call tree
-// is too large to hand-verify structural-op-free, on top of the already-
-// confirmed field-level conflict above.
+// confirmed registry-free before being made JobSystem-parallel.
+//
+// CONFIRMED BY ACTUAL CRASH (not just reasoned about), 2026-07-11: even
+// after eliminating every structural op AND every field-level value race
+// between TickNeedsAndInjuries and TickAI (deferred-ops queue + read-only
+// snapshot, see logic_tick.cpp/needs_ai_snapshot.h/
+// deferred_structural_ops.h), actually putting them in the same wave
+// crashed within seconds — SIGSEGV in ecs_iter_fini/ecs_query_next inside
+// TickAI on a JobSystem worker thread, concurrent with
+// TickNeedsAndInjuries's own query iteration on the main thread. Neither
+// side was doing anything structural at the time. Conclusion: flecs query
+// iteration (MdRegistry::View<T>().each(), i.e. ecs_query_next) is not
+// safe to run concurrently across 2 threads against the same
+// flecs::world AT ALL — not just unsafe in the presence of structural
+// ops. Real multi-threaded query iteration needs flecs's own staging API
+// (world.readonly_begin() + a stage per thread via get_stage(i)), which
+// would require every MdRegistry call site in both systems' entire call
+// trees to become stage-aware — out of scope; MdRegistry has no such
+// concept today. Until that exists, NO two batches that both call
+// MdRegistry::View<>().each() should ever be declared with disjoint tags
+// on the assumption that makes them safe to co-schedule — disjoint tags
+// only rule out the hazard this graph can see (data races on the tags
+// themselves), not this one.
 //
 // MAX_BATCHES=16, MAX_TAGS=8 per batch — fixed arrays, no heap.
 

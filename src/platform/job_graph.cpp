@@ -1,4 +1,5 @@
 #include <monkey_dust/platform/job_graph.h>
+#include <monkey_dust/platform/job_system.h>
 #include <monkey_dust/platform/md_log.h>
 #include <cstring>
 
@@ -63,10 +64,41 @@ void JobGraph::Run() {
         }
     }
 
-    // Execute in registration order, sequentially (see header note: no
-    // multi-threaded batch dispatch yet — nothing today needs it).
+    // Wave assignment: wave[i] = 1 + max(wave[j]) over every j < i this
+    // batch Conflicts() with, or 0 if none. Same-wave batches have no
+    // declared conflict with each other or with anything in an earlier
+    // wave, so they're independent enough to run concurrently (see the
+    // header's structural-op caveat — declared-independent is necessary,
+    // not sufficient, for a batch that touches MdRegistry directly).
+    int wave[MAX_BATCHES] = {};
+    int max_wave = 0;
     for (int i = 0; i < count_; ++i) {
-        entries_[i].fn(entries_[i].user);
+        int w = 0;
+        for (int j = 0; j < i; ++j)
+            if (Conflicts(entries_[j].desc, entries_[i].desc) && wave[j] + 1 > w)
+                w = wave[j] + 1;
+        wave[i] = w;
+        if (w > max_wave) max_wave = w;
+    }
+
+    // Run wave by wave: a wave with 2+ batches goes through JobSystem
+    // (each batch's fn() runs on a worker thread, same contract as any
+    // other JobSystem::Submit caller — no registry access mid-flight
+    // unless hand-verified safe); a lone batch just runs inline, same
+    // NumWorkers()==0 fallback shape used elsewhere (e.g. logic_tick.cpp's
+    // TickNavigation) so test binaries without JobSystem::Init() still work.
+    for (int w = 0; w <= max_wave; ++w) {
+        int wave_count = 0;
+        for (int i = 0; i < count_; ++i) if (wave[i] == w) ++wave_count;
+
+        if (wave_count > 1 && JobSystem::Get().NumWorkers() > 0) {
+            for (int i = 0; i < count_; ++i)
+                if (wave[i] == w) JobSystem::Get().Submit(entries_[i].fn, entries_[i].user);
+            JobSystem::Get().Flush();
+        } else {
+            for (int i = 0; i < count_; ++i)
+                if (wave[i] == w) entries_[i].fn(entries_[i].user);
+        }
     }
 
     count_ = 0;

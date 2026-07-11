@@ -211,23 +211,23 @@ JPH::BodyID JoltWorld::AddTerrainMesh(const float* heights, int grid,
                                        float origin_x, float origin_z)
 {
     if (!ready_) return JPH::BodyID();
-    const int N = grid;
-    JPH::TriangleList tris;
-    tris.reserve((size_t)(N * N * 2));
-    auto pos = [&](int c, int r) -> JPH::Float3 {
-        float h = heights[r * (N + 1) + c];
-        return JPH::Float3(origin_x + c * cell_size, h, origin_z + r * cell_size);
-    };
-    for (int r = 0; r < N; ++r) {
-        for (int c = 0; c < N; ++c) {
-            tris.push_back(JPH::Triangle(pos(c,r), pos(c+1,r), pos(c,r+1)));
-            tris.push_back(JPH::Triangle(pos(c+1,r), pos(c+1,r+1), pos(c,r+1)));
-        }
-    }
-    JPH::MeshShapeSettings mss(tris);
-    auto result = mss.Create();
+    // HeightFieldShape instead of MeshShapeSettings/triangle-soup — confirmed
+    // by direct measurement to be the dominant startup cost (3.86s across 81
+    // chunks, ~48ms/chunk) building an unoptimized BVH over grid*grid*2
+    // (128*128*2=32768) arbitrary triangles per chunk, when `heights` is
+    // already a regular (grid+1)x(grid+1) height grid — exactly what
+    // HeightFieldShape is purpose-built for (same pattern already proven in
+    // ReplaceTerrainBody below). Requires (grid % block_size(=2)) == 0;
+    // TERRAIN_GRID=128 satisfies this with no downsampling needed, unlike
+    // ReplaceTerrainBody's arbitrary-resolution input.
+    JPH::HeightFieldShapeSettings hfs(
+        heights,
+        JPH::Vec3(origin_x, 0.f, origin_z),
+        JPH::Vec3(cell_size, 1.f, cell_size),
+        (JPH::uint32)(grid + 1));
+    auto result = hfs.Create();
     if (result.HasError()) {
-        fprintf(stderr, "[Jolt] TerrainMesh failed: %s\n", result.GetError().c_str());
+        fprintf(stderr, "[Jolt] TerrainMesh(HeightField) failed: %s\n", result.GetError().c_str());
         return JPH::BodyID();
     }
     JPH::BodyCreationSettings bcs(result.Get(),

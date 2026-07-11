@@ -221,6 +221,13 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR MONKEY_DUST_EDITOR)
     target_compile_definitions(monkey_dust_engine PUBLIC DEBUG)
 endif()
+# Vulkan validation layers (gpu_device.cpp) are opt-in via a narrower flag than
+# DEBUG above — DEBUG also turns on for MONKEY_DUST_EDITOR=ON (the normal dev
+# build with editor panels), which is unrelated to wanting validation-layer
+# overhead on every pipeline creation. Real CMAKE_BUILD_TYPE=Debug only.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_definitions(monkey_dust_engine PUBLIC MD_GPU_VALIDATION)
+endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(MSVC)
         target_compile_options(monkey_dust_engine PRIVATE /O2 /arch:AVX2)

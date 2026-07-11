@@ -12,7 +12,19 @@ GpuDevice& GpuDevice::Get() {
 }
 
 bool GpuDevice::Init(SDL_Window* window) {
-    constexpr bool kDebug = true; // TEMP: validation always on to diagnose GPU crash
+    // Vulkan validation layers add real per-pipeline compile overhead (confirmed:
+    // ~4.5s stall creating the terrain_forward pipeline alone, reproducible every
+    // launch) — gated on MD_GPU_VALIDATION, NOT plain DEBUG, since DEBUG is also
+    // defined whenever MONKEY_DUST_EDITOR=ON (engine/CMakeLists.txt) regardless of
+    // CMAKE_BUILD_TYPE, which would otherwise leave validation on for every normal
+    // editor-enabled dev build, not just genuine CMAKE_BUILD_TYPE=Debug sessions.
+    // Previously hardcoded `true` unconditionally ("TEMP: validation always on to
+    // diagnose GPU crash") and never reverted — restore the real opt-in gate.
+#ifdef MD_GPU_VALIDATION
+    constexpr bool kDebug = true;
+#else
+    constexpr bool kDebug = false;
+#endif
     device_ = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, kDebug, NULL);
     if (!device_) {
         MD_LOG(MD_LOG_WARNING, "[GpuDevice] SDL_CreateGPUDevice failed: %s", SDL_GetError());

@@ -18,6 +18,18 @@ struct RenderQualityConfig {
     float actor_cr_m      =  150.f; // NPC/character draw distance (cull.comp far_sq)
     float actor_anim_t2_m =  150.f; // NPC animation T2 (LOD2 skip skinning)
 
+    // ── Terrain shader-pass crossfade (dithered, mirrors mesh LOD crossfade) ─
+    // terrain_pom.frag (POM ray-march + self-shadow + normal-map array) is the
+    // single most expensive fragment shader in the game and was previously run
+    // unconditionally out to terrain_cr_m (task #43 fixed a POM/forward seam
+    // by making POM cover the whole draw distance). Per-texel POM detail is
+    // imperceptible past a few hundred metres, so restrict it to a near radius
+    // and hand distant terrain to the much cheaper terrain_forward.frag,
+    // dithered-crossfading between the two passes across terrain_pom_band_m
+    // around the boundary (same DitherPattern4x4+clip() technique as #43).
+    float terrain_pom_cr_m   =  150.f; // POM shader radius; beyond it → forward
+    float terrain_pom_band_m =   50.f; // crossfade band width around the boundary
+
     // ── Prop-type distances (metres) — replaces npc_render hardcoded consts ──
     float prop_rock_m     =  600.f;
     float prop_formation_m=  900.f;
@@ -51,6 +63,8 @@ struct RenderQualityConfig {
             c.mesh_lod2_cr_m   = 3000.f;  // original
             c.actor_cr_m       =  150.f;  // original cull UBO far_sq = 150m
             c.actor_anim_t2_m  =  150.f;
+            c.terrain_pom_cr_m   = 100.f;  // HD 520: most aggressive POM cutoff
+            c.terrain_pom_band_m =  40.f;
             c.prop_rock_m      =  300.f;  // reduced props = real GPU savings
             c.prop_formation_m =  450.f;
             c.prop_hat_rock_m  =  600.f;
@@ -66,6 +80,8 @@ struct RenderQualityConfig {
             c.mesh_lod2_cr_m   = 3000.f;
             c.actor_cr_m       =  120.f;
             c.actor_anim_t2_m  =  120.f;
+            c.terrain_pom_cr_m   = 150.f;
+            c.terrain_pom_band_m =  50.f;
             c.prop_rock_m      =  450.f;
             c.prop_formation_m =  650.f;
             c.prop_hat_rock_m  =  900.f;
@@ -81,6 +97,8 @@ struct RenderQualityConfig {
             c.mesh_lod2_cr_m   = 3000.f;
             c.actor_cr_m       =  150.f;
             c.actor_anim_t2_m  =  150.f;
+            c.terrain_pom_cr_m   = 200.f;
+            c.terrain_pom_band_m =  60.f;
             c.prop_rock_m      =  600.f;
             c.prop_formation_m =  900.f;
             c.prop_hat_rock_m  = 1200.f;
@@ -96,6 +114,8 @@ struct RenderQualityConfig {
             c.mesh_lod2_cr_m   = 5000.f;
             c.actor_cr_m       =  200.f;
             c.actor_anim_t2_m  =  200.f;
+            c.terrain_pom_cr_m   = 300.f;
+            c.terrain_pom_band_m =  80.f;
             c.prop_rock_m      =  900.f;
             c.prop_formation_m = 1200.f;
             c.prop_hat_rock_m  = 1800.f;

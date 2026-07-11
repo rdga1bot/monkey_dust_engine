@@ -542,7 +542,8 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                               float world_origin_x,
                               float world_origin_z,
                               float world_to_uv,
-                              int   lod)
+                              int   lod,
+                              float lod_blend)
 {
     if (!IsReady() || !chunk.loaded || !chunk.vbo.SDLBuffer() || !chunk.ibo.SDLBuffer()) return;
 #ifdef MD_SDL_GPU
@@ -567,7 +568,7 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     vubo.world_origin_x = world_origin_x;
     vubo.world_origin_z = world_origin_z;
     vubo.world_to_uv    = world_to_uv;
-    vubo._pad           = 0.f;
+    vubo.lod_blend      = lod_blend;
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
@@ -633,7 +634,7 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     vubo.world_origin_x = world_origin_x;
     vubo.world_origin_z = world_origin_z;
     vubo.world_to_uv    = world_to_uv;
-    vubo._pad           = 0.f;
+    vubo.lod_blend      = 0.f;
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
     cb.PushVertexUniforms(0, &vubo, sizeof(vubo));
@@ -682,7 +683,7 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     vubo.world_origin_x = world_origin_x;
     vubo.world_origin_z = world_origin_z;
     vubo.world_to_uv    = world_to_uv;
-    vubo._pad           = 0.f;
+    vubo.lod_blend      = 0.f;
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));

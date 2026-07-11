@@ -46,7 +46,9 @@ public:
         float world_origin_x;   // world X → UV 0.5
         float world_origin_z;   // world Z → UV 0.5
         float world_to_uv;      // UV per metre (1 / kenshi_view_metres)
-        float _pad;
+        // Shader-pass dithered crossfade (mirrors TerrainPomVertUBO's
+        // lod_blend, terrain_pom.slang task #43) — was the unused _pad slot.
+        float lod_blend;
         float cam_pos_ws[4];    // xyz=camera world position, w=unused (fog distance)
         // 96 bytes total
     };
@@ -152,6 +154,11 @@ public:
     // Use uniform lod for all chunks to avoid T-junctions.
     // cam_x/y/z: camera world position, for the linear distance fog applied
     // in terrain_forward.frag (matches ground.frag/NPC shader fog model).
+    // lod_blend: shader-pass dithered crossfade fraction (mirrors DrawRawPOM's
+    // parameter of the same name) — 0=fully visible (default), 1=fully
+    // discarded. Draw a chunk via both DrawRaw and DrawRawPOM near the
+    // pass-switch boundary with complementary values to fade between the
+    // cheap forward shader and POM instead of a hard shader swap.
     void DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                  const TerrainChunk& chunk,
                  const float* vp16,
@@ -160,7 +167,8 @@ public:
                  float world_origin_x = 0.f,
                  float world_origin_z = 0.f,
                  float world_to_uv    = 1.f / 8000.f,
-                 int   lod            = 0);
+                 int   lod            = 0,
+                 float lod_blend      = 0.f);
 
     // POM variant — call once after Init(). Then replace DrawRaw calls with DrawRawPOM.
     // detail_path: RGBA PNG where A=height [0,1]. Pass nullptr to use neutral fallback.

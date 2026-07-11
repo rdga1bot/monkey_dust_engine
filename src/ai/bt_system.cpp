@@ -42,29 +42,23 @@ static constexpr uint32_t BT_LOD_ULTRA_MODULO = 960u;
 static constexpr float BT_LOD_TIER1_SQ = 30.0f * 30.0f;
 static constexpr float BT_LOD_TIER2_SQ = 80.0f * 80.0f;
 
-void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs) {
+void BTSystem::Tick(md::EngineContext& ctx, flecs::world& reg, uint32_t nowMs) {
     ++frame_idx_;
 
-    // Ensures Tier-1 (near) entities are processed first — hot cache path.
-    // EnTT reg.sort<T>() reorders the component pool; subsequent view iteration
-    // visits entities in sorted order (nearest first → best cache utilisation).
-    if (frame_idx_ % 190u == 1u) {
-        const auto& tsoa_sort = TransformSoA::Get();
-        reg.sort<BehaviorTreeComponent>(
-            [&](const entt::entity lhs, const entt::entity rhs) {
-                const auto* wl = reg.try_get<WorldTransform>(lhs);
-                const auto* wr = reg.try_get<WorldTransform>(rhs);
-                float dl = wl && wl->slot < (uint32_t)tsoa_sort.active_count
-                           ? tsoa_sort.dist_sq[wl->slot] : 1e9f;
-                float dr = wr && wr->slot < (uint32_t)tsoa_sort.active_count
-                           ? tsoa_sort.dist_sq[wr->slot] : 1e9f;
-                return dl < dr;  // nearest first
-            });
-    }
+    // B3.4: the periodic near-first sort (every 190 frames, via
+    // entt::registry::sort<BehaviorTreeComponent>()) is dropped under
+    // flecs. entt::sort<T>() physically reordered a component pool once,
+    // benefiting every subsequent view until the next sort call — flecs's
+    // equivalent (order_by) is attached to a SPECIFIC query and reapplied
+    // lazily each time THAT query iterates, which doesn't fit a query
+    // that's rebuilt fresh every Tick() call the way bt_view below is.
+    // Not on the live game's critical path (see bt_system.h) — the loop
+    // stays functionally correct, just without the cache-locality
+    // micro-optimization.
 
     // Phase 1: clear frame_flags + expire stale DirectorHints
-    auto hint_view = reg.view<AgentState, DirectorHintComponent>();
-    hint_view.each([&](entt::entity, AgentState& as, DirectorHintComponent& hint) {
+    auto hint_view = reg.query<AgentState, DirectorHintComponent>();
+    hint_view.each([&](flecs::entity, AgentState& as, DirectorHintComponent& hint) {
         // C13: clear per-frame signals before BT tick
         as.frame_flags   = 0;
         as.npc_tick_cost = 0;  // VBfA: reset per-NPC work budget each tick
@@ -78,8 +72,8 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
     });
 
     // Phase 2: clear frame_flags for entities with no DirectorHintComponent
-    auto bare_view = reg.view<AgentState>(entt::exclude<DirectorHintComponent>);
-    bare_view.each([](entt::entity, AgentState& as) {
+    auto bare_view = reg.query_builder<AgentState>().without<DirectorHintComponent>().build();
+    bare_view.each([](flecs::entity, AgentState& as) {
         as.frame_flags   = 0;
         as.npc_tick_cost = 0;
     });
@@ -88,20 +82,20 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
     // Frame_flags already cleared in phases 1+2 for ALL entities regardless of LOD.
     const auto& tsoa = TransformSoA::Get();
     const uint32_t fi = frame_idx_;
-    auto bt_view = reg.view<AgentState, BehaviorTreeComponent>();
-    bt_view.each([&](entt::entity e, AgentState& as, BehaviorTreeComponent& btc) {
+    auto bt_view = reg.query<AgentState, BehaviorTreeComponent>();
+    bt_view.each([&](flecs::entity e, AgentState& as, BehaviorTreeComponent& btc) {
         if (!btc.enabled || !btc.tree || !btc.tree->isValid()) return;
         if (as.lcflags.test(lcf::IS_SUSPENDED)) return;  // Batch 11 P8: suspension gate
         if (as.npc_dormant) return;                       // VBfA: external area-manager sleep
         if (as.npc_tick_cost >= NPC_TICK_COST_MAX) return; // VBfA: per-NPC over-work guard
 
-        const uint32_t eid = entt::to_integral(e);
+        const uint32_t eid = (uint32_t)e.id();
 
         if (as.motivation == MotivationType::Dormant) {
             // Ultra-rare tier: OffscreenNpcDatabase handles 0.1Hz; BT near-dormant @ 19s.
             if ((fi + eid) % BT_LOD_FAR_MODULO != 0u) return;
         } else {
-            const auto* wt = reg.try_get<WorldTransform>(e);
+            const auto* wt = e.try_get<WorldTransform>();
             if (wt && wt->slot < (uint32_t)tsoa.active_count) {
                 float dsq = tsoa.dist_sq[wt->slot];
                 uint32_t modulo = BT_LOD_FAR_MODULO;  // default: far tier
@@ -126,21 +120,20 @@ void BTSystem::Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs)
         if (as.lcflags.test(lcf::IS_PLAYER)) {
             cost = BtBudgetCost::kPlayer;
         } else {
-            const AIAgent* ag = reg.try_get<AIAgent>(e);
+            const AIAgent* ag = e.try_get<AIAgent>();
             if (ag && ag->bt_template_id == 255)
                 cost = BtBudgetCost::kScheduleNpc;
         }
         if (!AIBudget::Get().TryConsume(cost)) return;  // budget exhausted: skip BT
         as.npc_tick_cost += static_cast<uint16_t>(cost * 100.f);  // VBfA: accumulate work
 
-        btc.tree->tick(ctx, MdEntity(e), nowMs);
+        btc.tree->tick(ctx, MdEntity(e.id()), nowMs);
     });
 }
 
-void BTSystem::OnComponentDestroy(entt::registry& reg, entt::entity e) {
-    auto* btc = reg.try_get<BehaviorTreeComponent>(e);
-    if (btc && btc->owning && btc->tree) {
-        delete btc->tree;
-        btc->tree = nullptr;
+void BTSystem::OnComponentDestroy(flecs::entity e, BehaviorTreeComponent& btc) {
+    if (btc.owning && btc.tree) {
+        delete btc.tree;
+        btc.tree = nullptr;
     }
 }

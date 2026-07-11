@@ -71,7 +71,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* ben = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!ben) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(ben->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(ben->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             NpcRelationshipComponent* rel = MdRegistry::Get().TryGet<NpcRelationshipComponent>(e);
             if (!rel) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -236,7 +236,7 @@
             if (!ab || !as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity target    = static_cast<MdEntity>(en->val.e);
+            MdEntity target    = MdRegistry::Get().FromIndex(en->val.e);
             const AgentState* tas  = MdRegistry::Get().TryGet<AgentState>(target);
             if (!tas) { result = BTStatus::Failure; pc = nd.parent; continue; }
             bool enemy = AllianceMatrix::Get().IsEnemy(
@@ -344,7 +344,7 @@
             if (!ab || !wt) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity          target = static_cast<MdEntity>(en->val.e);
+            MdEntity          target = MdRegistry::Get().FromIndex(en->val.e);
             const WorldTransform* twt   = MdRegistry::Get().TryGet<WorldTransform>(target);
             if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint32_t ks = PathCache::PosKey(wt->x,  wt->z);
@@ -491,7 +491,7 @@
             if (ab) {
                 const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
                 if (en) {
-                    MdEntity target     = static_cast<MdEntity>(en->val.e);
+                    MdEntity target     = MdRegistry::Get().FromIndex(en->val.e);
                     const AgentState* tas   = MdRegistry::Get().TryGet<AgentState>(target);
                     if (tas) {
                         enemy = AllianceMatrix::Get().IsEnemy(
@@ -569,7 +569,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity target       = static_cast<MdEntity>(en->val.e);
+            MdEntity target       = MdRegistry::Get().FromIndex(en->val.e);
             const WeaponComponent* wc = MdRegistry::Get().TryGet<WeaponComponent>(target);
             if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (!wc->needs_reload) ? BTStatus::Success : BTStatus::Failure;
@@ -581,7 +581,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity target       = static_cast<MdEntity>(en->val.e);
+            MdEntity target       = MdRegistry::Get().FromIndex(en->val.e);
             const WeaponComponent* wc = MdRegistry::Get().TryGet<WeaponComponent>(target);
             if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (wc->weapon_type == static_cast<uint8_t>(nd.data)) ? BTStatus::Success : BTStatus::Failure;
@@ -995,7 +995,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity target = static_cast<MdEntity>(en->val.e);
+            MdEntity target = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(target)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const AgentState* tas = MdRegistry::Get().TryGet<AgentState>(target);
             if (!tas) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -1054,7 +1054,7 @@
             if (!as || as->lcflags.test(lcf::IS_DEAD)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             const BlackboardEntry* en = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
-            bool has_target = (en && MdRegistry::Get().Valid(static_cast<MdEntity>(en->val.e)));
+            bool has_target = (en && MdRegistry::Get().Valid(MdRegistry::Get().FromIndex(en->val.e)));
             result = (as->awareness >= AwarenessState::Suspicious && has_target)
                      ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
@@ -1116,7 +1116,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const AgentState* tas = MdRegistry::Get().TryGet<AgentState>(tgt);
             result = (tas && tas->lcflags.test(lcf::IS_PLAYER))
@@ -1130,7 +1130,7 @@
             if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const WorldTransform* twt = MdRegistry::Get().TryGet<WorldTransform>(tgt);
             if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -1146,7 +1146,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const AgentState* tas = MdRegistry::Get().TryGet<AgentState>(tgt);
             if (!tas) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -1212,7 +1212,7 @@
             if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const WorldTransform* twt = MdRegistry::Get().TryGet<WorldTransform>(tgt);
             if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -1285,7 +1285,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const AgentState* tas = MdRegistry::Get().TryGet<AgentState>(tgt);
             result = (tas && tas->awareness >= AwarenessState::Aware)
@@ -1298,7 +1298,7 @@
             if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const WorldTransform* twt = MdRegistry::Get().TryGet<WorldTransform>(tgt);
             if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -1313,7 +1313,7 @@
             if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const WorldTransform* twt = MdRegistry::Get().TryGet<WorldTransform>(tgt);
             if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -1429,7 +1429,7 @@
             }
             const AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             const BlackboardEntry* en = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
-            if (!en || !MdRegistry::Get().Valid(static_cast<MdEntity>(en->val.e))) {
+            if (!en || !MdRegistry::Get().Valid(MdRegistry::Get().FromIndex(en->val.e))) {
                 result = BTStatus::Failure; pc = nd.parent; continue;
             }
             const SenseComponent* sc = MdRegistry::Get().TryGet<SenseComponent>(e);
@@ -1464,7 +1464,7 @@
             const AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             const BlackboardEntry* en = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const AgentState* tas = MdRegistry::Get().TryGet<AgentState>(tgt);
             result = (tas && (tas->frame_flags & (1ull << ff::SHOULD_MELEE_ATTACK)))
@@ -1484,7 +1484,7 @@
             if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const WorldTransform* twt = MdRegistry::Get().TryGet<WorldTransform>(tgt);
             if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -1499,7 +1499,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             // IS_TARGETED is set on self by CombatSystem when tgt->Combat.target == e
             const AgentState* self_as = MdRegistry::Get().TryGet<AgentState>(e);
@@ -1512,7 +1512,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const AgentState* tas = MdRegistry::Get().TryGet<AgentState>(tgt);
             result = (tas && (tas->frame_flags & (1ull << ff::SHOULD_MELEE_ATTACK)))
@@ -1554,7 +1554,7 @@
             if (!self_wt || !ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity target = static_cast<MdEntity>(en->val.e);
+            MdEntity target = MdRegistry::Get().FromIndex(en->val.e);
             if (!MdRegistry::Get().Valid(target)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const WorldTransform* twt = MdRegistry::Get().TryGet<WorldTransform>(target);
             if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }

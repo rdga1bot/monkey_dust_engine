@@ -237,15 +237,16 @@ void DirectorSystem::Tick(float dt) {
     float max_activation = 0.f;
     auto& reg = MdRegistry::Get();
     {
-        const int max_m = pr.max_menaces > 0 ? pr.max_menaces : 1;
-        int found = 0;
+        // B3.4: flecs query.each() has no early-exit, so this now always
+        // scans every SenseComponent entity instead of stopping once
+        // pr.max_menaces threat sources are found — max_activation ends
+        // up identical either way (a simple running max), just computed
+        // with a bit more work on ticks with many sensed entities.
         auto view = reg.View<SenseComponent>();
-        for (auto [e, sc] : view.each()) {
+        view.each([&](MdEntity, SenseComponent& sc) {
             if (sc.activation[0] > max_activation)
                 max_activation = sc.activation[0];
-            if (sc.activation[0] > 0.3f && ++found >= max_m)
-                break;  // enough threat sources found — no need to scan further
-        }
+        });
     }
 
     // 2. Accumulate/decay menace using DirectorConfig rates.
@@ -272,10 +273,10 @@ void DirectorSystem::Tick(float dt) {
     if (menace_changed || stage_changed) {
         // Broadcast only to entities that have an AgentBlackboard (cold component).
         auto view = reg.View<AgentBlackboard>();
-        for (auto [e, bb] : view.each()) {
+        view.each([&](MdEntity, AgentBlackboard& bb) {
             bb_set_float(bb, K_MENACE, menace_);
             bb_set_int  (bb, K_STAGE,  static_cast<int32_t>(stage_));
-        }
+        });
         last_bc_menace_ = menace_;
         last_bc_stage_  = stage_;
     }

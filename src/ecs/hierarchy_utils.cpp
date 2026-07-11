@@ -5,12 +5,11 @@
 
 namespace Hierarchy {
 
-static void RemoveFromChildrenList(entt::registry& reg, entt::entity parent, entt::entity child) {
-    if (!reg.valid(parent) || !reg.all_of<ChildrenRef>(parent)) return;
-    auto& cr = reg.get<ChildrenRef>(parent);
-    MdEntity mchild(child);
+static void RemoveFromChildrenList(MdRegistry& reg, MdEntity parent, MdEntity child) {
+    if (!reg.Valid(parent) || !reg.AllOf<ChildrenRef>(parent)) return;
+    auto& cr = reg.Get<ChildrenRef>(parent);
     for (int i = 0; i < cr.count; ++i) {
-        if (cr.children[i] == mchild) {
+        if (cr.children[i] == child) {
             cr.children[i] = cr.children[cr.count - 1];
             --cr.count;
             return;
@@ -22,7 +21,7 @@ void ClearParent(MdEntity child) {
     auto& reg = MdRegistry::Get();
     if (!reg.AllOf<ParentRef>(child)) return;
     MdEntity parent = reg.Get<ParentRef>(child).parent;
-    RemoveFromChildrenList(reg.Raw(), parent.Raw(), child.Raw());
+    RemoveFromChildrenList(reg, parent, child);
     reg.Remove<ParentRef>(child);
 }
 
@@ -39,26 +38,27 @@ bool SetParent(MdEntity child, MdEntity parent) {
 
 // Parent destroyed (or ChildrenRef removed) -> every child loses its
 // ParentRef. Fires before the component data is actually erased, so
-// reading cr here is valid (EnTT on_destroy contract).
-static void OnChildrenRefDestroyed(entt::registry& r, entt::entity parent) {
-    auto& cr = r.get<ChildrenRef>(parent);
+// reading cr here is valid (flecs OnRemove contract — verified empirically,
+// same guarantee EnTT's on_destroy made).
+static void OnChildrenRefDestroyed(flecs::entity parent, ChildrenRef& cr) {
+    auto& reg = MdRegistry::Get();
     for (int i = 0; i < cr.count; ++i) {
-        entt::entity child = cr.children[i].Raw();
-        if (r.valid(child) && r.all_of<ParentRef>(child)) r.remove<ParentRef>(child);
+        MdEntity child = cr.children[i];
+        if (reg.Valid(child) && reg.AllOf<ParentRef>(child)) reg.Remove<ParentRef>(child);
     }
+    (void)parent;
 }
 
 // Child destroyed (or ParentRef removed) -> remove it from its parent's
 // ChildrenRef so the slot doesn't reference a dangling entity.
-static void OnParentRefDestroyed(entt::registry& r, entt::entity child) {
-    entt::entity parent = r.get<ParentRef>(child).parent.Raw();
-    RemoveFromChildrenList(r, parent, child);
+static void OnParentRefDestroyed(flecs::entity child, ParentRef& pr) {
+    RemoveFromChildrenList(MdRegistry::Get(), pr.parent, MdEntity(child.id()));
 }
 
 void RegisterDestroyHooks() {
-    auto& reg = MdRegistry::Get().Raw();
-    reg.on_destroy<ChildrenRef>().connect<&OnChildrenRefDestroyed>();
-    reg.on_destroy<ParentRef>().connect<&OnParentRefDestroyed>();
+    auto& w = MdRegistry::Get().Raw();
+    w.observer<ChildrenRef>().event(flecs::OnRemove).each(OnChildrenRefDestroyed);
+    w.observer<ParentRef>().event(flecs::OnRemove).each(OnParentRefDestroyed);
 }
 
 } // namespace Hierarchy

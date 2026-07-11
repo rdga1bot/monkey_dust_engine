@@ -31,7 +31,8 @@ struct BountyRecord {
     uint8_t         notorious   = 0;    // 1 = bounty is "notorious" (wanted poster level)
     uint16_t        expire_hours= 0;    // game-hours until bounty auto-expires (0=permanent)
 };
-static_assert(sizeof(BountyRecord) == 16, "BountyRecord must be 16 bytes");
+// B3.4: MdEntity grew 4→8 bytes (flecs::entity_t, was entt::entity).
+static_assert(sizeof(BountyRecord) == 24, "BountyRecord must be 24 bytes");
 
 struct FactionData {
     uint32_t id;

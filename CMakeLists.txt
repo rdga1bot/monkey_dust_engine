@@ -19,9 +19,9 @@ endif()
 if(NOT TARGET glm)
     add_subdirectory(${MD_THIRD_PARTY}/glm EXCLUDE_FROM_ALL)
 endif()
-# flecs — task #8 B2: standalone, parallel dependency. Only the isolated
-# md_tests target links this; monkey_dust_engine itself does not depend on
-# it (no include path added below, no target_link_libraries on the engine).
+# flecs — task #8. Vendored in B2 as a standalone, parallel dependency;
+# B3.4 makes it monkey_dust_engine's actual ECS backend (see md_registry.h),
+# replacing entt::registry.
 if(NOT TARGET flecs)
     add_subdirectory(${MD_THIRD_PARTY}/flecs EXCLUDE_FROM_ALL)
 endif()
@@ -103,7 +103,6 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
         "${CMAKE_CURRENT_SOURCE_DIR}/src/flare/power_loader.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/flare/map_loader.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/power_manager.cpp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/damage_calc.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/hit_zones.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/power_def.cpp"
         # hot/: multiple files define static s_mtime() — each must be its own TU.
@@ -155,6 +154,7 @@ target_include_directories(monkey_dust_engine
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
     # Third-party (PUBLIC so consumers also see them)
     PUBLIC  ${MD_THIRD_PARTY}/entt/single_include
+    PUBLIC  ${MD_THIRD_PARTY}/flecs
     PUBLIC  ${MD_THIRD_PARTY}/glm
     PRIVATE ${MD_THIRD_PARTY}/recastnavigation/Recast/Include
     PRIVATE ${MD_THIRD_PARTY}/recastnavigation/Detour/Include
@@ -207,6 +207,7 @@ target_link_libraries(monkey_dust_engine PRIVATE
     ozz_animation_offline
     ozz_base
 )
+target_link_libraries(monkey_dust_engine PUBLIC flecs)
 # gameplay_module.cpp uses dlopen/dlclose (POSIX dl)
 if(UNIX AND NOT APPLE)
     target_link_libraries(monkey_dust_engine PRIVATE dl)

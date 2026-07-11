@@ -1,98 +1,98 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/ecs/registry.h>
-#include <entt/entt.hpp>
+#include <flecs.h>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
-// MdView — task #8 (EnTT->flecs strangler-fig migration), parts B3.1/B3.2.
+// MdManagedTag — task #8 B3.4. Every entity created via MdRegistry::Create()
+// gets this tag, so MdRegistry::Each()/Clear()/Count() can scope "every
+// entity I manage" without picking up flecs's own internal bootstrap/module
+// entities — flecs's own world-wide entity iteration walks the ENTIRE
+// entity index (hundreds of internal IDs for built-in components/modules),
+// confirmed empirically; there's no other clean way to ask "just mine."
+struct MdManagedTag {};
+
+// MdView — task #8 (EnTT->flecs strangler-fig migration), parts B3.1-B3.4.
 //
-// Wraps an entt view so MdRegistry::View<T...>() can hand out MdEntity-
-// typed entities to callback lambdas without every call site changing.
-// entt::view::each(Func) picks its dispatch form via
-// is_invocable_v<Func, entt::entity, T&...> — since MdEntity's ctor from
-// entt::entity is deliberately explicit (see md_entity.h), that check
-// fails for `[](MdEntity e, T&...)` lambdas and entt silently falls back
-// to the component-only form, breaking the call. each(Func) below does
-// its own is_invocable_v check keyed on MdEntity instead, and either
-// wraps-and-forwards or passes the lambda straight through.
+// Wraps a flecs::query<T...> so MdRegistry::View<T...>() can hand out
+// MdEntity-typed entities to callback lambdas without every call site
+// changing. flecs::query::each(Func) dispatches on whether Func's first
+// param is flecs::entity — since that check targets the REAL flecs::entity
+// type, and our own each(Func) wraps into a lambda whose first param IS a
+// real flecs::entity (not MdEntity), flecs's own dispatch keeps working;
+// each(Func) below only needs to decide whether to wrap-and-convert to
+// MdEntity or pass the user's Func straight through unmodified.
 //
-// each() (zero-arg, B3.2) supports the structured-binding form
-// `for (auto [e, comps...] : view.each())` — entt's own no-arg each()
-// yields entt::entity by value in the tuple's first slot; EachRange
-// wraps its iterator to convert that to MdEntity on dereference.
-template<typename RawView, typename... T>
+// No zero-argument structured-binding form here (unlike B3.1-era MdView) —
+// flecs queries have no entt-style "range of tuples" each() overload, only
+// the callback form, and nothing in the codebase used the zero-arg form
+// directly (the handful of structured-binding call sites all went through
+// .Raw().each() instead, which those call sites were rewritten off of in
+// B3.4 since flecs simply doesn't support that shape).
+template<typename Query, typename... T>
 class MdView {
 public:
-    explicit MdView(RawView v) : view_(v) {}
+    explicit MdView(Query q) : query_(q) {}
 
     template<typename Func>
     void each(Func func) {
         if constexpr (std::is_invocable_v<Func, MdEntity, T&...>) {
-            view_.each([&func](entt::entity e, T&... args) { func(MdEntity(e), args...); });
+            query_.each([&func](flecs::entity e, T&... args) { func(MdEntity(e.id()), args...); });
         } else {
-            view_.each(func);
+            query_.each(func);
         }
     }
 
-    class EachRange {
-    public:
-        explicit EachRange(RawView& v) : range_(v.each()) {}
+    bool empty() { return query_.count() == 0; }
 
-        class Iterator {
-        public:
-            using RawIt = decltype(std::declval<decltype(std::declval<RawView&>().each())&>().begin());
-            explicit Iterator(RawIt it) : it_(it) {}
-            auto operator*() const {
-                return std::apply([](entt::entity e, T&... args) {
-                    return std::tuple<MdEntity, T&...>(MdEntity(e), args...);
-                }, *it_);
-            }
-            Iterator& operator++() { ++it_; return *this; }
-            bool operator!=(const Iterator& o) const { return it_ != o.it_; }
-        private:
-            RawIt it_;
-        };
+    // First matching entity, or MdEntity::Null() if none. flecs queries
+    // have no early-exit each() — this always visits every match, but its
+    // only 2 callers are editor/dialog code, not hot path.
+    MdEntity front() {
+        MdEntity result = MdEntity::Null();
+        bool found = false;
+        query_.each([&](flecs::entity e, T&...) {
+            if (!found) { result = MdEntity(e.id()); found = true; }
+        });
+        return result;
+    }
 
-        Iterator begin() { return Iterator(range_.begin()); }
-        Iterator end()   { return Iterator(range_.end()); }
-    private:
-        decltype(std::declval<RawView&>().each()) range_;
-    };
-
-    EachRange each() { return EachRange(view_); }
-
-    bool empty() { return view_.empty(); }
-    MdEntity front() { return MdEntity(view_.front()); }
-
-    // Escape hatch: raw entt view, for anything not covered above.
-    RawView& Raw() { return view_; }
+    // Escape hatch: raw flecs query, for anything not covered above.
+    Query& Raw() { return query_; }
 
 private:
-    RawView view_;
+    Query query_;
 };
 
-// MdRegistry — task #8 (EnTT->flecs strangler-fig migration), part B1 step 2.
+// MdRegistry — task #8 (EnTT->flecs strangler-fig migration), part B3.4.
 //
-// Thin facade over the SAME entt::registry singleton as Registry::Get() —
-// MdRegistry::Get() wraps Registry::Get(), not a second registry, so
-// retrofitted and not-yet-retrofitted call sites stay perfectly in sync
-// during the transition. Every method here mirrors entt::registry's own
-// templated shape (Get<T>, View<T...>, ...) 1:1, so a call site rename
-// from `Registry::Get().foo<T>(e)` to `MdRegistry::Get().Foo<T>(e)` is a
-// pure name change with identical runtime behavior today.
+// Thin facade over the SAME flecs::world singleton as Registry::Get() (was
+// entt::registry through B1-B3.3) — MdRegistry::Get() wraps Registry::Get(),
+// not a second world.
 //
-// View<T...>() returns an MdView<T...> (see above) rather than entt's own
-// view type directly — this lets each(Func) hand callback lambdas an
-// MdEntity instead of a raw entt::entity. Raw() is the intentional escape
-// hatch for code not yet retrofitted.
+// Every method rehydrates a flecs::entity handle from the stored MdEntity's
+// raw id via Handle() — flecs::entity handles are cheap (world pointer +
+// id, no allocation, no query) so this per-call rehydration costs nothing
+// meaningful. Raw() is the intentional escape hatch for code not yet
+// retrofitted; View<T...>() caches its underlying query per unique T...
+// signature (function-local static, added in B3.3 specifically to prepare
+// for this: flecs::query construction registers with the world and is
+// meant to be built once and reused, unlike entt::view's near-free
+// construction).
 //
-// This does not yet hide EnTT (Get<T> still requires an EnTT-registered
-// component type, View<T...>() still wraps an entt view) — it only moves
-// the CALL SITE syntax onto MdRegistry's name. Swapping the internal
-// implementation to flecs later (B3) is confined to this one file, once
-// every call site has migrated off Registry::Get() directly.
+// CRITICAL, B3.4: Emplace<T>()/GetOrEmplace<T>() return a T& that is only
+// valid until the entity's NEXT archetype change — flecs relocates an
+// entity's ENTIRE row to a new table on every Emplace<U>/Remove<U> call,
+// even for an unrelated component type U, invalidating every previously
+// held T& for that entity (unlike entt's per-type-pool-stable references,
+// where only the SAME type's pool reallocating could invalidate a ref).
+// Rule: Emplace() every component an entity needs FIRST, THEN Get<T>() to
+// fetch references for writing. Get<T>()/TryGet<T>() do not themselves
+// invalidate anything (no structural change) — freely chaining several
+// Get<>() calls in a row is safe. Found and fixed 2 real production bugs
+// of this exact shape during B3.4 verification (see CLAUDE_INVARIANTS.md).
 class MdRegistry {
 public:
     static MdRegistry& Get() {
@@ -100,102 +100,133 @@ public:
         return inst;
     }
 
-    MdEntity Create() { return MdEntity(Raw().create()); }
-    void     Destroy(MdEntity e) { Raw().destroy(e.Raw()); }
-    bool     Valid(MdEntity e) const { return Raw().valid(e.Raw()); }
+    MdEntity Create() {
+        auto e = Raw().entity();
+        e.add<MdManagedTag>();
+        return MdEntity(e.id());
+    }
+    void Destroy(MdEntity e) { Handle(e).destruct(); }
+    bool Valid(MdEntity e) const { return Handle(e).is_alive(); }
 
     template<typename T, typename... Args>
     T& Emplace(MdEntity e, Args&&... args) {
-        return Raw().emplace<T>(e.Raw(), std::forward<Args>(args)...);
+        auto h = Handle(e);
+        h.emplace<T>(std::forward<Args>(args)...);
+        return h.get_mut<T>();
     }
 
     template<typename T>
-    T& Get(MdEntity e) { return Raw().get<T>(e.Raw()); }
+    T& Get(MdEntity e) { return Handle(e).get_mut<T>(); }
     template<typename T>
-    const T& Get(MdEntity e) const { return Raw().get<T>(e.Raw()); }
+    const T& Get(MdEntity e) const { return Handle(e).get<T>(); }
 
     template<typename T>
-    T* TryGet(MdEntity e) { return Raw().try_get<T>(e.Raw()); }
+    T* TryGet(MdEntity e) { return Handle(e).template try_get_mut<T>(); }
     template<typename T>
-    const T* TryGet(MdEntity e) const { return Raw().try_get<T>(e.Raw()); }
+    const T* TryGet(MdEntity e) const { return Handle(e).template try_get<T>(); }
 
     template<typename... T>
-    bool AllOf(MdEntity e) const { return Raw().all_of<T...>(e.Raw()); }
+    bool AllOf(MdEntity e) const { auto h = Handle(e); return (h.template has<T>() && ...); }
     template<typename... T>
-    bool AnyOf(MdEntity e) const { return Raw().any_of<T...>(e.Raw()); }
+    bool AnyOf(MdEntity e) const { auto h = Handle(e); return (h.template has<T>() || ...); }
 
     template<typename T>
-    void Remove(MdEntity e) { Raw().remove<T>(e.Raw()); }
+    void Remove(MdEntity e) { Handle(e).template remove<T>(); }
 
     template<typename T, typename... Args>
     T& GetOrEmplace(MdEntity e, Args&&... args) {
-        return Raw().get_or_emplace<T>(e.Raw(), std::forward<Args>(args)...);
+        auto h = Handle(e);
+        if (!h.template has<T>()) h.template emplace<T>(std::forward<Args>(args)...);
+        return h.get_mut<T>();
     }
 
+    // entt's replace() requires T already present; flecs's set() is a safe
+    // upsert either way (verified: does not crash/assert if T is absent),
+    // so this is slightly more permissive than the old entt contract but
+    // not unsafe.
     template<typename T, typename... Args>
     T& Replace(MdEntity e, Args&&... args) {
-        return Raw().replace<T>(e.Raw(), std::forward<Args>(args)...);
+        auto h = Handle(e);
+        h.template set<T>(T{std::forward<Args>(args)...});
+        return h.get_mut<T>();
     }
 
     template<typename T, typename... Args>
     T& EmplaceOrReplace(MdEntity e, Args&&... args) {
-        return Raw().emplace_or_replace<T>(e.Raw(), std::forward<Args>(args)...);
+        auto h = Handle(e);
+        h.template set<T>(T{std::forward<Args>(args)...});
+        return h.get_mut<T>();
     }
 
     template<typename T, typename Fn>
-    void Patch(MdEntity e, Fn fn) { Raw().patch<T>(e.Raw(), fn); }
+    void Patch(MdEntity e, Fn fn) {
+        auto h = Handle(e);
+        T& v = h.get_mut<T>();
+        fn(v);
+        h.template modified<T>();
+    }
 
-    // B3.3: the underlying view is cached per unique T... signature (one
-    // function-local static per template instantiation) rather than
-    // rebuilt on every call. For entt this is a no-op today — a view is
-    // just storage<T>* pointers, cheap to fetch and stable across
-    // Registry::Clear() (clear() empties storage in place, it doesn't
-    // destroy/recreate the pool) — so a cached view still iterates
-    // whatever's live at call time. This is prep for B3.4: flecs::query
-    // <T...> registers with the world at construction and is meant to be
-    // built once and reused, not rebuilt every call; caching now means
-    // the swap in B3.4 doesn't also have to introduce caching under it.
     template<typename... T>
     auto View() {
-        static auto v = Raw().view<T...>();
-        return MdView<decltype(v), T...>(v);
+        static auto q = Raw().query<T...>();
+        return MdView<decltype(q), T...>(q);
     }
 
-    void Clear() { Raw().clear(); }
+    // Destroys every MdRegistry-managed entity (tagged MdManagedTag) —
+    // does NOT touch flecs's own internal bootstrap/module entities.
+    void Clear() {
+        Raw().query<MdManagedTag>().each([](flecs::entity e, MdManagedTag) { e.destruct(); });
+    }
 
-    // B3.2: iterate every live entity in the registry (entt's
-    // storage<entt::entity>() idiom), yielding MdEntity. Replaces the
-    // `reg.Raw().storage<entt::entity>()` escape hatch call sites.
-    // If func returns bool, returning false stops iteration early
-    // (find-first pattern); a void-returning func always visits all.
+    // Iterate every MdRegistry-managed entity. If func returns bool,
+    // returning false stops iteration early is NOT supported here (flecs's
+    // query.each() has no early-exit callback protocol) — func always
+    // visits every managed entity; callers wanting a cap just no-op past
+    // their limit inside func.
     template<typename Func>
     void Each(Func func) {
-        for (auto e : Raw().storage<entt::entity>()) {
-            if constexpr (std::is_invocable_r_v<bool, Func, MdEntity>) {
-                if (!func(MdEntity(e))) break;
-            } else {
-                func(MdEntity(e));
-            }
-        }
+        static auto q = Raw().query<MdManagedTag>();
+        q.each([&](flecs::entity e, MdManagedTag) { func(MdEntity(e.id())); });
     }
 
-    // Count of live entities — mirrors entt's storage<entt::entity>().size().
-    size_t Count() { return Raw().storage<entt::entity>().size(); }
+    size_t Count() {
+        static auto q = Raw().query<MdManagedTag>();
+        return (size_t)q.count();
+    }
 
-    // B3.2: reorder a component pool (e.g. for cache-friendly iteration by
-    // distance) — entt has no MdEntity-typed equivalent, so Compare still
-    // takes entt::entity; wrap MdEntity(a)/MdEntity(b) inside if needed.
+    // Reconstruct an MdEntity from a stored uint32 index (e.g.
+    // BlackboardEntry::val.e, Lua integer args) — resolves to the
+    // CURRENTLY alive entity for that index via flecs's generation-aware
+    // lookup, safe against the index having been recycled by a different,
+    // later-created entity since the id was stored. Falls back to a
+    // generation-0 MdEntity (same as MdEntity(uint32_t) directly) if no
+    // alive entity currently holds that index.
+    MdEntity FromIndex(uint32_t idx) const {
+        ecs_entity_t alive = ecs_get_alive(Raw().c_ptr(), (ecs_entity_t)idx);
+        return alive ? MdEntity(alive) : MdEntity(idx);
+    }
+
+    // B3.4: no-op under flecs. entt::registry::sort<T>() physically
+    // reordered a component pool once, benefiting every subsequent view
+    // until the next sort call. flecs's equivalent (order_by) is attached
+    // to a SPECIFIC query and reapplied lazily each time THAT query
+    // iterates — not a one-shot pool-wide reorder — so it isn't a drop-in
+    // replacement here. Migrating the actual cache-locality optimization
+    // to flecs's per-query order_by model is a deliberate follow-up, not
+    // part of B3.4's mechanical backend swap. The one caller
+    // (logic_tick.cpp's periodic AIAgent sort) loses this specific
+    // micro-optimization but stays functionally correct.
     template<typename T, typename Compare>
-    void Sort(Compare cmp) { Raw().sort<T>(cmp); }
+    void Sort(Compare) {}
 
-    // Escape hatch for call sites not yet retrofitted onto the typed API
-    // above (e.g. entt::to_integral, custom storage<> access).
-    entt::registry& Raw() { return Registry::Get(); }
-    const entt::registry& Raw() const { return Registry::Get(); }
+    flecs::world& Raw() { return Registry::Get(); }
+    const flecs::world& Raw() const { return Registry::Get(); }
 
     MdRegistry(const MdRegistry&) = delete;
     MdRegistry& operator=(const MdRegistry&) = delete;
 
 private:
     MdRegistry() = default;
+
+    flecs::entity Handle(MdEntity e) const { return flecs::entity(Raw(), e.Raw()); }
 };

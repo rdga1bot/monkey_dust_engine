@@ -21,7 +21,9 @@ struct NpcRelation {
     uint8_t      fear    = 0;
     uint8_t      _pad[2] = {};
 };
-static_assert(sizeof(NpcRelation) == 8, "NpcRelation must be 8 bytes");
+// B3.4: MdEntity grew 4→8 bytes (flecs::entity_t, was entt::entity) — sizes
+// below updated accordingly.
+static_assert(sizeof(NpcRelation) == 16, "NpcRelation must be 16 bytes");
 
 struct NpcRelationshipComponent {
     static constexpr uint8_t MAX_RELATIONS = 8;
@@ -71,4 +73,4 @@ struct NpcRelationshipComponent {
 
     void ClearAll() noexcept { count = 0; }
 };
-static_assert(sizeof(NpcRelationshipComponent) == 68, "NpcRelationshipComponent must be 68 bytes");
+static_assert(sizeof(NpcRelationshipComponent) == 136, "NpcRelationshipComponent must be 136 bytes");

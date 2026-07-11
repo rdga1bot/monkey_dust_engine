@@ -24,7 +24,8 @@ struct EntityProxyComponent {
     uint8_t        retry_count;
     uint8_t        _pad[2];
 };
-static_assert(sizeof(EntityProxyComponent) == 20);
+// B3.4: MdEntity grew 4→8 bytes (flecs::entity_t, was entt::entity).
+static_assert(sizeof(EntityProxyComponent) == 32);
 
 // Helpers
 inline bool proxy_is_live(const EntityProxyComponent& p) noexcept {

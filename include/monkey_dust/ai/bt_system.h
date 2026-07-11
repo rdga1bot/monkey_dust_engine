@@ -3,7 +3,7 @@
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/components/agent_state.h>
 #include <monkey_dust/components/bt_components.h>
-#include <entt/entt.hpp>
+#include <flecs.h>
 #include <cstdint>
 
 // ── BTSystem ──────────────────────────────────────────────────────────────────
@@ -30,6 +30,11 @@
 //   BTSystem bt_sys;
 //   // In logic tick:
 //   bt_sys.Tick(ctx, registry, nowMs);
+//
+// NOT on the live game's critical path (B3.4 note): AISystem::Update
+// (game/src/ai/ai_system.h) ticks BTs directly via MdRegistry::View<>(),
+// bypassing BTSystem entirely. BTSystem is exercised by tools/flare_demo
+// and its own unit test suite only.
 
 static constexpr float BT_TIER_NEAR_M = 30.f;   // full tick within 30 m
 static constexpr float BT_TIER_MED_M  = 80.f;   // reduced tick up to 80 m
@@ -39,22 +44,25 @@ class BTSystem {
 public:
     // nowMs: current game time in milliseconds (for TimerStart/TimerCheck nodes).
     // ctx:   engine context (frame_index for WeightedSelector RNG, delta_time, etc.)
-    // reg:   EnTT registry — views (AgentState + BehaviorTreeComponent).
-    void Tick(md::EngineContext& ctx, entt::registry& reg, uint32_t nowMs);
+    // reg:   flecs world — queries (AgentState + BehaviorTreeComponent).
+    void Tick(md::EngineContext& ctx, flecs::world& reg, uint32_t nowMs);
 
     uint32_t frame_idx() const noexcept { return frame_idx_; }
 
     // Called on entity removal to free owning trees.
-    // Must be connected to entt::registry::on_destroy<BehaviorTreeComponent>().
-    static void OnComponentDestroy(entt::registry& reg, entt::entity e);
+    // Must be connected via ConnectRegistry() (flecs OnRemove observer for
+    // BehaviorTreeComponent).
+    static void OnComponentDestroy(flecs::entity e, BehaviorTreeComponent& btc);
 
-    // Convenience: connect destroy listener to a registry. Takes a plain
-    // entt::registry& (not MdRegistry&) because unit tests construct their
-    // own independent entt::registry instances for isolation — MdRegistry
+    // Convenience: connect destroy listener to a world. Takes a plain
+    // flecs::world& (not MdRegistry&) because unit tests construct their
+    // own independent flecs::world instances for isolation — MdRegistry
     // can only ever wrap the one global singleton (Registry::Get()), so it
-    // can't stand in for an arbitrary registry here.
-    static void ConnectRegistry(entt::registry& reg) {
-        reg.on_destroy<BehaviorTreeComponent>().connect<&BTSystem::OnComponentDestroy>();
+    // can't stand in for an arbitrary world here.
+    static void ConnectRegistry(flecs::world& reg) {
+        reg.observer<BehaviorTreeComponent>()
+            .event(flecs::OnRemove)
+            .each(OnComponentDestroy);
     }
 
 private:

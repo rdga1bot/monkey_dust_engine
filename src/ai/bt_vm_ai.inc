@@ -171,7 +171,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity target = static_cast<MdEntity>(en->val.e);
+            MdEntity target = MdRegistry::Get().FromIndex(en->val.e);
             AgentState*  as_t   = MdRegistry::Get().TryGet<AgentState>(target);
             if (!as_t) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
@@ -226,7 +226,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             result = MdRegistry::Get().Valid(tgt) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
@@ -237,7 +237,7 @@
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, NEXT_TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
-            MdEntity tgt = static_cast<MdEntity>(en->val.e);
+            MdEntity tgt = MdRegistry::Get().FromIndex(en->val.e);
             result = MdRegistry::Get().Valid(tgt) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
@@ -357,7 +357,7 @@
             if (char_type == 1 || char_type == 2) {
                 AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
                 const BlackboardEntry* ben = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
-                MdEntity tgt = ben ? static_cast<MdEntity>(ben->val.e) : entt::null;
+                MdEntity tgt = ben ? MdRegistry::Get().FromIndex(ben->val.e) : entt::null;
                 if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
                 AgentState* tas = MdRegistry::Get().TryGet<AgentState>(tgt);
                 target_ok = tas && tas->lcflags.test(lcf::IS_IN_VENT);

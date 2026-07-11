@@ -6,6 +6,50 @@
 #include <type_traits>
 #include <utility>
 
+// Task #7/#8 concurrency project — real flecs-native multi-threading.
+//
+// Empirically verified (standalone probes, not guessed) before writing
+// this: flecs query iteration (ecs_query_next, i.e. flecs::query::each())
+// is NOT safe to run concurrently across 2 threads against the same
+// flecs::world under ANY configuration EXCEPT world.readonly_begin(true)
+// + each thread iterating a query that was BUILT ONCE against the main
+// world BEFORE readonly_begin(), but ITERATED via query.iter(stage_ptr)
+// where stage_ptr = world.get_stage(i) — "on-the-fly" query construction
+// against a stage, or iterating via the raw (non-stage) world during
+// readonly mode, both still crash (SIGSEGV in ecs_iter_fini). Separately
+// verified: single-entity get_mut<T>()/try_get<T>() calls on the RAW
+// (non-stage) world stay safe even while ANOTHER thread iterates a query
+// via its stage — so ONLY query iteration needs stage-routing, not every
+// MdRegistry call (confirmed via probe — see CLAUDE_STATE.md for the
+// exact probe results).
+//
+// MdRegistryStageScope is the mechanism: a thread-local override that,
+// when set, redirects MdView::each()/MdRegistry::Each() to iterate via
+// query.iter(stage) instead of query.each() directly. Default (no scope
+// active, the overwhelming majority of the game's execution) is
+// byte-for-byte the same code path as before this feature existed — zero
+// risk to anything outside the one JobGraph wave that sets it.
+namespace md_registry_detail {
+    inline thread_local ecs_world_t* t_stage_override = nullptr;
+}
+
+// RAII guard: while alive on the calling thread, MdView::each() iterates
+// through `stage` instead of the raw world. Nest-safe (restores the prior
+// value on destruction, not unconditionally nullptr) though nesting isn't
+// expected in practice — one guard per JobGraph batch invocation.
+class MdRegistryStageScope {
+public:
+    explicit MdRegistryStageScope(flecs::world& stage) noexcept
+        : prev_(md_registry_detail::t_stage_override) {
+        md_registry_detail::t_stage_override = stage.c_ptr();
+    }
+    ~MdRegistryStageScope() { md_registry_detail::t_stage_override = prev_; }
+    MdRegistryStageScope(const MdRegistryStageScope&) = delete;
+    MdRegistryStageScope& operator=(const MdRegistryStageScope&) = delete;
+private:
+    ecs_world_t* prev_;
+};
+
 // MdManagedTag — task #8 B3.4. Every entity created via MdRegistry::Create()
 // gets this tag, so MdRegistry::Each()/Clear()/Count() can scope "every
 // entity I manage" without picking up flecs's own internal bootstrap/module
@@ -38,10 +82,14 @@ public:
 
     template<typename Func>
     void each(Func func) {
+        ecs_world_t* stage = md_registry_detail::t_stage_override;
         if constexpr (std::is_invocable_v<Func, MdEntity, T&...>) {
-            query_.each([&func](flecs::entity e, T&... args) { func(MdEntity(e.id()), args...); });
+            auto wrapped = [&func](flecs::entity e, T&... args) { func(MdEntity(e.id()), args...); };
+            if (stage) query_.iter(stage).each(wrapped);
+            else       query_.each(wrapped);
         } else {
-            query_.each(func);
+            if (stage) query_.iter(stage).each(func);
+            else        query_.each(func);
         }
     }
 

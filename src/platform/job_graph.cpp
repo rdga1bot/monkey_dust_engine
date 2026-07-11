@@ -1,9 +1,34 @@
 #include <monkey_dust/platform/job_graph.h>
 #include <monkey_dust/platform/job_system.h>
 #include <monkey_dust/platform/md_log.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <cstring>
 
 namespace md {
+
+namespace {
+// Wraps one batch's (fn, user) with the flecs stage it must run through —
+// JobSystem::Submit only carries a single void* payload, so the stage
+// index rides along in this struct instead. StagedThunk sets up the
+// thread-local MdRegistryStageScope for the DURATION of the real fn()
+// call, on whichever worker thread picks this job up, then tears it down
+// — see md_registry.h's task #7/#8 concurrency section for why this
+// specific pattern (readonly_begin(true) + per-batch stage + queries
+// built once against the main world) is the only one confirmed safe by
+// probe, out of several that looked equivalent on paper.
+struct StagedJob {
+    JobBatchFn fn;
+    void* user;
+    flecs::world stage;
+};
+StagedJob g_staged_jobs[JobGraph::MAX_BATCHES];
+
+void StagedThunk(void* p) {
+    auto* job = static_cast<StagedJob*>(p);
+    MdRegistryStageScope scope(job->stage);
+    job->fn(job->user);
+}
+} // namespace
 
 JobGraph& JobGraph::Get() {
     static JobGraph inst;
@@ -92,9 +117,29 @@ void JobGraph::Run() {
         for (int i = 0; i < count_; ++i) if (wave[i] == w) ++wave_count;
 
         if (wave_count > 1 && JobSystem::Get().NumWorkers() > 0) {
-            for (int i = 0; i < count_; ++i)
-                if (wave[i] == w) JobSystem::Get().Submit(entries_[i].fn, entries_[i].user);
+            // Real concurrent dispatch, per the probe-verified pattern in
+            // md_registry.h: queries used by MdView::each() were already
+            // built once against the main world (function-local statics),
+            // so it's safe to enter readonly_begin(true) here and hand each
+            // batch its own stage — MdRegistryStageScope (set inside
+            // StagedThunk) makes every View<T>().each() in that batch's
+            // call tree route through .iter(stage) instead of the raw
+            // world for the duration of this wave.
+            flecs::world& raw = Registry::Get();
+            raw.set_stage_count(wave_count);
+            raw.readonly_begin(true);
+            int slot = 0;
+            for (int i = 0; i < count_; ++i) {
+                if (wave[i] != w) continue;
+                StagedJob& job = g_staged_jobs[slot];
+                job.fn    = entries_[i].fn;
+                job.user  = entries_[i].user;
+                job.stage = raw.get_stage(slot);
+                JobSystem::Get().Submit(StagedThunk, &job);
+                ++slot;
+            }
             JobSystem::Get().Flush();
+            raw.readonly_end();
         } else {
             for (int i = 0; i < count_; ++i)
                 if (wave[i] == w) entries_[i].fn(entries_[i].user);

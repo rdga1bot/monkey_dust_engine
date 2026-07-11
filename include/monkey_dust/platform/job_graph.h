@@ -41,27 +41,40 @@
 // way eval_sense_job/eval_t2/eval_nav_waypoint_job were each manually
 // confirmed registry-free before being made JobSystem-parallel.
 //
-// CONFIRMED BY ACTUAL CRASH (not just reasoned about), 2026-07-11: even
-// after eliminating every structural op AND every field-level value race
-// between TickNeedsAndInjuries and TickAI (deferred-ops queue + read-only
-// snapshot, see logic_tick.cpp/needs_ai_snapshot.h/
-// deferred_structural_ops.h), actually putting them in the same wave
-// crashed within seconds — SIGSEGV in ecs_iter_fini/ecs_query_next inside
-// TickAI on a JobSystem worker thread, concurrent with
-// TickNeedsAndInjuries's own query iteration on the main thread. Neither
-// side was doing anything structural at the time. Conclusion: flecs query
-// iteration (MdRegistry::View<T>().each(), i.e. ecs_query_next) is not
+// CONFIRMED BY ACTUAL CRASH, 2026-07-11: an earlier attempt at this put
+// TickNeedsAndInjuries and TickAI in the same wave with disjoint declared
+// tags and no stage-routing at all — SIGSEGV in ecs_iter_fini/
+// ecs_query_next within seconds. Root cause (isolated with 3 standalone
+// probes, not guessed): flecs query iteration (ecs_query_next) is not
 // safe to run concurrently across 2 threads against the same
-// flecs::world AT ALL — not just unsafe in the presence of structural
-// ops. Real multi-threaded query iteration needs flecs's own staging API
-// (world.readonly_begin() + a stage per thread via get_stage(i)), which
-// would require every MdRegistry call site in both systems' entire call
-// trees to become stage-aware — out of scope; MdRegistry has no such
-// concept today. Until that exists, NO two batches that both call
-// MdRegistry::View<>().each() should ever be declared with disjoint tags
-// on the assumption that makes them safe to co-schedule — disjoint tags
-// only rule out the hazard this graph can see (data races on the tags
-// themselves), not this one.
+// flecs::world UNLESS each thread iterates through its own stage
+// (world.readonly_begin(true) + get_stage(i)) — critically, the query
+// itself must be built ONCE against the main world BEFORE
+// readonly_begin() (on-the-fly query construction against a stage still
+// crashed in the probes); only the ITERATION (`query.iter(stage).each()`)
+// needs to happen inside the readonly+staged window. Separately
+// confirmed safe: single-entity get_mut<T>()/try_get<T>() calls on the
+// RAW (non-stage) world, concurrent with another thread's staged query
+// iteration — so this hazard is specific to query iteration, not every
+// MdRegistry call.
+//
+// FIXED: Run() below now wraps any wave with 2+ batches in
+// Registry::Get().readonly_begin(true)/readonly_end(), assigning each
+// batch its own stage via get_stage(slot) and MdRegistryStageScope (see
+// md_registry.h) — MdView::each() (the implementation behind every
+// MdRegistry::View<T>().each() call) already builds its query once as a
+// function-local static, so it satisfies the "built before
+// readonly_begin" requirement automatically, with zero call-site changes
+// anywhere in the codebase. A batch is safe to co-schedule with another
+// IFF, in addition to the disjoint-tags check above: (a) its call tree
+// performs zero structural ops (Emplace/Remove/Create/Destroy) while
+// running — still true, still not something Conflicts() can see, verify
+// by hand; (b) every query iteration in its call tree goes through
+// MdRegistry::View<T>().each() (which is now stage-aware) rather than
+// MdRegistry::Each() (the MdManagedTag-scoped iterator behind Clear()/
+// Count() — NOT yet updated to check the stage override, so a batch that
+// calls Clear()/Count() concurrently with another batch is still
+// unverified and should stay sequential until that gap is closed).
 //
 // MAX_BATCHES=16, MAX_TAGS=8 per batch — fixed arrays, no heap.
 

@@ -1,6 +1,6 @@
         // MD_deepseek: AggroLevelCheck / SetAggroLevel
         case BTNodeType::AggroLevelCheck: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (as->aggro_level == static_cast<NpcAggroLevel>(nd.data))
                      ? BTStatus::Success : BTStatus::Failure;
@@ -8,7 +8,7 @@
         }
 
         case BTNodeType::SetAggroLevel: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (as) as->aggro_level = static_cast<NpcAggroLevel>(nd.data);
             result = BTStatus::Success;
             pc = nd.parent; continue;
@@ -16,7 +16,7 @@
 
         // MD_deepseek: NpcCombatStateCheck / SetNpcCombatState
         case BTNodeType::NpcCombatStateCheck: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (as->combat_state == static_cast<NpcCombatState>(nd.data))
                      ? BTStatus::Success : BTStatus::Failure;
@@ -24,7 +24,7 @@
         }
 
         case BTNodeType::SetNpcCombatState: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (as) as->combat_state = static_cast<NpcCombatState>(nd.data);
             result = BTStatus::Success;
             pc = nd.parent; continue;
@@ -35,7 +35,7 @@
         // Z1: DecoratorMood — run child only when as->mood matches
         case BTNodeType::DecoratorMood: {
             if (result == BTStatus::Running) {
-                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
                 if (!as || as->mood != static_cast<NpcMood>(nd.data)) {
                     result = BTStatus::Failure; pc = nd.parent; continue;
                 }
@@ -51,7 +51,7 @@
         // Z2: DecoratorAwareness — run child only when as->awareness matches
         case BTNodeType::DecoratorAwareness: {
             if (result == BTStatus::Running) {
-                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
                 if (!as || as->awareness != static_cast<AwarenessState>(nd.data)) {
                     result = BTStatus::Failure; pc = nd.parent; continue;
                 }
@@ -67,7 +67,7 @@
         // Z3: DecoratorTimerAuto — start timer on every entry, propagate child result
         case BTNodeType::DecoratorTimerAuto: {
             if (result == BTStatus::Running) {
-                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
                 if (as) {
                     uint8_t  tid    = static_cast<uint8_t>(nd.data >> 24);
                     uint32_t dur_ms = nd.data & 0x00FFFFFFu;
@@ -91,7 +91,7 @@
 
         // Z4: ActionTimerRandom — start timer with LCG-random duration [min_ms, max_ms]
         case BTNodeType::ActionTimerRandom: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (as) {
                 uint8_t  tid   = static_cast<uint8_t>(nd.data >> 24);
                 uint32_t max_u = (nd.data >> 12) & 0xFFFu;   // 12 bits, unit=100ms
@@ -112,7 +112,7 @@
 
         // Z5: ActionSquadNotify — broadcast SquadSignal to entity's squad channel
         case BTNodeType::ActionSquadNotify: {
-            SquadMemberComponent* sm = Registry::Get().try_get<SquadMemberComponent>(e);
+            SquadMemberComponent* sm = MdRegistry::Get().TryGet<SquadMemberComponent>(e);
             if (sm) {
                 auto sig = static_cast<SquadSignal>(nd.data & 0xFFu);
                 uint32_t raw_id = static_cast<uint32_t>(static_cast<uint64_t>(e) & 0xFFFFFFFFu);
@@ -124,7 +124,7 @@
 
         // Z6: ConditionSquadSignal — check squad channel for expected signal
         case BTNodeType::ConditionSquadSignal: {
-            SquadMemberComponent* sm = Registry::Get().try_get<SquadMemberComponent>(e);
+            SquadMemberComponent* sm = MdRegistry::Get().TryGet<SquadMemberComponent>(e);
             if (!sm) { result = BTStatus::Failure; pc = nd.parent; continue; }
             auto expected = static_cast<SquadSignal>(nd.data & 0xFFu);
             result = (SquadSignalBus::Get().GetSignal(sm->squad_id) == expected)
@@ -134,7 +134,7 @@
 
         // Z7: ConditionAnySenseWithinTime — any (or specific) sense fired within time_ms
         case BTNodeType::ConditionAnySenseWithinTime: {
-            SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            SenseComponent* sc = MdRegistry::Get().TryGet<SenseComponent>(e);
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint32_t time_ms  = nd.data & 0x0FFFFFFFu;
             uint8_t  sense_idx= static_cast<uint8_t>((nd.data >> 28) & 0xFu);
@@ -155,7 +155,7 @@
 
         // Z8: ActionExpireTimer — immediately mark timer slot as expired
         case BTNodeType::ActionExpireTimer: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (as) {
                 uint8_t tid = static_cast<uint8_t>(nd.data & 0x1Fu);
                 if (tid < MAX_AGENT_TIMERS)
@@ -167,12 +167,12 @@
 
         // Z9: TargetFlagCheck — check lcflags on target entity from blackboard
         case BTNodeType::TargetFlagCheck: {
-            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
             entt::entity target = static_cast<entt::entity>(en->val.e);
-            AgentState*  as_t   = Registry::Get().try_get<AgentState>(target);
+            AgentState*  as_t   = MdRegistry::Get().TryGet<AgentState>(target);
             if (!as_t) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
             bool    is_set  = as_t->lcflags.test(bit_idx);
@@ -183,7 +183,7 @@
 
         // Z10: SetLocomotionState — write as->locomotion_state
         case BTNodeType::SetLocomotionState: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (as) as->locomotion_state = static_cast<LocomotionState>(nd.data);
             result = BTStatus::Success;
             pc = nd.parent; continue;
@@ -222,23 +222,23 @@
 
         // G2: ConditionHaveTarget — Success if "target_entity" bb key holds a valid entity
         case BTNodeType::ConditionHaveTarget: {
-            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
             entt::entity tgt = static_cast<entt::entity>(en->val.e);
-            result = Registry::Get().valid(tgt) ? BTStatus::Success : BTStatus::Failure;
+            result = MdRegistry::Get().Valid(tgt) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
 
         // G3: ConditionHaveNextTarget — Success if "next_target_entity" bb key holds valid entity
         case BTNodeType::ConditionHaveNextTarget: {
-            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* en = bb_find(*ab, NEXT_TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
             entt::entity tgt = static_cast<entt::entity>(en->val.e);
-            result = Registry::Get().valid(tgt) ? BTStatus::Success : BTStatus::Failure;
+            result = MdRegistry::Get().Valid(tgt) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
 
@@ -252,7 +252,7 @@
 
         // G5: ConditionIsSenseActivationAbove — current activation vs qualifier threshold
         case BTNodeType::ConditionIsSenseActivationAbove: {
-            SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            SenseComponent* sc = MdRegistry::Get().TryGet<SenseComponent>(e);
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t sense_idx = static_cast<uint8_t>((nd.data >> 8) & 0xFu);
             auto    q         = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
@@ -270,7 +270,7 @@
 
         // G6: ConditionHasAnySenseBeenAbove — any sense ever reached qualifier (last_activated_ms set)
         case BTNodeType::ConditionHasAnySenseBeenAbove: {
-            SenseComponent* sc = Registry::Get().try_get<SenseComponent>(e);
+            SenseComponent* sc = MdRegistry::Get().TryGet<SenseComponent>(e);
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             auto q = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
             bool ok = false;
@@ -290,7 +290,7 @@
 
         // G7: ActionSuspiciousItemDoneStage — stamp investigation_stage on most-recent event
         case BTNodeType::ActionSuspiciousItemDoneStage: {
-            NpcMemoryComponent* nmc = Registry::Get().try_get<NpcMemoryComponent>(e);
+            NpcMemoryComponent* nmc = MdRegistry::Get().TryGet<NpcMemoryComponent>(e);
             if (!nmc || nmc->event_count == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
             nmc->events[nmc->event_count - 1].investigation_stage =
                 static_cast<SuspiciousItemStage>(nd.data);
@@ -300,7 +300,7 @@
 
         // G8: ConditionSuspiciousItemBTPriority — any event intensity >= min_intensity
         case BTNodeType::ConditionSuspiciousItemBTPriority: {
-            NpcMemoryComponent* nmc = Registry::Get().try_get<NpcMemoryComponent>(e);
+            NpcMemoryComponent* nmc = MdRegistry::Get().TryGet<NpcMemoryComponent>(e);
             if (!nmc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t min_i = static_cast<uint8_t>(nd.data & 0xFFu);
             bool    ok    = false;
@@ -312,7 +312,7 @@
 
         // G9: ConditionLastTimeSquadNotified — Success if squad channel signal matches and is recent
         case BTNodeType::ConditionLastTimeSquadNotified: {
-            SquadMemberComponent* sm = Registry::Get().try_get<SquadMemberComponent>(e);
+            SquadMemberComponent* sm = MdRegistry::Get().TryGet<SquadMemberComponent>(e);
             if (!sm) { result = BTStatus::Failure; pc = nd.parent; continue; }
             auto    expected  = static_cast<SquadSignal>((nd.data >> 8) & 0xFFu);
             uint8_t thresh_s  = static_cast<uint8_t>(nd.data & 0xFFu);
@@ -326,7 +326,7 @@
         // G10: DecoratorAggressionEscalation — pass through if aggro_level != None
         case BTNodeType::DecoratorAggressionEscalation: {
             if (result == BTStatus::Running) {
-                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
                 if (!as || as->aggro_level == NpcAggroLevel::None) {
                     result = BTStatus::Failure; pc = nd.parent; continue;
                 }
@@ -341,7 +341,7 @@
         // ── Batch 2: MD BEHAVIOR XML patterns ────────────────────────────────
 
         case BTNodeType::ConditionIsDead: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = as->lcflags.test(lcf::IS_DEAD) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
@@ -351,15 +351,15 @@
             uint8_t char_type = static_cast<uint8_t>(nd.data & 0x3u);
             bool owner_ok = true, target_ok = true;
             if (char_type == 0 || char_type == 2) {
-                AgentState* as = Registry::Get().try_get<AgentState>(e);
+                AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
                 owner_ok = as && as->lcflags.test(lcf::IS_IN_VENT);
             }
             if (char_type == 1 || char_type == 2) {
-                AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+                AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
                 const BlackboardEntry* ben = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
                 entt::entity tgt = ben ? static_cast<entt::entity>(ben->val.e) : entt::null;
-                if (!Registry::Get().valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
-                AgentState* tas = Registry::Get().try_get<AgentState>(tgt);
+                if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
+                AgentState* tas = MdRegistry::Get().TryGet<AgentState>(tgt);
                 target_ok = tas && tas->lcflags.test(lcf::IS_IN_VENT);
             }
             result = (owner_ok && target_ok) ? BTStatus::Success : BTStatus::Failure;
@@ -367,7 +367,7 @@
         }
 
         case BTNodeType::ConditionCanBreakout: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             bool ok = as->lcflags.test(lcf::SHOULD_BREAKOUT) &&
                      !as->lcflags.test(lcf::DONE_BREAKOUT);
@@ -376,14 +376,14 @@
         }
 
         case BTNodeType::ConditionIsBackstage: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = as->lcflags.test(lcf::CLOSE_TO_BACKSTAGE) ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
 
         case BTNodeType::ConditionIsPartOfNPCGroup: {
-            result = Registry::Get().try_get<SquadMemberComponent>(e)
+            result = MdRegistry::Get().TryGet<SquadMemberComponent>(e)
                      ? BTStatus::Success : BTStatus::Failure;
             pc = nd.parent; continue;
         }
@@ -400,7 +400,7 @@
         }
 
         case BTNodeType::ConditionHasSearchedPos: {
-            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = bb_get_bool(*ab, HAS_SEARCHED_POS_BB_KEY)
                      ? BTStatus::Success : BTStatus::Failure;
@@ -408,7 +408,7 @@
         }
 
         case BTNodeType::ConditionHasDoneSuspectMoveTo: {
-            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = bb_get_bool(*ab, DONE_SUSPECT_MOVETO_BB_KEY)
                      ? BTStatus::Success : BTStatus::Failure;
@@ -416,7 +416,7 @@
         }
 
         case BTNodeType::ActionSwitchToNextTarget: {
-            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             if (!ab) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const BlackboardEntry* next = bb_find(*ab, NEXT_TARGET_ENTITY_BB_KEY);
             if (!next) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -431,7 +431,7 @@
         }
 
         case BTNodeType::ActionDoneSystematicSearch: {
-            AgentBlackboard* ab = Registry::Get().try_get<AgentBlackboard>(e);
+            AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
             if (ab) bb_set_bool(*ab, DONE_SYSTEMATIC_SEARCH_BB_KEY, true);
             result = BTStatus::Success;
             pc = nd.parent; continue;
@@ -440,7 +440,7 @@
         // ── Batch 4: EventOrder ───────────────────────────────────────────────
 
         case BTNodeType::ConditionEventAOccuredAfterB: {
-            AgentState* as = Registry::Get().try_get<AgentState>(e);
+            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t ea = static_cast<uint8_t>((nd.data >> 8) & 0x3u);
             uint8_t eb = static_cast<uint8_t>(nd.data & 0x3u);
@@ -456,7 +456,7 @@
         // ── Batch 5: Squad extensions ─────────────────────────────────────────
 
         case BTNodeType::ConditionSquadDoingEscalation: {
-            SquadMemberComponent* smc = Registry::Get().try_get<SquadMemberComponent>(e);
+            SquadMemberComponent* smc = MdRegistry::Get().TryGet<SquadMemberComponent>(e);
             if (!smc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (SquadSignalBus::Get().GetSignal(smc->squad_id) == SquadSignal::Escalating)
                      ? BTStatus::Success : BTStatus::Failure;
@@ -464,7 +464,7 @@
         }
 
         case BTNodeType::ConditionSquadDoingSuspiciousWarning: {
-            SquadMemberComponent* smc = Registry::Get().try_get<SquadMemberComponent>(e);
+            SquadMemberComponent* smc = MdRegistry::Get().TryGet<SquadMemberComponent>(e);
             if (!smc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (SquadSignalBus::Get().GetSignal(smc->squad_id) == SquadSignal::SuspiciousWarn)
                      ? BTStatus::Success : BTStatus::Failure;
@@ -473,7 +473,7 @@
 
         case BTNodeType::DecoratorSquadSearch:
             if (result == BTStatus::Running) {
-                SquadMemberComponent* smc = Registry::Get().try_get<SquadMemberComponent>(e);
+                SquadMemberComponent* smc = MdRegistry::Get().TryGet<SquadMemberComponent>(e);
                 if (smc) SquadSignalBus::Get().Set(smc->squad_id,
                                                    SquadSignal::Warning,
                                                    static_cast<uint32_t>(static_cast<uint64_t>(e)),
@@ -486,7 +486,7 @@
         // ── Batch 6: SuspiciousItem Group system ──────────────────────────────
 
         case BTNodeType::ConditionSuspiciousItemShouldDoStage: {
-            NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
+            NpcMemoryComponent* nm = MdRegistry::Get().TryGet<NpcMemoryComponent>(e);
             if (!nm || nm->event_count == 0) { result = BTStatus::Failure; pc = nd.parent; continue; }
             auto expected = static_cast<SuspiciousItemStage>(nd.data & 0xFFu);
             result = (nm->events[0].investigation_stage == expected)
@@ -495,8 +495,8 @@
         }
 
         case BTNodeType::ConditionSuspiciousItemIsWithinDistance: {
-            NpcMemoryComponent* nm = Registry::Get().try_get<NpcMemoryComponent>(e);
-            SenseComponent*     sc = Registry::Get().try_get<SenseComponent>(e);
+            NpcMemoryComponent* nm = MdRegistry::Get().TryGet<NpcMemoryComponent>(e);
+            SenseComponent*     sc = MdRegistry::Get().TryGet<SenseComponent>(e);
             if (!nm || nm->event_count == 0 || !sc) {
                 result = BTStatus::Failure; pc = nd.parent; continue;
             }
@@ -509,7 +509,7 @@
         }
 
         case BTNodeType::ConditionSuspiciousItemFirstGroupMember: {
-            SuspiciousItemGroupComponent* gc = Registry::Get().try_get<SuspiciousItemGroupComponent>(e);
+            SuspiciousItemGroupComponent* gc = MdRegistry::Get().TryGet<SuspiciousItemGroupComponent>(e);
             if (!gc || gc->group_id == SuspiciousItemGroupComponent::INVALID_GROUP) {
                 result = BTStatus::Failure; pc = nd.parent; continue;
             }
@@ -520,7 +520,7 @@
         }
 
         case BTNodeType::ConditionSuspiciousItemGroupAllowedToProgress: {
-            SuspiciousItemGroupComponent* gc = Registry::Get().try_get<SuspiciousItemGroupComponent>(e);
+            SuspiciousItemGroupComponent* gc = MdRegistry::Get().TryGet<SuspiciousItemGroupComponent>(e);
             if (!gc || gc->group_id == SuspiciousItemGroupComponent::INVALID_GROUP) {
                 result = BTStatus::Failure; pc = nd.parent; continue;
             }
@@ -530,7 +530,7 @@
         }
 
         case BTNodeType::ConditionSuspiciousItemGroupMembersRoutingTo: {
-            SuspiciousItemGroupComponent* gc = Registry::Get().try_get<SuspiciousItemGroupComponent>(e);
+            SuspiciousItemGroupComponent* gc = MdRegistry::Get().TryGet<SuspiciousItemGroupComponent>(e);
             if (!gc || gc->group_id == SuspiciousItemGroupComponent::INVALID_GROUP) {
                 result = BTStatus::Failure; pc = nd.parent; continue;
             }
@@ -540,7 +540,7 @@
         }
 
         case BTNodeType::ConditionSuspiciousItemWaitForGroupRouting: {
-            SuspiciousItemGroupComponent* gc = Registry::Get().try_get<SuspiciousItemGroupComponent>(e);
+            SuspiciousItemGroupComponent* gc = MdRegistry::Get().TryGet<SuspiciousItemGroupComponent>(e);
             if (!gc || gc->group_id == SuspiciousItemGroupComponent::INVALID_GROUP) {
                 result = BTStatus::Failure; pc = nd.parent; continue;
             }

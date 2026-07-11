@@ -231,14 +231,29 @@ public:
     // query.each() has no early-exit callback protocol) — func always
     // visits every managed entity; callers wanting a cap just no-op past
     // their limit inside func.
+    //
+    // Stage-aware for the same reason MdView::each() is (see the
+    // t_stage_override note above this class): nothing calls Each() from
+    // inside a JobGraph batch today (a sanity-check search found no
+    // TickAI/TickNeedsAndInjuries call site reaching it — a fuller audit
+    // of every registry touch point in both call trees is separately in
+    // progress), but making it check the override costs nothing when
+    // unset and closes the gap for whatever batch reaches for it next,
+    // instead of leaving it as a landmine that only stays safe as long as
+    // nobody adds that call.
     template<typename Func>
     void Each(Func func) {
         static auto q = Raw().query<MdManagedTag>();
-        q.each([&](flecs::entity e, MdManagedTag) { func(MdEntity(e.id())); });
+        ecs_world_t* stage = md_registry_detail::t_stage_override;
+        auto wrapped = [&func](flecs::entity e, MdManagedTag) { func(MdEntity(e.id())); };
+        if (stage) q.iter(stage).each(wrapped);
+        else       q.each(wrapped);
     }
 
     size_t Count() {
         static auto q = Raw().query<MdManagedTag>();
+        ecs_world_t* stage = md_registry_detail::t_stage_override;
+        if (stage) return (size_t)q.iter(stage).count();
         return (size_t)q.count();
     }
 

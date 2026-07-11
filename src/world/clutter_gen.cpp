@@ -2,6 +2,7 @@
 // one static merged vertex/index buffer per chunk. No GPU calls; safe on a worker
 // thread. See engine/include/monkey_dust/world/clutter_gen.h for the rationale.
 #include <monkey_dust/world/clutter_gen.h>
+#include <monkey_dust/platform/md_fs.h>
 
 // cgltf.h lives alongside prop_mesh.cpp; CGLTF_IMPLEMENTATION is provided once
 // by engine/src/render/cgltf_impl.cpp (compiled separately).
@@ -55,6 +56,30 @@ static bool     s_gd_tried = false;
 static void s_load_grass_density() {
     if (s_gd_tried) return;
     s_gd_tried = true;
+
+    // Fast path: pre-baked raw sidecar (tools/md_stitch_overlay_mask.py) — a
+    // plain fread instead of stb_image's PNG decode. Measured: decoding this
+    // 4096x4096 PNG via stb_image (single-threaded DEFLATE inflate) took
+    // ~760ms, alone accounting for most of the gap between JobSystem::Init()
+    // and terrain setup at every startup. Header = 2x little-endian uint32
+    // (width,height) then raw RGBA8 bytes; falls back to decoding the .png
+    // if the sidecar is missing/stale (e.g. a checkout that hasn't run the
+    // stitch script since — the .raw is gitignored, regenerate-only).
+    uint32_t raw_len = 0;
+    char* raw = md::fs_read_alloc("game/data/textures/md_overlay_mask.raw", &raw_len);
+    if (raw && raw_len > 8) {
+        uint32_t w, h;
+        memcpy(&w, raw,     4);
+        memcpy(&h, raw + 4, 4);
+        if ((uint64_t)raw_len - 8 == (uint64_t)w * h * 4) {
+            s_gd_w = (int)w;
+            s_gd_h = (int)h;
+            s_grass_density = (uint8_t*)raw + 8;  // raw intentionally never freed — same lifetime as stbi_load path below
+            return;
+        }
+        md::fs_free(raw);
+    }
+
     int comp;
     s_grass_density = stbi_load("game/data/textures/md_overlay_mask.png", &s_gd_w, &s_gd_h, &comp, 4);
     if (!s_grass_density)

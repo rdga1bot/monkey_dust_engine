@@ -19,6 +19,12 @@ endif()
 if(NOT TARGET glm)
     add_subdirectory(${MD_THIRD_PARTY}/glm EXCLUDE_FROM_ALL)
 endif()
+# flecs — task #8 B2: standalone, parallel dependency. Only the isolated
+# md_tests target links this; monkey_dust_engine itself does not depend on
+# it (no include path added below, no target_link_libraries on the engine).
+if(NOT TARGET flecs)
+    add_subdirectory(${MD_THIRD_PARTY}/flecs EXCLUDE_FROM_ALL)
+endif()
 if(NOT TARGET Recast)
     set(RECASTNAVIGATION_DEMO     OFF CACHE BOOL "" FORCE)
     set(RECASTNAVIGATION_TESTS    OFF CACHE BOOL "" FORCE)

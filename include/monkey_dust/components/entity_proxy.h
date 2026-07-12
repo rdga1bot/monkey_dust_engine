@@ -30,7 +30,7 @@ static_assert(sizeof(EntityProxyComponent) == 32);
 // Helpers
 inline bool proxy_is_live(const EntityProxyComponent& p) noexcept {
     return p.state == ProxySpawnState::Spawned &&
-           p.live_entity != entt::null;
+           p.live_entity != MdEntity::Null();
 }
 inline void proxy_request_spawn(EntityProxyComponent& p) noexcept {
     if (p.state == ProxySpawnState::Dormant)
@@ -42,6 +42,6 @@ inline void proxy_on_spawned(EntityProxyComponent& p, MdEntity live) noexcept {
     p.retry_count = 0;
 }
 inline void proxy_on_despawned(EntityProxyComponent& p) noexcept {
-    p.live_entity = entt::null;
+    p.live_entity = MdEntity::Null();
     p.state       = ProxySpawnState::Dormant;
 }

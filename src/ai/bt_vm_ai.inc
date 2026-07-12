@@ -357,7 +357,7 @@
             if (char_type == 1 || char_type == 2) {
                 AgentBlackboard* ab = MdRegistry::Get().TryGet<AgentBlackboard>(e);
                 const BlackboardEntry* ben = ab ? bb_find(*ab, TARGET_ENTITY_BB_KEY) : nullptr;
-                MdEntity tgt = ben ? MdRegistry::Get().FromIndex(ben->val.e) : entt::null;
+                MdEntity tgt = ben ? MdRegistry::Get().FromIndex(ben->val.e) : MdEntity::Null();
                 if (!MdRegistry::Get().Valid(tgt)) { result = BTStatus::Failure; pc = nd.parent; continue; }
                 AgentState* tas = MdRegistry::Get().TryGet<AgentState>(tgt);
                 target_ok = tas && tas->lcflags.test(lcf::IS_IN_VENT);

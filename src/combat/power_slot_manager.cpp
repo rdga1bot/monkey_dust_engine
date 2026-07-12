@@ -65,7 +65,7 @@ bool PowerSlotManager::Use(MdEntity e, int slot, float tx, float tz, float now_s
 void PowerSlotManager::Clear() {
     for (int i = 0; i < count_; ++i) {
         entries_[i] = EntitySlots{};
-        entries_[i].entity = entt::null;
+        entries_[i].entity = MdEntity::Null();
     }
     count_ = 0;
 }

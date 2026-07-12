@@ -13,8 +13,8 @@ public:
     void Register(const char* event_name, const char* func_name);
 
     // Call all handlers registered for event_name(entity_id).
-    // Pass entt::null for non-entity events (quest, dialog, etc.).
-    void Fire(const char* event_name, MdEntity entity_id = entt::null);
+    // Pass MdEntity::Null() for non-entity events (quest, dialog, etc.).
+    void Fire(const char* event_name, MdEntity entity_id = MdEntity::Null());
 
     void Clear();
 

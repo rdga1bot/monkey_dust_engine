@@ -33,7 +33,7 @@ public:
             if (ts.holders[i] == e) return true;  // already held
         if (ts.count >= ts.limit) return false;
         for (int i = 0; i < MAX_HOLDERS; ++i) {
-            if (ts.holders[i] == entt::null) {
+            if (ts.holders[i] == MdEntity::Null()) {
                 ts.holders[i] = e;
                 ++ts.count;
                 return true;
@@ -49,7 +49,7 @@ public:
         TokenSlot& ts = slots_[slot];
         for (int i = 0; i < MAX_HOLDERS; ++i) {
             if (ts.holders[i] == e) {
-                ts.holders[i] = entt::null;
+                ts.holders[i] = MdEntity::Null();
                 if (ts.count > 0) --ts.count;
                 return;
             }
@@ -69,7 +69,7 @@ public:
             slots_[i].count = 0;
             slots_[i].limit = DEFAULT_LIMIT;
             for (int j = 0; j < MAX_HOLDERS; ++j)
-                slots_[i].holders[j] = entt::null;
+                slots_[i].holders[j] = MdEntity::Null();
         }
     }
 

@@ -29,7 +29,7 @@
 static constexpr int HIERARCHY_MAX_CHILDREN = 4;
 
 struct ParentRef {
-    MdEntity parent = entt::null;
+    MdEntity parent = MdEntity::Null();
 };
 
 struct ChildrenRef {

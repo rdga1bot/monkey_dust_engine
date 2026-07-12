@@ -20,7 +20,7 @@ void CrowdSystem::Init(const dtNavMesh* nav_mesh, int max_agents) {
         fprintf(stderr, "[Crowd] crowd->init failed\n");
         dtFreeCrowd(crowd_); crowd_ = nullptr; return;
     }
-    for (int i = 0; i < MAX_AGENTS; ++i) agent_entity_[i] = entt::null;
+    for (int i = 0; i < MAX_AGENTS; ++i) agent_entity_[i] = MdEntity::Null();
     fprintf(stdout, "[Crowd] Init: max_agents=%d\n", max_agents);
 }
 
@@ -53,7 +53,7 @@ int CrowdSystem::AddAgent(MdEntity e, float x, float z,
 void CrowdSystem::RemoveAgent(int idx) {
     if (!crowd_ || idx < 0) return;
     crowd_->removeAgent(idx);
-    if (idx < MAX_AGENTS) agent_entity_[idx] = entt::null;
+    if (idx < MAX_AGENTS) agent_entity_[idx] = MdEntity::Null();
 }
 
 void CrowdSystem::SetTarget(int idx, float tx, float tz) {
@@ -77,7 +77,7 @@ void CrowdSystem::FlushRange(MdRegistry& reg, int start, int end) const {
     if (!crowd_) return;
     if (end > MAX_AGENTS) end = MAX_AGENTS;
     for (int i = start; i < end; ++i) {
-        if (agent_entity_[i] == entt::null) continue;
+        if (agent_entity_[i] == MdEntity::Null()) continue;
         if (!reg.Valid(agent_entity_[i])) continue;
         const dtCrowdAgent* ag = crowd_->getAgent(i);
         if (!ag || !ag->active) continue;

@@ -31,7 +31,7 @@ private:
     static constexpr int NUM_SLOTS   = 4;
 
     struct EntitySlots {
-        MdEntity entity     = entt::null;
+        MdEntity entity     = MdEntity::Null();
         int          power_ids[NUM_SLOTS]  = {-1, -1, -1, -1};
         float        last_use_s[NUM_SLOTS] = {};
     };

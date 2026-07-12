@@ -72,7 +72,7 @@ static inline float sense_cone_activation(const ViewCone& cone,
 static constexpr int MAX_SENSE_JOBS = 512;
 
 struct SenseJobInput {
-    MdEntity e = entt::null;
+    MdEntity e = MdEntity::Null();
     float px = 0.f, pz = 0.f, rot_y = 0.f;
     float player_x = 0.f, player_z = 0.f, player_stealth = 1.f;
     uint8_t cone_set_idx = 0;
@@ -129,12 +129,12 @@ inline void SenseSystemUpdate(float now_ms) {
 
     auto& reg = MdRegistry::Get();
 
-    MdEntity player = entt::null;
+    MdEntity player = MdEntity::Null();
     reg.View<AgentState>().each([&](MdEntity e, const AgentState& as) {
-        if (player == entt::null && as.lcflags.test(lcf::IS_PLAYER))
+        if (player == MdEntity::Null() && as.lcflags.test(lcf::IS_PLAYER))
             player = e;
     });
-    if (player == entt::null) return;
+    if (player == MdEntity::Null()) return;
 
     const WorldTransform* pwt = reg.TryGet<WorldTransform>(player);
     if (!pwt) return;

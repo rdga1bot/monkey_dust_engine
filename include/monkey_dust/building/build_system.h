@@ -62,7 +62,7 @@ public:
     }
     bool IsCellOccupied(int gx, int gz) const {
         if (gx < 0 || gx >= MAX_GRID || gz < 0 || gz >= MAX_GRID) return true;
-        return grid_[gx][gz] != entt::null;
+        return grid_[gx][gz] != MdEntity::Null();
     }
     void RebuildGridFromEntities();
 

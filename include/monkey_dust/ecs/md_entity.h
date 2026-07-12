@@ -1,6 +1,5 @@
 #pragma once
 #include <flecs.h>
-#include <entt/entt.hpp>
 #include <cstdint>
 
 // MdEntity — task #8 (EnTT->flecs strangler-fig migration), part B3.4.
@@ -9,22 +8,13 @@
 // B1-B3.3. Construction from flecs::entity_t is EXPLICIT and there is no
 // implicit conversion back — Raw() is the one blessed accessor.
 //
-// entt::null_t is still used as MdEntity's null-token convention
-// (`MdEntity x = entt::null;`) — this was a deliberate B3.4 call, not an
-// oversight: ~90 call sites across the codebase use `entt::null` purely as
-// a zero-cost sentinel-TYPE default, never touching entt::registry
-// internals, so keeping this one type as the null convention avoided
-// rewriting all of them. flecs itself uses 0 as its invalid-entity value
-// (unlike entt's all-1s convention) — id_'s default/null value is 0 to
-// match flecs's own convention (see transform_soa.cpp's bulk-init memset,
-// which fills 0x00 now, not 0xFF).
-//
-// entt::null comparisons work via the explicit, non-template operator==
-// overloads below (found via ADL) rather than relying on entt::null_t's
-// own templated conversion/comparison operators — those require
-// entt_traits<T> to exist for T, which it doesn't for MdEntity, and an
-// earlier naive implicit-conversion design caused a real, hard-to-
-// diagnose overload-resolution ambiguity.
+// Null convention: MdEntity::Null() (id_=0), matching flecs's own
+// invalid-entity value (unlike EnTT's all-1s convention) — see
+// transform_soa.cpp's bulk-init memset, which fills 0x00, not 0xFF.
+// entt::null_t and <entt/entt.hpp> were a deliberate B3.4 compatibility
+// shim (kept so ~90 call sites using `entt::null` as a sentinel didn't
+// need touching at the time) — removed entirely in the facade-removal
+// pass (Phase 0.5): every former `entt::null` use is now `MdEntity::Null()`.
 //
 // MdEntity(uint32_t) reconstructs from just the low 32 bits (generation
 // defaults to 0) — a "dumb", world-independent bit-reconstruction. flecs
@@ -40,19 +30,14 @@ public:
     MdEntity() = default;
     explicit MdEntity(flecs::entity_t e) : id_(e) {}
     explicit MdEntity(uint32_t raw_index) : id_(static_cast<flecs::entity_t>(raw_index)) {}
-    MdEntity(entt::null_t) : id_(0) {}
 
     flecs::entity_t Raw() const { return id_; }
     uint32_t        ToIntegral() const { return static_cast<uint32_t>(id_); }
 
-    static MdEntity Null() { return MdEntity(entt::null); }
+    static MdEntity Null() { return MdEntity(); }
 
     friend bool operator==(MdEntity a, MdEntity b) { return a.id_ == b.id_; }
     friend bool operator!=(MdEntity a, MdEntity b) { return a.id_ != b.id_; }
-    friend bool operator==(MdEntity a, entt::null_t) { return a.id_ == 0; }
-    friend bool operator!=(MdEntity a, entt::null_t) { return a.id_ != 0; }
-    friend bool operator==(entt::null_t, MdEntity a) { return a.id_ == 0; }
-    friend bool operator!=(entt::null_t, MdEntity a) { return a.id_ != 0; }
 
 private:
     flecs::entity_t id_ = 0;

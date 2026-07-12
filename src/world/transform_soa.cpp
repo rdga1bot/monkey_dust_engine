@@ -18,7 +18,7 @@
 #endif
 
 void TransformSoA::Init() {
-    memset(slot_to_entity, 0xFF, sizeof(slot_to_entity)); // all = entt::null pattern
+    memset(slot_to_entity, 0xFF, sizeof(slot_to_entity)); // all = MdEntity::Null() pattern
     for (int i = 0; i < MAX_SLOTS; ++i) {
         px[i]      = DUMMY_POS;
         pz[i]      = DUMMY_POS;
@@ -107,7 +107,7 @@ void TransformSoA::Free(MdEntity e) {
     }
     px[last]      = DUMMY_POS;
     pz[last]      = DUMMY_POS;
-    slot_to_entity[last] = entt::null;
+    slot_to_entity[last] = MdEntity::Null();
 }
 
 void TransformSoA::FlushAoStoSoA(MdRegistry& reg) {

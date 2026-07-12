@@ -50,7 +50,7 @@ BuildSystem::BuildSystem() {
     memset(defs_, 0, sizeof(defs_));
     for (int x = 0; x < MAX_GRID; ++x)
         for (int z = 0; z < MAX_GRID; ++z)
-            grid_[x][z] = entt::null;
+            grid_[x][z] = MdEntity::Null();
 }
 
 int BuildSystem::LoadFromFile(const char* path) {
@@ -112,13 +112,13 @@ const BuildingDef* BuildSystem::GetDef(uint32_t id) const {
 }
 
 MdEntity BuildSystem::Place(float wx, float wz, uint32_t def_id, Inventory& player_inv) {
-    const BuildingDef* def = GetDef(def_id); if (!def) return entt::null;
+    const BuildingDef* def = GetDef(def_id); if (!def) return MdEntity::Null();
     SnapToGrid(wx, wz); int gx, gz; WorldToGrid(wx, wz, gx, gz);
     for (int dx=0; dx<def->size_x; ++dx)
         for (int dz=0; dz<def->size_z; ++dz)
-            if (IsCellOccupied(gx+dx, gz+dz)) return entt::null;
+            if (IsCellOccupied(gx+dx, gz+dz)) return MdEntity::Null();
     for (int i=0; i<def->build_cost_count; ++i)
-        if (player_inv.Count(def->build_cost[i].item_id) < def->build_cost[i].amount) return entt::null;
+        if (player_inv.Count(def->build_cost[i].item_id) < def->build_cost[i].amount) return MdEntity::Null();
     for (int i=0; i<def->build_cost_count; ++i)
         player_inv.Take(def->build_cost[i].item_id, def->build_cost[i].amount);
     auto& reg = MdRegistry::Get(); auto e = reg.Create();
@@ -150,7 +150,7 @@ void BuildSystem::Demolish(MdEntity e, Inventory& player_inv) {
     for (int dx=0; dx<b.size_x; ++dx)
         for (int dz=0; dz<b.size_z; ++dz) {
             int gx=b.grid_x+dx, gz=b.grid_z+dz;
-            if (gx>=0&&gx<MAX_GRID&&gz>=0&&gz<MAX_GRID) grid_[gx][gz]=entt::null;
+            if (gx>=0&&gx<MAX_GRID&&gz>=0&&gz<MAX_GRID) grid_[gx][gz]=MdEntity::Null();
         }
     if (def) for (int i=0; i<def->build_cost_count; ++i) {
         int refund=def->build_cost[i].amount/2;
@@ -164,7 +164,7 @@ void BuildSystem::Demolish(MdEntity e, Inventory& player_inv) {
 }
 
 void BuildSystem::RebuildGridFromEntities() {
-    for (int x=0; x<MAX_GRID; ++x) for (int z=0; z<MAX_GRID; ++z) grid_[x][z]=entt::null;
+    for (int x=0; x<MAX_GRID; ++x) for (int z=0; z<MAX_GRID; ++z) grid_[x][z]=MdEntity::Null();
     auto& reg = MdRegistry::Get();
     reg.View<Building>().each([&](MdEntity e, const Building& b) {
         for (int dx=0; dx<b.size_x; ++dx) for (int dz=0; dz<b.size_z; ++dz) {

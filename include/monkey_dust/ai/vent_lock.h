@@ -19,7 +19,7 @@ public:
     // Returns true if vent_id is free or already owned by entity (re-entrant).
     bool TryLock(uint8_t vent_id, MdEntity owner) {
         if (vent_id >= MAX_VENTS) return false;
-        if (locks_[vent_id] == entt::null || locks_[vent_id] == owner) {
+        if (locks_[vent_id] == MdEntity::Null() || locks_[vent_id] == owner) {
             locks_[vent_id] = owner;
             return true;
         }
@@ -29,11 +29,11 @@ public:
     // Release all vent slots held by entity.
     void Release(MdEntity owner) {
         for (uint8_t i = 0; i < MAX_VENTS; ++i)
-            if (locks_[i] == owner) locks_[i] = entt::null;
+            if (locks_[i] == owner) locks_[i] = MdEntity::Null();
     }
 
     void ClearAll() {
-        for (uint8_t i = 0; i < MAX_VENTS; ++i) locks_[i] = entt::null;
+        for (uint8_t i = 0; i < MAX_VENTS; ++i) locks_[i] = MdEntity::Null();
     }
 
 private:

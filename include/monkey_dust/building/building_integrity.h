@@ -28,7 +28,7 @@ struct CollapseState {
 };
 
 struct BuildingNode {
-    MdEntity entity       = entt::null;
+    MdEntity entity       = MdEntity::Null();
     int16_t      gx           = 0;
     int16_t      gy           = 0;   // vertical layer (0 = ground)
     int16_t      gz           = 0;

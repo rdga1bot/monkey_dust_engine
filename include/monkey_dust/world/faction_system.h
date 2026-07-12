@@ -24,7 +24,7 @@ enum class CrimeFlags : uint8_t {
 
 struct BountyRecord {
     uint32_t        faction_id  = 0;    // offended faction
-    MdEntity    target      = entt::null;
+    MdEntity    target      = MdEntity::Null();
     uint32_t        amount      = 0;    // cats (Kenshi currency)
     uint8_t         crime_flags = 0;    // bitmask of CrimeFlags
     // F-1: Kenshi RE — notorious flag + expire_hours (Kenshi RE: §factions)

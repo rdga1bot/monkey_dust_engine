@@ -27,7 +27,7 @@ enum class NpcRole : uint8_t {
 static constexpr int MAX_ROLES = static_cast<int>(NpcRole::COUNT);
 
 struct RoleSlot {
-    MdEntity owner    = entt::null;
+    MdEntity owner    = MdEntity::Null();
     uint32_t     query_id = 0;
 };
 
@@ -45,7 +45,7 @@ public:
         int idx = static_cast<int>(role);
         if (idx <= 0 || idx >= MAX_ROLES) return false;
         RoleSlot& s = m_slots[idx];
-        if (s.owner == entt::null || s.owner == e) {
+        if (s.owner == MdEntity::Null() || s.owner == e) {
             s.owner    = e;
             s.query_id = query_id;
             return true;
@@ -72,7 +72,7 @@ public:
     bool could_perform(NpcRole role) const noexcept {
         int idx = static_cast<int>(role);
         if (idx <= 0 || idx >= MAX_ROLES) return false;
-        return m_slots[idx].owner == entt::null;
+        return m_slots[idx].owner == MdEntity::Null();
     }
 
     // Release all slots owned by e (e.g. on NPC death/despawn).

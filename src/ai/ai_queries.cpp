@@ -33,8 +33,30 @@ flecs::query<SquadController>& SquadControllers() {
     return q;
 }
 
+// task #8 Phase 4: order_by<AIAgent> replaces the old EnTT-era
+// MdRegistry::Sort<AIAgent>() (a periodic, timer-gated pool-wide physical
+// reorder — a no-op ever since the B3.4 flecs swap, since flecs has no
+// pool to physically reorder the way entt did). flecs's per-query
+// order_by does the equivalent job properly instead: entities of the same
+// faction_id cluster together in this query's iteration order (the actual
+// benefit logic_tick.cpp's old comment described — faction cache-locality
+// for BT/combat evaluation), and per flecs.h's own doc comment on
+// order_by, re-sorting only happens "if that component has changed, or
+// when the entity order in the table has changed" — i.e. automatically
+// exactly when needed (an AIAgent spawned/despawned/its faction_id
+// written), not on a blind 190-tick timer that could leave a freshly
+// spawned NPC unsorted for up to ~19s or re-sort for nothing when
+// nothing changed.
+static int CompareAIAgentFaction(flecs::entity_t, const AIAgent* a,
+                                  flecs::entity_t, const AIAgent* b) {
+    return (a->faction_id > b->faction_id) - (a->faction_id < b->faction_id);
+}
+
 flecs::query<AIAgent, BTComponent, WorldTransform>& AIAgentBTWorldTransform() {
-    static auto q = MdRegistry::Get().Raw().query<AIAgent, BTComponent, WorldTransform>();
+    static auto q = MdRegistry::Get().Raw()
+        .query_builder<AIAgent, BTComponent, WorldTransform>()
+        .order_by<AIAgent>(CompareAIAgentFaction)
+        .build();
     return q;
 }
 

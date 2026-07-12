@@ -200,19 +200,6 @@ public:
         return alive ? MdEntity(alive) : MdEntity(idx);
     }
 
-    // B3.4: no-op under flecs. entt::registry::sort<T>() physically
-    // reordered a component pool once, benefiting every subsequent view
-    // until the next sort call. flecs's equivalent (order_by) is attached
-    // to a SPECIFIC query and reapplied lazily each time THAT query
-    // iterates — not a one-shot pool-wide reorder — so it isn't a drop-in
-    // replacement here. Migrating the actual cache-locality optimization
-    // to flecs's per-query order_by model is a deliberate follow-up, not
-    // part of B3.4's mechanical backend swap. The one caller
-    // (logic_tick.cpp's periodic AIAgent sort) loses this specific
-    // micro-optimization but stays functionally correct.
-    template<typename T, typename Compare>
-    void Sort(Compare) {}
-
     flecs::world& Raw() { return Registry::Get(); }
     const flecs::world& Raw() const { return Registry::Get(); }
 

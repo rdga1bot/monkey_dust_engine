@@ -11,7 +11,7 @@
 
 // C ABI function types from libeditor_panels.so
 using EditorUploadHmapFn = void(*)(const float*, int, int, float, int, int);
-using EditorInitFn     = void(*)(void* imgui_ctx, void* gpu, void* window,
+using EditorInitFn     = void(*)(void* imgui_ctx, void* ecs_world, void* gpu, void* window,
                                   float overlay_top, const char* layout_path);
 using EditorShutdownFn = void(*)(const char* layout_path);
 using EditorBuildUIFn  = uint32_t(*)(float dt, float toolbar_h,
@@ -148,7 +148,7 @@ void EditorModule::Load() {
         return;
     }
 
-    init_fn(cfg_.imgui_ctx, cfg_.gpu, cfg_.window,
+    init_fn(cfg_.imgui_ctx, cfg_.ecs_world, cfg_.gpu, cfg_.window,
             cfg_.overlay_top, cfg_.layout_path);
 
     last_mtime_ = s_mtime(so_path_);

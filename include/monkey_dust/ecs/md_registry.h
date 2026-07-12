@@ -237,6 +237,27 @@ public:
     // during a concurrent stage's iteration was separately verified safe
     // by probe (see md_registry.h's top-of-file note); only structural
     // ops need the stage.
+    //
+    // A second, easy-to-miss distinction (empirically verified, standalone
+    // flecs probes — red/green-tested against game/src/combat/skill_xp.h's
+    // real lost-update bug, see tests/behavior/test_skill_xp_staged_grant.
+    // cpp): StagedHandle().set<T>() is genuinely DEFERRED — invisible even
+    // through the SAME stage's own reads — ONLY the first time T is added to
+    // an entity (a real structural/archetype change). Once T already exists
+    // on the entity, a stage-routed set<>() to it is a plain VALUE write and
+    // applies immediately, visible to the very next read (staged or main-
+    // world) in the same batch — flecs does not defer it at all, because no
+    // archetype move is needed. Practical implication for any code called
+    // from inside a JobGraph batch: reading a MAIN-world (Handle()) snapshot
+    // of T, computing on it, and writing the WHOLE struct back via a single
+    // StagedHandle().set<T>() is safe to repeat multiple times per entity
+    // per batch ONLY if T already existed on that entity BEFORE the batch
+    // started. If T might be getting its first-ever add mid-batch, that
+    // pattern silently loses every write but the last one for that entity —
+    // prefer MdRegistry::Patch<T>() (in-place mutation via a main-world
+    // pointer) once T is known to exist, and treat "T doesn't exist yet" as
+    // its own explicit, single, no-computation StagedHandle().set<T>(T{})
+    // branch rather than folding it into the same read-compute-write path.
     flecs::entity StagedHandle(MdEntity e) const {
         ecs_world_t* stage = md_registry_detail::t_stage_override;
         return stage ? flecs::entity(stage, e.Raw()) : Handle(e);

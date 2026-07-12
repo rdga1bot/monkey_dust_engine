@@ -1,6 +1,14 @@
 #include <monkey_dust/ecs/component_reflect.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/components/sense_component.h>
+#include <monkey_dust/components/health.h>
+#include <monkey_dust/components/combat.h>
+#include <monkey_dust/components/ai_agent.h>
+#include <monkey_dust/components/nav_agent.h>
+#include <monkey_dust/components/renderable.h>
+#include <monkey_dust/components/building.h>
+#include <monkey_dust/components/inventory.h>
+#include <monkey_dust/components/stat_sheet.h>
 #include <cstdio>
 #include <cstring>
 
@@ -110,6 +118,131 @@ void RegisterCoreComponents() {
     r.Register("sense_component", sc_fields,
                (int)(sizeof(sc_fields) / sizeof(sc_fields[0])),
                (uint16_t)sizeof(SenseComponent));
+
+    // LimbHealth — per-limb hp/max; skip flags[] (bitmask array).
+    // NOTE: reflection name is "limb_health" (not "health") — `Health` is a
+    // `using Health = LimbHealth;` alias (health.h), and flecs derives a
+    // component's auto-registered name from the real (post-alias) type via
+    // RTTI, so the entity EcsReflectBridge must resolve is "LimbHealth".
+    static const FieldDesc health_fields[] = {
+        MD_FIELD_RANGE(LimbHealth, hp[0], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, hp[1], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, hp[2], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, hp[3], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, hp[4], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, hp[5], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, max[0], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, max[1], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, max[2], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, max[3], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, max[4], F32, 1.f, 0.f, 500.f),
+        MD_FIELD_RANGE(LimbHealth, max[5], F32, 1.f, 0.f, 500.f),
+        MD_FIELD(LimbHealth, incapacitated, Bool),
+    };
+    r.Register("limb_health", health_fields,
+               (int)(sizeof(health_fields) / sizeof(health_fields[0])),
+               (uint16_t)sizeof(LimbHealth));
+
+    // Combat — weapon/armor top-level scalars; skip target (MdEntity), rng_state.
+    static const FieldDesc combat_fields[] = {
+        MD_FIELD_RANGE(Combat, weapon.damage,       F32, 1.f, 0.f, 500.f),
+        MD_FIELD(Combat,       weapon.type,          Enum8),
+        MD_FIELD_RANGE(Combat, weapon.attack_range,  F32, 0.1f, 0.f, 20.f),
+        MD_FIELD(Combat,       weapon.attack_ms,     U32),
+        MD_FIELD_RANGE(Combat, armor.blunt_resist,   F32, 0.01f, 0.f, 1.f),
+        MD_FIELD_RANGE(Combat, armor.cut_resist,     F32, 0.01f, 0.f, 1.f),
+        MD_FIELD_RANGE(Combat, armor.pierce_resist,  F32, 0.01f, 0.f, 1.f),
+        MD_FIELD(Combat, is_dead,        Bool),
+        MD_FIELD(Combat, last_attack_ms, F32),
+        MD_FIELD(Combat, death_timer,    F32),
+    };
+    r.Register("combat", combat_fields,
+               (int)(sizeof(combat_fields) / sizeof(combat_fields[0])),
+               (uint16_t)sizeof(Combat));
+
+    // AIAgent
+    static const FieldDesc ai_agent_fields[] = {
+        MD_FIELD_RANGE(AIAgent, lod_level,         U8, 1.f, 0.f, 2.f),
+        MD_FIELD(AIAgent, faction_id,        U32),
+        MD_FIELD(AIAgent, last_tick_ms,      F32),
+        MD_FIELD(AIAgent, bt_node,           I8),
+        MD_FIELD(AIAgent, personal_relation, I8),
+        MD_FIELD(AIAgent, bt_template_id,    U8),
+        MD_FIELD_RANGE(AIAgent, level, U8, 1.f, 1.f, 255.f),
+    };
+    r.Register("ai_agent", ai_agent_fields,
+               (int)(sizeof(ai_agent_fields) / sizeof(ai_agent_fields[0])),
+               (uint16_t)sizeof(AIAgent));
+
+    // NavAgent — skip path[] (large fixed array), render_x/z (internal smoothing).
+    static const FieldDesc nav_agent_fields[] = {
+        MD_FIELD(NavAgent, target_x, F32),
+        MD_FIELD(NavAgent, target_z, F32),
+        MD_FIELD(NavAgent, is_moving, Bool),
+        MD_FIELD_RANGE(NavAgent, move_speed, F32, 0.1f, 0.f, 10.f),
+        MD_FIELD_RANGE(NavAgent, walk_speed, F32, 0.1f, 0.f, 20.f),
+        MD_FIELD_RANGE(NavAgent, run_speed,  F32, 0.1f, 0.f, 20.f),
+        MD_FIELD(NavAgent, path_len, I32),
+        MD_FIELD(NavAgent, path_idx, I32),
+        MD_FIELD(NavAgent, crowd_idx, I32),
+        MD_FIELD(NavAgent, desired_vel_x, F32),
+        MD_FIELD(NavAgent, desired_vel_z, F32),
+    };
+    r.Register("nav_agent", nav_agent_fields,
+               (int)(sizeof(nav_agent_fields) / sizeof(nav_agent_fields[0])),
+               (uint16_t)sizeof(NavAgent));
+
+    // Renderable
+    static const FieldDesc renderable_fields[] = {
+        MD_FIELD(Renderable, sprite_id, U8),
+        MD_FIELD_RANGE(Renderable, lod_level, U8, 1.f, 0.f, 2.f),
+        MD_FIELD(Renderable, visible, Bool),
+    };
+    r.Register("renderable", renderable_fields,
+               (int)(sizeof(renderable_fields) / sizeof(renderable_fields[0])),
+               (uint16_t)sizeof(Renderable));
+
+    // Building — skip chain (ProductionChain, complex nested struct).
+    static const FieldDesc building_fields[] = {
+        MD_FIELD(Building, def_id, U32),
+        MD_FIELD(Building, grid_x, I32),
+        MD_FIELD(Building, grid_z, I32),
+        MD_FIELD(Building, size_x, I32),
+        MD_FIELD(Building, size_z, I32),
+        MD_FIELD(Building, progress_s, F32),
+        MD_FIELD(Building, active, Bool),
+        MD_FIELD(Building, phase, Enum8),
+        MD_FIELD_RANGE(Building, build_pct, F32, 1.f, 0.f, 100.f),
+        MD_FIELD(Building, hp, F32),
+        MD_FIELD(Building, hp_max, F32),
+        MD_FIELD(Building, power_output, F32),
+    };
+    r.Register("building", building_fields,
+               (int)(sizeof(building_fields) / sizeof(building_fields[0])),
+               (uint16_t)sizeof(Building));
+
+    // Inventory — skip item_ids/amounts/weights[64] (parallel slot arrays).
+    static const FieldDesc inventory_fields[] = {
+        MD_FIELD(Inventory, slot_count, I32),
+        MD_FIELD(Inventory, total_weight, F32),
+        MD_FIELD(Inventory, max_carry_weight, F32),
+    };
+    r.Register("inventory", inventory_fields,
+               (int)(sizeof(inventory_fields) / sizeof(inventory_fields[0])),
+               (uint16_t)sizeof(Inventory));
+
+    // StatSheet — race/traits + 4 core skill summary fields; skip full skills[25].
+    static const FieldDesc stat_sheet_fields[] = {
+        MD_FIELD(StatSheet, race_id, U8),
+        MD_FIELD(StatSheet, traits,  U16),
+        MD_FIELD_RANGE(StatSheet, skills[0], U8, 1.f, 0.f, 100.f),  // Strength
+        MD_FIELD_RANGE(StatSheet, skills[1], U8, 1.f, 0.f, 100.f),  // Dexterity
+        MD_FIELD_RANGE(StatSheet, skills[2], U8, 1.f, 0.f, 100.f),  // Athletics
+        MD_FIELD_RANGE(StatSheet, skills[3], U8, 1.f, 0.f, 100.f),  // Toughness
+    };
+    r.Register("stat_sheet", stat_sheet_fields,
+               (int)(sizeof(stat_sheet_fields) / sizeof(stat_sheet_fields[0])),
+               (uint16_t)sizeof(StatSheet));
 
     fprintf(stdout, "[ComponentReflect] %d components registered\n", r.Count());
 }

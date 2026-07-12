@@ -37,6 +37,13 @@ public:
 
     struct Config {
         ImGuiContext* imgui_ctx  = nullptr;
+        // Opaque ecs_world_t* (flecs untyped C API) — host fills with
+        // Registry::Get().c_ptr(). Passed explicitly across the dlopen
+        // boundary for the same reason as imgui_ctx: Registry::Get() is a
+        // function-local static in a header-inline function, and
+        // libeditor_panels.so does not link monkey_dust::engine statically,
+        // so it would otherwise get its own independently-instantiated copy.
+        void*          ecs_world = nullptr;
         SDL_GPUDevice* gpu       = nullptr;
         SDL_Window*    window    = nullptr;
         float          overlay_top = 0.f;

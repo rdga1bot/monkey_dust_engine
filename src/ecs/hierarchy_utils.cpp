@@ -6,8 +6,8 @@
 namespace Hierarchy {
 
 static void RemoveFromChildrenList(MdRegistry& reg, MdEntity parent, MdEntity child) {
-    if (!reg.Valid(parent) || !reg.AllOf<ChildrenRef>(parent)) return;
-    auto& cr = reg.Get<ChildrenRef>(parent);
+    if (!reg.Valid(parent) || !(reg.Handle(parent).has<ChildrenRef>())) return;
+    auto& cr = reg.Handle(parent).get_mut<ChildrenRef>();
     for (int i = 0; i < cr.count; ++i) {
         if (cr.children[i] == child) {
             cr.children[i] = cr.children[cr.count - 1];
@@ -19,8 +19,8 @@ static void RemoveFromChildrenList(MdRegistry& reg, MdEntity parent, MdEntity ch
 
 void ClearParent(MdEntity child) {
     auto& reg = MdRegistry::Get();
-    if (!reg.AllOf<ParentRef>(child)) return;
-    MdEntity parent = reg.Get<ParentRef>(child).parent;
+    if (!(reg.Handle(child).has<ParentRef>())) return;
+    MdEntity parent = reg.Handle(child).get_mut<ParentRef>().parent;
     RemoveFromChildrenList(reg, parent, child);
     reg.Remove<ParentRef>(child);
 }
@@ -30,7 +30,7 @@ bool SetParent(MdEntity child, MdEntity parent) {
     ClearParent(child);  // detach from any previous parent first
 
     if (!reg.Handle(parent).has<ChildrenRef>()) reg.Handle(parent).emplace<ChildrenRef>();
-    auto& cr = reg.Get<ChildrenRef>(parent);
+    auto& cr = reg.Handle(parent).get_mut<ChildrenRef>();
     if (cr.count >= HIERARCHY_MAX_CHILDREN) return false;
     cr.children[cr.count++] = child;
     reg.Handle(child).set<ParentRef>(ParentRef{parent});
@@ -45,7 +45,7 @@ static void OnChildrenRefDestroyed(flecs::entity parent, ChildrenRef& cr) {
     auto& reg = MdRegistry::Get();
     for (int i = 0; i < cr.count; ++i) {
         MdEntity child = cr.children[i];
-        if (reg.Valid(child) && reg.AllOf<ParentRef>(child)) reg.Remove<ParentRef>(child);
+        if (reg.Valid(child) && (reg.Handle(child).has<ParentRef>())) reg.Remove<ParentRef>(child);
     }
     (void)parent;
 }

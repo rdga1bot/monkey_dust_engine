@@ -147,7 +147,7 @@ public:
                 break;
             case DialogCondType::SkillAbove:
                 if (reg.Valid(target)) {
-                    const auto* ss = reg.TryGet<StatSheet>(target);
+                    const auto* ss = reg.Handle(target).try_get_mut<StatSheet>();
                     if (ss && (int)(*ss)[static_cast<Skill>(c.param_a)] <= (int)c.param_b)
                         return false;
                 }
@@ -155,7 +155,7 @@ public:
             // D-2: CompareOp-based conditions (Kenshi RE: "compare by" operator)
             case DialogCondType::SkillCompare: {
                 if (!reg.Valid(target)) return false;
-                const auto* ss = reg.TryGet<StatSheet>(target);
+                const auto* ss = reg.Handle(target).try_get_mut<StatSheet>();
                 int val = ss ? (int)(*ss)[static_cast<Skill>(c.param_a)] : 0;
                 if (!ApplyCompareOp(c.compare_op, val, (int)c.param_b)) return false;
             } break;

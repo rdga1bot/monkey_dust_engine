@@ -144,8 +144,8 @@ MdEntity BuildSystem::Place(float wx, float wz, uint32_t def_id, Inventory& play
 
 void BuildSystem::Demolish(MdEntity e, Inventory& player_inv) {
     auto& reg = MdRegistry::Get();
-    if (!reg.Valid(e) || !reg.AllOf<Building>(e)) return;
-    auto& b = reg.Get<Building>(e);
+    if (!reg.Valid(e) || !(reg.Handle(e).has<Building>())) return;
+    auto& b = reg.Handle(e).get_mut<Building>();
     const BuildingDef* def = GetDef(b.def_id);
     for (int dx=0; dx<b.size_x; ++dx)
         for (int dz=0; dz<b.size_z; ++dz) {
@@ -157,7 +157,7 @@ void BuildSystem::Demolish(MdEntity e, Inventory& player_inv) {
         if (refund>0) player_inv.Add(def->build_cost[i].item_id, refund);
     }
     if (NavSystem::Get().IsReady()) {
-        const auto& tr = reg.Get<WorldTransform>(e);
+        const auto& tr = reg.Handle(e).get_mut<WorldTransform>();
         NavSystem::Get().EnqueueRebuild(tr.x, tr.z, nullptr, 0, nullptr, 0);
     }
     reg.Destroy(e);
@@ -207,8 +207,8 @@ void BuildSystem::Tick(float dt_s) {
         } else {
             b.chain.state = ProductionState::IDLE;
         }
-        if (reg.AllOf<WorldTransform>(be)) {
-            const auto& btr = reg.Get<WorldTransform>(be);
+        if ((reg.Handle(be).has<WorldTransform>())) {
+            const auto& btr = reg.Handle(be).get_mut<WorldTransform>();
             ParticleSoA::Get().Emit(btr.x, btr.y+1.5f, btr.z, 0.3f,1.5f,0.3f,180,180,180,200,1.5f,0.12f,3,ParticleType::SMOKE);
         }
     });

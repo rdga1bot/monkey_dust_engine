@@ -98,7 +98,7 @@
             pc = nd.parent; continue;  // propagate child result as-is
 
         case BTNodeType::TimerStart: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (as) {
                 uint8_t  tid    = static_cast<uint8_t>(nd.data >> 24);
                 uint32_t dur_ms = nd.data & 0x00FFFFFFu;
@@ -117,7 +117,7 @@
         }
 
         case BTNodeType::TimerCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t  tid      = static_cast<uint8_t>(nd.data & 0x1Fu);
             if (tid >= MAX_AGENT_TIMERS) { result = BTStatus::Failure; pc = nd.parent; continue; }
@@ -133,7 +133,7 @@
 
         // Pattern 4: bit-index encoding (lcf::* constants, 0-63)
         case BTNodeType::FlagCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
             bool    is_set  = as->lcflags.test(bit_idx);
@@ -143,7 +143,7 @@
         }
 
         case BTNodeType::FlagSet: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (as) {
                 uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
                 if (nd.flags == 0u) as->lcflags.set  (bit_idx);
@@ -154,7 +154,7 @@
         }
 
         case BTNodeType::SenseCheck: {
-            SenseComponent* sc = MdRegistry::Get().TryGet<SenseComponent>(e);
+            SenseComponent* sc = MdRegistry::Get().Handle(e).try_get_mut<SenseComponent>();
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t sense_idx = static_cast<uint8_t>(nd.data >> 24);
             float   threshold = static_cast<float>(nd.data & 0x00FFFFFFu) * 0.001f;
@@ -168,7 +168,7 @@
 
         // Pattern 1: check current motivation matches expected
         case BTNodeType::MotivationCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (as->motivation == static_cast<MotivationType>(nd.data))
                      ? BTStatus::Success : BTStatus::Failure;
@@ -177,7 +177,7 @@
 
         // Pattern 1: write motivation to agent state
         case BTNodeType::SetMotivation: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (as) as->motivation = static_cast<MotivationType>(nd.data);
             result = BTStatus::Success;
             pc = nd.parent; continue;
@@ -194,7 +194,7 @@
 
         // Pattern 6: gauge threshold check
         case BTNodeType::GaugeCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             auto    gtype = static_cast<GaugeType>(nd.data >> 24);
             float   thr   = static_cast<float>(nd.data & 0x00FFFFFFu) * 0.001f;
@@ -205,7 +205,7 @@
 
         // Pattern 6: gauge write (set to fixed value)
         case BTNodeType::GaugeSet: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (as) {
                 auto  gtype = static_cast<GaugeType>(nd.data >> 24);
                 float val   = static_cast<float>(nd.data & 0x00FFFFFFu) * 0.001f;
@@ -249,7 +249,7 @@
 
         // C13: FrameFlag — read/write frame_flags (cleared each logic tick)
         case BTNodeType::FrameFlagCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
             bool    is_set  = (as->frame_flags >> bit_idx) & 1ull;
@@ -259,7 +259,7 @@
         }
 
         case BTNodeType::FrameFlagSet: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (as) {
                 uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);
                 if (nd.flags == 0u) as->frame_flags |=  (1ull << bit_idx);
@@ -308,7 +308,7 @@
 
         // C15: AwarenessCheck
         case BTNodeType::AwarenessCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (as->awareness == static_cast<AwarenessState>(nd.data))
                      ? BTStatus::Success : BTStatus::Failure;
@@ -317,7 +317,7 @@
 
         // C16: AlertnessCheck
         case BTNodeType::AlertnessCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (as->alertness == static_cast<AlertnessState>(nd.data))
                      ? BTStatus::Success : BTStatus::Failure;
@@ -326,7 +326,7 @@
 
         // C17: MoodCheck
         case BTNodeType::MoodCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (as->mood == static_cast<NpcMood>(nd.data))
                      ? BTStatus::Success : BTStatus::Failure;
@@ -349,7 +349,7 @@
             // Prefer dynamic query_id from DirectorHintComponent when the hint
             // targets this same role — scopes the claim to the Director's session.
             if (const DirectorHintComponent* hint =
-                    MdRegistry::Get().TryGet<DirectorHintComponent>(e)) {
+                    MdRegistry::Get().Handle(e).try_get_mut<DirectorHintComponent>()) {
                 if (hint->role_pending && hint->suggested_role == role)
                     query_id = hint->query_id;
             }
@@ -367,7 +367,7 @@
 
         // C19: WithdrawState
         case BTNodeType::WithdrawCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (as->withdraw_state == static_cast<WithdrawState>(nd.data))
                      ? BTStatus::Success : BTStatus::Failure;
@@ -375,7 +375,7 @@
         }
 
         case BTNodeType::SetWithdraw: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (as) as->withdraw_state = static_cast<WithdrawState>(nd.data);
             result = BTStatus::Success;
             pc = nd.parent; continue;
@@ -383,7 +383,7 @@
 
         // Echo NpcMemory nodes
         case BTNodeType::MemoryCheck: {
-            NpcMemoryComponent* mem = MdRegistry::Get().TryGet<NpcMemoryComponent>(e);
+            NpcMemoryComponent* mem = MdRegistry::Get().Handle(e).try_get_mut<NpcMemoryComponent>();
             if (!mem) { result = BTStatus::Failure; pc = nd.parent; continue; }
             bool ok = (nd.data == 0) ? (mem->spatial_count > 0) : (mem->event_count > 0);
             result = ok ? BTStatus::Success : BTStatus::Failure;
@@ -391,14 +391,14 @@
         }
 
         case BTNodeType::MemoryForget: {
-            NpcMemoryComponent* mem = MdRegistry::Get().TryGet<NpcMemoryComponent>(e);
+            NpcMemoryComponent* mem = MdRegistry::Get().Handle(e).try_get_mut<NpcMemoryComponent>();
             if (mem) mem->ClearAll();
             result = BTStatus::Success;
             pc = nd.parent; continue;
         }
 
         case BTNodeType::AreaSweepCheck: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (static_cast<uint8_t>(as->area_sweep_type) == static_cast<uint8_t>(nd.data))
                      ? BTStatus::Success : BTStatus::Failure;
@@ -436,7 +436,7 @@
 
         // MD_gemini: SenseTimeCheck — Success if sense was triggered recently
         case BTNodeType::SenseTimeCheck: {
-            auto* sc = MdRegistry::Get().TryGet<SenseComponent>(e);
+            auto* sc = MdRegistry::Get().Handle(e).try_get_mut<SenseComponent>();
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t  sense_idx      = static_cast<uint8_t>((nd.data >> 24) & 0xFFu);
             uint32_t max_elapsed_ms = nd.data & 0x00FFFFFFu;
@@ -448,14 +448,14 @@
 
         // MD_gemini: ActionSetDead / ActionDespawn — deferred lifecycle via lcf flags
         case BTNodeType::ActionSetDead: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             as->lcflags.set(lcf::IS_DEAD);
             result = BTStatus::Success; pc = nd.parent; continue;
         }
 
         case BTNodeType::ActionDespawn: {
-            AgentState* as = MdRegistry::Get().TryGet<AgentState>(e);
+            AgentState* as = MdRegistry::Get().Handle(e).try_get_mut<AgentState>();
             if (!as) { result = BTStatus::Failure; pc = nd.parent; continue; }
             as->lcflags.set(lcf::SHOULD_DESPAWN);
             result = BTStatus::Success; pc = nd.parent; continue;

@@ -127,8 +127,8 @@ public:
                 const GridCell& cell = cells_[cx][cz];
                 for (int i = 0; i < cell.count && found < max_out; ++i) {
                     MdEntity c = cell.entities[i];
-                    if (reg.Valid(c) && reg.AllOf<WorldTransform>(c)) {
-                        const auto& et = reg.Get<WorldTransform>(c);
+                    if (reg.Valid(c) && (reg.Handle(c).has<WorldTransform>())) {
+                        const auto& et = reg.Handle(c).get_mut<WorldTransform>();
                         float ddx = et.x - wx, ddz = et.z - wz;
                         if (ddx*ddx + ddz*ddz > r2) continue;
                     }
@@ -195,8 +195,8 @@ public:
                     if (he && (he->world_y < ylo || he->world_y > yhi)) continue;
                     // XZ distance
                     if (MdRegistry::Get().Valid(c) &&
-                        MdRegistry::Get().AllOf<WorldTransform>(c)) {
-                        const auto& et = MdRegistry::Get().Get<WorldTransform>(c);
+                        (MdRegistry::Get().Handle(c).has<WorldTransform>())) {
+                        const auto& et = MdRegistry::Get().Handle(c).get_mut<WorldTransform>();
                         float ddx = et.x - wx, ddz = et.z - wz;
                         if (ddx*ddx + ddz*ddz > r2) continue;
                     }

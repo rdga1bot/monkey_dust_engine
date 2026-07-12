@@ -10,7 +10,7 @@ bool LimbSeverance_TryApply(MdRegistry& reg, MdEntity e,
     if (limb < 0 || limb >= LIMB_COUNT)   return false;
     if (!reg.Valid(e))                     return false;
 
-    LimbHealth* lh = reg.TryGet<LimbHealth>(e);
+    LimbHealth* lh = reg.Handle(e).try_get_mut<LimbHealth>();
     if (!lh) return false;
     if (lh->IsSevered(limb)) return false; // already gone
 
@@ -26,7 +26,7 @@ bool LimbSeverance_TryApply(MdRegistry& reg, MdEntity e,
     lh->Sever(limb);
 
     // Spawn detached limb prop at entity's world position
-    const WorldTransform* tr = reg.TryGet<WorldTransform>(e);
+    const WorldTransform* tr = reg.Handle(e).try_get_mut<WorldTransform>();
     if (tr) {
         MdEntity prop = reg.Create();
         WorldTransform pt{};
@@ -51,7 +51,7 @@ bool LimbSeverance_Equip(MdRegistry& reg, MdEntity e,
     if (limb < 0 || limb >= LIMB_COUNT) return false;
     if (!reg.Valid(e)) return false;
 
-    LimbHealth* lh = reg.TryGet<LimbHealth>(e);
+    LimbHealth* lh = reg.Handle(e).try_get_mut<LimbHealth>();
     if (!lh) return false;
 
     lh->AttachProsthetic(limb, prosthetic_max_hp);

@@ -82,16 +82,16 @@ void CrowdSystem::FlushRange(MdRegistry& reg, int start, int end) const {
         const dtCrowdAgent* ag = crowd_->getAgent(i);
         if (!ag || !ag->active) continue;
 
-        if (reg.AllOf<WorldTransform>(agent_entity_[i])) {
-            auto& tr = reg.Get<WorldTransform>(agent_entity_[i]);
+        if ((reg.Handle(agent_entity_[i]).has<WorldTransform>())) {
+            auto& tr = reg.Handle(agent_entity_[i]).get_mut<WorldTransform>();
             tr.x = ag->npos[0];
             tr.z = ag->npos[2];
             // Keep Y on terrain surface as agent moves (DetourCrowd npos[1] may be
             // stale/zero when navmesh is flat; TerrainQuery is always authoritative).
             tr.y = TerrainQuery::Get().GetHeight(tr.x, tr.z);
         }
-        if (reg.AllOf<NavAgent>(agent_entity_[i])) {
-            auto& nav = reg.Get<NavAgent>(agent_entity_[i]);
+        if ((reg.Handle(agent_entity_[i]).has<NavAgent>())) {
+            auto& nav = reg.Handle(agent_entity_[i]).get_mut<NavAgent>();
             float vx = ag->vel[0], vz = ag->vel[2];
             float speed = sqrtf(vx*vx + vz*vz);
             if (speed > 0.2f) {

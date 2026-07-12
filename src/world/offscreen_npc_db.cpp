@@ -160,14 +160,14 @@ bool OffscreenNpcDatabase::Capture(MdEntity e, MdRegistry& reg,
     slot.entity_uid = uid_counter_++;
     slot.task_type  = OffscreenTask::Patrol;
 
-    const WorldTransform* tr = reg.TryGet<WorldTransform>(e);
+    const WorldTransform* tr = reg.Handle(e).try_get_mut<WorldTransform>();
     if (tr) {
         slot.position[0] = tr->x;
         slot.position[1] = tr->y;
         slot.position[2] = tr->z;
     }
 
-    const LimbHealth* lh = reg.TryGet<LimbHealth>(e);
+    const LimbHealth* lh = reg.Handle(e).try_get_mut<LimbHealth>();
     if (lh) {
         // Pack HP as uint16 (hp / max * 65535), avoid div-by-zero
         auto pack = [](float hp, float mx) -> uint16_t {
@@ -188,7 +188,7 @@ bool OffscreenNpcDatabase::Capture(MdEntity e, MdRegistry& reg,
         slot.hp_rarm = slot.hp_lleg = slot.hp_rleg = 0xFFFFu; // full HP
     }
 
-    const NpcNeeds* nd = reg.TryGet<NpcNeeds>(e);
+    const NpcNeeds* nd = reg.Handle(e).try_get_mut<NpcNeeds>();
     if (nd) {
         slot.hunger  = (uint8_t)(nd->hunger  * 255.f);
         slot.fatigue = (uint8_t)(nd->fatigue * 255.f);
@@ -215,7 +215,7 @@ void OffscreenNpcDatabase::Spawn(MdRegistry& reg,
         reg.Handle(ne).emplace<WorldTransform>(tr);
 
         reg.Handle(ne).set<LimbHealth>(LimbHealth::Make(60.f));
-        auto& lh = reg.Get<LimbHealth>(ne);
+        auto& lh = reg.Handle(ne).get_mut<LimbHealth>();
         auto unpack = [](uint16_t packed, float mx) -> float {
             return (float)packed / 65535.f * mx;
         };
@@ -228,7 +228,7 @@ void OffscreenNpcDatabase::Spawn(MdRegistry& reg,
         lh.UpdateIncap();
 
         reg.Handle(ne).emplace<NpcNeeds>();
-        auto& nd = reg.Get<NpcNeeds>(ne);
+        auto& nd = reg.Handle(ne).get_mut<NpcNeeds>();
         nd.hunger  = s.hunger  / 255.f;
         nd.fatigue = s.fatigue / 255.f;
 

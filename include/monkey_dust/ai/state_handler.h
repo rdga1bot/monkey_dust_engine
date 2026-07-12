@@ -54,7 +54,7 @@ public:
     // Apply flag change to entity's EntityStateFlag bitmask + dispatch handlers.
     void Apply(MdEntity e, EntityStateFlag flag, bool set,
                MdRegistry& reg) const noexcept {
-        auto* as = reg.TryGet<AgentState>(e);
+        auto* as = reg.Handle(e).try_get_mut<AgentState>();
         if (!as) return;
 
         uint32_t bit = static_cast<uint32_t>(flag);
@@ -70,7 +70,7 @@ public:
     // Test: does the entity have the flag set?
     static bool Test(MdEntity e, EntityStateFlag flag,
                      const MdRegistry& reg) noexcept {
-        const auto* as = reg.TryGet<AgentState>(e);
+        const auto* as = reg.Handle(e).try_get_mut<AgentState>();
         if (!as) return false;
         return (as->entity_state & static_cast<uint32_t>(flag)) != 0u;
     }

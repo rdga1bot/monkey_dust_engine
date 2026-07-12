@@ -107,11 +107,11 @@ bool RagdollSystem::Init(const char* /*glb_path*/) {
 void RagdollSystem::Activate(MdEntity e, MdRegistry& reg) {
     if (!settings_) return;
 
-    const WorldTransform* tr = reg.TryGet<WorldTransform>(e);
+    const WorldTransform* tr = reg.Handle(e).try_get_mut<WorldTransform>();
     if (!tr) return;
 
     if (!reg.Handle(e).has<RagdollComponent>()) reg.Handle(e).emplace<RagdollComponent>();
-    auto& rc = reg.Get<RagdollComponent>(e);
+    auto& rc = reg.Handle(e).get_mut<RagdollComponent>();
     if (rc.active) return;
 
     JPH::Ragdoll* rd = settings_->CreateRagdoll(
@@ -138,7 +138,7 @@ void RagdollSystem::Activate(MdEntity e, MdRegistry& reg) {
 }
 
 void RagdollSystem::Deactivate(MdEntity e, MdRegistry& reg) {
-    auto* rc = reg.TryGet<RagdollComponent>(e);
+    auto* rc = reg.Handle(e).try_get_mut<RagdollComponent>();
     if (!rc || !rc->active || !rc->ragdoll) return;
     rc->ragdoll->RemoveFromPhysicsSystem();
     delete rc->ragdoll;
@@ -161,7 +161,7 @@ void RagdollSystem::Tick(float dt, float player_x, float player_z) {
         float dz = tr.z - player_z;
         float d2 = dx * dx + dz * dz;
 
-        auto* rc = reg.TryGet<RagdollComponent>(e);
+        auto* rc = reg.Handle(e).try_get_mut<RagdollComponent>();
         bool  in_range = (d2 <= lod2);
 
         if (in_range && (!rc || !rc->active)) {
@@ -198,7 +198,7 @@ static void jolt_to_mat4(JPH::RVec3 pos, JPH::Quat rot, float* m) {
 
 bool RagdollSystem::GetSegmentWorlds(MdEntity e, float out_seg[6][16]) const {
     auto& reg = MdRegistry::Get();
-    const auto* rc = reg.TryGet<RagdollComponent>(e);
+    const auto* rc = reg.Handle(e).try_get_mut<RagdollComponent>();
     if (!rc || !rc->active || !rc->ragdoll) return false;
 
     const auto& ids = rc->ragdoll->GetBodyIDs();

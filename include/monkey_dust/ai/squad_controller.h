@@ -156,7 +156,7 @@ public:
         auto& reg        = MdRegistry::Get();
         MdEntity sq  = reg.Create();
         reg.Handle(sq).emplace<SquadController>();
-        auto& sc         = reg.Get<SquadController>(sq);
+        auto& sc         = reg.Handle(sq).get_mut<SquadController>();
         sc.home_x        = home_x;
         sc.home_z        = home_z;
         sc.target_x      = home_x;
@@ -321,7 +321,7 @@ private:
             MdEntity m = sc.members[i];
             if (!reg.Valid(m)) continue;
 
-            auto* bb = reg.TryGet<AgentBlackboard>(m);
+            auto* bb = reg.Handle(m).try_get_mut<AgentBlackboard>();
             if (bb) {
                 bb_set_float(*bb, kSquadTx, tx);
                 bb_set_float(*bb, kSquadTz, tz);
@@ -331,7 +331,7 @@ private:
             // In Fight/StandGround: BT drives individual movement
             if (is_fight) continue;
 
-            auto* nav = reg.TryGet<NavAgent>(m);
+            auto* nav = reg.Handle(m).try_get_mut<NavAgent>();
             if (!nav) continue;
 
             // Per-member angular offset so they don't converge to a single point.

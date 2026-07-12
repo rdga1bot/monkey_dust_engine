@@ -19,9 +19,9 @@ bool PowerSystem::Use(MdEntity caster, int power_id, float tx, float tz) {
         return false;
     }
     auto& reg = MdRegistry::Get();
-    if (!reg.Valid(caster) || !reg.AllOf<WorldTransform>(caster)) return false;
+    if (!reg.Valid(caster) || !(reg.Handle(caster).has<WorldTransform>())) return false;
 
-    const auto& tr = reg.Get<WorldTransform>(caster);
+    const auto& tr = reg.Handle(caster).get_mut<WorldTransform>();
     float cx = tr.x, cz = tr.z;
 
     if (strcmp(def->dmg_type, "melee") == 0) {
@@ -55,8 +55,8 @@ void PowerSystem::DoMelee(MdEntity caster, float cx, float cz,
         });
 
     for (int i = 0; i < hit_count; ++i) {
-        if (!reg.Valid(hits[i].e) || !reg.AllOf<Health>(hits[i].e)) continue;
-        auto& hp = reg.Get<Health>(hits[i].e);
+        if (!reg.Valid(hits[i].e) || !(reg.Handle(hits[i].e).has<Health>())) continue;
+        auto& hp = reg.Handle(hits[i].e).get_mut<Health>();
         hp.hp[1] -= damage;  // Torso (index 1)
         if (hp.hp[1] < 0.0f) hp.hp[1] = 0.0f;
         hp.UpdateIncap();

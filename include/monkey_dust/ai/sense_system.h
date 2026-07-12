@@ -136,11 +136,11 @@ inline void SenseSystemUpdate(float now_ms) {
     });
     if (player == MdEntity::Null()) return;
 
-    const WorldTransform* pwt = reg.TryGet<WorldTransform>(player);
+    const WorldTransform* pwt = reg.Handle(player).try_get_mut<WorldTransform>();
     if (!pwt) return;
 
     // B-1: StealthComponent on player reduces all observer activation fills.
-    const StealthComponent* psc = reg.TryGet<StealthComponent>(player);
+    const StealthComponent* psc = reg.Handle(player).try_get_mut<StealthComponent>();
     float player_stealth = psc ? psc->stealth_factor : 1.f;
 
     auto uint32_now = static_cast<uint32_t>(now_ms);
@@ -162,7 +162,7 @@ inline void SenseSystemUpdate(float now_ms) {
 
         // AI-4: read optional SenseModifiers (CATHODE RE §6.4 config-driven ranges).
         // If no SenseModifiers component, defaults (1.0) apply — same as before.
-        const SenseModifiers* sm = reg.TryGet<SenseModifiers>(e);
+        const SenseModifiers* sm = reg.Handle(e).try_get_mut<SenseModifiers>();
 
         SenseJobInput& j = s_sense_jobs[s_sense_count++];
         j.e              = e;
@@ -207,7 +207,7 @@ inline void SenseSystemUpdate(float now_ms) {
     // version, just split into gather/compute/scatter phases.
     for (int i = 0; i < s_sense_count; ++i) {
         const SenseJobInput& j = s_sense_jobs[i];
-        SenseComponent& sc = reg.Get<SenseComponent>(j.e);
+        SenseComponent& sc = reg.Handle(j.e).get_mut<SenseComponent>();
 
         bool vis_was_hi = sc.activation[0] >= sc.threshold_hi;
         sc.activation[0] = j.visual_act;
@@ -221,7 +221,7 @@ inline void SenseSystemUpdate(float now_ms) {
                 ++AwarenessLimits::g_frame.reacted_to_player;
 
                 // CATHODE RE §7.8: raise awareness watermark when NPC fully detects player.
-                AgentBlackboard* bb = reg.TryGet<AgentBlackboard>(j.e);
+                AgentBlackboard* bb = reg.Handle(j.e).try_get_mut<AgentBlackboard>();
                 if (bb && bb->awareness_watermark < AwarenessState::Aware) {
                     bb->awareness_watermark = AwarenessState::Aware;
                     bb->watermark_ms = uint32_now;

@@ -22,6 +22,12 @@ endif()
 if(NOT TARGET flecs)
     add_subdirectory(${MD_THIRD_PARTY}/flecs EXCLUDE_FROM_ALL)
 endif()
+# FLECS_SANITIZE (flecs 4.1.6, flecs.h ~L92) enables expensive internal
+# consistency checks — catches stale-pointer/use-after-structural-change
+# bugs (the B3.4 class) immediately instead of as an intermittent crash.
+# PUBLIC so it propagates to every TU that includes flecs.h through the
+# `flecs` target, not just flecs.c's own compilation.
+target_compile_definitions(flecs PUBLIC $<$<CONFIG:Debug>:FLECS_SANITIZE>)
 if(NOT TARGET Recast)
     set(RECASTNAVIGATION_DEMO     OFF CACHE BOOL "" FORCE)
     set(RECASTNAVIGATION_TESTS    OFF CACHE BOOL "" FORCE)

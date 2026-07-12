@@ -47,10 +47,10 @@ inline void AoeApply(const AoeResult& aoe, float ox, float oz,
     for (int i = 0; i < aoe.count; ++i) {
         MdEntity e = aoe.hits[i];
         if (!reg.Valid(e)) continue;
-        Health* hp  = reg.TryGet<Health>(e);
-        Combat* cmb = reg.TryGet<Combat>(e);
+        Health* hp  = reg.Handle(e).try_get_mut<Health>();
+        Combat* cmb = reg.Handle(e).try_get_mut<Combat>();
         if (!hp || !cmb) continue;
-        const auto& tr = reg.Get<WorldTransform>(e);
+        const auto& tr = reg.Handle(e).get_mut<WorldTransform>();
         float dx = tr.x - ox, dz = tr.z - oz;
         float dist    = sqrtf(dx*dx + dz*dz);
         float falloff = (radius > 0.f) ? (1.0f - 0.5f * dist / radius) : 1.0f;

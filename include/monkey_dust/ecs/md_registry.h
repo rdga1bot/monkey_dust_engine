@@ -130,17 +130,17 @@ private:
 // meant to be built once and reused, unlike entt::view's near-free
 // construction).
 //
-// CRITICAL, B3.4: Get<T>() returns a T& that is only valid until the
-// entity's NEXT archetype change — flecs relocates an entity's ENTIRE row
-// to a new table on every emplace<U>/set<U>/remove<U> call, even for an
-// unrelated component type U, invalidating every previously held T& for
-// that entity (unlike entt's per-type-pool-stable references, where only
-// the SAME type's pool reallocating could invalidate a ref). Rule: call
-// Handle(e).emplace<T>()/set<T>() for every component an entity needs
-// FIRST, THEN Get<T>() to fetch references for writing. Get<T>()/TryGet<T>()
-// do not themselves invalidate anything (no structural change) — freely
-// chaining several Get<>() calls in a row is safe. Found and fixed 3 real
-// production bugs of this exact shape (see CLAUDE_INVARIANTS.md).
+// CRITICAL, B3.4: Handle(e).get_mut<T>() returns a T& that is only valid
+// until the entity's NEXT archetype change — flecs relocates an entity's
+// ENTIRE row to a new table on every emplace<U>/set<U>/remove<U> call, even
+// for an unrelated component type U, invalidating every previously held T&
+// for that entity (unlike entt's per-type-pool-stable references, where
+// only the SAME type's pool reallocating could invalidate a ref). Rule:
+// call Handle(e).emplace<T>()/set<T>() for every component an entity needs
+// FIRST, THEN Handle(e).get_mut<T>() to fetch references for writing.
+// get_mut<T>()/try_get_mut<T>() do not themselves invalidate anything (no
+// structural change) — freely chaining several in a row is safe. Found and
+// fixed 3 real production bugs of this exact shape (see CLAUDE_INVARIANTS.md).
 class MdRegistry {
 public:
     static MdRegistry& Get() {
@@ -155,21 +155,6 @@ public:
     }
     void Destroy(MdEntity e) { Handle(e).destruct(); }
     bool Valid(MdEntity e) const { return Handle(e).is_alive(); }
-
-    template<typename T>
-    T& Get(MdEntity e) { return Handle(e).get_mut<T>(); }
-    template<typename T>
-    const T& Get(MdEntity e) const { return Handle(e).get<T>(); }
-
-    template<typename T>
-    T* TryGet(MdEntity e) { return Handle(e).template try_get_mut<T>(); }
-    template<typename T>
-    const T* TryGet(MdEntity e) const { return Handle(e).template try_get<T>(); }
-
-    template<typename... T>
-    bool AllOf(MdEntity e) const { auto h = Handle(e); return (h.template has<T>() && ...); }
-    template<typename... T>
-    bool AnyOf(MdEntity e) const { auto h = Handle(e); return (h.template has<T>() || ...); }
 
     template<typename T>
     void Remove(MdEntity e) { Handle(e).template remove<T>(); }

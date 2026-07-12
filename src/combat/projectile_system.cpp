@@ -50,8 +50,8 @@ void ProjectileSystem::Tick(float dt) {
 
             if (hit_count > 0) {
                 for (int i = 0; i < hit_count; ++i) {
-                    if (!reg.Valid(hit_ents[i]) || !reg.AllOf<Health>(hit_ents[i])) continue;
-                    auto& hp = reg.Get<Health>(hit_ents[i]);
+                    if (!reg.Valid(hit_ents[i]) || !(reg.Handle(hit_ents[i]).has<Health>())) continue;
+                    auto& hp = reg.Handle(hit_ents[i]).get_mut<Health>();
                     hp.hp[1] -= pc.damage;  // Torso (index 1)
                     if (hp.hp[1] < 0.0f) hp.hp[1] = 0.0f;
                     hp.UpdateIncap();

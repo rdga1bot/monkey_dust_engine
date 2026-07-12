@@ -85,8 +85,8 @@ uint32_t TransformSoA::Alloc(MdEntity e, float x, float z, uint8_t faction_id) {
 
 void TransformSoA::Free(MdEntity e) {
     auto& reg = MdRegistry::Get();
-    if (!reg.Valid(e) || !reg.AllOf<WorldTransform>(e)) return;
-    auto& tr  = reg.Get<WorldTransform>(e);
+    if (!reg.Valid(e) || !(reg.Handle(e).has<WorldTransform>())) return;
+    auto& tr  = reg.Handle(e).get_mut<WorldTransform>();
     uint32_t slot = tr.slot;
     if (slot == INVALID_SLOT || slot >= (uint32_t)active_count) return;
     tr.slot = INVALID_SLOT;
@@ -102,8 +102,8 @@ void TransformSoA::Free(MdEntity e) {
         MarkFactionDirty(slot);
         MdEntity moved = slot_to_entity[last];
         slot_to_entity[slot] = moved;
-        if (reg.Valid(moved) && reg.AllOf<WorldTransform>(moved))
-            reg.Get<WorldTransform>(moved).slot = slot;
+        if (reg.Valid(moved) && (reg.Handle(moved).has<WorldTransform>()))
+            reg.Handle(moved).get_mut<WorldTransform>().slot = slot;
     }
     px[last]      = DUMMY_POS;
     pz[last]      = DUMMY_POS;

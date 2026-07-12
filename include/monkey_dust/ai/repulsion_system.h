@@ -56,7 +56,7 @@ public:
                int nc = grid.QueryRadius(ta.x, ta.z, QUERY_R, near, 8);
                for (int i = 0; i < nc && npushes < MAX_PUSH - 1; ++i) {
                    if (!reg.Valid(near[i]) || near[i] == a) continue;
-                   const auto* tb = reg.TryGet<WorldTransform>(near[i]);
+                   const auto* tb = reg.Handle(near[i]).try_get_mut<WorldTransform>();
                    if (!tb) continue;
                    float dx = ta.x - tb->x;
                    float dz = ta.z - tb->z;
@@ -72,7 +72,7 @@ public:
         // Apply: all position mutations happen after the view.each completes.
         for (int i = 0; i < npushes; ++i) {
             if (!reg.Valid(s_pushes[i].e)) continue;
-            auto* t = reg.TryGet<WorldTransform>(s_pushes[i].e);
+            auto* t = reg.Handle(s_pushes[i].e).try_get_mut<WorldTransform>();
             if (t) { t->x += s_pushes[i].dx; t->z += s_pushes[i].dz; }
         }
     }

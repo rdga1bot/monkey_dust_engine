@@ -48,7 +48,7 @@ void CaptureFromECS(ReplayBuffer& buf,
         ns.x         = wt.x;
         ns.z         = wt.z;
         ns.entity_id = e.ToIntegral();
-        const AgentState* as = reg.TryGet<AgentState>(e);
+        const AgentState* as = reg.Handle(e).try_get_mut<AgentState>();
         if (as) {
             ns.motivation = (uint8_t)as->motivation;
             ns.awareness  = (uint8_t)as->awareness;

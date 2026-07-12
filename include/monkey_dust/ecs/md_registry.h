@@ -211,6 +211,37 @@ public:
     // dangling-reference bug class structurally impossible here.
     flecs::entity Handle(MdEntity e) const { return flecs::entity(Raw(), e.Raw()); }
 
+    // task #8 Phase 5: stage-routed handle for STRUCTURAL ops (emplace/
+    // set/destruct/remove) issued from code that might run inside a
+    // JobGraph-staged batch (see MdRegistryStageScope above). During
+    // world.readonly_begin(true) (which JobGraph::Run() wraps its wave
+    // in), flecs forbids structural ops on the main world outright — "readonly
+    // assert" — but permits them on a STAGE, where they're automatically
+    // queued and merged back into the world on readonly_end() (readonly_
+    // begin/end are documented to internally bracket defer_begin/defer_end
+    // — see flecs.h's ecs_readonly_begin() doc comment). This is what
+    // replaces DeferredStructuralOps' 3 hand-rolled queues: route the
+    // structural call through StagedHandle() instead of Handle(), and
+    // flecs's own deferred-command mechanism does the rest, generalizing
+    // to any future structural op instead of only the 3 that were
+    // manually audited and queued before.
+    //
+    // Falls back to the plain (main-world) Handle() when no stage is
+    // active (t_stage_override unset) — i.e. this is always safe to call,
+    // inside or outside a JobGraph batch, unlike the old Queue*() calls
+    // which only made sense because Flush() ran them through the real
+    // structural path afterward.
+    //
+    // Read-only accessors (Get/TryGet/AllOf/has) are NOT routed through
+    // this — the existing get_mut<T>()/try_get<T>() on the RAW world
+    // during a concurrent stage's iteration was separately verified safe
+    // by probe (see md_registry.h's top-of-file note); only structural
+    // ops need the stage.
+    flecs::entity StagedHandle(MdEntity e) const {
+        ecs_world_t* stage = md_registry_detail::t_stage_override;
+        return stage ? flecs::entity(stage, e.Raw()) : Handle(e);
+    }
+
     MdRegistry(const MdRegistry&) = delete;
     MdRegistry& operator=(const MdRegistry&) = delete;
 

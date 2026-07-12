@@ -1,7 +1,6 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/ai/behavior_tree.h>
-#include <entt/entt.hpp>
 
 extern "C" {
 #ifdef _WIN32

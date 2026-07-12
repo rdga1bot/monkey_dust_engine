@@ -2,7 +2,6 @@
 #include <monkey_dust/ecs/md_entity.h>
 #include <cstdint>
 #include <cstring>
-#include <entt/entt.hpp>
 
 static constexpr int    MAX_FACTIONS       = 64;
 static constexpr int8_t HOSTILE_THRESHOLD  = -25;

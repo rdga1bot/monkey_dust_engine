@@ -1,7 +1,6 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
 #include <cstdint>
-#include <entt/entt.hpp>
 
 struct AIAgent {
     uint8_t      lod_level;

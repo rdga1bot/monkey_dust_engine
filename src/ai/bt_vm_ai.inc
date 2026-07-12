@@ -425,7 +425,7 @@
             if (BlackboardEntry* tgt = bb_insert(*ab, TARGET_ENTITY_BB_KEY, 3))
                 tgt->val.e = next_val;
             if (BlackboardEntry* nxt = bb_insert(*ab, NEXT_TARGET_ENTITY_BB_KEY, 3))
-                nxt->val.e = static_cast<uint32_t>(entt::tombstone);
+                nxt->val.e = MdEntity::Null().ToIntegral();
             result = BTStatus::Success;
             pc = nd.parent; continue;
         }

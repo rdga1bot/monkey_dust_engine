@@ -1,6 +1,5 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
-#include <entt/entt.hpp>
 
 struct ProjectileComponent {
     MdEntity owner;      // caster entity (excluded from hit checks)

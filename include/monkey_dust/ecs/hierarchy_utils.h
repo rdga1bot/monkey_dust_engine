@@ -4,7 +4,6 @@
 // either side of the relation is destroyed. See hierarchy.h for scope and
 // confirmed use cases (carry unconscious NPC / lead captive).
 #include <monkey_dust/ecs/md_entity.h>
-#include <entt/entt.hpp>
 
 namespace Hierarchy {
 

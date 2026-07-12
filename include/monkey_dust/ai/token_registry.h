@@ -10,7 +10,6 @@
 //   MdTokenRegistry::Get().SetLimit(token_id, 2);   // max 2 concurrent holders
 //   MdTokenRegistry::Get().Reset();                 // on level/scene reset
 
-#include <entt/entt.hpp>
 #include <cstdint>
 #include <cstring>
 

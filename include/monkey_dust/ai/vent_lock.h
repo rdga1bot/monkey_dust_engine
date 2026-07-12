@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <monkey_dust/ecs/md_entity.h>
-#include <entt/entt.hpp>
 
 // ── VentLockTable ─────────────────────────────────────────────────────────────
 // Header-only singleton that grants exclusive vent access to one NPC at a time.

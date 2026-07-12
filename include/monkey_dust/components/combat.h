@@ -2,7 +2,6 @@
 #include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/combat/damage_calc.h>
 #include <monkey_dust/combat/hit_zones.h>
-#include <entt/entt.hpp>
 #include <cstdint>
 
 struct Combat {

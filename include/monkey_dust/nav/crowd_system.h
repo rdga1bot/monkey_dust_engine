@@ -10,7 +10,6 @@
 //   CrowdSystem::Get().FlushToNavAgent(registry);
 
 #include <monkey_dust/ecs/md_registry.h>
-#include <entt/entt.hpp>
 
 class dtCrowd;
 struct dtNavMesh;

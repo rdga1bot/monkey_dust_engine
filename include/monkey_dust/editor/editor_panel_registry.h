@@ -2,7 +2,6 @@
 #include <monkey_dust/ecs/md_entity.h>
 #include <cstdint>
 #include <cstring>
-#include <entt/entt.hpp>
 
 // ── EditorPanelRegistry ───────────────────────────────────────────────────────
 // Lightweight panel registry — panels self-register with an ID, short name,

@@ -1,6 +1,5 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
-#include <entt/entt.hpp>
 
 // LuaEventBus — maps named C++ events to registered Lua callback functions.
 // Handlers are registered from Lua via md_on_event() or from C++ via Register().

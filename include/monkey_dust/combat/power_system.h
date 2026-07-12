@@ -1,6 +1,5 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
-#include <entt/entt.hpp>
 
 // PowerSystem — activates a power for a caster entity.
 // Melee/ment: AoE damage within radius (ment at target pos, melee at caster pos).

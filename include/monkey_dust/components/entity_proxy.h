@@ -1,7 +1,6 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
 #include <cstdint>
-#include <entt/entt.hpp>
 
 // EntityProxyComponent — MD EntityProxy pattern:
 // Lightweight stand-in for a streamed-out entity.

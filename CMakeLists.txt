@@ -13,9 +13,6 @@ set(MD_THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 
 # Додаємо compile targets тільки якщо ще не визначені (при monorepo build
 # root може додати їх раніше — захищаємо від подвійного add_subdirectory).
-if(NOT TARGET entt)
-    add_subdirectory(${MD_THIRD_PARTY}/entt EXCLUDE_FROM_ALL)
-endif()
 if(NOT TARGET glm)
     add_subdirectory(${MD_THIRD_PARTY}/glm EXCLUDE_FROM_ALL)
 endif()
@@ -153,7 +150,6 @@ target_include_directories(monkey_dust_engine
     PUBLIC  ${MD_THIRD_PARTY}/ozz-animation/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
     # Third-party (PUBLIC so consumers also see them)
-    PUBLIC  ${MD_THIRD_PARTY}/entt/single_include
     PUBLIC  ${MD_THIRD_PARTY}/flecs
     PUBLIC  ${MD_THIRD_PARTY}/glm
     PRIVATE ${MD_THIRD_PARTY}/recastnavigation/Recast/Include

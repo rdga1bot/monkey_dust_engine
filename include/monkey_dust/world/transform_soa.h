@@ -7,7 +7,6 @@
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/platform/math_types.h>
 #include <cstdint>
-#include <entt/entt.hpp>
 
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>

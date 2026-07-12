@@ -24,7 +24,6 @@
 //   - Cart + pack animal: a physics constraint/joint (Jolt), not a rigid
 //     parent-child relation.
 #include <monkey_dust/ecs/md_entity.h>
-#include <entt/entt.hpp>
 
 static constexpr int HIERARCHY_MAX_CHILDREN = 4;
 

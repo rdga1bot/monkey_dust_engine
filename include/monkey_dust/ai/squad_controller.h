@@ -31,7 +31,6 @@
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/nav/crowd_system.h>
 #include <monkey_dust/ai/fnv.h>
-#include <entt/entt.hpp>
 #include <cmath>
 
 // ── Squad activity states (VBfA AT_SQUAD_ACTIVITY_*) ─────────────────────────

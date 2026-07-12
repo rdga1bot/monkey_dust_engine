@@ -1,5 +1,4 @@
 #pragma once
-#include <entt/entt.hpp>
 #include <cmath>
 #include <cstring>
 #include <monkey_dust/ecs/registry.h>

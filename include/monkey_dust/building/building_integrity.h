@@ -16,7 +16,7 @@
 // Collapsed nodes have component CollapseState added in the ECS registry;
 //   the render system spawns debris at their WorldTransform position.
 
-#include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/ecs/md_registry.h>
 #include <cstdint>
 #include <cstring>
 
@@ -56,18 +56,19 @@ public:
     }
 
     // Remove a building piece (on demolish or collapse).
-    void OnDestroy(MdEntity e, entt::registry& reg) {
+    void OnDestroy(MdEntity e) {
         int idx = FindIdx(e);
         if (idx < 0) return;
         // Swap-erase
         nodes_[idx] = nodes_[--count_];
         PropagateSupport();
         // Any node now marked !is_supported → trigger collapse.
+        auto& reg = MdRegistry::Get();
         for (int i = 0; i < count_; ++i) {
             BuildingNode& n = nodes_[i];
             if (!n.is_supported && !n.is_collapsing) {
                 n.is_collapsing = true;
-                (void)reg.get_or_emplace<CollapseState>(n.entity);
+                (void)reg.GetOrEmplace<CollapseState>(n.entity);
             }
         }
     }

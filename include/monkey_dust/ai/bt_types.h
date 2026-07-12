@@ -12,7 +12,6 @@
 #include <monkey_dust/ai/vent_lock.h>
 #include <monkey_dust/ai/npc_development.h>
 #include <monkey_dust/ecs/md_entity.h>
-#include <entt/entt.hpp>
 #include <cstdint>
 
 // ── SenseThresholdQualifier ───────────────────────────────────────────────────

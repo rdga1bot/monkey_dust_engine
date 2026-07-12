@@ -2,7 +2,6 @@
 #include <cstdint>
 #include <cmath>
 #include <monkey_dust/ecs/md_entity.h>
-#include <entt/entt.hpp>
 
 // Kenshi zone size. Ogre Terrain::setTerrainScale() gives horizontal_scale=294912.0
 // world UNITS (re_docs/kenshi/terrain.md), but Kenshi's engine unit is 1 unit = 0.1m

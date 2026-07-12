@@ -6,7 +6,6 @@
 // squad_id maps to SquadSignalBus channels (MAX_SQUADS=8).
 // formation selects a hardcoded spacing pattern; leader=MdEntity::Null() → no assigned leader.
 
-#include <entt/entt.hpp>
 
 enum class SquadFormation : uint8_t {
     None   = 0,

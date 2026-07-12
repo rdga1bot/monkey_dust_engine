@@ -1,6 +1,5 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
-#include <entt/entt.hpp>
 
 // PowerSlotManager — 4 power slots per entity with per-slot cooldowns.
 // Slot indices: 0–3. power_id=-1 means empty slot.

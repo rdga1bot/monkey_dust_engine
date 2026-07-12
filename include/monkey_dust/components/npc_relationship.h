@@ -2,7 +2,6 @@
 #include <cstdint>
 #include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/ecs/registry.h>
-#include <entt/entt.hpp>
 #include <monkey_dust/platform/md_log.h>
 #include <flecs.h>
 

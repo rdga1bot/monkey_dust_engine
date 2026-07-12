@@ -26,12 +26,20 @@ struct GraphicsSettings {
     // ── Display ───────────────────────────────────────────────────────────────
     float fog_near     = 1200.f;  // open-world: fog starts at 1200m (past LOD-1 at 600m)
     float fog_far      = 2800.f;  // fully sky at 2800m (hides streaming edge at ~3×500m)
-    // FOG_EXP2 density constant for terrain shaders (terrain_forward.slang/
-    // terrain_pom.slang) — RE-confirmed Kenshi value (re_docs/kenshi/terrain.md
-    // "Subsystem 8: Fog & Atmosphere", fog type 3 = EXP2, density 0.001).
-    // Non-terrain shaders (NPC/PBR/ground — game/src/render/npc_render.cpp)
-    // still use the older linear fog_near/fog_far pair, out of this scope.
-    float fog_density  = 0.001f;
+    // Terrain fog (terrain_forward.slang/terrain_pom.slang, 2026-07-12):
+    // linear near/far, computed per-draw as terrain_cr_m (RenderQualityConfig,
+    // the actual terrain draw distance) * {fog_near_ratio, 1.0} — NOT this
+    // fog_near/fog_far pair (kept above for whatever else may reference it).
+    // Ties fog_t=1.0 exactly to the draw-distance cutoff so the outermost
+    // LOD-crossfade dither band (terrain_cr_m±40m) is hidden in fog for free.
+    // History: briefly FOG_EXP2 (RE-confirmed Kenshi density=0.001,
+    // re_docs/kenshi/terrain.md "Subsystem 8") — reverted because a flat
+    // density with no near offset saturated fog_t≈1.0 across most of a
+    // normal ground-level game view (Kenshi's own model derives near/far
+    // from a view-distance setting with a narrow ramp; this engine never
+    // implemented that part, so the flat density was too aggressive alone).
+    float fog_near_ratio = 0.4f;  // tunable without recompiling shaders
+    float fog_density  = 0.001f;  // no longer read by terrain shaders; kept in case anything else references it
     float fog_color[3] = {0.38f, 0.58f, 0.82f};  // matches sky clear color
     bool  fog_enabled  = true;
 

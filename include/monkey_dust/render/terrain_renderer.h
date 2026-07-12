@@ -67,7 +67,7 @@ public:
         float ambient[4];         // xyz=colour, w=unused
         float world_params[4];    // xy=origin_xz, z=world_to_uv, w=unused
         float ground_layers_a[4]; // xyzw = base,slope,cliff,grass GroundTexLayer indices
-        float ground_layers_b[4]; // xy = dirt,road GroundTexLayer indices; z=fog_density (FOG_EXP2 constant, was fog_far under the old linear scheme); w=unused
+        float ground_layers_b[4]; // xy = dirt,road GroundTexLayer indices; z=fog_far (linear fog, 2026-07-12 — was fog_density/FOG_EXP2 briefly, reverted: EXP2 saturated fog_t≈1.0 across most of a normal game view); w=unused
         float fog_color_near[4];  // xyz=fog colour, w=fog_near
         float blend_layers[4];    // xyz=crossfade target base,slope,cliff; w=SLOT-B base index (used per-chunk, see terrain_gen.cpp — NOT a free/unused slot)
         // x=1.0 -> override ground_layers_a/b via the per-zone SSBO lookup
@@ -108,7 +108,7 @@ public:
         float sun_dir_str[4];   // 16 bytes
         float ambient[4];       // 16 bytes
         float world_params[4];  // 16 bytes
-        float pom_params[4];    // x=height_scale, y=layers_min, z=layers_max, w=fog_density (FOG_EXP2 constant, was fog_far)
+        float pom_params[4];    // x=height_scale, y=layers_min, z=layers_max, w=fog_far (linear fog, 2026-07-12 — see ground_layers_b's comment above)
         float ground_layers_a[4]; // xyzw = base,slope,cliff,grass GroundTexLayer indices
         float ground_layers_b[4]; // xy=dirt,road GroundTexLayer indices; zw=unused
         float fog_color_near[4];  // xyz=fog colour, w=fog_near
@@ -209,16 +209,14 @@ public:
     // Drop-in replacement for DrawRaw. Passes camera world position for tangent-space
     // view vector used in POM ray marching. Falls back to DrawRaw if POM not ready.
     // lod: 0=full 64×64, 1=32×32, 2=16×16, 3=8×8 (uniform across all chunks).
-    // fog_density_override > 0 replaces GraphicsSettings' fog_density (tuned
-    // for normal ground-level gameplay view distances). vDist is full 3D
-    // camera distance, so an aerial camera (e.g. the editor's 3D World tab,
-    // kilometres up) makes even chunks nearly overhead exceed the normal
-    // fog falloff, saturating fog_t to 1.0 and showing solid fog colour
-    // instead of the real chunk texture — same root cause fixed for the
-    // batch API, see SetBatchGroundLayers's doc comment. Pass a much
-    // smaller density (e.g. 0.00005 vs default 0.001) for aerial views —
-    // EXP2 fog visibility scales roughly as 1/density. Pass 0 (default)
-    // for normal gameplay behaviour, unchanged.
+    // fog_density_override > 0 overrides fog_far directly (linear fog, see
+    // graphics_settings.h's fog_near_ratio comment — name kept for source
+    // compatibility, semantics changed 2026-07-12 from an EXP2 density
+    // override to a linear fog_far override). Pass 0 (default) to use the
+    // terrain_cr_m-derived fog_far, correct for normal ground-level gameplay.
+    // For an aerial camera (e.g. the editor's 3D World tab, kilometres up)
+    // vDist is full 3D camera distance, so pass a LARGER fog_far override
+    // (was: smaller density) to keep near-overhead chunks out of fog.
     void DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                     const TerrainChunk& chunk,
                     const float* vp16,
@@ -281,21 +279,22 @@ public:
     // from the last DrawRawChunk call (often all-zero), which showed as a
     // solid wrong-colour (green) plane. Call this once after BeginRawBatch
     // to push a real set of 6 GroundTexLayer indices before a manual draw.
-    // fog_density_override > 0 replaces BeginRawBatch's fog_density (tuned
-    // for normal gameplay view distances, a few km) — a whole-world
-    // background mesh viewed from an aerial editor camera can be tens of km
-    // away, which saturates fog_t to 1.0 under the normal density and washes
-    // the entire mesh out to a solid fog-colour plane (confirmed via GPU
-    // debug: ground texture/UV sampling were both correct, only the final
-    // fog mix was wrong). Pass 0 (default) to leave fog_density untouched.
+    // fog_density_override > 0 replaces BeginRawBatch's fog_far (linear fog,
+    // 2026-07-12 — name kept for source compatibility, was an EXP2 density
+    // override). Default fog_far is terrain_cr_m-derived, tuned for normal
+    // gameplay view distances (a few km) — a whole-world background mesh
+    // viewed from an aerial editor camera can be tens of km away, which
+    // would saturate fog_t to 1.0 and wash the entire mesh to solid fog
+    // colour; pass a LARGER fog_far override for that case. Pass 0 (default)
+    // to leave fog_far untouched.
     void SetBatchGroundLayers(SDL_GPUCommandBuffer* cmd, const float ground_layers[6],
                               float fog_density_override = 0.f);
 
     // Same fog problem as above, for the LOD1 individual-chunk path: DrawRawChunk
-    // DOES set ground_layers correctly per chunk, but copies fog_density from
+    // DOES set ground_layers correctly per chunk, but copies fog_far from
     // batch_fubo_base_ unchanged — so it's ALSO 100% fogged (solid fog colour)
-    // whenever the aerial editor camera's altitude alone exceeds the normal
-    // gameplay fog falloff, regardless of horizontal distance to the chunk.
+    // whenever an aerial camera's distance to the whole-mesh draw exceeds
+    // fog_far, regardless of horizontal distance to any one chunk.
     // Call once after BeginRawBatch, before the DrawRawChunk loop, to fix.
     void SetBatchFogDensity(SDL_GPUCommandBuffer* cmd, float fog_density);
 
@@ -375,6 +374,6 @@ private:
     // DrawRawChunk, editor zone-lookup path) never overwrite it — harmless,
     // that branch never samples tex_albedo_baked.
     void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const;      // forward (LOD1-3) — +b5 baked albedo
-    void FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[7]) const;  // POM (LOD0) — +b5 ground normal array, +b6 baked albedo
+    void FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const;  // POM (LOD0) — +b4 ground normal array, +b5 baked albedo (2026-07-12: tex_ground/b1 dropped, was dead)
 #endif
 };

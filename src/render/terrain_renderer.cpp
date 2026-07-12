@@ -2,6 +2,7 @@
 #include <monkey_dust/world/biome_def.h>
 #include <monkey_dust/world/clutter_gen.h>
 #include <monkey_dust/tools/graphics_settings.h>
+#include <monkey_dust/render/render_quality.h>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -376,7 +377,7 @@ bool TerrainRenderer::InitPOM(const char* detail_path, const PomParams& p)
     pd.has_depth_target   = true;
     pd.vert_uniform_bufs  = 1;   // slot 0: TerrainPomVertUBO (96 bytes)
     pd.frag_uniform_bufs  = 1;   // slot 0: TerrainPomFragUBO (96 bytes)
-    pd.frag_samplers      = 7;   // b0=tex_colour, b1=tex_ground(array), b2=tex_detail, b3=tex_overlay_mask, b4=tex_biome_blend, b5=tex_ground_nml(array), b6=baked per-chunk albedo
+    pd.frag_samplers      = 6;   // b0=tex_colour, b1=tex_detail, b2=tex_overlay_mask, b3=tex_biome_blend, b4=tex_ground_nml(array), b5=baked per-chunk albedo (2026-07-12: tex_ground dropped, was dead/DCE'd — see terrain_pom.slang's binding-renumbering comment)
 
     fprintf(stderr, "[TerrainRenderer] creating POM pipeline...\n");
     if (!pom_pipeline_.Create(pd)) {
@@ -468,42 +469,40 @@ void TerrainRenderer::ShutdownPOM()
 }
 
 #ifdef MD_SDL_GPU
-void TerrainRenderer::FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[7]) const
+void TerrainRenderer::FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const
 {
     // binding 0: Kenshi overlay (world colour — biome identity)
     bool ov = tex_colour_.Valid() && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
     out[0].texture = ov ? tex_colour_.SDLTexture() : fallback_tex_;
     out[0].sampler = ov ? tex_colour_.SDLSampler() : fallback_sampler_;
-    // binding 1: per-biome DDS ground array (detail modulator)
-    bool ga = ground_array_ready_ && tex_ground_array_.Valid()
-              && tex_ground_array_.SDLTexture() && tex_ground_array_.SDLSampler();
-    out[1].texture = ga ? tex_ground_array_.SDLTexture() : nullptr;
-    out[1].sampler = ga ? tex_ground_array_.SDLSampler() : nullptr;
-    // binding 2: detail/height texture (POM ray marching height field)
+    // (formerly binding 1: per-biome DDS ground array — dropped 2026-07-12,
+    // dead since BakeAlbedo replaced its per-fragment usage with binding 5's
+    // single sample; see terrain_pom.slang's binding-renumbering comment.)
+    // binding 1: detail/height texture (POM ray marching height field)
     bool dv = tex_detail_.Valid() && tex_detail_.SDLTexture() && tex_detail_.SDLSampler();
-    out[2].texture = dv ? tex_detail_.SDLTexture() : fallback_detail_tex_;
-    out[2].sampler = dv ? tex_detail_.SDLSampler() : fallback_detail_sampler_;
-    // binding 3: painted grass/dirt/road mask (R=grass,G=secondary,B=dirt,A=road)
+    out[1].texture = dv ? tex_detail_.SDLTexture() : fallback_detail_tex_;
+    out[1].sampler = dv ? tex_detail_.SDLSampler() : fallback_detail_sampler_;
+    // binding 2: painted grass/dirt/road mask (R=grass,G=secondary,B=dirt,A=road)
     bool mv = overlay_mask_ready_ && tex_overlay_mask_.Valid()
               && tex_overlay_mask_.SDLTexture() && tex_overlay_mask_.SDLSampler();
-    out[3].texture = mv ? tex_overlay_mask_.SDLTexture() : fallback_mask_tex_;
-    out[3].sampler = mv ? tex_overlay_mask_.SDLSampler() : fallback_mask_sampler_;
-    // binding 4: procedural biome-crossfade blend map (R/G/B=neighbour
+    out[2].texture = mv ? tex_overlay_mask_.SDLTexture() : fallback_mask_tex_;
+    out[2].sampler = mv ? tex_overlay_mask_.SDLSampler() : fallback_mask_sampler_;
+    // binding 3: procedural biome-crossfade blend map (R/G/B=neighbour
     // base/slope/cliff idx, A=blend weight)
     bool bv = biome_blend_ready_ && tex_biome_blend_.Valid()
               && tex_biome_blend_.SDLTexture() && tex_biome_blend_.SDLSampler();
-    out[4].texture = bv ? tex_biome_blend_.SDLTexture() : fallback_blend_tex_;
-    out[4].sampler = bv ? tex_biome_blend_.SDLSampler() : fallback_blend_sampler_;
-    // binding 5: per-biome DDS normal-map array (paired 1:1 with binding 1's
-    // diffuse layers) — see biome_def.h's kGroundNmlPaths comment.
+    out[3].texture = bv ? tex_biome_blend_.SDLTexture() : fallback_blend_tex_;
+    out[3].sampler = bv ? tex_biome_blend_.SDLSampler() : fallback_blend_sampler_;
+    // binding 4: per-biome DDS normal-map array (paired 1:1 with the diffuse
+    // layers — see biome_def.h's kGroundNmlPaths comment).
     bool na = ground_array_ready_ && tex_ground_nml_array_.Valid()
               && tex_ground_nml_array_.SDLTexture() && tex_ground_nml_array_.SDLSampler();
-    out[5].texture = na ? tex_ground_nml_array_.SDLTexture() : nullptr;
-    out[5].sampler = na ? tex_ground_nml_array_.SDLSampler() : nullptr;
-    // binding 6: baked per-chunk albedo (see BakeAlbedo) — default fallback,
+    out[4].texture = na ? tex_ground_nml_array_.SDLTexture() : nullptr;
+    out[4].sampler = na ? tex_ground_nml_array_.SDLSampler() : nullptr;
+    // binding 5: baked per-chunk albedo (see BakeAlbedo) — default fallback,
     // DrawRawPOM overwrites with chunk.albedo_tex per-draw when baked.
-    out[6].texture = fallback_tex_;
-    out[6].sampler = fallback_sampler_;
+    out[5].texture = fallback_tex_;
+    out[5].sampler = fallback_sampler_;
 }
 #endif
 
@@ -568,10 +567,17 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
     fubo.world_params[0]= world_origin_x; fubo.world_params[1] = world_origin_z;
     fubo.world_params[2]= world_to_uv;    fubo.world_params[3] = 0.f;
     const auto& fog = GraphicsSettings::Get();
+    // Linear fog, tied to terrain_cr_m — see BeginRawBatch's comment.
+    // fog_density_override's name is now legacy — a positive value overrides
+    // fog_far directly (was: overrides EXP2 density); 0 = the terrain_cr_m-
+    // derived default. Callers wanting the old "smaller density for an aerial
+    // camera" behaviour should instead pass a LARGER fog_far override.
+    const float fog_far = (fog_density_override > 0.f) ? fog_density_override
+                                                         : RenderQualityConfig::Get().terrain_cr_m;
     fubo.pom_params[0]  = pom_params_.height_scale;
     fubo.pom_params[1]  = (float)pom_params_.layers_min;
     fubo.pom_params[2]  = (float)pom_params_.layers_max;
-    fubo.pom_params[3]  = (fog_density_override > 0.f) ? fog_density_override : fog.fog_density;
+    fubo.pom_params[3]  = fog_far;
     fubo.ground_layers_a[0] = chunk.ground_layers[0];  // base
     fubo.ground_layers_a[1] = chunk.ground_layers[1];  // slope
     fubo.ground_layers_a[2] = chunk.ground_layers[2];  // cliff
@@ -585,17 +591,17 @@ void TerrainRenderer::DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cm
     fubo.blend_layers[2] = chunk.blend_layers[2];
     fubo.blend_layers[3] = chunk.blend_layers[3];  // slot B (second differing neighbour) base index
     fubo.fog_color_near[0] = fog.fog_color[0]; fubo.fog_color_near[1] = fog.fog_color[1];
-    fubo.fog_color_near[2] = fog.fog_color[2]; fubo.fog_color_near[3] = fog.fog_near;
+    fubo.fog_color_near[2] = fog.fog_color[2]; fubo.fog_color_near[3] = fog.fog_near_ratio * fog_far;
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[7];
+    SDL_GPUTextureSamplerBinding bindings[6];
     FillPomSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
     if (chunk.albedo_baked && chunk.albedo_tex.Valid()) {
-        bindings[6].texture = chunk.albedo_tex.SDLTexture();
-        bindings[6].sampler = chunk.albedo_tex.SDLSampler();
+        bindings[5].texture = chunk.albedo_tex.SDLTexture();
+        bindings[5].sampler = chunk.albedo_tex.SDLSampler();
     }
-    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 7);
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 6);
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
 #endif
@@ -713,6 +719,8 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
 
     const auto& fog = GraphicsSettings::Get();
+    // Linear fog, tied to terrain_cr_m — see BeginRawBatch's comment.
+    const float fog_far = RenderQualityConfig::Get().terrain_cr_m;
     TerrainFragUBO fubo;
     fubo.sun_dir_str[0] = sun.dir[0]; fubo.sun_dir_str[1] = sun.dir[1];
     fubo.sun_dir_str[2] = sun.dir[2]; fubo.sun_dir_str[3] = sun.strength;
@@ -723,9 +731,9 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     fubo.ground_layers_a[0] = chunk.ground_layers[0]; fubo.ground_layers_a[1] = chunk.ground_layers[1];
     fubo.ground_layers_a[2] = chunk.ground_layers[2]; fubo.ground_layers_a[3] = chunk.ground_layers[3];
     fubo.ground_layers_b[0] = chunk.ground_layers[4]; fubo.ground_layers_b[1] = chunk.ground_layers[5];
-    fubo.ground_layers_b[2] = fog.fog_density; fubo.ground_layers_b[3] = 0.f;
+    fubo.ground_layers_b[2] = fog_far; fubo.ground_layers_b[3] = 0.f;
     fubo.fog_color_near[0] = fog.fog_color[0]; fubo.fog_color_near[1] = fog.fog_color[1];
-    fubo.fog_color_near[2] = fog.fog_color[2]; fubo.fog_color_near[3] = fog.fog_near;
+    fubo.fog_color_near[2] = fog.fog_color[2]; fubo.fog_color_near[3] = fog.fog_near_ratio * fog_far;
     fubo.blend_layers[0] = chunk.blend_layers[0]; fubo.blend_layers[1] = chunk.blend_layers[1];
     fubo.blend_layers[2] = chunk.blend_layers[2]; fubo.blend_layers[3] = chunk.blend_layers[3];
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
@@ -785,6 +793,8 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     cb.PushVertexUniforms(0, &vubo, sizeof(vubo));
 
     const auto& fog = GraphicsSettings::Get();
+    // Linear fog, tied to terrain_cr_m — see BeginRawBatch's comment.
+    const float fog_far = RenderQualityConfig::Get().terrain_cr_m;
     TerrainFragUBO fubo;
     fubo.sun_dir_str[0] = sun.dir[0]; fubo.sun_dir_str[1] = sun.dir[1];
     fubo.sun_dir_str[2] = sun.dir[2]; fubo.sun_dir_str[3] = sun.strength;
@@ -795,9 +805,9 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     fubo.ground_layers_a[0] = chunk.ground_layers[0]; fubo.ground_layers_a[1] = chunk.ground_layers[1];
     fubo.ground_layers_a[2] = chunk.ground_layers[2]; fubo.ground_layers_a[3] = chunk.ground_layers[3];
     fubo.ground_layers_b[0] = chunk.ground_layers[4]; fubo.ground_layers_b[1] = chunk.ground_layers[5];
-    fubo.ground_layers_b[2] = fog.fog_density; fubo.ground_layers_b[3] = 0.f;
+    fubo.ground_layers_b[2] = fog_far; fubo.ground_layers_b[3] = 0.f;
     fubo.fog_color_near[0] = fog.fog_color[0]; fubo.fog_color_near[1] = fog.fog_color[1];
-    fubo.fog_color_near[2] = fog.fog_color[2]; fubo.fog_color_near[3] = fog.fog_near;
+    fubo.fog_color_near[2] = fog.fog_color[2]; fubo.fog_color_near[3] = fog.fog_near_ratio * fog_far;
     fubo.blend_layers[0] = chunk.blend_layers[0]; fubo.blend_layers[1] = chunk.blend_layers[1];
     fubo.blend_layers[2] = chunk.blend_layers[2]; fubo.blend_layers[3] = chunk.blend_layers[3];
     cb.PushFragmentUniforms(0, &fubo, sizeof(fubo));
@@ -849,15 +859,19 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     // (still avoids the per-chunk pipeline/sampler binds this batching
     // exists to save).
     const auto& fog = GraphicsSettings::Get();
+    // Linear fog, tied to terrain_cr_m (2026-07-12) — see graphics_settings.h's
+    // fog_near_ratio comment. fog_t reaches 1.0 exactly at the draw-distance
+    // cutoff, hiding the outermost LOD-crossfade dither band for free.
+    const float fog_far = RenderQualityConfig::Get().terrain_cr_m;
     batch_fubo_base_.sun_dir_str[0]=sun.dir[0]; batch_fubo_base_.sun_dir_str[1]=sun.dir[1];
     batch_fubo_base_.sun_dir_str[2]=sun.dir[2]; batch_fubo_base_.sun_dir_str[3]=sun.strength;
     batch_fubo_base_.ambient[0]=sun.ambient[0]; batch_fubo_base_.ambient[1]=sun.ambient[1];
     batch_fubo_base_.ambient[2]=sun.ambient[2]; batch_fubo_base_.ambient[3]=0.f;
     batch_fubo_base_.world_params[0]=world_origin_x; batch_fubo_base_.world_params[1]=world_origin_z;
     batch_fubo_base_.world_params[2]=world_to_uv;    batch_fubo_base_.world_params[3]=0.f;
-    batch_fubo_base_.ground_layers_b[2] = fog.fog_density;
+    batch_fubo_base_.ground_layers_b[2] = fog_far;
     batch_fubo_base_.fog_color_near[0] = fog.fog_color[0]; batch_fubo_base_.fog_color_near[1] = fog.fog_color[1];
-    batch_fubo_base_.fog_color_near[2] = fog.fog_color[2]; batch_fubo_base_.fog_color_near[3] = fog.fog_near;
+    batch_fubo_base_.fog_color_near[2] = fog.fog_color[2]; batch_fubo_base_.fog_color_near[3] = fog.fog_near_ratio * fog_far;
     // Explicit reset — see TerrainFragUBO::use_zone_lookup's doc comment:
     // must not leak a stale 1.0 from an earlier synthesis/compact-LOD2 draw
     // this same frame into the normal per-chunk DrawRawChunk path below.

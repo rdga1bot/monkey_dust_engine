@@ -242,8 +242,8 @@ void DirectorSystem::Tick(float dt) {
         // pr.max_menaces threat sources are found — max_activation ends
         // up identical either way (a simple running max), just computed
         // with a bit more work on ticks with many sensed entities.
-        auto view = reg.View<SenseComponent>();
-        view.each([&](MdEntity, SenseComponent& sc) {
+        static auto q_menace = reg.Raw().query<SenseComponent>();
+        MdEach(q_menace, [&](MdEntity, SenseComponent& sc) {
             if (sc.activation[0] > max_activation)
                 max_activation = sc.activation[0];
         });
@@ -272,8 +272,8 @@ void DirectorSystem::Tick(float dt) {
     const bool stage_changed  = stage_ != last_bc_stage_;
     if (menace_changed || stage_changed) {
         // Broadcast only to entities that have an AgentBlackboard (cold component).
-        auto view = reg.View<AgentBlackboard>();
-        view.each([&](MdEntity, AgentBlackboard& bb) {
+        static auto q_bcast = reg.Raw().query<AgentBlackboard>();
+        MdEach(q_bcast, [&](MdEntity, AgentBlackboard& bb) {
             bb_set_float(bb, K_MENACE, menace_);
             bb_set_int  (bb, K_STAGE,  static_cast<int32_t>(stage_));
         });

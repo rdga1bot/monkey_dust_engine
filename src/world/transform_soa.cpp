@@ -111,7 +111,8 @@ void TransformSoA::Free(MdEntity e) {
 }
 
 void TransformSoA::FlushAoStoSoA(MdRegistry& reg) {
-    reg.View<WorldTransform>().each([](const WorldTransform& tr) {
+    static auto q_p3_transform_soa_1 = reg.Raw().query<WorldTransform>();
+    MdEach(q_p3_transform_soa_1, [](const WorldTransform& tr) {
         if (MD_UNLIKELY(tr.slot == INVALID_SLOT ||
                         tr.slot >= (uint32_t)TransformSoA::Get().active_count))
             return;

@@ -16,6 +16,7 @@
 #include <monkey_dust/ai/awareness_limits.h>
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_registry.h>
+#include <monkey_dust/ai/ai_queries.h>
 #include <monkey_dust/platform/job_system.h>
 #include <cmath>
 #ifdef __AVX2__
@@ -130,7 +131,7 @@ inline void SenseSystemUpdate(float now_ms) {
     auto& reg = MdRegistry::Get();
 
     MdEntity player = MdEntity::Null();
-    reg.View<AgentState>().each([&](MdEntity e, const AgentState& as) {
+    MdEach(ai_queries::AgentStateOnly(), [&](MdEntity e, const AgentState& as) {
         if (player == MdEntity::Null() && as.lcflags.test(lcf::IS_PLAYER))
             player = e;
     });
@@ -149,7 +150,7 @@ inline void SenseSystemUpdate(float now_ms) {
     // throttle stays here since it mutates sc.sense_cooldown_frames per-entity
     // (cheap, and keeps the "who gets a job this tick" decision in one place).
     s_sense_count = 0;
-    reg.View<SenseComponent, WorldTransform, AgentState>().each([&](
+    MdEach(ai_queries::SenseWorldTransformAgentState(), [&](
         MdEntity e, SenseComponent& sc,
         const WorldTransform& wt, AgentState& as)
     {
@@ -274,12 +275,12 @@ inline void SenseSystemUpdate(float now_ms) {
 
     // B-3: NoiseEmitter pass — fill activation[AudioCombat=1] and activation[AudioMovement=2]
     // from nearby noise sources. Separate from the player detection path above.
-    reg.View<NoiseEmitter, WorldTransform>().each([&](
+    MdEach(ai_queries::NoiseWorldTransform(), [&](
         const NoiseEmitter& ne, const WorldTransform& nwt)
     {
         if (ne.noise_radius_m <= 0.f) return;
         float r2 = ne.noise_radius_m * ne.noise_radius_m;
-        reg.View<SenseComponent, WorldTransform>().each([&](
+        MdEach(ai_queries::SenseWorldTransform(), [&](
             SenseComponent& sc, const WorldTransform& owt)
         {
             float dx = nwt.x - owt.x, dz = nwt.z - owt.z;
@@ -299,13 +300,13 @@ inline void SenseSystemUpdate(float now_ms) {
     });
 
     // B-3: SmellEmitter pass — fill activation[Smell=3] from nearby smell sources.
-    reg.View<SmellEmitter, WorldTransform>().each([&](
+    MdEach(ai_queries::SmellWorldTransform(), [&](
         const SmellEmitter& se, const WorldTransform& swt)
     {
         if (se.smell_radius_m <= 0.f) return;
         float r2 = se.smell_radius_m * se.smell_radius_m;
         float intensity = (float)se.intensity / 255.f;
-        reg.View<SenseComponent, WorldTransform>().each([&](
+        MdEach(ai_queries::SenseWorldTransform(), [&](
             SenseComponent& sc, const WorldTransform& owt)
         {
             float dx = swt.x - owt.x, dz = swt.z - owt.z;

@@ -2,6 +2,13 @@
 #include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/ai/bt_types.h>
 
+// Defined in behavior_tree.cpp; declared here (not just relied on via Unity
+// Build TU-merging, which bt_factories.cpp's "addXxx()" factory methods
+// used to depend on implicitly — broke when adding engine/src/ai/
+// ai_queries.cpp shifted the Unity batch split and put the two files in
+// different translation units).
+void initNode(BTNode& n, BTNodeType t);
+
 class BehaviorTree {
 public:
     static constexpr uint16_t INVALID      = 0xFFFF;

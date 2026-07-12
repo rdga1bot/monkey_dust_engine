@@ -14,7 +14,7 @@ BehaviorTree::BehaviorTree() {
     memset(m_state,    0, sizeof(m_state));
 }
 
-static inline void initNode(BTNode& n, BTNodeType t) {
+void initNode(BTNode& n, BTNodeType t) {
     n.type       = t;
     n.flags      = 0;
     n.parent     = BehaviorTree::INVALID;

@@ -31,6 +31,7 @@
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/nav/crowd_system.h>
 #include <monkey_dust/ai/fnv.h>
+#include <monkey_dust/ai/ai_queries.h>
 #include <cmath>
 
 // ── Squad activity states (VBfA AT_SQUAD_ACTIVITY_*) ─────────────────────────
@@ -177,7 +178,7 @@ public:
     // player_x/z: current player world position
     static void Update(float dt_ms, float player_x, float player_z) {
         auto& reg = MdRegistry::Get();
-        reg.View<SquadController>().each([&](MdEntity, SquadController& sc) {
+        MdEach(ai_queries::SquadControllers(), [&](MdEntity, SquadController& sc) {
             if (sc.member_count <= 0) return;
 
             // ── Squad thinks every THINK_INTERVAL_MS ─────────────────────────

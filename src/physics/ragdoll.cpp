@@ -153,8 +153,8 @@ void RagdollSystem::Tick(float dt, float player_x, float player_z) {
     const float lod2 = LOD_RADIUS_M * LOD_RADIUS_M;
 
     // Activate dead NPCs within LOD range; deactivate those beyond.
-    auto view = reg.View<LimbHealth, WorldTransform>();
-    view.each([&](MdEntity e, LimbHealth& lh, WorldTransform& tr) {
+    static auto q_lod = reg.Raw().query<LimbHealth, WorldTransform>();
+    MdEach(q_lod, [&](MdEntity e, LimbHealth& lh, WorldTransform& tr) {
         if (!lh.incapacitated) return;
 
         float dx = tr.x - player_x;
@@ -172,8 +172,8 @@ void RagdollSystem::Tick(float dt, float player_x, float player_z) {
     });
 
     // Advance timers on active ragdolls; remove after SLEEP_SETTLE_S.
-    auto rc_view = reg.View<RagdollComponent>();
-    rc_view.each([&](MdEntity e, RagdollComponent& rc) {
+    static auto q_active_ragdolls = reg.Raw().query<RagdollComponent>();
+    MdEach(q_active_ragdolls, [&](MdEntity e, RagdollComponent& rc) {
         if (!rc.active) return;
         rc.time_active_s += dt;
         if (rc.time_active_s > SLEEP_SETTLE_S) {
@@ -234,8 +234,8 @@ bool RagdollSystem::GetBoneMatrices(MdEntity e, float* out, int bone_count) cons
 void RagdollSystem::DeactivateChunk(float min_x, float min_z,
                                     float max_x, float max_z) {
     auto& reg = MdRegistry::Get();
-    auto view = reg.View<RagdollComponent, WorldTransform>();
-    view.each([&](MdEntity e, RagdollComponent& rc, WorldTransform& tr) {
+    static auto q_chunk = reg.Raw().query<RagdollComponent, WorldTransform>();
+    MdEach(q_chunk, [&](MdEntity e, RagdollComponent& rc, WorldTransform& tr) {
         if (!rc.active) return;
         if (tr.x >= min_x && tr.x <= max_x && tr.z >= min_z && tr.z <= max_z)
             Deactivate(e, reg);

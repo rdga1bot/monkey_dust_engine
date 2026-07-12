@@ -50,8 +50,8 @@ public:
         auto& reg = MdRegistry::Get();
 
         // Collect: gather push vectors without modifying positions.
-        reg.View<WorldTransform, NavAgent>()
-           .each([&](MdEntity a, const WorldTransform& ta, const NavAgent&) {
+        static auto q_p3_repulsion_system_1 = reg.Raw().query<WorldTransform, NavAgent>();
+        MdEach(q_p3_repulsion_system_1, [&](MdEntity a, const WorldTransform& ta, const NavAgent&) {
                MdEntity near[8];
                int nc = grid.QueryRadius(ta.x, ta.z, QUERY_R, near, 8);
                for (int i = 0; i < nc && npushes < MAX_PUSH - 1; ++i) {

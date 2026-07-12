@@ -47,7 +47,8 @@ void PowerSystem::DoMelee(MdEntity caster, float cx, float cz,
     static HitRecord hits[64];
     int hit_count = 0;
 
-    reg.View<WorldTransform, Health>().each(
+    static auto q_p3_power_system_1 = reg.Raw().query<WorldTransform, Health>();
+    MdEach(q_p3_power_system_1, 
         [&](MdEntity e, const WorldTransform& t, const Health&) {
             if (e == caster || hit_count >= 64) return;
             float dx = t.x - cx, dz = t.z - cz;

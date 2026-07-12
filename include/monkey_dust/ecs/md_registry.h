@@ -58,61 +58,65 @@ private:
 // confirmed empirically; there's no other clean way to ask "just mine."
 struct MdManagedTag {};
 
-// MdView — task #8 (EnTT->flecs strangler-fig migration), parts B3.1-B3.4.
+// MdEach/MdFirst — task #8 Phase 3 (View<T...>() facade removal).
 //
-// Wraps a flecs::query<T...> so MdRegistry::View<T...>() can hand out
-// MdEntity-typed entities to callback lambdas without every call site
-// changing. flecs::query::each(Func) dispatches on whether Func's first
-// param is flecs::entity — since that check targets the REAL flecs::entity
-// type, and our own each(Func) wraps into a lambda whose first param IS a
-// real flecs::entity (not MdEntity), flecs's own dispatch keeps working;
-// each(Func) below only needs to decide whether to wrap-and-convert to
-// MdEntity or pass the user's Func straight through unmodified.
+// Replace MdView, which hid a flecs::query<T...> behind a header-template
+// function-local static — the SAME static, shared across every call site
+// for a given T... pack WITHIN one linkage unit, but independently
+// duplicated across a dlopen'd .so boundary (a real problem for the two
+// hot-reloadable editor/gameplay .so targets: each side would silently
+// get its own separate, separately-warmed query object for what looks
+// like "the same" MdRegistry::View<T...>() call).
 //
-// No zero-argument structured-binding form here (unlike B3.1-era MdView) —
-// flecs queries have no entt-style "range of tuples" each() overload, only
-// the callback form, and nothing in the codebase used the zero-arg form
-// directly (the handful of structured-binding call sites all went through
-// .Raw().each() instead, which those call sites were rewritten off of in
-// B3.4 since flecs simply doesn't support that shape).
-template<typename Query, typename... T>
-class MdView {
-public:
-    explicit MdView(Query q) : query_(q) {}
-
-    template<typename Func>
-    void each(Func func) {
-        ecs_world_t* stage = md_registry_detail::t_stage_override;
-        if constexpr (std::is_invocable_v<Func, MdEntity, T&...>) {
-            auto wrapped = [&func](flecs::entity e, T&... args) { func(MdEntity(e.id()), args...); };
-            if (stage) query_.iter(stage).each(wrapped);
-            else       query_.each(wrapped);
+// The fix: callers now own an explicit flecs::query<T...> themselves —
+// either a plain per-call-site `static auto q = reg.Raw().query<T...>();`
+// for call sites with no cross-.so or cross-thread sharing need, or a
+// named, non-template accessor function (defined once in a .cpp, e.g.
+// game/src/ai/ai_queries.cpp) for the handful of signatures that DO need
+// to be the same shared, pre-warmed object everywhere (the concurrent
+// JobGraph wave's queries — see ai_queries.h for why). MdEach/MdFirst are
+// stateless — safe to call on any flecs::query<T...>, regardless of who
+// owns it or where it lives — so they can stay in this header without
+// reintroducing the per-.so duplication problem (no static state here).
+//
+// Stage-awareness (t_stage_override) is preserved exactly as MdView had
+// it: whichever query is passed in gets routed through iter(stage) when
+// inside a JobGraph-staged batch, or iterated directly otherwise — this
+// is what makes concurrent TickNeedsAndInjuries/TickAI query iteration
+// safe (see the t_stage_override note above this file's opening comment).
+//
+// Callback signature: same convention as before — flecs::query::each()
+// natively dispatches on whether Func accepts (flecs::entity, T&...) or
+// just (T&...), so the wrapping lambda below only needs to convert that
+// flecs::entity into MdEntity when the caller's Func wants an MdEntity
+// first (checked the same way MdView did).
+template<typename Query, typename Func>
+void MdEach(Query& q, Func&& func) {
+    ecs_world_t* stage = md_registry_detail::t_stage_override;
+    auto wrapped = [&func](flecs::entity fe, auto&... args) {
+        if constexpr (std::is_invocable_v<Func, MdEntity, decltype(args)&...>) {
+            func(MdEntity(fe.id()), args...);
         } else {
-            if (stage) query_.iter(stage).each(func);
-            else        query_.each(func);
+            func(args...);
         }
-    }
+    };
+    if (stage) q.iter(stage).each(wrapped);
+    else       q.each(wrapped);
+}
 
-    bool empty() { return query_.count() == 0; }
-
-    // First matching entity, or MdEntity::Null() if none. flecs queries
-    // have no early-exit each() — this always visits every match, but its
-    // only 2 callers are editor/dialog code, not hot path.
-    MdEntity front() {
-        MdEntity result = MdEntity::Null();
-        bool found = false;
-        query_.each([&](flecs::entity e, T&...) {
-            if (!found) { result = MdEntity(e.id()); found = true; }
-        });
-        return result;
-    }
-
-    // Escape hatch: raw flecs query, for anything not covered above.
-    Query& Raw() { return query_; }
-
-private:
-    Query query_;
-};
+// First matching entity, or MdEntity::Null() if none — a real early-exit
+// via flecs::query::find() (unlike MdView::front(), which had to visit
+// every match since flecs's each() has no early-exit protocol). Templated
+// on the query's Components... pack (not a generic `auto&...` predicate)
+// because flecs::find_delegate resolves the predicate against TWO
+// candidate signatures — (flecs::iter&, size_t, Components&...) and plain
+// (Components&...) — and a fully generic lambda matches both at once,
+// making overload resolution ambiguous.
+template<typename... Components>
+MdEntity MdFirst(flecs::query<Components...>& q) {
+    flecs::entity found = q.find([](Components&...) { return true; });
+    return found ? MdEntity(found.id()) : MdEntity::Null();
+}
 
 // MdRegistry — task #8 (EnTT->flecs strangler-fig migration), part B3.4.
 //
@@ -178,47 +182,10 @@ public:
         h.template modified<T>();
     }
 
-    template<typename... T>
-    auto View() {
-        static auto q = Raw().query<T...>();
-        return MdView<decltype(q), T...>(q);
-    }
-
     // Destroys every MdRegistry-managed entity (tagged MdManagedTag) —
     // does NOT touch flecs's own internal bootstrap/module entities.
     void Clear() {
         Raw().query<MdManagedTag>().each([](flecs::entity e, MdManagedTag) { e.destruct(); });
-    }
-
-    // Iterate every MdRegistry-managed entity. If func returns bool,
-    // returning false stops iteration early is NOT supported here (flecs's
-    // query.each() has no early-exit callback protocol) — func always
-    // visits every managed entity; callers wanting a cap just no-op past
-    // their limit inside func.
-    //
-    // Stage-aware for the same reason MdView::each() is (see the
-    // t_stage_override note above this class): nothing calls Each() from
-    // inside a JobGraph batch today (a sanity-check search found no
-    // TickAI/TickNeedsAndInjuries call site reaching it — a fuller audit
-    // of every registry touch point in both call trees is separately in
-    // progress), but making it check the override costs nothing when
-    // unset and closes the gap for whatever batch reaches for it next,
-    // instead of leaving it as a landmine that only stays safe as long as
-    // nobody adds that call.
-    template<typename Func>
-    void Each(Func func) {
-        static auto q = Raw().query<MdManagedTag>();
-        ecs_world_t* stage = md_registry_detail::t_stage_override;
-        auto wrapped = [&func](flecs::entity e, MdManagedTag) { func(MdEntity(e.id())); };
-        if (stage) q.iter(stage).each(wrapped);
-        else       q.each(wrapped);
-    }
-
-    size_t Count() {
-        static auto q = Raw().query<MdManagedTag>();
-        ecs_world_t* stage = md_registry_detail::t_stage_override;
-        if (stage) return (size_t)q.iter(stage).count();
-        return (size_t)q.count();
     }
 
     // Reconstruct an MdEntity from a stored uint32 index (e.g.

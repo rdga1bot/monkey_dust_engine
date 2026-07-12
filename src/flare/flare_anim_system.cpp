@@ -42,8 +42,8 @@ void FlareAnimSystem::Init() {
     BillboardRenderer::Get().Init();
 
     auto& reg = MdRegistry::Get();
-    reg.View<FlareActorComponent, FlareSpriteAnim>()
-       .each([&](FlareActorComponent& fac, FlareSpriteAnim& sa) {
+    static auto q_p3_flare_anim_system_1 = reg.Raw().query<FlareActorComponent, FlareSpriteAnim>();
+    MdEach(q_p3_flare_anim_system_1, [&](FlareActorComponent& fac, FlareSpriteAnim& sa) {
         if (sa.atlas_slot >= 0) return;
         const SpriteCategoryEntry* e =
             SpriteResolver::Get().Resolve(fac.category);
@@ -58,8 +58,8 @@ void FlareAnimSystem::Init() {
 void FlareAnimSystem::Tick(float dt_ms) {
     if (!inited_) return;
     auto& reg = MdRegistry::Get();
-    reg.View<FlareActorComponent, FlareSpriteAnim, NavAgent, WorldTransform>()
-       .each([&](const FlareActorComponent&,
+    static auto q_p3_flare_anim_system_2 = reg.Raw().query<FlareActorComponent, FlareSpriteAnim, NavAgent, WorldTransform>();
+    MdEach(q_p3_flare_anim_system_2, [&](const FlareActorComponent&,
                  FlareSpriteAnim& sa,
                  const NavAgent& nav,
                  const WorldTransform& tr)
@@ -88,8 +88,8 @@ void FlareAnimSystem::Tick(float dt_ms) {
 void FlareAnimSystem::SubmitBillboards(float tile_world_size) {
     if (!inited_) return;
     auto& reg = MdRegistry::Get();
-    reg.View<FlareSpriteAnim, WorldTransform>()
-       .each([&](const FlareSpriteAnim& sa, const WorldTransform& tr) {
+    static auto q_p3_flare_anim_system_3 = reg.Raw().query<FlareSpriteAnim, WorldTransform>();
+    MdEach(q_p3_flare_anim_system_3, [&](const FlareSpriteAnim& sa, const WorldTransform& tr) {
         if (sa.atlas_slot < 0 || !sa.anim.set) return;
         const SpriteFrame* f = CurrentFrame(sa.anim);
         if (!f || f->w == 0 || f->h == 0) return;

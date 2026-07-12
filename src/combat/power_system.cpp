@@ -90,8 +90,8 @@ void PowerSystem::SpawnProjectile(MdEntity caster,
     pc.radius     = 0.4f;
 
     auto proj = reg.Create();
-    reg.Emplace<ProjectileComponent>(proj, pc);
-    reg.Emplace<WorldTransform>(proj, WorldTransform{cx, 0.0f, cz, 0.0f});
+    reg.Handle(proj).emplace<ProjectileComponent>(pc);
+    reg.Handle(proj).emplace<WorldTransform>(WorldTransform{cx, 0.0f, cz, 0.0f});
 }
 
 } // namespace md

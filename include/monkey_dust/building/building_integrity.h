@@ -68,7 +68,8 @@ public:
             BuildingNode& n = nodes_[i];
             if (!n.is_supported && !n.is_collapsing) {
                 n.is_collapsing = true;
-                (void)reg.GetOrEmplace<CollapseState>(n.entity);
+                if (!reg.Handle(n.entity).has<CollapseState>())
+                    reg.Handle(n.entity).emplace<CollapseState>();
             }
         }
     }

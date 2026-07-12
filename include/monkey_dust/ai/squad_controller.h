@@ -155,7 +155,8 @@ public:
                                     float patrol_radius = 40.f) {
         auto& reg        = MdRegistry::Get();
         MdEntity sq  = reg.Create();
-        auto& sc         = reg.Emplace<SquadController>(sq);
+        reg.Handle(sq).emplace<SquadController>();
+        auto& sc         = reg.Get<SquadController>(sq);
         sc.home_x        = home_x;
         sc.home_z        = home_z;
         sc.target_x      = home_x;

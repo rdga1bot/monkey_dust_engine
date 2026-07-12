@@ -31,7 +31,7 @@ bool LimbSeverance_TryApply(MdRegistry& reg, MdEntity e,
         MdEntity prop = reg.Create();
         WorldTransform pt{};
         pt.x = tr->x; pt.y = tr->y; pt.z = tr->z;
-        reg.Emplace<WorldTransform>(prop, pt);
+        reg.Handle(prop).emplace<WorldTransform>(pt);
 
         DetachedLimb dl{};
         dl.source   = e;
@@ -39,7 +39,7 @@ bool LimbSeverance_TryApply(MdRegistry& reg, MdEntity e,
         dl.velocity[0] = hit_dir ? hit_dir[0] * 3.f : 0.f;
         dl.velocity[1] = 2.f;   // slight upward pop
         dl.velocity[2] = hit_dir ? hit_dir[2] * 3.f : 0.f;
-        reg.Emplace<DetachedLimb>(prop, dl);
+        reg.Handle(prop).emplace<DetachedLimb>(dl);
     }
 
     MD_LOG(MD_LOG_INFO, "LimbSeverance: entity limb %d severed (dmg=%.1f)", limb, damage);

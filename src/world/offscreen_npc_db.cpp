@@ -212,9 +212,10 @@ void OffscreenNpcDatabase::Spawn(MdRegistry& reg,
 
         WorldTransform tr{};
         tr.x = s.position[0]; tr.y = s.position[1]; tr.z = s.position[2];
-        reg.Emplace<WorldTransform>(ne, tr);
+        reg.Handle(ne).emplace<WorldTransform>(tr);
 
-        auto& lh = reg.Emplace<LimbHealth>(ne, LimbHealth::Make(60.f));
+        reg.Handle(ne).set<LimbHealth>(LimbHealth::Make(60.f));
+        auto& lh = reg.Get<LimbHealth>(ne);
         auto unpack = [](uint16_t packed, float mx) -> float {
             return (float)packed / 65535.f * mx;
         };
@@ -226,7 +227,8 @@ void OffscreenNpcDatabase::Spawn(MdRegistry& reg,
         lh.hp[5] = unpack(s.hp_rleg,  lh.max[5]);
         lh.UpdateIncap();
 
-        auto& nd = reg.Emplace<NpcNeeds>(ne);
+        reg.Handle(ne).emplace<NpcNeeds>();
+        auto& nd = reg.Get<NpcNeeds>(ne);
         nd.hunger  = s.hunger  / 255.f;
         nd.fatigue = s.fatigue / 255.f;
 

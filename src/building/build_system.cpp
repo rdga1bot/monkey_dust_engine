@@ -125,10 +125,10 @@ MdEntity BuildSystem::Place(float wx, float wz, uint32_t def_id, Inventory& play
     Building b={}; b.def_id=def_id; b.grid_x=gx; b.grid_z=gz;
     b.size_x=def->size_x; b.size_z=def->size_z;
     b.chain=def->chain; b.progress_s=0.0f; b.active=def->chain.valid;
-    reg.Emplace<Building>(e, b);
+    reg.Handle(e).emplace<Building>(b);
     float cx=wx+(def->size_x-1)*0.5f, cz=wz+(def->size_z-1)*0.5f;
-    reg.Emplace<WorldTransform>(e, cx, 0.0f, cz, 0.0f);
-    if (def->chain.valid) { Inventory inv={}; inv.Clear(); reg.Emplace<Inventory>(e, inv); }
+    reg.Handle(e).emplace<WorldTransform>(cx, 0.0f, cz, 0.0f);
+    if (def->chain.valid) { Inventory inv={}; inv.Clear(); reg.Handle(e).emplace<Inventory>(inv); }
     for (int dx=0; dx<def->size_x; ++dx)
         for (int dz=0; dz<def->size_z; ++dz)
             grid_[gx+dx][gz+dz]=e;

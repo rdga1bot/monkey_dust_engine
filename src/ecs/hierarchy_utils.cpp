@@ -29,10 +29,11 @@ bool SetParent(MdEntity child, MdEntity parent) {
     auto& reg = MdRegistry::Get();
     ClearParent(child);  // detach from any previous parent first
 
-    auto& cr = reg.GetOrEmplace<ChildrenRef>(parent);
+    if (!reg.Handle(parent).has<ChildrenRef>()) reg.Handle(parent).emplace<ChildrenRef>();
+    auto& cr = reg.Get<ChildrenRef>(parent);
     if (cr.count >= HIERARCHY_MAX_CHILDREN) return false;
     cr.children[cr.count++] = child;
-    reg.EmplaceOrReplace<ParentRef>(child, ParentRef{parent});
+    reg.Handle(child).set<ParentRef>(ParentRef{parent});
     return true;
 }
 

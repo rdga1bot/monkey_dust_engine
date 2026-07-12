@@ -110,7 +110,8 @@ void RagdollSystem::Activate(MdEntity e, MdRegistry& reg) {
     const WorldTransform* tr = reg.TryGet<WorldTransform>(e);
     if (!tr) return;
 
-    auto& rc = reg.GetOrEmplace<RagdollComponent>(e);
+    if (!reg.Handle(e).has<RagdollComponent>()) reg.Handle(e).emplace<RagdollComponent>();
+    auto& rc = reg.Get<RagdollComponent>(e);
     if (rc.active) return;
 
     JPH::Ragdoll* rd = settings_->CreateRagdoll(

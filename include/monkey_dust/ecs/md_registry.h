@@ -130,17 +130,17 @@ private:
 // meant to be built once and reused, unlike entt::view's near-free
 // construction).
 //
-// CRITICAL, B3.4: Emplace<T>()/GetOrEmplace<T>() return a T& that is only
-// valid until the entity's NEXT archetype change — flecs relocates an
-// entity's ENTIRE row to a new table on every Emplace<U>/Remove<U> call,
-// even for an unrelated component type U, invalidating every previously
-// held T& for that entity (unlike entt's per-type-pool-stable references,
-// where only the SAME type's pool reallocating could invalidate a ref).
-// Rule: Emplace() every component an entity needs FIRST, THEN Get<T>() to
-// fetch references for writing. Get<T>()/TryGet<T>() do not themselves
-// invalidate anything (no structural change) — freely chaining several
-// Get<>() calls in a row is safe. Found and fixed 2 real production bugs
-// of this exact shape during B3.4 verification (see CLAUDE_INVARIANTS.md).
+// CRITICAL, B3.4: Get<T>() returns a T& that is only valid until the
+// entity's NEXT archetype change — flecs relocates an entity's ENTIRE row
+// to a new table on every emplace<U>/set<U>/remove<U> call, even for an
+// unrelated component type U, invalidating every previously held T& for
+// that entity (unlike entt's per-type-pool-stable references, where only
+// the SAME type's pool reallocating could invalidate a ref). Rule: call
+// Handle(e).emplace<T>()/set<T>() for every component an entity needs
+// FIRST, THEN Get<T>() to fetch references for writing. Get<T>()/TryGet<T>()
+// do not themselves invalidate anything (no structural change) — freely
+// chaining several Get<>() calls in a row is safe. Found and fixed 3 real
+// production bugs of this exact shape (see CLAUDE_INVARIANTS.md).
 class MdRegistry {
 public:
     static MdRegistry& Get() {
@@ -155,13 +155,6 @@ public:
     }
     void Destroy(MdEntity e) { Handle(e).destruct(); }
     bool Valid(MdEntity e) const { return Handle(e).is_alive(); }
-
-    template<typename T, typename... Args>
-    T& Emplace(MdEntity e, Args&&... args) {
-        auto h = Handle(e);
-        h.emplace<T>(std::forward<Args>(args)...);
-        return h.get_mut<T>();
-    }
 
     template<typename T>
     T& Get(MdEntity e) { return Handle(e).get_mut<T>(); }
@@ -181,26 +174,12 @@ public:
     template<typename T>
     void Remove(MdEntity e) { Handle(e).template remove<T>(); }
 
-    template<typename T, typename... Args>
-    T& GetOrEmplace(MdEntity e, Args&&... args) {
-        auto h = Handle(e);
-        if (!h.template has<T>()) h.template emplace<T>(std::forward<Args>(args)...);
-        return h.get_mut<T>();
-    }
-
     // entt's replace() requires T already present; flecs's set() is a safe
     // upsert either way (verified: does not crash/assert if T is absent),
     // so this is slightly more permissive than the old entt contract but
     // not unsafe.
     template<typename T, typename... Args>
     T& Replace(MdEntity e, Args&&... args) {
-        auto h = Handle(e);
-        h.template set<T>(T{std::forward<Args>(args)...});
-        return h.get_mut<T>();
-    }
-
-    template<typename T, typename... Args>
-    T& EmplaceOrReplace(MdEntity e, Args&&... args) {
         auto h = Handle(e);
         h.template set<T>(T{std::forward<Args>(args)...});
         return h.get_mut<T>();
@@ -285,11 +264,17 @@ public:
     flecs::world& Raw() { return Registry::Get(); }
     const flecs::world& Raw() const { return Registry::Get(); }
 
+    // Native flecs::entity handle for MdEntity e — the facade-removal escape
+    // hatch (task #8 phase-out): call sites migrating off Emplace/GetOrEmplace/
+    // EmplaceOrReplace use Handle(e).emplace<T>()/.set<T>() directly instead
+    // of the old T&-returning facade methods, since flecs::entity::emplace/set
+    // return the entity itself (not T&), which is what makes the B3.4
+    // dangling-reference bug class structurally impossible here.
+    flecs::entity Handle(MdEntity e) const { return flecs::entity(Raw(), e.Raw()); }
+
     MdRegistry(const MdRegistry&) = delete;
     MdRegistry& operator=(const MdRegistry&) = delete;
 
 private:
     MdRegistry() = default;
-
-    flecs::entity Handle(MdEntity e) const { return flecs::entity(Raw(), e.Raw()); }
 };

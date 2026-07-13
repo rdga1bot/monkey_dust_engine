@@ -60,6 +60,14 @@ public:
     // Autonomy system (md.chunk_stats()) — active entity/tree-streaming chunks.
     int ActiveCount() const { return active_count_; }
 
+    // Autonomy system (md.chunk_stats()) — real counter, not a stub:
+    // incremented at the one confirmed silent-drop site (TryEnqueuePending,
+    // chunk_manager.cpp) — ENGINE_AUDIT.md risk #3 ("до 18/49 чанків можуть
+    // мовчки ніколи не завантажитись"). Covers the entity/tree staging ring
+    // overflow specifically; does NOT claim to cover every possible drop
+    // path in the codebase (see docs/AUTONOMY_LOG.md Etap 3 scope note).
+    int DroppedCount() const { return dropped_count_.load(std::memory_order_relaxed); }
+
 private:
     ChunkManager() : active_count_(0), last_player_chunk_({9999, 9999}) {
         chunks_dir_[0] = '\0';
@@ -75,6 +83,7 @@ private:
     int        active_count_;
     char       chunks_dir_[128];
     ChunkCoord last_player_chunk_;
+    std::atomic<int> dropped_count_{0};
 
     ChunkLoadStaging  staging_[MAX_STAGING];
     std::thread       io_worker_;

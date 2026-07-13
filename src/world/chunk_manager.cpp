@@ -65,6 +65,7 @@ bool ChunkManager::TryEnqueuePending(ChunkCoord c) {
     if (next == pending_tail_.load(std::memory_order_acquire)) {
         MD_LOG(MD_LOG_WARNING, "[ChunkManager] pending ring full (MAX_STAGING=%d) — chunk (%d,%d) load request dropped",
                MAX_STAGING, c.x, c.z);
+        dropped_count_.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
     pending_[h] = {c.x, c.z, true};

@@ -108,6 +108,9 @@ public:
 
     static TerrainStreamQueue& Get() { static TerrainStreamQueue inst; return inst; }
 
+    // Autonomy system (md.chunk_stats()) — in-flight terrain build requests.
+    int PendingCount() const { return pending_.load(std::memory_order_acquire); }
+
 private:
     void worker_loop() {
         while (running_.load(std::memory_order_acquire)) {

@@ -57,6 +57,9 @@ public:
         save_entity_fn_   = save_fn;
     }
 
+    // Autonomy system (md.chunk_stats()) — active entity/tree-streaming chunks.
+    int ActiveCount() const { return active_count_; }
+
 private:
     ChunkManager() : active_count_(0), last_player_chunk_({9999, 9999}) {
         chunks_dir_[0] = '\0';

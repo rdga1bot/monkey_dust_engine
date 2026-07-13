@@ -76,6 +76,35 @@ bool LuaSystem::Init(const char* scripts_dir) {
     lua_register(L_, "md_log", md_log);
     lua_sethook(L_, hook, LUA_MASKCOUNT, 50000);
 
+    // Scenario control-flow primitives (Etap 1, AUTONOMY_SYSTEM_PROMPT_v2.md).
+    // Pure Lua, not C functions: wait_ticks/wait_until just need
+    // coroutine.yield() (one yield = one logic tick, from the driver's
+    // perspective in ResumeScenario); md.quit raises a distinguishable
+    // error value (a table, not a string) so ResumeScenario can tell
+    // "intentional quit" apart from a genuine script failure without any
+    // extra C-side bookkeeping.
+    static const char* const kScenarioBootstrap =
+        "md = md or {}\n"
+        "function md.wait_ticks(n)\n"
+        "  for _ = 1, n do coroutine.yield() end\n"
+        "end\n"
+        "function md.wait_until(fn, timeout_ticks)\n"
+        "  if timeout_ticks == nil then error('wait_until: timeout_ticks is required') end\n"
+        "  for _ = 1, timeout_ticks do\n"
+        "    if fn() then return true end\n"
+        "    coroutine.yield()\n"
+        "  end\n"
+        "  error('wait_until: timed out after ' .. timeout_ticks .. ' ticks')\n"
+        "end\n"
+        "function md.quit(code)\n"
+        "  error({__md_quit = true, code = code or 0})\n"
+        "end\n";
+    if (luaL_dostring(L_, kScenarioBootstrap) != LUA_OK) {
+        const char* err = lua_tostring(L_, -1);
+        MD_LOG(MD_LOG_WARNING, "[LuaSystem] scenario bootstrap failed: %s", err ? err : "?");
+        lua_pop(L_, 1);
+    }
+
     if (!scripts_dir || scripts_dir[0] == '\0') return true;
 
     DIR* dir = opendir(scripts_dir);
@@ -99,6 +128,20 @@ bool LuaSystem::Init(const char* scripts_dir) {
 
 void LuaSystem::RegisterFunction(const char* name, lua_CFunction fn) {
     if (L_) lua_register(L_, name, fn);
+}
+
+void LuaSystem::RegisterNamespaceFunction(const char* field_name, lua_CFunction fn) {
+    if (!L_) return;
+    lua_getglobal(L_, "md");
+    if (!lua_istable(L_, -1)) {
+        lua_pop(L_, 1);
+        lua_newtable(L_);
+        lua_pushvalue(L_, -1);
+        lua_setglobal(L_, "md");
+    }
+    lua_pushcfunction(L_, fn);
+    lua_setfield(L_, -2, field_name);
+    lua_pop(L_, 1);
 }
 
 void LuaSystem::Shutdown() {
@@ -145,4 +188,68 @@ bool LuaSystem::Exec(const char* lua_code) {
         return false;
     }
     return true;
+}
+
+bool LuaSystem::StartScenario(const char* lua_code, lua_Integer n_ticks,
+                               char* error_out, size_t error_out_size) {
+    if (!L_ || !lua_code) return false;
+    scenario_co_ = lua_newthread(L_);  // GC-owned by L_; inherits the hook, see class doc comment
+    scenario_started_ = false;
+    if (luaL_loadstring(scenario_co_, lua_code) != LUA_OK) {
+        const char* err = lua_tostring(scenario_co_, -1);
+        if (error_out && error_out_size) snprintf(error_out, error_out_size, "%s", err ? err : "?");
+        lua_pop(scenario_co_, 1);
+        scenario_co_ = nullptr;
+        return false;
+    }
+    lua_pushinteger(scenario_co_, n_ticks);
+    return true;
+}
+
+LuaSystem::ScenarioResult LuaSystem::ResumeScenario() {
+    ScenarioResult result;
+    if (!scenario_co_) { snprintf(result.error_msg, sizeof(result.error_msg), "no active scenario"); return result; }
+
+    // ALWAYS re-arm before resuming — see class doc comment / §Recon.7:
+    // the instruction counter is cumulative, not fresh per resume.
+    lua_sethook(scenario_co_, hook, LUA_MASKCOUNT, 50000);
+
+    int nres = 0;
+    bool first_call = !scenario_started_;
+    scenario_started_ = true;
+    int status = lua_resume(scenario_co_, L_, first_call ? 1 : 0, &nres);
+
+    if (status == LUA_YIELD) {
+        lua_pop(scenario_co_, nres);
+        result.status = ScenarioStatus::Yielded;
+        return result;
+    }
+    if (status == LUA_OK) {
+        lua_pop(scenario_co_, nres);
+        result.status = ScenarioStatus::Finished;
+        scenario_co_ = nullptr;
+        return result;
+    }
+
+    // Error: distinguish md.quit(code) (a table with __md_quit) from a
+    // genuine failure (assert_*, wait_until timeout, runtime error).
+    if (lua_istable(scenario_co_, -1)) {
+        lua_getfield(scenario_co_, -1, "__md_quit");
+        bool is_quit = lua_toboolean(scenario_co_, -1);
+        lua_pop(scenario_co_, 1);
+        if (is_quit) {
+            lua_getfield(scenario_co_, -1, "code");
+            result.quit_code = (int)lua_tointeger(scenario_co_, -1);
+            lua_pop(scenario_co_, 2);  // code, then the error table itself
+            result.status = ScenarioStatus::Quit;
+            scenario_co_ = nullptr;
+            return result;
+        }
+    }
+    const char* err = lua_tostring(scenario_co_, -1);
+    snprintf(result.error_msg, sizeof(result.error_msg), "%s", err ? err : "(non-string error)");
+    lua_pop(scenario_co_, 1);
+    result.status = ScenarioStatus::Failed;
+    scenario_co_ = nullptr;
+    return result;
 }

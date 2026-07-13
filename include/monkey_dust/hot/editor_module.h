@@ -48,6 +48,13 @@ public:
         SDL_Window*    window    = nullptr;
         float          overlay_top = 0.f;
         const char*    layout_path = nullptr;
+        // Opaque LuaSystem* — host fills with &LuaSystem::Get(). Same
+        // rationale as ecs_world above: LuaSystem::Get()'s singleton is a
+        // function-local static defined in a header (lua_system.h), and
+        // libeditor_panels.so does not link monkey_dust::engine statically —
+        // without this, the .so would get its own independent LuaSystem
+        // instance, invisible to the host's --exec scenario driver.
+        void*          lua_system = nullptr;
     };
 
     void Init(const char* so_path, const Config& cfg);

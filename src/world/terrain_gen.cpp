@@ -601,6 +601,14 @@ static float s_hmap_sample(const float* hmap, int hmap_w, int hmap_h,
 }
 
 bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParams& p) {
+    // Chunk array slots are reused across streaming (a slot built for one
+    // world position gets rebuilt in place for another) — a stale bake from
+    // the PREVIOUS occupant must not survive into this one. albedo_tex
+    // itself (the GPU texture object) is left alone and reused by the next
+    // BakeAlbedo call; only the "is it still valid for THIS chunk" flag
+    // needs to reset here, once, in the single place every rebuild path
+    // (game and editor) already goes through.
+    out.albedo_baked = false;
     float world_origin_x = coord.x * CHUNK_SIZE;
     float world_origin_z = coord.z * CHUNK_SIZE;
 

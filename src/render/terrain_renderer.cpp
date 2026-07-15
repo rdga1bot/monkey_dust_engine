@@ -639,16 +639,10 @@ bool TerrainRenderer::InitKenshiOverlay(const char* path)
 #ifdef MD_SDL_GPU
 void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const
 {
-    // UseColourOverride() swaps texture for a batch (VT local composite).
-    if (col_override_tex_ && col_override_smp_) {
-        out[0].texture = col_override_tex_;
-        out[0].sampler = col_override_smp_;
-    } else {
-        bool valid = tex_loaded_ && tex_colour_.Valid()
-                     && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
-        out[0].texture = valid ? tex_colour_.SDLTexture() : fallback_tex_;
-        out[0].sampler = valid ? tex_colour_.SDLSampler() : fallback_sampler_;
-    }
+    bool valid = tex_loaded_ && tex_colour_.Valid()
+                 && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
+    out[0].texture = valid ? tex_colour_.SDLTexture() : fallback_tex_;
+    out[0].sampler = valid ? tex_colour_.SDLSampler() : fallback_sampler_;
     // b1: per-biome DDS ground array — same texture as the POM (LOD0) pass, so
     // distant terrain (LOD1-3, this pipeline) stays in the same material family.
     bool ga = ground_array_ready_ && tex_ground_array_.Valid()

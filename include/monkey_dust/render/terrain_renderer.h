@@ -254,12 +254,6 @@ public:
     bool IsReady()    const;
     bool IsPomReady() const;
 
-    // Temporarily override the kenshi colour overlay for one render batch.
-    // Pass nullptr to restore the original texture.
-    void UseColourOverride(SDL_GPUTexture* tex, SDL_GPUSampler* smp) {
-        col_override_tex_ = tex; col_override_smp_ = smp;
-    }
-
     // Batch API: hoists pipeline/UBO/sampler/IBO outside the per-chunk loop.
     // Reduces API calls from 6/chunk to 2/chunk for large worlds.
     // BeginRawBatch: bind pipeline, push vertex+frag UBO, bind sampler, bind shared IBO.
@@ -351,9 +345,6 @@ private:
     bool        albedo_bake_ready_ = false;
     static constexpr int ALBEDO_BAKE_SIZE = 256; // texels/side per chunk (460.8m chunk -> ~1.8m/texel)
 
-    // Optional colour override — UseColourOverride() swaps for one batch.
-    SDL_GPUTexture* col_override_tex_ = nullptr;
-    SDL_GPUSampler* col_override_smp_ = nullptr;
     uint32_t        batch_idx_count_ = 0;  // set by BeginRawBatch
     TerrainFragUBO  batch_fubo_base_{};     // sun/world params cached by BeginRawBatch;
                                              // DrawRawChunk fills ground_layers per-chunk and re-pushes

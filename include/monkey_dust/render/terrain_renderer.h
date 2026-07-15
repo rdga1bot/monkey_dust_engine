@@ -57,7 +57,16 @@ public:
         // baked per-chunk texture lands on the right texel.
         float chunk_origin_x;
         float chunk_origin_z;
-        // 104 bytes total
+        // Applied to aPos.xz BEFORE everything else (projection, vWorldPos,
+        // vDist, vChunkUV) — lets a single static, absolute-Kenshi-metres
+        // vertex buffer (the game's whole-world compact-VBO background,
+        // task #158i-9/9) render correctly aligned with the game's floating
+        // local terrain window (tnoff_x/z) without rebuilding the buffer
+        // every time that window re-centres. Zero for every other caller
+        // (BeginRawBatch defaults it to 0,0) — no behaviour change there.
+        float pos_offset_x;
+        float pos_offset_z;
+        // 112 bytes total
     };
 
     // Fragment UBO: sun(32) + world_params(16) + ground_layers_a/b(32) + fog_color_near(16)
@@ -258,11 +267,14 @@ public:
     // Reduces API calls from 6/chunk to 2/chunk for large worlds.
     // BeginRawBatch: bind pipeline, push vertex+frag UBO, bind sampler, bind shared IBO.
     // DrawRawChunk:  bind VBO + draw (2 calls per chunk).
+    // pos_offset_x/z: see TerrainVertUBO::pos_offset_x's doc comment — 0,0 for
+    // every caller except the game's whole-world compact-VBO background.
     void BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                        const float* vp16, const SunParams& sun,
                        float cam_x, float cam_y, float cam_z,
                        float world_origin_x, float world_origin_z,
-                       float world_to_uv, int lod);
+                       float world_to_uv, int lod,
+                       float pos_offset_x = 0.f, float pos_offset_z = 0.f);
     void DrawRawChunk(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                       const TerrainChunk& chunk);
 

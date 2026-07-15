@@ -823,7 +823,8 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
                                      const float* vp16, const SunParams& sun,
                                      float cam_x, float cam_y, float cam_z,
                                      float world_origin_x, float world_origin_z,
-                                     float world_to_uv, int lod)
+                                     float world_to_uv, int lod,
+                                     float pos_offset_x, float pos_offset_z)
 {
 #ifdef MD_SDL_GPU
     if (!IsReady()) return;
@@ -845,6 +846,8 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     // use_lookup branch) — harmless, that branch never reads vAlbedoUV.
     vubo.chunk_origin_x = 0.f;
     vubo.chunk_origin_z = 0.f;
+    vubo.pos_offset_x   = pos_offset_x;
+    vubo.pos_offset_z   = pos_offset_z;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
 
     // Cache sun/world/fog params; ground_layers varies per chunk (per-biome)

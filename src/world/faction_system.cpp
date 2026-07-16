@@ -44,6 +44,7 @@ int FactionSystem::LoadFromFile(const char* path) {
         memset(&fd, 0, sizeof(fd));
         int id_val = 0;
         if (!ParseInt(id_pos, "\"id\"", id_val)) { cursor = id_pos + 4; continue; }
+        if (id_val < 0 || id_val > MAX_FACTIONS) { cursor = id_pos + 4; continue; }
         fd.id = (uint32_t)id_val;
         int def_rel = 0;
         ParseInt(id_pos, "\"default_relation\"", def_rel);

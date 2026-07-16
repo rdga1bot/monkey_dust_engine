@@ -153,7 +153,14 @@ void RagdollSystem::Tick(float dt, float player_x, float player_z) {
     const float lod2 = LOD_RADIUS_M * LOD_RADIUS_M;
 
     // Activate dead NPCs within LOD range; deactivate those beyond.
+    // Collect-then-apply: Activate() does reg.Handle(e).emplace<RagdollComponent>()
+    // on first activation, a structural change to e's archetype -- doing that
+    // directly inside this query's .each() mutates the same registry being
+    // iterated (house rule violation; combat_dispatch.h documents the same
+    // collect-then-apply pattern for exactly this reason).
     static auto q_lod = reg.Raw().query<LimbHealth, WorldTransform>();
+    MdEntity to_activate[MAX_RAGDOLLS], to_deactivate[MAX_RAGDOLLS];
+    int n_activate = 0, n_deactivate = 0;
     MdEach(q_lod, [&](MdEntity e, LimbHealth& lh, WorldTransform& tr) {
         if (!lh.incapacitated) return;
 
@@ -165,11 +172,13 @@ void RagdollSystem::Tick(float dt, float player_x, float player_z) {
         bool  in_range = (d2 <= lod2);
 
         if (in_range && (!rc || !rc->active)) {
-            Activate(e, reg);
+            if (n_activate < MAX_RAGDOLLS) to_activate[n_activate++] = e;
         } else if (!in_range && rc && rc->active) {
-            Deactivate(e, reg);
+            if (n_deactivate < MAX_RAGDOLLS) to_deactivate[n_deactivate++] = e;
         }
     });
+    for (int i = 0; i < n_activate; ++i)   Activate(to_activate[i], reg);
+    for (int i = 0; i < n_deactivate; ++i) Deactivate(to_deactivate[i], reg);
 
     // Advance timers on active ragdolls; remove after SLEEP_SETTLE_S.
     static auto q_active_ragdolls = reg.Raw().query<RagdollComponent>();

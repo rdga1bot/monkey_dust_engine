@@ -1521,18 +1521,32 @@
         }
         case BTNodeType::DecoratorLoop: {
             if (result == BTStatus::Running) {
-                // Fresh entry: reset counter, push child
-                st.counter = 0;
+                // NOTE: this branch is reached both on a genuine first entry
+                // AND on every external Tick() that resumes an in-flight
+                // multi-tick child (the stackless VM re-descends from m_root
+                // every call) -- the two are indistinguishable here, exactly
+                // like the sibling Repeat node (bt_vm_core.inc). Resetting
+                // st.counter=0 unconditionally (as this used to) means an
+                // N>0 loop wrapping any child that ever returns Running loses
+                // its iteration count every tick and can never reach N via
+                // count, contradicting "loops child N times". st.counter is
+                // zero-initialized by the BehaviorTree ctor and only ever
+                // touched in the completion branches below, matching Repeat.
                 if (nd.childCount > 0) { pc = m_children[nd.childStart]; continue; }
                 result = BTStatus::Success; pc = nd.parent; continue;
             }
-            if (result == BTStatus::Failure) { pc = nd.parent; continue; }
+            if (result == BTStatus::Failure) { st.counter = 0; pc = nd.parent; continue; }
             // Child succeeded: check loop count
             if (nd.data > 0u && ++st.counter >= static_cast<uint16_t>(nd.data)) {
+                st.counter = 0;
                 result = BTStatus::Success; pc = nd.parent; continue;
             }
-            // Loop again
-            if (nd.childCount > 0) { pc = m_children[nd.childStart]; result = BTStatus::Running; continue; }
+            // Loop again -- fresh state for the child's new iteration.
+            if (nd.childCount > 0) {
+                uint16_t ci = m_children[nd.childStart];
+                m_state[ci] = BTState{};
+                pc = ci; result = BTStatus::Running; continue;
+            }
             result = BTStatus::Success; pc = nd.parent; continue;
         }
 

@@ -270,12 +270,32 @@
         }
 
         // C14: WeightedSelector — one-shot weighted child pick per entry
+        // st.currentChild uses bit 15 as a "committed" flag (bits 0-1 hold
+        // the actual chosen index, only 4 children supported) rather than a
+        // sentinel *value* -- BTState is zero-initialized at construction,
+        // so a sentinel like 0xFFFF would be indistinguishable from a real
+        // "chosen child 0" only if 0 itself were the sentinel; using a
+        // separate bit keeps the natural zero-init state correctly reading
+        // as "not committed" without any extra reset-time bookkeeping.
         case BTNodeType::WeightedSelector:
             if (result == BTStatus::Success || result == BTStatus::Failure) {
                 st.currentChild = 0;
                 pc = nd.parent; continue; // propagate child result as-is
             }
-            // First entry (Running): pick weighted random child
+            if (st.currentChild & 0x8000u) {
+                // Already committed to a child this run (this Running entry
+                // is a resumption of that in-flight child on a later
+                // external Tick(), not a genuine fresh entry -- the
+                // stackless VM re-descends from m_root every call, so
+                // Running here is otherwise indistinguishable from first
+                // entry). Previously this re-rolled every single time,
+                // abandoning the committed child's state and defeating the
+                // documented "one-shot weighted child pick per entry" design.
+                uint16_t chosen = st.currentChild & 0x7FFFu;
+                pc = m_children[nd.childStart + (chosen % nd.childCount)];
+                continue;
+            }
+            // Genuine first entry: pick weighted random child, commit to it.
             {
                 if (nd.childCount == 0) {
                     pc = nd.parent; result = BTStatus::Failure; continue;
@@ -301,7 +321,7 @@
                     acc += w[ii];
                     if (roll < acc) { chosen = ii; break; }
                 }
-                st.currentChild = chosen;
+                st.currentChild = static_cast<uint16_t>(chosen) | 0x8000u;
                 pc = m_children[nd.childStart + (chosen % nd.childCount)];
                 result = BTStatus::Running; continue;
             }

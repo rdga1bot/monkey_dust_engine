@@ -4,6 +4,7 @@
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/ecs/md_registry.h>
 #include <monkey_dust/world/world_transform.h>
+#include <monkey_dust/platform/md_log.h>
 
 // ─────────────────────────────────────────────────────────
 // SpatialGrid — O(1) spatial queries + O(1) entity remove.
@@ -74,10 +75,22 @@ public:
         GridCell& cell = cells_[cx][cz];
         if (cell.count >= MAX_PER_CELL) return;
         int idx = cell.count;
+        // hash_put can fail once HASH_BUCKETS entries are already tracked
+        // (open-addressing table is full). Previously the entity was still
+        // pushed into the GridCell even on failure, leaving it with no hash
+        // entry -- Remove(e) then silently no-ops forever (hash_find never
+        // finds it), and the stale entity keeps occupying a cell slot until
+        // the next full Clear()+rebuild. Roll back the cell insert instead so
+        // an untracked entity is simply absent from queries this cycle
+        // (self-heals on next rebuild) rather than permanently stuck.
+        if (!hash_put(e, (int16_t)cx, (int16_t)cz, (int8_t)idx, wy)) {
+            MD_LOG(MD_LOG_WARNING, "[SpatialGrid] hash table full (%d buckets) -- "
+                   "entity dropped from spatial queries this cycle", HASH_BUCKETS);
+            return;
+        }
         cell.entities[cell.count++] = e;
         if (wy < cell.height_lo) cell.height_lo = wy;
         if (wy > cell.height_hi) cell.height_hi = wy;
-        hash_put(e, (int16_t)cx, (int16_t)cz, (int8_t)idx, wy);
     }
 
     // Remove entity by entity handle — O(1), no world position needed.
@@ -127,11 +140,14 @@ public:
                 const GridCell& cell = cells_[cx][cz];
                 for (int i = 0; i < cell.count && found < max_out; ++i) {
                     MdEntity c = cell.entities[i];
-                    if (reg.Valid(c) && (reg.Handle(c).has<WorldTransform>())) {
-                        const auto& et = reg.Handle(c).get_mut<WorldTransform>();
-                        float ddx = et.x - wx, ddz = et.z - wz;
-                        if (ddx*ddx + ddz*ddz > r2) continue;
-                    }
+                    // A stale/invalid entity (e.g. left behind by a dropped
+                    // hash_put, see InsertH) has no position to check against
+                    // r2 -- it must NOT pass the filter unconditionally, or it
+                    // crowds out genuinely-in-range entities from max_out.
+                    if (!reg.Valid(c) || !reg.Handle(c).has<WorldTransform>()) continue;
+                    const auto& et = reg.Handle(c).get_mut<WorldTransform>();
+                    float ddx = et.x - wx, ddz = et.z - wz;
+                    if (ddx*ddx + ddz*ddz > r2) continue;
                     out[found++] = c;
                 }
             }
@@ -193,13 +209,13 @@ public:
                     // Per-entity Y check via hash
                     const HashEntry* he = hash_find(c);
                     if (he && (he->world_y < ylo || he->world_y > yhi)) continue;
-                    // XZ distance
-                    if (MdRegistry::Get().Valid(c) &&
-                        (MdRegistry::Get().Handle(c).has<WorldTransform>())) {
-                        const auto& et = MdRegistry::Get().Handle(c).get_mut<WorldTransform>();
-                        float ddx = et.x - wx, ddz = et.z - wz;
-                        if (ddx*ddx + ddz*ddz > r2) continue;
-                    }
+                    // XZ distance -- an invalid/positionless entity must not
+                    // pass unconditionally (same reasoning as QueryRadius).
+                    if (!MdRegistry::Get().Valid(c) ||
+                        !MdRegistry::Get().Handle(c).has<WorldTransform>()) continue;
+                    const auto& et = MdRegistry::Get().Handle(c).get_mut<WorldTransform>();
+                    float ddx = et.x - wx, ddz = et.z - wz;
+                    if (ddx*ddx + ddz*ddz > r2) continue;
                     out[found++] = c;
                 }
             }
@@ -242,7 +258,7 @@ private:
     // CATHODE RE §7.3: 193-bucket open-addressing hash (linear probing).
     HashEntry hash_[HASH_BUCKETS];
 
-    void hash_put(MdEntity e, int16_t cx, int16_t cz,
+    bool hash_put(MdEntity e, int16_t cx, int16_t cz,
                   int8_t cell_idx, float wy = 0.f) {
         uint32_t id   = e.ToIntegral();
         uint32_t slot = id % (uint32_t)HASH_BUCKETS;
@@ -250,9 +266,10 @@ private:
             uint32_t s = (slot + (uint32_t)i) % (uint32_t)HASH_BUCKETS;
             if (hash_[s].entity_id == 0xFFFFFFFFu) {
                 hash_[s] = { id, cx, cz, cell_idx, 0, wy };
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     // const overload for QueryRadiusH

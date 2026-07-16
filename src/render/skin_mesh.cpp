@@ -236,6 +236,15 @@ bool SkinMesh::LoadGLB(const char* path) {
     }
 
     cgltf_size ni = prim->indices->count;
+    // Unlike nv (bounds-checked above against the 131072-vertex cap), ni was
+    // used unchecked to write into the 1<<20-element static s_idx16/s_idx32
+    // buffers -- a dense mesh with more indices than vertices (independent
+    // caps: index count isn't bounded by vertex count) could overflow them.
+    if (ni == 0 || ni > (1u<<20)) {
+        fprintf(stderr,"[SkinMesh] bad index count %zu\n", ni);
+        cgltf_free(data);
+        return false;
+    }
     indices_u16 = (nv <= 65535);
     index_count = (uint32_t)ni;
     if (indices_u16) {

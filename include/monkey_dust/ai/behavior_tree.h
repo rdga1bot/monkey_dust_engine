@@ -378,4 +378,13 @@ private:
     uint16_t m_nodeCount  = 0;
     uint16_t m_childCount = 0;
     uint16_t m_root       = INVALID;
+
+    // Every add*() factory did `uint16_t i = m_nodeCount++;` then wrote
+    // m_nodes[i] unconditionally -- MAX_NODES was declared but never
+    // enforced, an out-of-bounds write for any tree (hand-built or JSON-
+    // loaded) with more than MAX_NODES total nodes. Centralized here so the
+    // ~250 call sites across behavior_tree.cpp/bt_factories.cpp all get the
+    // same bound: reuse the last valid slot (aliasing, not memory-safe-fixing
+    // the tree's logic) rather than corrupt adjacent memory.
+    uint16_t allocNodeIdx();
 };

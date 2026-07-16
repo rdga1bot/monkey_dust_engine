@@ -255,6 +255,7 @@
             SenseComponent* sc = MdRegistry::Get().Handle(e).try_get_mut<SenseComponent>();
             if (!sc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t sense_idx = static_cast<uint8_t>((nd.data >> 8) & 0xFu);
+            if (sense_idx >= MAX_SENSES) { result = BTStatus::Failure; pc = nd.parent; continue; }
             auto    q         = static_cast<SenseThresholdQualifier>(nd.data & 0xFFu);
             float   act       = sc->activation[sense_idx];
             bool    ok        = false;

@@ -32,15 +32,6 @@ struct BehaviorTreeComponent {
     BehaviorTreeComponent() = default;
     explicit BehaviorTreeComponent(BehaviorTree* t, bool owns = false, bool en = true) noexcept
         : tree(t), owning(owns), enabled(en) {}
-
-    // Convenience: allocate a fresh owned tree
-    static BehaviorTreeComponent MakeOwned() {
-        BehaviorTreeComponent c;
-        c.tree    = new BehaviorTree();
-        c.owning  = true;
-        c.enabled = true;
-        return c;
-    }
 };
 
 // ── DirectorHintComponent ─────────────────────────────────────────────────────

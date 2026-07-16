@@ -521,6 +521,13 @@ bool GpuPipeline::Reload() {
     if (!desc_.vert_path || !desc_.frag_path) return false;
     MdSpvCache_Invalidate(desc_.vert_path);
     MdSpvCache_Invalidate(desc_.frag_path);
+    // Destroy() releases sdl_pipeline_ but doesn't evict it from
+    // s_pipe_cache. Without this, Create()'s hash lookup (PipeHash is
+    // computed the same way from the same vert/frag path + features/raster
+    // bits) finds the JUST-DESTROYED pointer still cached and hands it back
+    // as if valid -- 100%-reproducible use-after-free on the very first
+    // Reload() of any pipeline (e.g. every /reload-shaders hot-reload).
+    MdPipeCache_Invalidate(desc_.vert_path, desc_.frag_path);
     Destroy();
     bool ok = Create(desc_);
     if (ok)

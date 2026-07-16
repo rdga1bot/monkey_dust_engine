@@ -81,6 +81,17 @@ constexpr BoneZoneEntry BONE_ZONE_MAP[BONE_ZONE_COUNT] = {
     { 26, HitZone::RightArm,      "Bip01 R UpperArm"  },  // VBfA: rightarm
 };
 
+// Map a HitZone to its LimbHealth index (LIMB_COUNT=6: Head/Torso/L-R Arm/L-R Leg).
+// LeftShoulder/RightShoulder/WeaponBone (6-8) have no dedicated limb HP pool —
+// per this file's own header comment ("Shoulder/WeaponBone map to Torso for
+// damage, but retain separate enum for ragdoll routing") they must fold into
+// Torso for any LimbHealth::hp/max/flags indexing. Using (int)zone directly
+// there is an out-of-bounds write into a 6-element array for zones 6-8.
+inline int HitZoneToLimbIndex(HitZone zone) {
+    int z = (int)zone;
+    return z < 6 ? z : 1;  // 1 == (int)HitZone::Torso
+}
+
 // Map a bone index to its HitZone; returns Torso for unmapped bones.
 inline HitZone BoneToHitZone(uint8_t bone_idx) {
     for (int i = 0; i < BONE_ZONE_COUNT; ++i)

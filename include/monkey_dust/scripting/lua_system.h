@@ -47,8 +47,12 @@ public:
     // Calls named Lua function(entity_id) → BTStatus
     BTStatus CallAction(const char* func_name, MdEntity e);
 
-    // Execute arbitrary Lua source; returns false on parse/runtime error. For tests only.
-    bool Exec(const char* lua_code);
+    // Execute arbitrary Lua source; returns false on parse/runtime error.
+    // Optional error_out captures the Lua error string (e.g. an
+    // assert_true/assert_eq failure message) for callers that need to
+    // report it back (editor command-file automation, task #123) rather
+    // than only logging via MD_LOG_WARNING.
+    bool Exec(const char* lua_code, char* error_out = nullptr, size_t error_out_size = 0);
 
     bool IsReady() const { return L_ != nullptr; }
 

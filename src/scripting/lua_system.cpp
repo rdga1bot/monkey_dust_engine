@@ -178,12 +178,24 @@ BTStatus LuaSystem::CallAction(const char* func_name, MdEntity e) {
     return result;
 }
 
-bool LuaSystem::Exec(const char* lua_code) {
+bool LuaSystem::Exec(const char* lua_code, char* error_out, size_t error_out_size) {
     if (!L_ || !lua_code) return false;
     lua_sethook(L_, hook, LUA_MASKCOUNT, 50000);
-    if (luaL_dostring(L_, lua_code) != LUA_OK) {
+    // Explicit short ASCII chunkname ("cmd") instead of luaL_dostring's
+    // default (the raw source text itself, truncated to a fixed byte
+    // length by Lua's luaO_chunkid — confirmed live via task #123's
+    // command-file channel: a non-ASCII literal (e.g. a Cyrillic
+    // assert_true label) gets cut mid-UTF8-character at the truncation
+    // point, producing an invalid-UTF8 error message that then fails to
+    // parse as JSON/text downstream). The reported error TEXT itself
+    // (from luaL_error) is unaffected — only the chunkname-echo prefix was
+    // ever corrupted.
+    bool failed = luaL_loadbuffer(L_, lua_code, strlen(lua_code), "cmd") != LUA_OK
+               || lua_pcall(L_, 0, LUA_MULTRET, 0) != LUA_OK;
+    if (failed) {
         const char* err = lua_tostring(L_, -1);
         MD_LOG(MD_LOG_WARNING, "[LuaSystem] Exec error: %s", err ? err : "?");
+        if (error_out && error_out_size) snprintf(error_out, error_out_size, "%s", err ? err : "?");
         lua_pop(L_, 1);
         return false;
     }

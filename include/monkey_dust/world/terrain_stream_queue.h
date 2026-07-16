@@ -125,13 +125,24 @@ private:
                 if (s.ready.load(std::memory_order_relaxed))    continue;
                 if (!s.chunk) { s.consumed.store(true); continue; }
 
-                TerrainGen_Build(*s.chunk, s.coord, s.params);
+                // Task terrain-patches: this worker thread's own sequential
+                // processing ("one chunk per iteration" below) never races
+                // against itself, but the MAIN thread's synchronous Build+
+                // Upload fallback (HandleTerrainStreaming/HandleFlythroughStreaming,
+                // main.cpp — used whenever enqueue() reports the queue full)
+                // can run at the same moment as this call, on the SAME shared
+                // static staging buffers (terrain_gen.cpp) — hold the lock
+                // until the staged data is fully copied into this slot.
+                {
+                    std::lock_guard<std::mutex> tg_lock(TerrainGen_StagingMutex());
+                    TerrainGen_Build(*s.chunk, s.coord, s.params);
 
-                // Copy staging buffers into per-slot storage before marking ready
-                memcpy(s.staged_v,  TerrainGen_StagedVerts(),        sizeof(s.staged_v));
-                memcpy(s.staged_i,  TerrainGen_StagedIndices(),       sizeof(s.staged_i));
-                memcpy(s.staged_sv, TerrainGen_StagedSkirtVerts(),    sizeof(s.staged_sv));
-                memcpy(s.staged_si, TerrainGen_StagedSkirtIndices(),  sizeof(s.staged_si));
+                    // Copy staging buffers into per-slot storage before marking ready
+                    memcpy(s.staged_v,  TerrainGen_StagedVerts(),        sizeof(s.staged_v));
+                    memcpy(s.staged_i,  TerrainGen_StagedIndices(),       sizeof(s.staged_i));
+                    memcpy(s.staged_sv, TerrainGen_StagedSkirtVerts(),    sizeof(s.staged_sv));
+                    memcpy(s.staged_si, TerrainGen_StagedSkirtIndices(),  sizeof(s.staged_si));
+                }
 
                 // KEN-CLUTTER Tier 2: bake dense clutter on this same worker thread
                 // (heavy enough now — thousands of merged verts — that it must NOT

@@ -1,11 +1,31 @@
 #pragma once
 #include <monkey_dust/world/terrain_chunk.h>
 #include <monkey_dust/world/biome_def.h>
+#include <mutex>
 
 // Generates a TerrainChunk (mesh + heightmap + navmesh) from params.
 // Call on a worker thread; GpuStaticBuffer::Init() must be deferred to main thread.
 // Returns false on allocation failure (navmesh OOM).
 bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParams& p);
+
+// Task terrain-patches: TerrainGen_Build writes into shared static staging
+// buffers (s_verts_buf/s_idx_buf/etc, terrain_gen.cpp) — TerrainGen_UploadFrom's
+// own doc comment already notes this "avoids race when worker thread reuses
+// staging" for the WORKER THREAD's own sequential calls (TerrainStreamQueue's
+// worker_loop processes one chunk per iteration by design). It does NOT cover
+// the separate hazard confirmed live (task terrain-patches, CPU-side edge-
+// length reconstruction from chunk.heightmap.h showed only normal ~3-30m
+// edges everywhere a rendered chunk showed degenerate garbage triangles):
+// the MAIN THREAD's synchronous fallback path (HandleTerrainStreaming/
+// HandleFlythroughStreaming, main.cpp, used whenever TerrainStreamQueue's
+// enqueue() reports the queue full) calls TerrainGen_Build directly with NO
+// synchronization against the worker thread doing the same for a different
+// chunk at the same moment — both write the SAME global buffers. Every
+// caller of TerrainGen_Build (or the paired Build+consume-staging sequence)
+// MUST hold this lock for the whole critical section, not just around Build
+// itself, since the staged data remains valid only until the NEXT Build call
+// on either thread.
+std::mutex& TerrainGen_StagingMutex();
 
 // Resolve the biome for a zone (zx,zy in 0..63) by sampling md_biomemap.png —
 // same resolution used internally for per-chunk ground_layers (s_resolve_biome).

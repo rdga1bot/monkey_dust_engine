@@ -561,6 +561,15 @@ static int           s_nav_tri  [TERRAIN_IDX];   // same indices, cast to int
 static TerrainVertex s_skirt_v  [TERRAIN_SKIRT_VERTS];  // 520 verts
 static uint16_t      s_skirt_i  [TERRAIN_SKIRT_IDX];    // 1536 indices
 
+// See terrain_gen.h's doc comment on TerrainGen_StagingMutex(): guards the
+// buffers above across the main thread's synchronous Build+Upload fallback
+// (HandleTerrainStreaming/HandleFlythroughStreaming) and TerrainStreamQueue's
+// worker thread, which were previously unsynchronized against each other.
+std::mutex& TerrainGen_StagingMutex() {
+    static std::mutex m;
+    return m;
+}
+
 // Load r32 heightmap file into a flat buffer (width*height floats).
 // Returns false on error. Caller owns buffer (use delete[]).
 static bool s_load_r32(const char* path, float*& buf_out, int& w_out, int& h_out,

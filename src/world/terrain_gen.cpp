@@ -610,6 +610,19 @@ static float s_hmap_sample(const float* hmap, int hmap_w, int hmap_h,
 }
 
 bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParams& p) {
+    // Task terrain-patches (milder artifact, 2026-07-17): out.loaded must go
+    // false BEFORE any other field on `out` is touched, not after. Chunk array
+    // slots are reused across streaming, and this is the SAME live TerrainChunk
+    // sitting in the streaming grid (worker thread calls Build directly on it,
+    // no private copy) — TerrainQuery::GetHeight() and other callers trust
+    // `chunk.loaded` as their ONLY gate before reading chunk.heightmap.h[]
+    // directly. Setting loaded=false only near the end (after heights/verts/
+    // skirts were already overwritten in place) left loaded==true (stale, from
+    // the previous occupant) for nearly this whole function's runtime, so a
+    // concurrent GetHeight() call during that window could read a torn mix of
+    // old-location and new-location heights for this chunk.
+    out.loaded = false;
+
     // Chunk array slots are reused across streaming (a slot built for one
     // world position gets rebuilt in place for another) — a stale bake from
     // the PREVIOUS occupant must not survive into this one. albedo_tex
@@ -1062,7 +1075,7 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     out.coord    = coord;
     out.center_x = p.world_offset_x + coord.x * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
     out.center_z = p.world_offset_z + coord.z * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
-    out.loaded   = false;  // Upload() sets this
+    // out.loaded already set false at function entry — Upload() sets it true.
 
     // Biome ground-texture lookup — direct biomemap.png colour → real FCS
     // Biomes entry (BiomeDef::ForColor), precise per-chunk. grass/dirt/road

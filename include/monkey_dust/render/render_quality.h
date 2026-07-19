@@ -1,5 +1,8 @@
 #pragma once
 #include <monkey_dust/render/render_tier.h>
+#include <monkey_dust/platform/md_fs.h>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 // RenderQualityConfig — per-type cull radii + quality toggles.
@@ -17,19 +20,6 @@ struct RenderQualityConfig {
     float mesh_lod2_cr_m  = 3000.f; // static props LOD2
     float actor_cr_m      =  150.f; // NPC/character draw distance (cull.comp far_sq)
     float actor_anim_t2_m =  150.f; // NPC animation T2 (LOD2 skip skinning)
-
-    // ── Terrain shader-pass split (hard cutoff, no crossfade) ────────────────
-    // terrain_pom.frag (POM ray-march + self-shadow + normal-map array) is the
-    // single most expensive fragment shader in the game and was previously run
-    // unconditionally out to terrain_cr_m (task #43 fixed a POM/forward seam
-    // by making POM cover the whole draw distance). Per-texel POM detail is
-    // imperceptible past a few hundred metres, so restrict it to a near radius
-    // and hand distant terrain to the much cheaper terrain_forward.frag. Used
-    // to dithered-crossfade between the two passes around the boundary
-    // (terrain_pom_band_m); that dithering caused a visible checkerboard
-    // ("сітківка") and was removed (task #158, commit 4fa16546) in favour of
-    // a plain hard cutoff — terrain_pom_band_m removed with it (task #158i).
-    float terrain_pom_cr_m   =  150.f; // POM shader radius; beyond it → forward
 
     // ── Prop-type distances (metres) — replaces npc_render hardcoded consts ──
     float prop_rock_m     =  600.f;
@@ -64,7 +54,6 @@ struct RenderQualityConfig {
             c.mesh_lod2_cr_m   = 3000.f;  // original
             c.actor_cr_m       =  150.f;  // original cull UBO far_sq = 150m
             c.actor_anim_t2_m  =  150.f;
-            c.terrain_pom_cr_m   = 100.f;  // HD 520: most aggressive POM cutoff
             c.prop_rock_m      =  300.f;  // reduced props = real GPU savings
             c.prop_formation_m =  450.f;
             c.prop_hat_rock_m  =  600.f;
@@ -80,7 +69,6 @@ struct RenderQualityConfig {
             c.mesh_lod2_cr_m   = 3000.f;
             c.actor_cr_m       =  120.f;
             c.actor_anim_t2_m  =  120.f;
-            c.terrain_pom_cr_m   = 150.f;
             c.prop_rock_m      =  450.f;
             c.prop_formation_m =  650.f;
             c.prop_hat_rock_m  =  900.f;
@@ -96,7 +84,6 @@ struct RenderQualityConfig {
             c.mesh_lod2_cr_m   = 3000.f;
             c.actor_cr_m       =  150.f;
             c.actor_anim_t2_m  =  150.f;
-            c.terrain_pom_cr_m   = 200.f;
             c.prop_rock_m      =  600.f;
             c.prop_formation_m =  900.f;
             c.prop_hat_rock_m  = 1200.f;
@@ -112,7 +99,6 @@ struct RenderQualityConfig {
             c.mesh_lod2_cr_m   = 5000.f;
             c.actor_cr_m       =  200.f;
             c.actor_anim_t2_m  =  200.f;
-            c.terrain_pom_cr_m   = 300.f;
             c.prop_rock_m      =  900.f;
             c.prop_formation_m = 1200.f;
             c.prop_hat_rock_m  = 1800.f;
@@ -122,5 +108,49 @@ struct RenderQualityConfig {
             c.tex_detail       = 0;
             break;
         }
+    }
+
+    // Optional runtime tuning without a C++ recompile (user request,
+    // 2026-07-18 terrain-seam investigation — every numeric experiment that
+    // session needed a full ninja rebuild). Call once, right after
+    // ApplyTierPreset, so overrides win over the tier default. Plain
+    // key=value lines (one per line, '#' starts a comment, blank lines
+    // ignored) — no external JSON library per project convention. Missing
+    // file is silent/expected (most runs have no overrides).
+    static void LoadOverrides(const char* path = "game/data/render_quality_overrides.txt") noexcept {
+        uint32_t size = 0;
+        char* buf = md::fs_read_alloc(path, &size);
+        if (!buf) return;
+        RenderQualityConfig& c = Get();
+        char* line = buf;
+        while (line < buf + size) {
+            char* nl = (char*)memchr(line, '\n', (buf + size) - line);
+            char* end = nl ? nl : (buf + size);
+            *end = '\0';
+            char* eq = strchr(line, '=');
+            if (eq && line[0] != '#') {
+                *eq = '\0';
+                const char* key = line;
+                const char* val = eq + 1;
+                float fval = (float)atof(val);
+                if      (!strcmp(key, "terrain_cr_m"))    c.terrain_cr_m    = fval;
+                else if (!strcmp(key, "mesh_lod0_cr_m"))  c.mesh_lod0_cr_m  = fval;
+                else if (!strcmp(key, "mesh_lod1_cr_m"))  c.mesh_lod1_cr_m  = fval;
+                else if (!strcmp(key, "mesh_lod2_cr_m"))  c.mesh_lod2_cr_m  = fval;
+                else if (!strcmp(key, "actor_cr_m"))      c.actor_cr_m      = fval;
+                else if (!strcmp(key, "actor_anim_t2_m")) c.actor_anim_t2_m = fval;
+                else if (!strcmp(key, "prop_rock_m"))     c.prop_rock_m     = fval;
+                else if (!strcmp(key, "prop_formation_m"))c.prop_formation_m= fval;
+                else if (!strcmp(key, "prop_hat_rock_m")) c.prop_hat_rock_m = fval;
+                else if (!strcmp(key, "prop_veg_m"))      c.prop_veg_m      = fval;
+                else if (!strcmp(key, "prop_tree_m"))     c.prop_tree_m     = fval;
+                else if (!strcmp(key, "render_deco"))     c.render_deco     = fval != 0.f;
+                else if (!strcmp(key, "tex_detail"))       c.tex_detail      = (uint8_t)fval;
+                else    fprintf(stderr, "[RenderQualityConfig] unknown override key: %s\n", key);
+            }
+            line = end + 1;
+        }
+        md::fs_free(buf);
+        fprintf(stdout, "[RenderQualityConfig] loaded overrides from %s\n", path);
     }
 };

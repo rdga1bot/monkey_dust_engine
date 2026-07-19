@@ -3,26 +3,19 @@
 #include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/world/terrain_chunk.h>
 
-// POM parameters — defined outside TerrainRenderer to avoid nested-class
-// default-member-initializer parsing issues with GCC default arguments.
-struct TerrainPomParams {
-    float height_scale;  // world-space displacement depth (0.03=subtle, 0.12=deep)
-    int   layers_min;    // layers when looking straight down (isometric view)
-    int   layers_max;    // layers at grazing angle — Intel HD 520 budget: max 8
-
-    TerrainPomParams() : height_scale(0.06f), layers_min(4), layers_max(8) {}
-    TerrainPomParams(float hs, int lmin, int lmax)
-        : height_scale(hs), layers_min(lmin), layers_max(lmax) {}
-};
-
-// TerrainRenderer — forward-rendering pass for a single TerrainChunk.
-// Uses terrain_forward.vert/frag (single colour output, Lambertian lighting).
-// POM variant: terrain_pom.vert/frag — Parallax Occlusion Mapping + self-shadow.
-// For GBuffer deferred path see terrain.vert/frag (not yet wired).
+// TerrainRenderer — the terrain rendering pass for a TerrainChunk. Uses
+// terrain_forward.vert/frag: single colour output, Lambertian lighting,
+// per-vertex dominant-weight ground selection (see TerrainVertex's
+// ground_id/ground_id2/blend_alpha, terrain_chunk.h). One shader for every
+// distance — real Kenshi has no near/far terrain-shader split either
+// (re_docs/kenshi/terrain.md:114-136). 2026-07-19: removed the POM
+// (parallax occlusion mapping + bump-normal) pipeline and the per-chunk
+// baked-albedo pipeline that used to exist alongside this one — both were
+// this project's own invention, not part of the original game, and were
+// the root of a whole class of near/far shader-seam bugs. For GBuffer
+// deferred path see terrain.vert/frag (not yet wired).
 class TerrainRenderer {
 public:
-    using PomParams = TerrainPomParams;  // convenience alias
-
     struct SunParams {
         float dir[3];      // world-space normalised direction
         float strength;    // diffuse multiplier
@@ -46,21 +39,23 @@ public:
         float world_origin_x;   // world X → UV 0.5
         float world_origin_z;   // world Z → UV 0.5
         float world_to_uv;      // UV per metre (1 / kenshi_view_metres)
-        // Shader-pass dithered crossfade (mirrors TerrainPomVertUBO's
-        // lod_blend, terrain_pom.slang task #43) — was the unused _pad slot.
+        // Mesh-LOD dithered crossfade (task #43) — every caller that set
+        // this to nonzero was removed by task #158 (2026-07-15); kept in
+        // the layout for source/UBO compatibility, effectively always 0.
         float lod_blend;
         float cam_pos_ws[4];    // xyz=camera world position, w=unused (fog distance)
-        // Chunk-local albedo-bake UV origin (see BakeAlbedo/terrain_albedo_bake.slang):
-        // this chunk's own world-space corner, NOT the world overlay origin
-        // above — lets the runtime vertex shader compute the SAME 0..1
-        // chunk-local UV the bake pass rasterized into, so sampling the
-        // baked per-chunk texture lands on the right texel.
+        // No longer consumed by the shader (was the per-chunk albedo-bake
+        // UV origin, terrain_albedo_bake.slang — deleted 2026-07-19, see
+        // TerrainVertex's ground_id/ground_id2/blend_alpha in
+        // terrain_chunk.h). Kept so every DrawRaw/DrawRawChunk caller's
+        // argument list stays unchanged — touching that is out of scope
+        // for this rewrite.
         float chunk_origin_x;
         float chunk_origin_z;
         // Applied to aPos.xz BEFORE everything else (projection, vWorldPos,
-        // vDist, vChunkUV) — lets a single static, absolute-Kenshi-metres
-        // vertex buffer (the game's whole-world compact-VBO background,
-        // task #158i-9/9) render correctly aligned with the game's floating
+        // vDist) — lets a single static, absolute-Kenshi-metres vertex
+        // buffer (the game's whole-world compact-VBO background, task
+        // #158i-9/9) render correctly aligned with the game's floating
         // local terrain window (tnoff_x/z) without rebuilding the buffer
         // every time that window re-centres. Zero for every other caller
         // (BeginRawBatch defaults it to 0,0) — no behaviour change there.
@@ -88,61 +83,7 @@ public:
         // stale 1.0 from an earlier synthesis/compact-LOD2 draw this same
         // frame would otherwise silently leak into subsequent per-chunk draws.
         float use_zone_lookup[4];
-        // 128 bytes total — exactly the Intel HD 520 frag UBO ceiling (same
-        // as TerrainPomFragUBO below); no headroom left for more fields.
-    };
-
-    // Vertex UBO for POM pipeline: TerrainVertUBO (80 bytes) + cam_pos_ws (16 bytes) = 96 bytes.
-    struct TerrainPomVertUBO {
-        float vp[16];           // 64 bytes
-        float world_origin_x;
-        float world_origin_z;
-        float world_to_uv;
-        // Dithered LOD-tier crossfade (task #43) — 0=normal/fully visible,
-        // 1=fully discarded. See terrain_pom.slang's DitherPattern4x4.
-        // Was an unused _pad0 slot.
-        float lod_blend;
-        float cam_pos_ws[4];    // xyz=camera world position, w=unused
-        // Chunk-local albedo-bake UV origin — see TerrainVertUBO's field of
-        // the same name.
-        float chunk_origin_x;
-        float chunk_origin_z;
-        // 104 bytes total
-    };
-
-    // Fragment UBO for POM pipeline: 112 bytes + blend_layers (16 bytes) = 128 bytes
-    // (exactly fills the Intel HD 520 128B push-constant budget -- do not add
-    // more fields here without dropping something else first).
-    struct TerrainPomFragUBO {
-        float sun_dir_str[4];   // 16 bytes
-        float ambient[4];       // 16 bytes
-        float world_params[4];  // 16 bytes
-        float pom_params[4];    // x=height_scale, y=layers_min, z=layers_max, w=fog_far (linear fog, 2026-07-12 — see ground_layers_b's comment above)
-        float ground_layers_a[4]; // xyzw = base,slope,cliff,grass GroundTexLayer indices
-        float ground_layers_b[4]; // xy=dirt,road GroundTexLayer indices; zw=unused
-        float fog_color_near[4];  // xyz=fog colour, w=fog_near
-        float blend_layers[4];    // xyz=crossfade target base,slope,cliff; w=unused
-        // 128 bytes total
-    };
-
-    // ── Albedo bake pipeline UBOs (terrain_albedo_bake.slang) ────────────────
-    // Own, independent pipeline/UBOs — does NOT touch the runtime forward/POM
-    // pipelines' sampler/UBO layout at all, so none of the "5 sync points"
-    // invariant applies here; only the runtime shaders' ONE new sampler
-    // (tex_albedo_baked) does, see FillSamplerBindings/FillPomSamplerBindings.
-    struct BakeVertUBO {
-        float chunk_origin_x;
-        float chunk_origin_z;
-        float chunk_size;
-        float _pad;
-        // 16 bytes total
-    };
-    struct BakeFragUBO {
-        float world_params[4];    // xy=overlay origin, z=world_to_uv, w unused
-        float ground_layers_a[4]; // xyzw = base,slope,cliff,grass
-        float ground_layers_b[4]; // xy = dirt,road; zw unused
-        float blend_layers[4];    // xyz=slot A base/slope/cliff, w=slot B base
-        // 64 bytes total
+        // 128 bytes total — exactly the Intel HD 520 frag UBO ceiling.
     };
 
     bool Init();
@@ -151,30 +92,36 @@ public:
     // Load Kenshi stitched colour overlay (md_terrain.png, 4096×4096).
     bool InitKenshiOverlay(const char* path);
 
-    // Load 24-layer BC3 DDS texture array for per-biome ground texturing (POM path).
-    // Also loads the paired 24-layer BC1 normal-map array (kGroundNmlPaths) —
-    // real terrainfp4.hlsl samples diffuse+normal in lockstep per layer; see
-    // biome_def.h's kGroundNmlPaths comment for the root-cause rationale.
-    // Must be called after Init() and before InitPOM().
+    // Load 24-layer BC3 DDS texture array for per-biome ground texturing.
+    // Also loads the paired 24-layer BC1 normal-map array (kGroundNmlPaths)
+    // — currently unused by terrain_forward.slang (no normal-mapping since
+    // the 2026-07-19 rewrite) but kept loaded; see biome_def.h's
+    // kGroundNmlPaths comment. Must be called after Init().
     bool InitGroundTextureArray();
+
+    // Load the tiling generic-detail RGB tint texture used by
+    // terrain_forward.slang's albedo blend (was loaded as a side effect of
+    // InitPOM's detail_path parameter before the 2026-07-19 POM removal —
+    // now its own small entry point). Pass nullptr/empty to leave
+    // tex_detail_ unset (FillSamplerBindings falls back to a neutral white
+    // 1×1, same as any other missing texture).
+    bool InitDetailTexture(const char* path);
 
     // Load the stitched grass/dirt/road painted mask (md_overlay_mask.png,
     // tools/md_stitch_overlay_mask.py — R=grass,G=secondary,B=dirt,A=road,
-    // matches Kenshi's real terrainfp4.hlsl overlayMap). POM path only.
+    // matches Kenshi's real terrainfp4.hlsl overlayMap). Used by the
+    // editor's zone-lookup (synthesis/compact-LOD) draw path only — the
+    // per-chunk near/mid path resolves this at generation time instead
+    // (see terrain_gen.cpp's s_ground_pick).
     bool InitOverlayMask(const char* path);
 
     // Load the procedural biome-crossfade texture (md_biome_blend.png,
     // tools/md_gen_biome_blendmap.py) — R/G/B = neighbouring-zone's
     // base/slope/cliff GroundTexLayer index (0..23, packed as raw uint8/255),
     // A = blend weight (0=pure current-zone biome, 1=pure neighbour biome).
-    // Fixes the hard per-chunk (460.8m) biome edge: real Kenshi zones
-    // (areasmap.tga) are numerous and small, so this transition is crossed
-    // often; the real shader cross-fades it via a painted blendMap (see
-    // terrainfp4.hlsl BLEND1), which we don't have hand-painted data for —
-    // this derives an equivalent single extra blend slot procedurally
-    // instead, delivered via texture (not UBO) since a full 4-biome-set port
-    // doesn't fit the Intel HD 520 push-constant budget (TerrainPomFragUBO
-    // is already 112/128 bytes). POM path only.
+    // Same zone-lookup-path-only scope as InitOverlayMask above — the
+    // per-chunk near/mid path no longer needs this (per-vertex ground
+    // selection resolves zone/chunk-boundary blending directly).
     bool InitBiomeBlend(const char* path);
 
     // Draw chunk inside an already-open GpuCommandBuffer colour pass.
@@ -194,11 +141,14 @@ public:
     // Use uniform lod for all chunks to avoid T-junctions.
     // cam_x/y/z: camera world position, for the linear distance fog applied
     // in terrain_forward.frag (matches ground.frag/NPC shader fog model).
-    // lod_blend: shader-pass dithered crossfade fraction (mirrors DrawRawPOM's
-    // parameter of the same name) — 0=fully visible (default), 1=fully
-    // discarded. Draw a chunk via both DrawRaw and DrawRawPOM near the
-    // pass-switch boundary with complementary values to fade between the
-    // cheap forward shader and POM instead of a hard shader swap.
+    // lod_blend: shader-pass dithered crossfade fraction — 0=fully visible
+    // (default), 1=fully discarded.
+    // fog_density_override > 0 replaces the terrain_cr_m-derived fog_far
+    // (linear fog, see graphics_settings.h's fog_near_ratio comment). Normal
+    // gameplay fog_far is tuned for ground-level view distance; an aerial
+    // camera (e.g. the editor's 3D World tab, kilometres up) needs a much
+    // LARGER fog_far or distant chunks saturate to solid fog colour. Pass 0
+    // (default) to leave fog_far untouched.
     void DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                  const TerrainChunk& chunk,
                  const float* vp16,
@@ -208,60 +158,10 @@ public:
                  float world_origin_z = 0.f,
                  float world_to_uv    = 1.f / 8000.f,
                  int   lod            = 0,
-                 float lod_blend      = 0.f);
+                 float lod_blend      = 0.f,
+                 float fog_density_override = 0.f);
 
-    // POM variant — call once after Init(). Then replace DrawRaw calls with DrawRawPOM.
-    // detail_path: RGBA PNG where A=height [0,1]. Pass nullptr to use neutral fallback.
-    bool InitPOM(const char* detail_path, const PomParams& p = PomParams());
-    void ShutdownPOM();
-
-    // Drop-in replacement for DrawRaw. Passes camera world position for tangent-space
-    // view vector used in POM ray marching. Falls back to DrawRaw if POM not ready.
-    // lod: 0=full 64×64, 1=32×32, 2=16×16, 3=8×8 (uniform across all chunks).
-    // fog_density_override > 0 overrides fog_far directly (linear fog, see
-    // graphics_settings.h's fog_near_ratio comment — name kept for source
-    // compatibility, semantics changed 2026-07-12 from an EXP2 density
-    // override to a linear fog_far override). Pass 0 (default) to use the
-    // terrain_cr_m-derived fog_far, correct for normal ground-level gameplay.
-    // For an aerial camera (e.g. the editor's 3D World tab, kilometres up)
-    // vDist is full 3D camera distance, so pass a LARGER fog_far override
-    // (was: smaller density) to keep near-overhead chunks out of fog.
-    void DrawRawPOM(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
-                    const TerrainChunk& chunk,
-                    const float* vp16,
-                    const SunParams& sun,
-                    float cam_x, float cam_y, float cam_z,
-                    float world_origin_x = 0.f,
-                    float world_origin_z = 0.f,
-                    float world_to_uv    = 1.f / 8000.f,
-                    int   lod            = 0,
-                    float fog_density_override = 0.f,
-                    // task #43: dithered LOD-tier crossfade fraction,
-                    // 0=fully visible (default), 1=fully discarded. Draw a
-                    // chunk twice near a LOD boundary with complementary
-                    // values on each adjacent tier — see terrain_pom.slang's
-                    // DitherPattern4x4/clip().
-                    float lod_blend      = 0.f);
-
-    // Terrain surface construction rethink (2026-07-12): bakes the 6-9
-    // sample ground-texture blend (BlendGroundLayers, extracted verbatim
-    // into terrain_albedo_bake.slang) into chunk.albedo_tex ONCE, instead
-    // of recomputing it every fragment every frame in terrain_forward/
-    // terrain_pom. Call once per chunk, after InitGroundTextureArray/
-    // InitOverlayMask/InitBiomeBlend (needs their source textures) and
-    // after the chunk's own vbo/ibo are uploaded. Caller owns the command
-    // buffer lifecycle (acquire once, call this per chunk, submit once) —
-    // mirrors GpuUploadBatch's "one submit, not N" rationale.
-    // world_origin_x/z/world_to_uv: SAME world-space overlay UV convention
-    // as DrawRaw/DrawRawPOM's parameters of the same name (COL_OX/COL_OZ/
-    // COL_UV in npc_render.cpp) — must match so the baked tex_overlay_mask/
-    // tex_biome_blend samples address the same world position.
-    bool InitAlbedoBake();
-    void BakeAlbedo(SDL_GPUCommandBuffer* cmd, TerrainChunk& chunk,
-                     float world_origin_x, float world_origin_z, float world_to_uv);
-
-    bool IsReady()    const;
-    bool IsPomReady() const;
+    bool IsReady() const;
 
     // Batch API: hoists pipeline/UBO/sampler/IBO outside the per-chunk loop.
     // Reduces API calls from 6/chunk to 2/chunk for large worlds.
@@ -328,34 +228,23 @@ public:
 
 private:
     GpuPipeline pipeline_;
-    GpuTexture  tex_colour_;        // Kenshi colour overlay (forward pass slot 0)
-    GpuTexture  tex_ground_array_;  // 24-layer BC3 DDS array (POM pass slot 0)
-    GpuTexture  tex_ground_nml_array_; // 24-layer BC1 DDS array — paired normal maps
+    GpuTexture  tex_colour_;        // Kenshi colour overlay
+    GpuTexture  tex_ground_array_;  // 24-layer BC3 DDS array — the actual per-vertex-indexed ground textures
+    GpuTexture  tex_ground_nml_array_; // 24-layer BC1 DDS array — paired normal maps, currently unused (no normal-mapping)
     bool        tex_loaded_        = false;
     bool        ground_array_ready_= false;
 
-    // POM pipeline data
-    GpuPipeline pom_pipeline_;
-    GpuTexture  tex_detail_;   // RGB=detail tint, A=height [0,1]; tiling detail texture
-    GpuTexture  tex_overlay_mask_;      // R=grass,G=secondary,B=dirt,A=road painted mask
+    GpuTexture  tex_detail_;   // generic tiling detail-tint texture (InitDetailTexture)
+    GpuTexture  tex_overlay_mask_;      // R=grass,G=secondary,B=dirt,A=road painted mask — zone-lookup path only
     bool        overlay_mask_ready_ = false;
-    GpuTexture  tex_biome_blend_;       // R/G/B=neighbour base/slope/cliff idx, A=blend weight
+    GpuTexture  tex_biome_blend_;       // R/G/B=neighbour base/slope/cliff idx, A=blend weight — zone-lookup path only
     bool        biome_blend_ready_ = false;
-    PomParams   pom_params_;
-    bool        pom_loaded_ = false;
 
     // Shared LOD IBOs — one per LOD level, built in Init(), reused by all chunks.
     GpuStaticBuffer lod_ibo_shared_[TERRAIN_LOD_LEVELS];
 
     // Per-zone ground-layer lookup (see UploadZoneGroundLayers/SetBatchZoneLookup).
     SSBO zone_layers_ssbo_;
-
-    // Albedo bake pipeline (see BakeAlbedo) — small offscreen RGBA8 target,
-    // no depth. One pipeline shared by all chunks; each chunk owns its own
-    // baked GpuTexture (TerrainChunk::albedo_tex).
-    GpuPipeline albedo_bake_pipeline_;
-    bool        albedo_bake_ready_ = false;
-    static constexpr int ALBEDO_BAKE_SIZE = 256; // texels/side per chunk (460.8m chunk -> ~1.8m/texel)
 
     uint32_t        batch_idx_count_ = 0;  // set by BeginRawBatch
     TerrainFragUBO  batch_fubo_base_{};     // sun/world params cached by BeginRawBatch;
@@ -364,19 +253,10 @@ private:
 #ifdef MD_SDL_GPU
     SDL_GPUTexture* fallback_tex_            = nullptr;
     SDL_GPUSampler* fallback_sampler_        = nullptr;
-    SDL_GPUTexture* fallback_detail_tex_     = nullptr;
-    SDL_GPUSampler* fallback_detail_sampler_ = nullptr;
     SDL_GPUTexture* fallback_mask_tex_       = nullptr;
     SDL_GPUSampler* fallback_mask_sampler_   = nullptr;
     SDL_GPUTexture* fallback_blend_tex_      = nullptr;
     SDL_GPUSampler* fallback_blend_sampler_  = nullptr;
-    // out[5]/out[6] (last slot): baked albedo — filled with the fallback
-    // white texture by default; DrawRaw/DrawRawPOM overwrite it per-chunk
-    // with chunk.albedo_tex right after calling this (see BakeAlbedo doc
-    // comment) if the chunk has been baked. Batch draws (BeginRawBatch/
-    // DrawRawChunk, editor zone-lookup path) never overwrite it — harmless,
-    // that branch never samples tex_albedo_baked.
-    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const;      // forward (LOD1-3) — +b5 baked albedo
-    void FillPomSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const;  // POM (LOD0) — +b4 ground normal array, +b5 baked albedo (2026-07-12: tex_ground/b1 dropped, was dead)
+    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const;
 #endif
 };

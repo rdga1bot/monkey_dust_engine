@@ -30,27 +30,192 @@ static constexpr float TERRAIN_STEP  = CHUNK_SIZE / TERRAIN_GRID;               
 // LOD levels (same VBO, coarser IBO — steps of 2/4/8 vertices)
 static constexpr int   TERRAIN_LOD_LEVELS    = 3;
 static constexpr int   TERRAIN_LOD_STEPS[3]  = { 2, 4, 8 };
+// 2026-07-19: sizes account for BuildLodIboStitched's full-resolution
+// border (task #182 T-junction fix — see that function's doc comment).
+// triangles = 2*(G-2)^2 + 4*(G-2)*(step+1) + 8*step, G=TERRAIN_GRID/step.
 static constexpr int   TERRAIN_LOD_IDX[3]    = {
-    (TERRAIN_GRID/2) * (TERRAIN_GRID/2) * 6,  // 24576 (64×64 quads)
-    (TERRAIN_GRID/4) * (TERRAIN_GRID/4) * 6,  //  6144 (32×32 quads)
-    (TERRAIN_GRID/8) * (TERRAIN_GRID/8) * 6   //  1536 (16×16 quads)
+    25344,  // step=2, G=64:  8448 tris (was 24576/8192 tris pre-stitch)
+     7296,  // step=4, G=32:  2432 tris (was  6144/2048 tris pre-stitch)
+     2880   // step=8, G=16:   960 tris (was  1536/ 512 tris pre-stitch)
 };
 // Camera-to-chunk-centre distance thresholds to switch LOD levels
 static constexpr float TERRAIN_LOD_DIST[3]   = { 600.f, 1200.f, 2000.f };
 
-// Vertex layout (stride = 48 bytes):
+// Vertex layout (stride = 52 bytes):
 //   location 0: vec3 pos    (12)
 //   location 1: vec3 normal (12)
 //   location 2: vec2 uv     (8)   — world-space UV for texture tiling
-//   location 3: vec4 splat  (16)  — float weights: [grass, rock, dirt, snow]
+//   location 3: vec4 ground (16)  — unused, see ground_id's doc comment
 struct TerrainVertex {
     float x, y, z;           // world position        offset  0
     float nx, ny, nz;         // normal                offset 12
     float u, v;               // UV (world-space)      offset 24
-    float splat[4];           // [grass,rock,dirt,snow] offset 32
+    // Dominant-weight ground selection (base/slope/cliff/grass/dirt/road
+    // argmax, re_docs/kenshi/terrain.md:114-136) runs PER-PIXEL in
+    // terrain_forward.slang's fsMain now, not baked here. A same-day
+    // 2026-07-19 first attempt baked ground_id/ground_id2 into these
+    // fields (flat-interpolated, since array-layer indices can't be
+    // lerped) — real bug: adjacent vertices on a slope often disagree on
+    // the dominant layer, and flat interpolation paints each whole
+    // triangle from one vertex's decision, producing dense triangle-shaped
+    // seams (confirmed via screenshots). fsMain now recomputes the same
+    // argmax per-pixel from the already-smoothly-interpolated normal and a
+    // live tex_overlay_mask sample instead. These 4 floats are unused
+    // leftover slots — same status `splat[4]` had before that whole
+    // rewrite (was [grass,rock,dirt,snow], computed on CPU but never
+    // sampled by any shader). Kept (not removed) purely to avoid touching
+    // vertex stride/layout across every caller for an already-dead field.
+    float ground_id;          // unused
+    float ground_id2;         // unused
+    float blend_alpha;        // unused
+    float _reserved;          // unused
     float morph_y;            // geomorph target Y for L0→L1; guarded by TERRAIN_MORPH_DATA_ENABLED
 };
 static_assert(sizeof(TerrainVertex) == 52, "TerrainVertex size mismatch");
+
+// Builds an LOD index buffer whose CHUNK BOUNDARY is always drawn at full
+// resolution (step=1), regardless of how decimated the interior is (step
+// S ∈ {2,4,8}, TERRAIN_LOD_STEPS). This is a geomorphic seam-stitch: since
+// every chunk ALWAYS draws its own border at full resolution, any two
+// adjacent chunks' shared edge matches exactly for ANY combination of LOD
+// tiers — no runtime cross-chunk coordination needed, each chunk is
+// self-sufficient. Fixes a confirmed T-junction gap (measured up to
+// 19.4m — md.scan_terrain_seam_tjunctions()) where the old scheme
+// decimated the border too, leaving a straight-line approximation that
+// could diverge sharply from the real (fine) terrain on steep Kenshi
+// cliffs (see project_pillar_bug_confirmed.md memory / task #182).
+//
+// Reuses the SAME shared VBO every LOD tier already uses — normals are
+// computed once from the full-resolution mesh (terrain_gen.cpp's normal-
+// accumulation pass covers every vertex regardless of which LOD IBO ends
+// up drawn), so this only changes which triangles get drawn. No new
+// vertices, no new normal computation.
+//
+// Three parts, each independently derived and winding-verified (2D signed
+// area in (col,row) space, matching the plain-decimation interior's own
+// CCW convention — the border/corner winding is NOT symmetric across all
+// 4 sides, verified individually, do not "simplify" by assuming symmetry):
+//   1. Core interior: same 2-triangle-per-quad pattern as before, shifted
+//      inward by one decimated cell (that outer ring is replaced by parts
+//      2+3 below).
+//   2. Border strips (4 edges): a "zipper" between the full-res chunk
+//      edge (step+1 fine points per decimated span) and the first
+//      interior line (2 coarse points per span) — step+1 triangles/span.
+//   3. Corner patches (4 corners): a pure fan from the single interior
+//      corner anchor to the L-shaped full-res chain of the two adjacent
+//      edges — 2*step triangles/corner.
+// out must have room for TERRAIN_LOD_IDX[lod-1] uint16_t (lod=1,2,3).
+// Returns the actual index count written (3 * triangle count).
+inline int BuildLodIboStitched(uint16_t* out, int step) {
+    const int G = TERRAIN_GRID / step;
+    const int ROWLEN = TERRAIN_GRID + 1;
+    auto idx = [&](int col, int row) -> uint16_t {
+        return (uint16_t)(row * ROWLEN + col);
+    };
+    int ii = 0;
+    auto emit = [&](uint16_t a, uint16_t b, uint16_t c) {
+        out[ii++] = a; out[ii++] = b; out[ii++] = c;
+    };
+
+    // ── 1. Core interior ───────────────────────────────────────────────
+    for (int kr = 1; kr <= G - 2; ++kr) {
+        for (int kc = 1; kc <= G - 2; ++kc) {
+            uint16_t bl = idx(kc*step,      kr*step);
+            uint16_t br = idx(kc*step+step, kr*step);
+            uint16_t tl = idx(kc*step,      kr*step+step);
+            uint16_t tr = idx(kc*step+step, kr*step+step);
+            emit(bl, br, tl);
+            emit(br, tr, tl);
+        }
+    }
+
+    const int mid = step / 2;  // step is always an even power of 2 here
+
+    // ── 2. Border strips ───────────────────────────────────────────────
+    // Bottom (row=0): fine F[i]=idx(i,0); coarse Q[k]=idx(k*step,step).
+    for (int k = 1; k <= G - 2; ++k) {
+        uint16_t Q0 = idx(k*step,     step);
+        uint16_t Q1 = idx((k+1)*step, step);
+        for (int i = 0; i < mid; ++i)
+            emit(idx(k*step+i, 0), idx(k*step+i+1, 0), Q0);
+        emit(idx(k*step+mid, 0), Q1, Q0);
+        for (int i = mid; i < step; ++i)
+            emit(idx(k*step+i, 0), idx(k*step+i+1, 0), Q1);
+    }
+    // Right (col=GRID): fine F[j]=idx(GRID,j); coarse Q[k]=idx(GRID-step,k*step).
+    // Same (unreversed) winding as bottom.
+    for (int k = 1; k <= G - 2; ++k) {
+        uint16_t Q0 = idx(TERRAIN_GRID-step, k*step);
+        uint16_t Q1 = idx(TERRAIN_GRID-step, (k+1)*step);
+        for (int j = 0; j < mid; ++j)
+            emit(idx(TERRAIN_GRID, k*step+j), idx(TERRAIN_GRID, k*step+j+1), Q0);
+        emit(idx(TERRAIN_GRID, k*step+mid), Q1, Q0);
+        for (int j = mid; j < step; ++j)
+            emit(idx(TERRAIN_GRID, k*step+j), idx(TERRAIN_GRID, k*step+j+1), Q1);
+    }
+    // Top (row=GRID): fine F[i]=idx(i,GRID); coarse Q[k]=idx(k*step,GRID-step).
+    // Reversed winding relative to bottom.
+    for (int k = 1; k <= G - 2; ++k) {
+        uint16_t Q0 = idx(k*step,     TERRAIN_GRID-step);
+        uint16_t Q1 = idx((k+1)*step, TERRAIN_GRID-step);
+        for (int i = 0; i < mid; ++i)
+            emit(idx(k*step+i+1, TERRAIN_GRID), idx(k*step+i, TERRAIN_GRID), Q0);
+        emit(idx(k*step+mid, TERRAIN_GRID), Q0, Q1);
+        for (int i = mid; i < step; ++i)
+            emit(idx(k*step+i+1, TERRAIN_GRID), idx(k*step+i, TERRAIN_GRID), Q1);
+    }
+    // Left (col=0): fine F[j]=idx(0,j); coarse Q[k]=idx(step,k*step).
+    // Reversed winding relative to bottom.
+    for (int k = 1; k <= G - 2; ++k) {
+        uint16_t Q0 = idx(step, k*step);
+        uint16_t Q1 = idx(step, (k+1)*step);
+        for (int j = 0; j < mid; ++j)
+            emit(idx(0, k*step+j+1), idx(0, k*step+j), Q0);
+        emit(idx(0, k*step+mid), Q0, Q1);
+        for (int j = mid; j < step; ++j)
+            emit(idx(0, k*step+j+1), idx(0, k*step+j), Q1);
+    }
+
+    // ── 3. Corner patches ──────────────────────────────────────────────
+    // Winding verified independently per corner — checkerboard pattern
+    // (BL/TR reversed, BR/TL unreversed), not a typo.
+    uint16_t chain[2*8+1];  // max size at step=8
+
+    // Bottom-left: anchor idx(step,step), chain along row=0 then col=0.
+    {
+        uint16_t A = idx(step, step);
+        int n = 0;
+        for (int m = 0; m <= step; ++m) chain[n++] = idx(step-m, 0);
+        for (int m = 1; m <= step; ++m) chain[n++] = idx(0, m);
+        for (int i = 0; i < n-1; ++i) emit(chain[i+1], chain[i], A);
+    }
+    // Bottom-right: anchor idx(GRID-step,step), chain along row=0 then col=GRID.
+    {
+        uint16_t A = idx(TERRAIN_GRID-step, step);
+        int n = 0;
+        for (int m = 0; m <= step; ++m) chain[n++] = idx(TERRAIN_GRID-step+m, 0);
+        for (int m = 1; m <= step; ++m) chain[n++] = idx(TERRAIN_GRID, m);
+        for (int i = 0; i < n-1; ++i) emit(chain[i], chain[i+1], A);
+    }
+    // Top-left: anchor idx(step,GRID-step), chain along row=GRID then col=0.
+    {
+        uint16_t A = idx(step, TERRAIN_GRID-step);
+        int n = 0;
+        for (int m = 0; m <= step; ++m) chain[n++] = idx(step-m, TERRAIN_GRID);
+        for (int m = 1; m <= step; ++m) chain[n++] = idx(0, TERRAIN_GRID-m);
+        for (int i = 0; i < n-1; ++i) emit(chain[i], chain[i+1], A);
+    }
+    // Top-right: anchor idx(GRID-step,GRID-step), chain along row=GRID then col=GRID.
+    {
+        uint16_t A = idx(TERRAIN_GRID-step, TERRAIN_GRID-step);
+        int n = 0;
+        for (int m = 0; m <= step; ++m) chain[n++] = idx(TERRAIN_GRID-step+m, TERRAIN_GRID);
+        for (int m = 1; m <= step; ++m) chain[n++] = idx(TERRAIN_GRID, TERRAIN_GRID-m);
+        for (int i = 0; i < n-1; ++i) emit(chain[i+1], chain[i], A);
+    }
+
+    return ii;
+}
 
 // Raw heightmap data — stored separately for CPU-side queries (NPC grounding, etc.)
 struct TerrainHeightmap {
@@ -130,17 +295,6 @@ struct TerrainChunk {
     GpuStaticBuffer  clutter_ibo;
     int              clutter_index_count = 0;
     bool             clutter_loaded = false;
-
-    // Terrain surface construction rethink (2026-07-12): the 6-9 sample
-    // ground-texture blend (BlendGroundLayers) is baked ONCE per chunk into
-    // this small offscreen texture instead of recomputed every fragment
-    // every frame (TerrainRenderer::BakeAlbedo, called once right after
-    // upload — same one-shot-per-chunk lifecycle as clutter_vbo/loaded
-    // above). Runtime terrain_forward/terrain_pom shaders sample it once
-    // instead of doing the full blend. See docs/OSS_TERRAIN_METHODS.md's
-    // Wicked Engine section for the reference pattern this mirrors.
-    GpuTexture       albedo_tex;
-    bool             albedo_baked = false;
 
     // Sample height at local chunk coords (0..CHUNK_SIZE).
     // Bilinear interpolation between grid cells.

@@ -62,9 +62,10 @@ float SimplexNoise2(float x, float y);
 float FBM2(float x, float y, int octaves, float persistence, float lacunarity);
 
 // ── Terrain Atlas API ────────────────────────────────────────────────────────
-// world_hmap.r32: one 66 MB file replacing 4096 zone_X_Y.r32 files.
-// Atlas magic: 0x414D4800. Layout: header(16B) + 4096 × zone_block(16908B).
-// zone_block: float hmin + float hmax + float[65*65] heights (row=Z, col=X).
+// world_hmap.r16: raw uint16 base (8256×8256, tools/tif_to_r32.py) + sparse
+// "<base>_edits.r32" overlay for editor-brush changes. 64×64 zones, 129×129
+// verts/zone (row=Z, col=X). See engine/src/world/terrain_gen.cpp for the
+// exact on-disk layout (ATLAS_R16_MAGIC / ATLAS_EDITS_MAGIC).
 
 bool  TerrainAtlas_Load(const char* path);  // load into static RAM buffer
 bool  TerrainAtlas_Loaded();                // true after successful Load
@@ -89,19 +90,8 @@ bool  TerrainAtlas_SaveEdits(const char* path);
 bool  TerrainAtlas_LoadEdits(const char* path);
 bool  TerrainAtlas_HasEdits();
 
-// ── Master heightmap API ─────────────────────────────────────────────────────
-// Low-resolution macro geography layer blended under procedural noise.
-// world_extent_x/z: total world size in metres the heightmap covers.
-// For a 64-zone atlas: world_extent = 64 * CHUNK_SIZE = 29491.2m (real Kenshi map size).
-bool  TerrainMaster_Load(const char* path, float world_extent_x, float world_extent_z);
-bool  TerrainMaster_Loaded();
-// World-space height sample (wx,wz in metres; bilinear)
-float TerrainMaster_SampleWorld(float wx, float wz);
-// Grid pixel access (col in [0,W-1], row in [0,H-1])
-float TerrainMaster_GetPixel(int col, int row);
-void  TerrainMaster_SetPixel(int col, int row, float h);
-int   TerrainMaster_Width();
-int   TerrainMaster_Height();
-float TerrainMaster_HMax();
-// Overwrite file with current pixel data
-bool  TerrainMaster_Save(const char* path);
+// World-space bilinear height sample across the full 64×64 atlas (wx,wz in
+// metres, [0, 64*CHUNK_SIZE)=29491.2m). For ground-snapping/height-query
+// call sites (editor camera, prop placement) — samples the REAL Kenshi zone
+// data directly, at full atlas resolution.
+float TerrainAtlas_SampleWorld(float wx, float wz);

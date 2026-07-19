@@ -3,21 +3,14 @@
 // TerrainGen_Upload lives in a separate TU so test binaries that call
 // TerrainGen_Build do NOT pull in GpuStaticBuffer::Init (and glad symbols).
 
+// Task #182 (2026-07-19): was a plain uniform decimation (border vertices
+// skipped along with the interior) — replaced by BuildLodIboStitched's
+// always-full-resolution-border construction, which fixes a confirmed
+// T-junction gap (up to 19.4m) between chunks drawn at different LOD
+// tiers. See terrain_chunk.h's BuildLodIboStitched doc comment.
 static void build_lod_ibo(uint16_t* out, int step)
 {
-    const int G = TERRAIN_GRID / step;
-    const int S = TERRAIN_GRID + 1;  // vertex stride per row
-    int ii = 0;
-    for (int row = 0; row < G; ++row) {
-        for (int col = 0; col < G; ++col) {
-            uint16_t bl = (uint16_t)( row      * step * S + col * step);
-            uint16_t br = (uint16_t)( row      * step * S + col * step + step);
-            uint16_t tl = (uint16_t)((row + 1) * step * S + col * step);
-            uint16_t tr = (uint16_t)((row + 1) * step * S + col * step + step);
-            out[ii++] = bl; out[ii++] = br; out[ii++] = tl;
-            out[ii++] = br; out[ii++] = tr; out[ii++] = tl;
-        }
-    }
+    BuildLodIboStitched(out, step);
 }
 
 static void s_upload_core(TerrainChunk& chunk,

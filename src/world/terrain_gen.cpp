@@ -3,10 +3,12 @@
 #include <monkey_dust/world/biome_system.h>
 #include <monkey_dust/world/biome_def.h>
 #include <monkey_dust/world/terrain_pass_grid.h>
+#include <monkey_dust/platform/md_fs.h>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <cstdint>
+#include <vector>
 #include "stb_image.h"
 
 // ── Biomemap colour lookup (real Kenshi biome-selection mechanism) ───────────
@@ -92,43 +94,141 @@ const BiomeDef& TerrainGen_ResolveBiome(int zx, int zy) {
 }
 
 // ── Terrain Atlas ─────────────────────────────────────────────────────────────
-static constexpr uint32_t ATLAS_MAGIC  = 0x414D4800u;
+// 2026-07-19: on-disk format switched from a single 260MB float32 .r32 blob
+// to a raw-uint16 "base" (read-only, written offline by tools/tif_to_r32.py
+// — matches Kenshi's own uint16 source precision exactly) plus a small
+// sparse raw "_edits.r32" overlay file the editor's terrain brush writes to.
+// A 16-bit PNG base was tried first (2.7x smaller, 50.6MB vs 136.3MB) but
+// measured ~5x SLOWER to load in this exact engine (1.79s vs 0.35s,
+// stb_image DEFLATE decode cost) — this project's target hardware (Intel
+// HD 520) has a documented history of user-reported slow startup
+// (CLAUDE.md task #158c), so load time won over disk size; raw uint16 is
+// still under half the size of the original float32 .r32. The base is
+// still never edited in-place (even though raw uint16 COULD support
+// in-place zone writes, a sparse edits-overlay is simpler and keeps every
+// brush stroke a small, fast append instead of a full-file rewrite). See
+// TERRAIN_HEIGHT_SCALE_M's doc comment for the uint16<->metres mapping
+// (identical to tools/tif_to_r32.py's / tools/md_hmap_io.py's).
+static constexpr uint32_t ATLAS_R16_MAGIC   = 0x3631524Du; // "MR16" LE — matches tools/md_hmap_io.py's R16_MAGIC
+static constexpr uint32_t ATLAS_EDITS_MAGIC = 0x4541444Du; // "MDAE" LE
 static constexpr int      ATLAS_ZONES  = 64;
 static constexpr int      ATLAS_VERTS  = 129;          // TERRAIN_GRID+1
 static constexpr int      ATLAS_ZBLOCK = ATLAS_VERTS * ATLAS_VERTS; // 16641
+static constexpr int      ATLAS_R16_SIZE = ATLAS_ZONES * ATLAS_VERTS; // 8256, r16 grid side
+// Must match tools/tif_to_r32.py's/tools/md_hmap_io.py's HEIGHT_MAX_M
+// exactly — this is the global uint16[0..65535] <-> metres[0..980] scale
+// the raw-uint16 base is quantized with. Kenshi's own fullmap.tif source
+// is ALREADY uint16 at this same effective precision (~0.015m/step), so
+// this round-trip is lossless relative to the real source data, not a new
+// quantization step.
+static constexpr float    TERRAIN_HEIGHT_SCALE_M = 980.0f;
 
 static float   s_atlas_h   [ATLAS_ZONES * ATLAS_ZONES * ATLAS_ZBLOCK]; // ~260 MB BSS
 static float   s_atlas_hmin[ATLAS_ZONES * ATLAS_ZONES];
 static float   s_atlas_hmax[ATLAS_ZONES * ATLAS_ZONES];
-static uint8_t s_atlas_dirty[ATLAS_ZONES * ATLAS_ZONES];
+static uint8_t s_atlas_dirty[ATLAS_ZONES * ATLAS_ZONES]; // "ever edited this session" — NOT reset on save (see TerrainAtlas_Save)
 static bool    s_atlas_loaded = false;
-static char    s_atlas_path[512] = {};
+static char    s_atlas_base_path[512] = {}; // base path with no extension, as passed by the caller
 
 static int s_atlas_zi(int zx, int zy)          { return zy * ATLAS_ZONES + zx; }
 static int s_atlas_hi(int zx, int zy, int c, int r) {
     return s_atlas_zi(zx, zy) * ATLAS_ZBLOCK + r * ATLAS_VERTS + c;
 }
 
-bool TerrainAtlas_Load(const char* path) {
-    FILE* f = fopen(path, "rb");
+// Derives "<base>.r16" / "<base>_edits.r32" from the caller's base path.
+// Callers pass a path with no extension (e.g. "game/data/terrain/world_hmap");
+// tolerate an accidental trailing ".r32" from old call sites by stripping it.
+static void s_atlas_derive_paths(const char* base, char* r16_out, char* edits_out, size_t out_sz) {
+    char stripped[512];
+    strncpy(stripped, base, sizeof(stripped) - 1);
+    stripped[sizeof(stripped) - 1] = '\0';
+    size_t len = strlen(stripped);
+    if (len > 4 && strcmp(stripped + len - 4, ".r32") == 0) stripped[len - 4] = '\0';
+    snprintf(r16_out,   out_sz, "%s.r16",       stripped);
+    snprintf(edits_out, out_sz, "%s_edits.r32", stripped);
+}
+
+// Loads the read-only raw-uint16 base into s_atlas_h (tiled 8256x8256 =
+// 64x64 zones of 129x129, exactly mirroring the old .r32's per-zone layout
+// — see tools/tif_to_r32.py). hmin/hmax per zone are recomputed by
+// scanning (the file carries no per-zone range, only the single global
+// TERRAIN_HEIGHT_SCALE_M). 8-byte header (magic, zone count) — see
+// tools/md_hmap_io.py's save_atlas_tiled for the writer.
+static bool s_atlas_load_r16_base(const char* r16_path) {
+    FILE* f = fopen(r16_path, "rb");
     if (!f) return false;
-    uint32_t magic, zx, zy, verts;
-    if (fread(&magic, 4, 1, f) != 1 || magic != ATLAS_MAGIC ||
-        fread(&zx,    4, 1, f) != 1 || fread(&zy,    4, 1, f) != 1 ||
-        fread(&verts, 4, 1, f) != 1 ||
-        (int)zx != ATLAS_ZONES || (int)zy != ATLAS_ZONES || (int)verts != ATLAS_VERTS) {
-        fclose(f); return false;
+    uint32_t magic = 0, zones = 0;
+    if (fread(&magic, 4, 1, f) != 1 || fread(&zones, 4, 1, f) != 1 ||
+        magic != ATLAS_R16_MAGIC || zones != (uint32_t)ATLAS_ZONES) {
+        fprintf(stderr, "[TerrainAtlas] %s: bad r16 header (magic=%#x zones=%u)\n", r16_path, magic, zones);
+        fclose(f);
+        return false;
     }
-    for (int i = 0; i < ATLAS_ZONES * ATLAS_ZONES; ++i) {
-        fread(&s_atlas_hmin[i], 4, 1, f);
-        fread(&s_atlas_hmax[i], 4, 1, f);
-        fread(&s_atlas_h[i * ATLAS_ZBLOCK], 4, ATLAS_ZBLOCK, f);
-    }
-    memset(s_atlas_dirty, 0, sizeof(s_atlas_dirty));
-    s_atlas_loaded = true;
-    strncpy(s_atlas_path, path, sizeof(s_atlas_path) - 1);
+    std::vector<uint16_t> raw((size_t)ATLAS_R16_SIZE * ATLAS_R16_SIZE);
+    bool ok = fread(raw.data(), 2, raw.size(), f) == raw.size();
     fclose(f);
-    fprintf(stdout, "[TerrainAtlas] loaded %s\n", path);
+    if (!ok) {
+        fprintf(stderr, "[TerrainAtlas] %s: truncated (expected %zu uint16 samples)\n", r16_path, raw.size());
+        return false;
+    }
+    for (int zy = 0; zy < ATLAS_ZONES; ++zy) {
+        for (int zx = 0; zx < ATLAS_ZONES; ++zx) {
+            int zi = s_atlas_zi(zx, zy);
+            float hmin =  1e30f, hmax = -1e30f;
+            for (int row = 0; row < ATLAS_VERTS; ++row) {
+                const uint16_t* src_row = raw.data() + (size_t)(zy * ATLAS_VERTS + row) * ATLAS_R16_SIZE + zx * ATLAS_VERTS;
+                float* dst_row = &s_atlas_h[s_atlas_hi(zx, zy, 0, row)];
+                for (int col = 0; col < ATLAS_VERTS; ++col) {
+                    float hgt = src_row[col] * (TERRAIN_HEIGHT_SCALE_M / 65535.0f);
+                    dst_row[col] = hgt;
+                    if (hgt < hmin) hmin = hgt;
+                    if (hgt > hmax) hmax = hgt;
+                }
+            }
+            s_atlas_hmin[zi] = hmin;
+            s_atlas_hmax[zi] = hmax;
+        }
+    }
+    return true;
+}
+
+// Overlays any previously-saved zone edits (sparse list) on top of the
+// already-loaded PNG base. Missing file is expected/silent (no edits yet).
+static void s_atlas_load_edits(const char* edits_path) {
+    FILE* f = fopen(edits_path, "rb");
+    if (!f) return;
+    uint32_t magic = 0, n_zones = 0;
+    if (fread(&magic, 4, 1, f) != 1 || magic != ATLAS_EDITS_MAGIC ||
+        fread(&n_zones, 4, 1, f) != 1) {
+        fclose(f); return;
+    }
+    uint32_t applied = 0;
+    for (uint32_t i = 0; i < n_zones; ++i) {
+        uint32_t zx = 0, zy = 0;
+        float hmin = 0.f, hmax = 0.f;
+        if (fread(&zx, 4, 1, f) != 1 || fread(&zy, 4, 1, f) != 1 ||
+            fread(&hmin, 4, 1, f) != 1 || fread(&hmax, 4, 1, f) != 1 ||
+            zx >= (uint32_t)ATLAS_ZONES || zy >= (uint32_t)ATLAS_ZONES) break;
+        int zi = s_atlas_zi((int)zx, (int)zy);
+        if (fread(&s_atlas_h[zi * ATLAS_ZBLOCK], 4, ATLAS_ZBLOCK, f) != (size_t)ATLAS_ZBLOCK) break;
+        s_atlas_hmin[zi] = hmin;
+        s_atlas_hmax[zi] = hmax;
+        s_atlas_dirty[zi] = 1; // re-mark so a subsequent Save keeps carrying it forward
+        ++applied;
+    }
+    fclose(f);
+    fprintf(stdout, "[TerrainAtlas] applied %u edited zone(s) from %s\n", applied, edits_path);
+}
+
+bool TerrainAtlas_Load(const char* path) {
+    char r16_path[512], edits_path[512];
+    s_atlas_derive_paths(path, r16_path, edits_path, sizeof(r16_path));
+    if (!s_atlas_load_r16_base(r16_path)) return false;
+    memset(s_atlas_dirty, 0, sizeof(s_atlas_dirty));
+    s_atlas_load_edits(edits_path);
+    s_atlas_loaded = true;
+    strncpy(s_atlas_base_path, path, sizeof(s_atlas_base_path) - 1);
+    fprintf(stdout, "[TerrainAtlas] loaded %s\n", r16_path);
     return true;
 }
 
@@ -158,32 +258,73 @@ bool TerrainAtlas_ZoneDirty(int zx, int zy) {
 
 bool TerrainAtlas_Save(const char* path) {
     if (!s_atlas_loaded) return false;
-    FILE* f = fopen(path, "r+b");
+    char r16_path[512], edits_path[512];
+    s_atlas_derive_paths(path, r16_path, edits_path, sizeof(r16_path));
+    (void)r16_path; // base is read-only, never rewritten here
+    FILE* f = fopen(edits_path, "wb");
     if (!f) return false;
-    int saved = 0;
-    for (int i = 0; i < ATLAS_ZONES * ATLAS_ZONES; ++i) {
-        if (!s_atlas_dirty[i]) continue;
-        long off = 16L + (long)i * (8L + ATLAS_ZBLOCK * 4L);
-        fseek(f, off, SEEK_SET);
-        fwrite(&s_atlas_hmin[i], 4, 1, f);
-        fwrite(&s_atlas_hmax[i], 4, 1, f);
-        fwrite(&s_atlas_h[i * ATLAS_ZBLOCK], 4, ATLAS_ZBLOCK, f);
-        s_atlas_dirty[i] = 0;
-        ++saved;
+    uint32_t n_dirty = 0;
+    for (int i = 0; i < ATLAS_ZONES * ATLAS_ZONES; ++i) if (s_atlas_dirty[i]) ++n_dirty;
+    uint32_t magic = ATLAS_EDITS_MAGIC;
+    fwrite(&magic, 4, 1, f);
+    fwrite(&n_dirty, 4, 1, f);
+    for (int zy = 0; zy < ATLAS_ZONES; ++zy) {
+        for (int zx = 0; zx < ATLAS_ZONES; ++zx) {
+            int zi = s_atlas_zi(zx, zy);
+            if (!s_atlas_dirty[zi]) continue;
+            uint32_t uzx = (uint32_t)zx, uzy = (uint32_t)zy;
+            fwrite(&uzx, 4, 1, f);
+            fwrite(&uzy, 4, 1, f);
+            fwrite(&s_atlas_hmin[zi], 4, 1, f);
+            fwrite(&s_atlas_hmax[zi], 4, 1, f);
+            fwrite(&s_atlas_h[zi * ATLAS_ZBLOCK], 4, ATLAS_ZBLOCK, f);
+        }
     }
     fclose(f);
-    fprintf(stdout, "[TerrainAtlas] saved %d dirty zone(s)\n", saved);
+    fprintf(stdout, "[TerrainAtlas] saved %u edited zone(s) to %s\n", n_dirty, edits_path);
     return true;
 }
 
-// SaveEdits/LoadEdits/HasEdits — thin wrappers over the r32 atlas API
-// (editor brush tool calls these; for r32 backend Save writes directly to atlas file)
+// SaveEdits/LoadEdits/HasEdits — thin wrappers over the atlas API
+// (editor brush tool calls these)
 bool TerrainAtlas_SaveEdits(const char* path) { return TerrainAtlas_Save(path); }
 bool TerrainAtlas_LoadEdits(const char*)       { return s_atlas_loaded; } // already loaded by TerrainAtlas_Load
 bool TerrainAtlas_HasEdits() {
     for (int i = 0; i < ATLAS_ZONES * ATLAS_ZONES; ++i)
         if (s_atlas_dirty[i]) return true;
     return false;
+}
+
+// World-space bilinear height sample across the whole 64×64 atlas (wx,wz in
+// metres, [0, ATLAS_ZONES*CHUNK_SIZE)). Replaces TerrainMaster_SampleWorld
+// for ground-snapping call sites now that the macro-geography layer is gone —
+// this samples the REAL Kenshi zone data directly, at full atlas resolution.
+float TerrainAtlas_SampleWorld(float wx, float wz) {
+    if (!s_atlas_loaded) return 0.f;
+    constexpr int GRID_N = ATLAS_ZONES * (ATLAS_VERTS - 1); // 8192 spans, 8193 verts/axis
+    const float world_ext = (float)ATLAS_ZONES * CHUNK_SIZE;
+    float u = wx / world_ext, v = wz / world_ext;
+    u = u < 0.f ? 0.f : (u > 1.f ? 1.f : u);
+    v = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
+
+    float gx = u * GRID_N, gz = v * GRID_N;
+    int gx0 = (int)gx; if (gx0 >= GRID_N) gx0 = GRID_N - 1;
+    int gz0 = (int)gz; if (gz0 >= GRID_N) gz0 = GRID_N - 1;
+    float tx = gx - gx0, tz = gz - gz0;
+
+    auto sample_grid = [](int gcol, int grow) -> float {
+        int zx = gcol / (ATLAS_VERTS - 1), col = gcol % (ATLAS_VERTS - 1);
+        int zy = grow / (ATLAS_VERTS - 1), row = grow % (ATLAS_VERTS - 1);
+        if (zx >= ATLAS_ZONES) { zx = ATLAS_ZONES - 1; col = ATLAS_VERTS - 1; }
+        if (zy >= ATLAS_ZONES) { zy = ATLAS_ZONES - 1; row = ATLAS_VERTS - 1; }
+        return s_atlas_h[s_atlas_hi(zx, zy, col, row)];
+    };
+    float h00 = sample_grid(gx0,     gz0);
+    float h10 = sample_grid(gx0 + 1, gz0);
+    float h01 = sample_grid(gx0,     gz0 + 1);
+    float h11 = sample_grid(gx0 + 1, gz0 + 1);
+    return (h00 * (1.f - tx) + h10 * tx) * (1.f - tz)
+         + (h01 * (1.f - tx) + h11 * tx) * tz;
 }
 
 void TerrainAtlas_SmoothBoundaries() {
@@ -277,93 +418,6 @@ void TerrainAtlas_StitchEdge(int zx, int zy, int dir) {
 // forward declaration — definition is after s_load_r32 below
 static float s_hmap_sample(const float* hmap, int hmap_w, int hmap_h, float u, float v);
 
-// ── Master heightmap (macro geography, loaded once at startup) ────────────────
-// Loaded via TerrainMaster_Load(); sampled in s_gen_height() when available.
-// Format: uint32 w, uint32 h, float hmin, float hmax, then w*h float32 heights.
-// Covers [0, ATLAS_ZONES*CHUNK_SIZE] × [0, ATLAS_ZONES*CHUNK_SIZE] world space.
-
-static float* s_master_h    = nullptr;
-static int    s_master_w    = 0;
-static int    s_master_hh   = 0;   // height (rows) — avoid clash with s_master_h ptr name
-static float  s_master_wext = 1.f; // world extent X (metres) — set in TerrainMaster_Load
-static float  s_master_zext = 1.f; // world extent Z (metres)
-static float  s_master_hmax = 0.f; // stored hmax from file header
-
-bool TerrainMaster_Load(const char* path, float world_extent_x, float world_extent_z) {
-    FILE* f = fopen(path, "rb");
-    if (!f) return false;
-    unsigned int w = 0, h = 0;
-    float hmin = 0.f, hmax = 0.f;
-    if (fread(&w, 4, 1, f) != 1 || fread(&h, 4, 1, f) != 1 ||
-        fread(&hmin, 4, 1, f) != 1 || fread(&hmax, 4, 1, f) != 1 ||
-        w == 0 || h == 0) {
-        fclose(f); return false;
-    }
-    delete[] s_master_h;
-    s_master_h    = new float[w * h];
-    s_master_w    = (int)w;
-    s_master_hh   = (int)h;
-    s_master_wext = world_extent_x > 0.f ? world_extent_x : 1.f;
-    s_master_zext = world_extent_z > 0.f ? world_extent_z : 1.f;
-    s_master_hmax = hmax;
-    bool ok = fread(s_master_h, sizeof(float), w * h, f) == w * h;
-    fclose(f);
-    if (!ok) { delete[] s_master_h; s_master_h = nullptr; return false; }
-    fprintf(stdout, "[TerrainMaster] loaded %s (%u×%u, hmax=%.1fm)\n",
-            path, w, h, hmax);
-    return true;
-}
-
-bool TerrainMaster_Loaded() { return s_master_h != nullptr; }
-
-float TerrainMaster_SampleWorld(float wx, float wz) {
-    if (!s_master_h) return 0.f;
-    float u = wx / s_master_wext;
-    float v = wz / s_master_zext;
-    u = u < 0.f ? 0.f : (u > 1.f ? 1.f : u);
-    v = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
-    return s_hmap_sample(s_master_h, s_master_w, s_master_hh, u, v);
-}
-
-float TerrainMaster_GetPixel(int col, int row) {
-    if (!s_master_h) return 0.f;
-    col = col < 0 ? 0 : (col >= s_master_w  ? s_master_w  - 1 : col);
-    row = row < 0 ? 0 : (row >= s_master_hh ? s_master_hh - 1 : row);
-    return s_master_h[row * s_master_w + col];
-}
-
-void TerrainMaster_SetPixel(int col, int row, float h) {
-    if (!s_master_h) return;
-    if (col < 0 || col >= s_master_w || row < 0 || row >= s_master_hh) return;
-    s_master_h[row * s_master_w + col] = h;
-}
-
-int   TerrainMaster_Width()  { return s_master_w; }
-int   TerrainMaster_Height() { return s_master_hh; }
-float TerrainMaster_HMax()   { return s_master_hmax; }
-
-bool TerrainMaster_Save(const char* path) {
-    if (!s_master_h) return false;
-    FILE* f = fopen(path, "wb");
-    if (!f) return false;
-    unsigned int w = (unsigned int)s_master_w;
-    unsigned int h = (unsigned int)s_master_hh;
-    float hmin = s_master_h[0], hmax = s_master_h[0];
-    int n = s_master_w * s_master_hh;
-    for (int i = 1; i < n; ++i) {
-        if (s_master_h[i] < hmin) hmin = s_master_h[i];
-        if (s_master_h[i] > hmax) hmax = s_master_h[i];
-    }
-    s_master_hmax = hmax;
-    bool ok = fwrite(&w, 4, 1, f) == 1 &&
-              fwrite(&h, 4, 1, f) == 1 &&
-              fwrite(&hmin, 4, 1, f) == 1 &&
-              fwrite(&hmax, 4, 1, f) == 1 &&
-              fwrite(s_master_h, sizeof(float), n, f) == (size_t)n;
-    fclose(f);
-    return ok;
-}
-
 // ── Simplex noise (Stefan Gustavson / Ashima Arts — public domain) ────────────
 
 static const int perm[512] = {
@@ -444,20 +498,6 @@ static float s_gen_height(int col, int row, ChunkCoord coord, const TerrainGenPa
     float wx = (coord.x * CHUNK_SIZE) + col * TERRAIN_STEP;
     float wz = (coord.z * CHUNK_SIZE) + row * TERRAIN_STEP;
 
-    // ── Master heightmap: macro geography base layer ──────────────────────────
-    // When loaded, provides the large-scale structure (mountain ranges, valleys).
-    // Noise adds surface detail on top; amplitude is scaled down accordingly.
-    float h_macro = 0.f;
-    float detail_scale = 1.f;   // fraction of amplitude used for noise detail
-    if (s_master_h) {
-        float u = (wx + p.world_offset_x) / s_master_wext;
-        float v = (wz + p.world_offset_z) / s_master_zext;
-        u = u < 0.f ? 0.f : (u > 1.f ? 1.f : u);
-        v = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
-        h_macro = s_hmap_sample(s_master_h, s_master_w, s_master_hh, u, v);
-        detail_scale = 0.18f;   // noise adds ±18% of amplitude as surface detail
-    }
-
     // ── Noise detail layer ────────────────────────────────────────────────────
     float sx = wx * p.base_scale + p.seed * 127.1f;
     float sz = wz * p.base_scale + p.seed * 311.7f;
@@ -473,7 +513,7 @@ static float s_gen_height(int col, int row, ChunkCoord coord, const TerrainGenPa
     if (p.redistribution_power != 1.f)
         base = powf(base, p.redistribution_power);
 
-    float h = h_macro + base * p.amplitude * detail_scale;
+    float h = base * p.amplitude;
 
     if (p.ridge_weight > 0.f) {
         // Ridged multifractal: 3 octaves, signal-dependent weighting.
@@ -499,56 +539,6 @@ static float s_gen_height(int col, int row, ChunkCoord coord, const TerrainGenPa
 }
 
 static inline int s_idx(int col, int row) { return row * (TERRAIN_GRID + 1) + col; }
-
-// ── Splat weights from height ──────────────────────────────────────────────────
-
-// splat[0]=grass  splat[1]=rock  splat[2]=dirt  splat[3]=snow
-static void s_splat(float h, float amp, float* splat, BiomeType biome) {
-    float t = (amp > 0.0f) ? (h / amp) : 0.0f;  // [0,1] height fraction
-    float grass = 0.f, rock = 0.f, dirt = 0.f, snow = 0.f;
-
-    switch (biome) {
-    case BiomeType::Desert:
-        dirt  = 0.75f - t * 0.3f;  if (dirt  < 0.f) dirt  = 0.f;
-        rock  = 0.20f + t * 0.6f;  if (rock  > 1.f) rock  = 1.f;
-        grass = 0.05f;
-        break;
-    case BiomeType::Badlands:
-        rock  = 0.50f + t * 0.4f;  if (rock  > 1.f) rock  = 1.f;
-        dirt  = 0.35f - t * 0.2f;  if (dirt  < 0.f) dirt  = 0.f;
-        grass = 0.15f * (1.f - t);
-        break;
-    case BiomeType::Grassland:
-        grass = 0.70f - t * 0.8f;  if (grass < 0.f) grass = 0.f;
-        dirt  = 0.20f;
-        rock  = 0.10f + t * 0.7f;  if (rock  > 1.f) rock  = 1.f;
-        break;
-    case BiomeType::Rocky:
-        rock  = 0.80f + t * 0.2f;  if (rock  > 1.f) rock  = 1.f;
-        dirt  = 0.15f * (1.f - t);
-        grass = 0.05f * (1.f - t);
-        break;
-    case BiomeType::Swamp:
-        grass = 0.55f - t * 0.4f;  if (grass < 0.f) grass = 0.f;
-        dirt  = 0.35f + t * 0.1f;
-        rock  = 0.10f + t * 0.3f;  if (rock  > 1.f) rock  = 1.f;
-        break;
-    case BiomeType::Tundra:
-        snow  = 0.50f + t * 0.4f;  if (snow  > 1.f) snow  = 1.f;
-        rock  = 0.30f + t * 0.4f;  if (rock  > 1.f) rock  = 1.f;
-        dirt  = 0.20f * (1.f - t);
-        break;
-    default:
-        grass = 1.0f - t * 1.6f;   if (grass < 0.f) grass = 0.f;
-        dirt  = (1.0f - t) * 0.3f;
-        rock  = t * 0.9f;           if (rock  > 1.f) rock  = 1.f;
-        break;
-    }
-
-    float sum = grass + rock + dirt + snow;
-    if (sum > 1e-6f) { grass /= sum; rock /= sum; dirt /= sum; snow /= sum; }
-    splat[0] = grass; splat[1] = rock; splat[2] = dirt; splat[3] = snow;
-}
 
 // ── TerrainGen_Build ──────────────────────────────────────────────────────────
 
@@ -623,14 +613,6 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     // old-location and new-location heights for this chunk.
     out.loaded = false;
 
-    // Chunk array slots are reused across streaming (a slot built for one
-    // world position gets rebuilt in place for another) — a stale bake from
-    // the PREVIOUS occupant must not survive into this one. albedo_tex
-    // itself (the GPU texture object) is left alone and reused by the next
-    // BakeAlbedo call; only the "is it still valid for THIS chunk" flag
-    // needs to reset here, once, in the single place every rebuild path
-    // (game and editor) already goes through.
-    out.albedo_baked = false;
     float world_origin_x = coord.x * CHUNK_SIZE;
     float world_origin_z = coord.z * CHUNK_SIZE;
 
@@ -638,54 +620,13 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     if (!p.force_noise && p.zone_origin_x >= 0) {
         int zx = p.zone_origin_x + coord.x;
         int zy = p.zone_origin_z + coord.z;
-        bool loaded = false;
-        if (s_atlas_loaded && zx >= 0 && zx < ATLAS_ZONES && zy >= 0 && zy < ATLAS_ZONES) {
-            // Atlas path — direct copy from in-RAM buffer (no file I/O per chunk)
-            const float* src = &s_atlas_h[s_atlas_zi(zx, zy) * ATLAS_ZBLOCK];
-            for (int row = 0; row <= TERRAIN_GRID; ++row)
-                for (int col = 0; col <= TERRAIN_GRID; ++col)
-                    out.heightmap.h[s_idx(col, row)] = src[row * ATLAS_VERTS + col];
-            loaded = true;
-        }
-        if (!loaded) {
-            // Fallback: individual zone_X_Y.r32 files
-            char path[256];
-            snprintf(path, sizeof(path), "game/data/terrain/zone_%d_%d.r32", zx, zy);
-            float* hmap = nullptr; int hw = 0, hh = 0; float hmin, hmax;
-            if (s_load_r32(path, hmap, hw, hh, hmin, hmax) && hmap) {
-                for (int row = 0; row <= TERRAIN_GRID; ++row)
-                    for (int col = 0; col <= TERRAIN_GRID; ++col)
-                        out.heightmap.h[s_idx(col, row)] = hmap[row * (TERRAIN_GRID+1) + col];
-                delete[] hmap;
-                loaded = true;
-            }
-        }
-        if (!loaded) {
-            // Item 3: atlas height fallback — copy border row/col from nearest loaded neighbor
-            // instead of dropping to h=0 (which creates a visible void/cliff at atlas edge).
-            bool neighbor_found = false;
-            const int try_dx[] = { 1, -1, 0,  0 };
-            const int try_dz[] = { 0,  0, 1, -1 };
-            for (int d = 0; d < 4 && !neighbor_found; ++d) {
-                int nx = zx + try_dx[d], nz = zy + try_dz[d];
-                if (nx < 0 || nx >= ATLAS_ZONES || nz < 0 || nz >= ATLAS_ZONES) continue;
-                if (s_atlas_hmax[s_atlas_zi(nx, nz)] - s_atlas_hmin[s_atlas_zi(nx, nz)] < 0.1f) continue;
-                // Clone neighbor heights into this zone
-                for (int row = 0; row <= TERRAIN_GRID; ++row)
-                    for (int col = 0; col <= TERRAIN_GRID; ++col)
-                        out.heightmap.h[s_idx(col, row)] =
-                            s_atlas_h[s_atlas_hi(nx, nz, col, row)];
-                neighbor_found = true;
-            }
-            if (!neighbor_found) {
-                fprintf(stdout, "[TerrainGen] zone %d/%d missing — noise fallback\n", zx, zy);
-                TerrainGenParams fp = p;
-                fp.zone_origin_x = -1;
-                for (int row = 0; row <= TERRAIN_GRID; ++row)
-                    for (int col = 0; col <= TERRAIN_GRID; ++col)
-                        out.heightmap.h[s_idx(col, row)] = s_gen_height(col, row, coord, fp);
-            }
-        }
+        // Real Kenshi zone data — always in RAM once TerrainAtlas_Load() has
+        // run at startup, and every real gameplay chunk request resolves to
+        // an in-bounds (zx,zy). Direct copy, no file I/O per chunk.
+        const float* src = &s_atlas_h[s_atlas_zi(zx, zy) * ATLAS_ZBLOCK];
+        for (int row = 0; row <= TERRAIN_GRID; ++row)
+            for (int col = 0; col <= TERRAIN_GRID; ++col)
+                out.heightmap.h[s_idx(col, row)] = src[row * ATLAS_VERTS + col];
     } else if (!p.force_noise && p.heightmap_r32) {
         // Load Kenshi heightmap and sample heights for this chunk
         static const float* s_hmap     = nullptr;
@@ -757,64 +698,12 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             s_verts_buf[vi].u = fmodf(wx * 0.125f, 2048.0f);
             s_verts_buf[vi].v = fmodf(wz * 0.125f, 2048.0f);
 
-            // Biome-aware splat weights with soft boundary blending.
-            // Sample temperature/moisture at 2× the biome_scale for a second
-            // "offset" position, then lerp between the two resolved biomes by a
-            // smooth-step on the noise magnitude — this blurs hard biome edges
-            // over ~200-400m without extra noise calls.
-            if (p.biome_scale > 0.f) {
-                float bs = p.biome_scale;
-                float so = (float)p.seed;
-
-                float raw_t = SimplexNoise2(wx*bs + so*0.7f + 1000.f*bs,
-                                            wz*bs + so*0.3f + 1000.f*bs);
-                float raw_m = SimplexNoise2(wx*bs + so*0.4f + 2000.f*bs,
-                                            wz*bs + so*0.9f + 2000.f*bs);
-                float temp0 = (raw_t + 1.f) * 0.5f;
-                float mois0 = (raw_m + 1.f) * 0.5f;
-                BiomeType b0 = BiomeResolver::Resolve(temp0, mois0, h);
-
-                // Offset sample for blending (half frequency → smoother transitions)
-                float raw_t2 = SimplexNoise2(wx*bs*0.5f + so*0.7f + 1000.f*bs + 37.3f,
-                                             wz*bs*0.5f + so*0.3f + 1000.f*bs + 19.7f);
-                float raw_m2 = SimplexNoise2(wx*bs*0.5f + so*0.4f + 2000.f*bs + 53.1f,
-                                             wz*bs*0.5f + so*0.9f + 2000.f*bs + 41.9f);
-                float temp1 = (raw_t2 + 1.f) * 0.5f;
-                float mois1 = (raw_m2 + 1.f) * 0.5f;
-                BiomeType b1 = BiomeResolver::Resolve(temp1, mois1, h);
-
-                if (b0 == b1) {
-                    s_splat(h, p.amplitude, s_verts_buf[vi].splat, b0);
-                } else {
-                    // Blend: smooth-step on the difference of noise magnitudes
-                    float diff = fabsf(raw_t - raw_t2) + fabsf(raw_m - raw_m2);
-                    float t_blend = diff * 2.5f;  // scale → [0,1] range
-                    if (t_blend > 1.f) t_blend = 1.f;
-                    t_blend = t_blend * t_blend * (3.f - 2.f * t_blend); // smooth-step
-                    float s0[4], s1[4];
-                    s_splat(h, p.amplitude, s0, b0);
-                    s_splat(h, p.amplitude, s1, b1);
-                    for (int k = 0; k < 4; ++k)
-                        s_verts_buf[vi].splat[k] = s0[k] + t_blend * (s1[k] - s0[k]);
-                }
-            } else {
-                s_splat(h, p.amplitude, s_verts_buf[vi].splat, BiomeType::Desert);
-            }
-
-            // Variant B: edge-fade — fade splat to 0 at chunk boundary (outer 15%).
-            // Both sides of any seam → pure overlay → no visible biome stitch.
-            {
-                float lx = (float)col / TERRAIN_GRID;
-                float lz = (float)row / TERRAIN_GRID;
-                float et = lx < (1.f-lx) ? lx : (1.f-lx);
-                if (lz      < et) et = lz;
-                if ((1.f-lz)< et) et = 1.f-lz;
-                et /= 0.15f;
-                if (et < 1.f) {
-                    float f = et * et * (3.f - 2.f * et);
-                    for (int k = 0; k < 4; ++k) s_verts_buf[vi].splat[k] *= f;
-                }
-            }
+            // Per-vertex ground_id/ground_id2/blend_alpha filled in a later
+            // pass (s_ground_pick loop, after out.ground_layers/blend_layers
+            // are resolved below) — this used to compute a generic-BiomeType
+            // procedural splat[4] here, but it was dead: no shader has ever
+            // sampled it (2026-07-19 replaced with real per-vertex dominant-
+            // weight ground selection, see terrain_chunk.h's TerrainVertex).
 
             // Nav positions (flat float array for Recast)
             s_nav_pos[vi * 3 + 0] = wx;
@@ -1146,6 +1035,24 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
                 ++found;
             }
         }
+
+        // Dominant-weight ground selection happens PER-PIXEL in
+        // terrain_forward.slang's fsMain now (2026-07-19 correction), not
+        // baked per-vertex here. A per-vertex argmax + flat-interpolated
+        // ground_id/ground_id2 looked right on paper ("baked into the mesh
+        // vertex" per re_docs/kenshi/terrain.md:114-136) but is unstable in
+        // practice: adjacent vertices on a slope routinely pick different
+        // dominant layers from tiny per-vertex normal differences, and flat
+        // interpolation paints each WHOLE triangle from just one vertex's
+        // decision — every such disagreement became a hard triangle-shaped
+        // seam (confirmed via screenshots: dense diamond/zigzag artifacts
+        // exactly matching the mesh's triangulation). The fragment shader
+        // already has everything it needs to make the same decision
+        // per-pixel instead — the interpolated normal (smooth by
+        // construction) and a live tex_overlay_mask sample — so nothing is
+        // baked here anymore; ground_id/ground_id2/blend_alpha in
+        // TerrainVertex (terrain_chunk.h) are unused leftover slots, same
+        // status as the original dead splat[4] before this rewrite.
     }
 
     // ── 4. NavMesh (disabled) + PassGrid (lightweight, from heightmap slope) ────

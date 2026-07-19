@@ -22,7 +22,7 @@ Built around **SDL3 + SDL\_GPU (Vulkan)**, **flecs ECS**, a custom stackless **B
 | GPU skinning | AnimationSoA; SSBO skeletal bones (MAX\_BONES=64, Kenshi uses 30 of 64); compute dispatch |
 | Particles | ParticleSoA CPU-sim; SMOKE/SPARK/BLOOD types |
 | Material system | O3DE-inspired: JSON → `GpuPipeline::Desc`; **parent inheritance** (`"parent": "base_pbr"`); `shader_features` bitmask; `MaterialTypeRegistry` (MAX=32) |
-| Terrain POM | Parallax Occlusion Mapping + self-shadow; per-vertex geomorphing L0→L1; `DrawRaw(int lod)` / `DrawRawPOM(int lod)` — lod=0 full-res (64×64), lod=1/2/3 uses `chunk.ibo_lod[lod-1]` (32/16/8 quads); POM only at lod=0; editor uses distance-based per-chunk LOD |
+| Terrain shading | Single unified shader (`terrain_forward.slang`) for every LOD tier — matches original Kenshi ("same material at all LOD levels", no POM/normal-mapping split); per-pixel dominant-weight ground selection (base/slope/cliff/grass/dirt/road, 6-layer `BlendGroundLayers` chain); `DrawRaw(int lod)` — lod=0 full-res, lod=1/2/3 use `chunk.ibo_lod[lod-1]` |
 
 ### AI — Behavior Tree VM
 - Stackless BT VM (`behavior_tree.h`, 373 lines core VM) + `bt_types.h` (987 lines — all enums/structs: BTNodeType, BTNode, BTState, etc.) + `bt_factories.cpp` (868 lines — Batch 2–35 factory methods) — 30+ node types, zero heap allocations
@@ -60,14 +60,14 @@ flecs directly. `AllianceMatrix` and `NpcRelationshipComponent` use real flecs r
 
 ### Terrain
 - `TerrainQuery` singleton — single source of truth for terrain heights/normals/slopes
-- `TerrainAtlas` — `world_hmap.r32` (67 MB, 4096 zones 65×65); O(1) RAM lookup; dirty-zone partial save
+- `TerrainAtlas` — real Kenshi elevation data (`world_hmap.r16`, raw uint16, 8256×8256 tiled, 64×64 zones × 129×129 verts/zone — matches Kenshi's own in-engine resolution); O(1) RAM lookup; dirty-zone partial save (editor brush) via a sparse `_edits.r32` overlay on top of the read-only base
+- **No procedural terrain generation** — removed entirely (2026-07-19): real Kenshi zone data covers every in-bounds chunk, so the old noise-fallback chain (missing-zone → neighbor-clone → `SimplexNoise2`/`FBM2` synthesis, plus the `TerrainMaster`/`md_master_hmap` macro-geography guide layer it depended on) was provably unreachable in real gameplay. `SimplexNoise2`/`FBM2` remain as generic noise primitives (test fixtures, `force_noise` mode) but no longer back any real-terrain code path.
 - **`TerrainAtlas_SmoothBoundaries()`** — N=15 kernel blends zone boundary heights (eliminates Kenshi fullmap 22m+ height-jump seams → NdotL cliffs)
+- **`BuildLodIboStitched()`** (2026-07-19) — every chunk's boundary is always triangulated at full resolution regardless of interior LOD decimation, so any two adjacent chunks' shared edge matches exactly for any LOD-tier combination (geomorphic seam-stitch: core interior + border zipper strips + corner fan patches, all reusing the one shared per-chunk VBO/normals). Fixes a confirmed T-junction gap of up to 19.4 m between differently-LOD'd neighbors that a same-LOD-only skirt couldn't cover.
 - Cross-chunk normal stitching via atlas (no file I/O, no seam artefacts)
-- **`ndl_min=0.57`** in `terrain_pom.frag` — floor = flat-terrain NdotL; zone-boundary faces match flat ground (no warm/cool split)
+- **`ndl_min=0.57`** in `terrain_forward.slang` — floor = flat-terrain NdotL; zone-boundary faces match flat ground (no warm/cool split)
 - `TerrainGen_Build` / `TerrainGen_Upload` — worker-thread mesh gen + GPU upload
-- **Parallax Occlusion Mapping** — `terrain_pom.vert/frag`; linear search + binary refinement; self-shadowing with view-angle attenuation; 15 m distance cutoff; detail tile 8×; `height_scale=0.04`
-- **Mesh LOD** — 4 levels (64/32/16/8 quads) via separate IBOs per chunk; distance thresholds 600/1200/2000 m; `TERRAIN_LOD_DIST[3]` / `TERRAIN_LOD_IDX[3]`
-- **Per-vertex geomorphing** — `morph_y` field in `TerrainVertex` (stride 48→52); L0→L1 blend zone 420–600 m computed per-vertex in `terrain_pom.vert`; eliminates LOD pop
+- **Mesh LOD** — 4 levels (128/64/32/16 quads) via separate IBOs per chunk, selected by `RenderQualityConfig::mesh_lod0/1/2_cr_m` (default 500/1500/3000 m horizontal chunk-centre distance); `TERRAIN_LOD_IDX[3]`
 - **`PoissonScatter`** — Bridson O(n) Poisson Disk Sampling for prop placement; min-distance guarantee; slope + embed constraints; deterministic seed; used for mixed rock+vegetation scatter
 
 ### Navigation
@@ -151,7 +151,7 @@ ninja -C build md_tests          # meta-target, depends on flare_ini_parser + fl
 ./build/tests/flare_tile_map
 ```
 
-> The large GTest suite (1724 tests across 200+ suites — FNV · AgentBlackboard · FlowGraph ·
+> The large GTest suite (1750 tests across 200+ suites — FNV · AgentBlackboard · FlowGraph ·
 > DirectorSystem · BT VM · Batch 3–31 · M47–M59 · O3DE-1–4 · ZLD-1–2 · FL-3–4 · KEN-1–8 ·
 > VBfA-R1–9 · VBfA-AI1–6, etc.) lives in the private parent
 > [`monkey_dust`](https://github.com/rdga1bot/monkey_dust) game repo's `tests/` directory, not in

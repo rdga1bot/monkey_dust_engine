@@ -15,9 +15,19 @@
 struct RenderQualityConfig {
     // ── Cull radii (metres) ─────────────────────────────────────────────────
     float terrain_cr_m    = 3000.f; // terrain chunk draw distance
-    float mesh_lod0_cr_m  =  500.f; // static props LOD0 (POM close)
-    float mesh_lod1_cr_m  = 1500.f; // static props LOD1
-    float mesh_lod2_cr_m  = 3000.f; // static props LOD2
+    // mesh_lod0/1/2_cr_m: DOUBLE DUTY (task #182g audit, 2026-07-19 — not
+    // previously documented) — originally "static props LOD" per the names
+    // below, but game/src/render/npc_render.cpp's terrain draw loop ALSO
+    // reuses these exact 3 fields as the GAME's terrain chunk mesh-LOD
+    // distance thresholds (SceneRender's fixed 9x9 window). The EDITOR's
+    // World3D 64x64 aerial viewport does NOT use these — it has its own
+    // separate, deliberately larger hardcoded d0sq/d1sq/d2sq (1200/3500/
+    // 8000) in tools/editor/editor_world_3d_sdlgpu.cpp. See also
+    // engine/include/monkey_dust/world/terrain_chunk.h's removed
+    // TERRAIN_LOD_DIST comment for the full 2-systems-not-3 picture.
+    float mesh_lod0_cr_m  =  500.f; // static props LOD0 (POM close) + game terrain LOD0
+    float mesh_lod1_cr_m  = 1500.f; // static props LOD1 + game terrain LOD1
+    float mesh_lod2_cr_m  = 3000.f; // static props LOD2 + game terrain LOD2
     float actor_cr_m      =  150.f; // NPC/character draw distance (cull.comp far_sq)
     float actor_anim_t2_m =  150.f; // NPC animation T2 (LOD2 skip skinning)
 

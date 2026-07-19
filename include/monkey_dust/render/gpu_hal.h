@@ -474,10 +474,23 @@ void GpuDrawIndexedIndirect(unsigned int indirect_buf_id, uint32_t draw_count = 
 // SDL_GPU: SDL_CreateGPUBuffer(VERTEX|INDEX) + one-shot SDL_UploadToGPUBuffer
 //          via temporary transfer buffer (released after upload).
 // ─────────────────────────────────────────────────────────────────────────────
+// Sentinel gl_target value for GpuStaticBuffer::Init/InitEmpty — requests
+// SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ instead of VERTEX/INDEX, so the
+// resulting buffer can be bound via SDL_BindGPUFragmentStorageBuffers (a
+// StructuredBuffer<T> in shader code). Doesn't collide with any real GL
+// buffer-target enum (those are all small, e.g. GL_ARRAY_BUFFER=0x8892).
+// Lets read-only per-chunk data (e.g. terrain_chunk.h's steepness_ssbo) ride
+// the SAME GpuUploadBatch used for vbo/ibo/skirt — one shared submit instead
+// of a second per-chunk synchronous upload (see GpuUploadBatch doc comment
+// for why that matters on Intel ANV).
+static constexpr unsigned int GPU_TARGET_STORAGE = 0xFFFFFFFEu;
+
 class GpuStaticBuffer {
 public:
-    // gl_target: GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER (used for usage hint).
-    // SDL_GPU path maps GL_ELEMENT_ARRAY_BUFFER → INDEX usage, rest → VERTEX.
+    // gl_target: GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER (used for usage hint),
+    // or GPU_TARGET_STORAGE for a fragment-storage-buffer-bindable resource.
+    // SDL_GPU path maps GL_ELEMENT_ARRAY_BUFFER → INDEX usage,
+    // GPU_TARGET_STORAGE → GRAPHICS_STORAGE_READ, rest → VERTEX.
     void Init(unsigned int gl_target, const void* data, uint32_t size_bytes);
     // Creates the GPU-side buffer only, no data upload — pair with GpuUploadBatch::Add()
     // (gpu_hal.h below) to fill it. Use when uploading many small buffers at once

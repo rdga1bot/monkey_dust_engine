@@ -28,10 +28,18 @@ static void s_upload_core(TerrainChunk& chunk,
     for (int li = 0; li < TERRAIN_LOD_LEVELS; ++li)
         build_lod_ibo(lod_tmp[li], TERRAIN_LOD_STEPS[li]);
 
+    // Task #182 (2026-07-19), shading-mismatch fix: bake full-res steepness
+    // from the SAME normals already computed by the LOD0 build (verts[i].ny)
+    // — see TerrainChunk::steepness_ssbo's doc comment (terrain_chunk.h).
+    static float steep_tmp[TERRAIN_VERTS];
+    for (int i = 0; i < TERRAIN_VERTS; ++i)
+        steep_tmp[i] = 1.0f - verts[i].ny;
+
     uint32_t total = sizeof(TerrainVertex) * TERRAIN_VERTS
                    + sizeof(uint16_t)      * TERRAIN_IDX
                    + sizeof(TerrainVertex) * TERRAIN_SKIRT_VERTS
-                   + sizeof(uint16_t)      * TERRAIN_SKIRT_IDX;
+                   + sizeof(uint16_t)      * TERRAIN_SKIRT_IDX
+                   + sizeof(float)         * TERRAIN_VERTS;
     for (int li = 0; li < TERRAIN_LOD_LEVELS; ++li)
         total += sizeof(uint16_t) * TERRAIN_LOD_IDX[li];
 
@@ -44,6 +52,7 @@ static void s_upload_core(TerrainChunk& chunk,
     // Item 7: skirt geometry upload
     batch.Add(chunk.skirt_vbo, 0x8892u, skirt_v, sizeof(TerrainVertex) * TERRAIN_SKIRT_VERTS);
     batch.Add(chunk.skirt_ibo, 0x8893u, skirt_i, sizeof(uint16_t)      * TERRAIN_SKIRT_IDX);
+    batch.Add(chunk.steepness_ssbo, GPU_TARGET_STORAGE, steep_tmp, sizeof(float) * TERRAIN_VERTS);
     batch.End();
 
     chunk.loaded = true;

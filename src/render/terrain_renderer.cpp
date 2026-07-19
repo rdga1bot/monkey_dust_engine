@@ -20,17 +20,21 @@ bool TerrainRenderer::Init() {
     // TerrainVertex layout (stride=52) — this is now the ONLY terrain
     // pipeline (2026-07-19: no more POM/forward split, see
     // shaders/slang/terrain_forward.slang's file header):
-    //   loc 0: vec3 pos    offset  0
-    //   loc 1: vec3 normal offset 12
-    //   loc 2: vec2 uv     offset 24
-    //   loc 3: vec4 ground offset 32  (ground_id, ground_id2, blend_alpha, _reserved — was aSplat)
-    pd.layout.count      = 4;
+    //   loc 0: vec3 pos     offset  0
+    //   loc 1: vec3 normal  offset 12
+    //   loc 2: vec2 uv      offset 24
+    //   loc 3: vec4 ground  offset 32  (ground_id, ground_id2, blend_alpha, _reserved — was aSplat)
+    //   loc 4: float morphY offset 48  (task #182g, 2026-07-19: WIRED UP — was declared in
+    //          TerrainVertex/stride math but never added to the pipeline's own vertex input
+    //          layout, so the shader could never actually read it regardless of its own code —
+    //          see terrain_forward.slang's aMorphY doc comment for the other half of this fix)
+    pd.layout.count      = 5;
     pd.layout.stride     = 52;  // pos(12)+norm(12)+uv(8)+ground(16)+morph_y(4)
     pd.layout.attribs[0] = { 0,  0, GpuAttribFmt::F3 };  // aPos
     pd.layout.attribs[1] = { 1, 12, GpuAttribFmt::F3 };  // aNormal
     pd.layout.attribs[2] = { 2, 24, GpuAttribFmt::F2 };  // aUV
     pd.layout.attribs[3] = { 3, 32, GpuAttribFmt::F4 };  // aGround
-    // loc 4 (morph_y at offset 48) not currently consumed by this shader.
+    pd.layout.attribs[4] = { 4, 48, GpuAttribFmt::F1 };  // aMorphY
 
     pd.raster.depth_test  = true;
     pd.raster.depth_write = true;
@@ -42,7 +46,17 @@ bool TerrainRenderer::Init() {
     // b5 (baked per-chunk albedo) removed 2026-07-19 — per-vertex ground
     // selection replaced BakeAlbedo entirely, see FillSamplerBindings.
     pd.frag_samplers     = 5;  // b0=kenshi colour overlay, b1=ground DDS array, b2=detail tint, b3=overlay mask, b4=biome blend
-    pd.frag_storage_bufs = 1;  // b5 (right after the 5 samplers, SDL_GPU set=2 contiguous layout): per-zone ground-layer lookup (zone_layers_ssbo_), used only when TerrainFragUBO.use_zone_lookup.x>0.5 (synthesis/compact-LOD2 background draws — see SetBatchZoneLookup)
+    // b5,b6 (right after the 5 samplers, SDL_GPU set=2 contiguous layout):
+    // b5=per-zone ground-layer lookup (zone_layers_ssbo_), used only when
+    // TerrainFragUBO.use_zone_lookup.x>0.5 (synthesis/compact-LOD2
+    // background draws — see SetBatchZoneLookup). b6=per-chunk baked
+    // full-res steepness (task #182, 2026-07-19 — see TerrainChunk::
+    // steepness_ssbo's doc comment), read by fsMain's per-chunk (non-
+    // lookup) branch instead of interpolating N.y across the LOD triangle.
+    // b7=comboAlternates (task #182c/d, 2026-07-19) — small GLOBAL (not
+    // per-chunk) table of the real Kenshi biome-crossfade alternates, see
+    // combo_alt_ssbo_'s doc comment (terrain_renderer.h).
+    pd.frag_storage_bufs = 3;
 
 #ifdef MD_SDL_GPU
     // Create 1×1 white fallback texture for slots where InitTextures was not
@@ -104,6 +118,13 @@ bool TerrainRenderer::Init() {
     // indices), flat index = zone_idx*6 + layer. Allocated empty here;
     // populated once by the caller (World3D editor's synthesis-mesh init).
     zone_layers_ssbo_.Init(64 * 64 * 6 * (int)sizeof(uint32_t));
+
+    // Task #182: all-zero (flat) fallback for TerrainChunk::steepness_ssbo —
+    // see FillStorageBindings/fallback_steepness_ssbo_'s doc comment.
+    {
+        static float s_zero_steep[TERRAIN_VERTS] = {};
+        fallback_steepness_ssbo_.Init(GPU_TARGET_STORAGE, s_zero_steep, sizeof(s_zero_steep));
+    }
 #endif
     return true;
 }
@@ -144,6 +165,29 @@ bool TerrainRenderer::InitGroundTextureArray()
     }
     ground_array_ready_ = true;
     fprintf(stderr, "[TerrainRenderer] ground texture+normal arrays ready (%d layers)\n", tex_count);
+
+    // Task #182c/d (2026-07-19): resolve+upload the global biome-crossfade
+    // alternates HERE — outside any render pass, safe for GpuStaticBuffer's
+    // internal command-buffer+copy-pass upload (see combo_alt_ssbo_'s doc
+    // comment, terrain_renderer.h, and FillStorageBindings's comment for
+    // why this must NOT happen lazily mid-frame). BiomeRegistry is already
+    // required to be loaded by this point (used above via biomes.*).
+    {
+        const BiomeDef& altR = biomes.ForColor(255, 0, 0);
+        const BiomeDef& altG = biomes.ForColor(0, 255, 0);
+        const BiomeDef& altB = biomes.ForColor(0, 0, 255);
+        float combo_data[18] = {
+            (float)altR.tex_base, (float)altR.tex_slope, (float)altR.tex_cliff,
+            (float)altR.tex_grass,(float)altR.tex_dirt,  (float)altR.tex_road,
+            (float)altG.tex_base, (float)altG.tex_slope, (float)altG.tex_cliff,
+            (float)altG.tex_grass,(float)altG.tex_dirt,  (float)altG.tex_road,
+            (float)altB.tex_base, (float)altB.tex_slope, (float)altB.tex_cliff,
+            (float)altB.tex_grass,(float)altB.tex_dirt,  (float)altB.tex_road,
+        };
+        combo_alt_ssbo_.Shutdown();
+        combo_alt_ssbo_.Init(GPU_TARGET_STORAGE, combo_data, sizeof(combo_data));
+        combo_alt_ready_ = true;
+    }
     return true;
 #else
     return false;
@@ -191,14 +235,19 @@ bool TerrainRenderer::InitBiomeBlend(const char* path)
 {
 #ifdef MD_SDL_GPU
     GpuSamplerDesc sd;
-    // LINEAR now safe: v3 stores ONLY a blend weight (all 4 channels
-    // identical, 0..255), no packed texture index -- matches the real
-    // Kenshi blendmap.png architecture (confirmed: every channel there is
-    // strictly binary 0/255, and the smooth ramp comes entirely from the
-    // GPU's own bilinear sampling of that mask, not pre-blurred data). The
-    // blend-target texture INDEX now comes from TerrainChunk::blend_layers
-    // (a per-chunk UBO constant, mirroring Kenshi's page-constant
-    // diffuseMaps1/2/3 identity) -- see terrain_gen.cpp's ARCHITECTURE NOTE.
+    // LINEAR safe: this file (private/md_gen_biome_blendmap.py, v6,
+    // 2026-07-19) is now a direct 1:1 copy of the REAL Kenshi
+    // data/newland/land/blendmap.png -- confirmed every channel is
+    // strictly binary 0/255 (spot-checked at copy time), and R/G/B/A are 4
+    // INDEPENDENT masks (not identical, 27%/25%/17%/24% nonzero) -- the
+    // smooth ramp comes entirely from the GPU's own bilinear sampling of
+    // this binary mask, not pre-blurred data, matching real Kenshi's own
+    // mechanism (terrainfp4.hlsl). terrain_forward.slang combines all 4
+    // channels via max() into one weight; the blend-target texture INDEX
+    // still comes from TerrainChunk::blend_layers (a per-chunk UBO
+    // constant, monkey_dust's own simplified stand-in for Kenshi's real
+    // per-page diffuseMaps1/2/3 identity system, blendinfo.dat -- see
+    // terrain_gen.cpp's ARCHITECTURE NOTE).
     sd.min_filter = GpuSamplerDesc::Filter::LINEAR;
     sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
     sd.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
@@ -254,6 +303,9 @@ void TerrainRenderer::Shutdown() {
     tex_loaded_         = false;
     ground_array_ready_ = false;
     zone_layers_ssbo_.Shutdown();
+    fallback_steepness_ssbo_.Shutdown();
+    combo_alt_ssbo_.Shutdown();
+    combo_alt_ready_ = false;
 
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
@@ -335,6 +387,27 @@ void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) c
     out[4].texture = bv ? tex_biome_blend_.SDLTexture() : fallback_blend_tex_;
     out[4].sampler = bv ? tex_biome_blend_.SDLSampler() : fallback_blend_sampler_;
 }
+
+void TerrainRenderer::FillStorageBindings(SDL_GPUBuffer* out[3], const TerrainChunk* chunk)
+{
+    out[0] = zone_layers_ssbo_.SDLBuffer();
+    out[1] = (chunk && chunk->steepness_ssbo.SDLBuffer())
+                 ? chunk->steepness_ssbo.SDLBuffer()
+                 : fallback_steepness_ssbo_.SDLBuffer();
+    // combo_alt_ssbo_ is resolved+uploaded once in InitGroundTextureArray()
+    // (safe: outside any render pass) — NOT lazily here. An earlier version
+    // called GpuStaticBuffer::Init() from this function, which is invoked
+    // WHILE the caller already has a render pass open on its own command
+    // buffer; Init() internally acquires a SEPARATE command buffer and copy
+    // pass with no fence/wait against the in-flight render pass, a real
+    // race (confirmed by a user-reported ~3x FPS regression + visible
+    // corruption — a solid-colour quad where a chunk should be — immediately
+    // after this fix shipped). If combo_alt_ready_ is somehow still false
+    // here (InitGroundTextureArray not yet called), fall back to the
+    // all-zero fallback_steepness_ssbo_ buffer (same size class, safely
+    // already-initialized) rather than risk another unsafe lazy Init().
+    out[2] = combo_alt_ready_ ? combo_alt_ssbo_.SDLBuffer() : fallback_steepness_ssbo_.SDLBuffer();
+}
 #endif
 
 void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
@@ -383,7 +456,7 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     // Linear fog, tied to terrain_cr_m — see BeginRawBatch's comment.
     const float fog_far = (fog_density_override > 0.f) ? fog_density_override
                                                          : RenderQualityConfig::Get().terrain_cr_m;
-    TerrainFragUBO fubo;
+    TerrainFragUBO fubo{};  // {} zero-inits use_zone_lookup — never set below (task #182 fix)
     fubo.sun_dir_str[0] = sun.dir[0]; fubo.sun_dir_str[1] = sun.dir[1];
     fubo.sun_dir_str[2] = sun.dir[2]; fubo.sun_dir_str[3] = sun.strength;
     fubo.ambient[0]     = sun.ambient[0]; fubo.ambient[1] = sun.ambient[1];
@@ -404,6 +477,10 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
     SDL_BindGPUFragmentSamplers(rp, 0, bindings, 5);
+
+    SDL_GPUBuffer* sbufs[3];
+    FillStorageBindings(sbufs, &chunk);
+    SDL_BindGPUFragmentStorageBuffers(rp, 0, sbufs, 3);
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count, 1, 0, 0, 0);
 
@@ -469,7 +546,7 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     const auto& fog = GraphicsSettings::Get();
     // Linear fog, tied to terrain_cr_m — see BeginRawBatch's comment.
     const float fog_far = RenderQualityConfig::Get().terrain_cr_m;
-    TerrainFragUBO fubo;
+    TerrainFragUBO fubo{};  // {} zero-inits use_zone_lookup — never set below (task #182 fix)
     fubo.sun_dir_str[0] = sun.dir[0]; fubo.sun_dir_str[1] = sun.dir[1];
     fubo.sun_dir_str[2] = sun.dir[2]; fubo.sun_dir_str[3] = sun.strength;
     fubo.ambient[0]     = sun.ambient[0]; fubo.ambient[1] = sun.ambient[1];
@@ -490,6 +567,10 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
     cb.BindFragmentSamplers(0, bindings, 5);
+
+    SDL_GPUBuffer* sbufs[3];
+    FillStorageBindings(sbufs, &chunk);
+    SDL_BindGPUFragmentStorageBuffers(cb.SDLPass(), 0, sbufs, 3);
 
     SDL_DrawGPUIndexedPrimitives(cb.SDLPass(), TERRAIN_IDX, 1, 0, 0, 0);
 #endif
@@ -555,11 +636,18 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     if (bindings[0].texture && bindings[0].sampler)
         SDL_BindGPUFragmentSamplers(rp, 0, bindings, 5);
 
-    // Always bound (cheap, read-only) — only actually read by the shader
-    // when use_zone_lookup=1 (synthesis/compact-LOD2 draws). Harmless no-op
-    // for the normal per-chunk LOD1 path above.
-    if (SDL_GPUBuffer* zbuf = zone_layers_ssbo_.SDLBuffer())
-        SDL_BindGPUFragmentStorageBuffers(rp, 0, &zbuf, 1);
+    // Always bound (cheap, read-only) — b5 (zoneGroundLayers) only actually
+    // read by the shader when use_zone_lookup=1 (synthesis/compact-LOD2
+    // draws); b6 (per-chunk steepness) is never read on this batch path
+    // (BeginRawBatch has no single "current chunk" — same reasoning as
+    // chunk_origin_x/z=0,0 above) but must still be bound to something
+    // valid since the pipeline declares 2 storage buffers. DrawRawChunk
+    // re-binds b6 per-chunk right after this for the LOD1 individual-chunk
+    // sub-path, which DOES read it.
+    SDL_GPUBuffer* sbufs[3];
+    FillStorageBindings(sbufs, nullptr);
+    if (sbufs[0] || sbufs[1])
+        SDL_BindGPUFragmentStorageBuffers(rp, 0, sbufs, 3);
 
     if (lod_ibo_shared_[lod_clamped-1].SDLBuffer()) {
         SDL_GPUBufferBinding ib { lod_ibo_shared_[lod_clamped-1].SDLBuffer(), 0u };
@@ -583,6 +671,13 @@ void TerrainRenderer::DrawRawChunk(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
     fubo.blend_layers[0] = chunk.blend_layers[0]; fubo.blend_layers[1] = chunk.blend_layers[1];
     fubo.blend_layers[2] = chunk.blend_layers[2]; fubo.blend_layers[3] = chunk.blend_layers[3];
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
+
+    // Task #182: re-bind b6 with THIS chunk's own baked steepness (BeginRawBatch
+    // bound the shared fallback, since it has no single "current chunk").
+    SDL_GPUBuffer* sbufs[3];
+    FillStorageBindings(sbufs, &chunk);
+    if (sbufs[0] || sbufs[1])
+        SDL_BindGPUFragmentStorageBuffers(rp, 0, sbufs, 3);
 
     SDL_GPUBufferBinding vb { chunk.vbo.SDLBuffer(), 0u };
     SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);

@@ -141,8 +141,14 @@ public:
     // Use uniform lod for all chunks to avoid T-junctions.
     // cam_x/y/z: camera world position, for the linear distance fog applied
     // in terrain_forward.frag (matches ground.frag/NPC shader fog model).
-    // lod_blend: shader-pass dithered crossfade fraction — 0=fully visible
-    // (default), 1=fully discarded.
+    // lod_blend: geomorph factor (task #182g, 2026-07-19 — repurposed from
+    // an unused dithered-discard crossfade, see terrain_forward.slang's
+    // vsMain/aMorphY doc comments) — 0=full LOD0 detail (default), ramping
+    // to 1 as this chunk approaches its LOD0->LOD1 distance threshold
+    // blends vertex Y toward the pre-baked coarser-LOD target position,
+    // hiding the hard "pop" at the actual LOD switch. Caller (game/src/
+    // render/npc_render.cpp) computes this from distance; 0 elsewhere
+    // (editor Draw()/DrawRawChunk() don't wire it up yet).
     // fog_density_override > 0 replaces the terrain_cr_m-derived fog_far
     // (linear fog, see graphics_settings.h's fog_near_ratio comment). Normal
     // gameplay fog_far is tuned for ground-level view distance; an aerial
@@ -246,6 +252,31 @@ private:
     // Per-zone ground-layer lookup (see UploadZoneGroundLayers/SetBatchZoneLookup).
     SSBO zone_layers_ssbo_;
 
+    // Task #182 (2026-07-19): all-flat (steepness=0) fallback for
+    // TerrainChunk::steepness_ssbo, bound whenever a chunk hasn't baked one
+    // yet (e.g. mid-stream) or on the zone-lookup batch path (BeginRawBatch
+    // has no single "current chunk" — same reasoning as chunk_origin_x/z=0,0
+    // there). Never actually read by fsMain's use_lookup branch, but the
+    // pipeline declares 2 fragment storage buffers so both slots must be
+    // bound with SOMETHING valid every draw, or the second binding reads
+    // garbage (Intel HD 520 checklist: sampler/buffer count mismatches
+    // silently corrupt neighbouring bindings).
+    GpuStaticBuffer fallback_steepness_ssbo_;
+
+    // Task #182c/d (2026-07-19): the real Kenshi biome-crossfade alternates
+    // are a small GLOBAL (world-wide-constant, not per-chunk/per-page) set —
+    // confirmed via Ghidra decompile of the render-time lookup chain plus
+    // real FCS "Biomes" data (see terrain_gen.cpp's ARCHITECTURE NOTE and
+    // re_docs/kenshi/terrain.md). Resolved lazily on first FillStorageBindings
+    // call (BiomeRegistry must already be loaded by then — chunk generation,
+    // which depends on it too, always runs before the first draw) via
+    // BiomeRegistry::ForColor(255,0,0)/(0,255,0)/(0,0,255), then uploaded
+    // ONCE as 3×6=18 floats (ground/slope/cliff/grass/dirt/road GroundTexLayer
+    // indices per alternate) — never changes afterward, same instance bound
+    // on every draw call regardless of which chunk.
+    GpuStaticBuffer combo_alt_ssbo_;
+    bool            combo_alt_ready_ = false;
+
     uint32_t        batch_idx_count_ = 0;  // set by BeginRawBatch
     TerrainFragUBO  batch_fubo_base_{};     // sun/world params cached by BeginRawBatch;
                                              // DrawRawChunk fills ground_layers per-chunk and re-pushes
@@ -258,5 +289,11 @@ private:
     SDL_GPUTexture* fallback_blend_tex_      = nullptr;
     SDL_GPUSampler* fallback_blend_sampler_  = nullptr;
     void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const;
+    // Task #182: binding 0 = zoneGroundLayers (global), binding 1 = the
+    // chunk's own steepness_ssbo (or fallback_steepness_ssbo_ if unbaked),
+    // binding 2 = comboAlternates (global, see combo_alt_ssbo_'s doc comment;
+    // lazily resolved+uploaded on first call — not const-safe on paper, but
+    // matches the existing lazy-init pattern used elsewhere in this class).
+    void FillStorageBindings(SDL_GPUBuffer* out[3], const TerrainChunk* chunk);
 #endif
 };

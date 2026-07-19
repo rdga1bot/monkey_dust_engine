@@ -38,8 +38,22 @@ static constexpr int   TERRAIN_LOD_IDX[3]    = {
      7296,  // step=4, G=32:  2432 tris (was  6144/2048 tris pre-stitch)
      2880   // step=8, G=16:   960 tris (was  1536/ 512 tris pre-stitch)
 };
-// Camera-to-chunk-centre distance thresholds to switch LOD levels
-static constexpr float TERRAIN_LOD_DIST[3]   = { 600.f, 1200.f, 2000.f };
+// REMOVED 2026-07-19 (task #182g audit): TERRAIN_LOD_DIST[3]={600,1200,2000}
+// was dead code — declared here but grep-confirmed to have ZERO references
+// anywhere in engine/game/tools. The REAL, active LOD-switch distance
+// thresholds live in two deliberately SEPARATE places for two different
+// rendering contexts (not a bug/duplication, just needs explicit cross-
+// referencing so a future session doesn't rediscover this confusion):
+//   - game (SceneRender's fixed 9x9 window): RenderQualityConfig's
+//     mesh_lod0_cr_m/mesh_lod1_cr_m/mesh_lod2_cr_m (500/1500/3000 default,
+//     engine/include/monkey_dust/render/render_quality.h), consumed in
+//     game/src/render/npc_render.cpp's terrain draw loop.
+//   - editor (World3D 64x64 aerial-overview viewport): hardcoded
+//     d0sq/d1sq/d2sq (1200/3500/8000) local to
+//     tools/editor/editor_world_3d_sdlgpu.cpp — deliberately larger, since
+//     that viewport shows a much bigger area than the game's ground-level
+//     view and would produce excessive triangle counts at the game's
+//     closer thresholds.
 
 // Vertex layout (stride = 52 bytes):
 //   location 0: vec3 pos    (12)
@@ -50,25 +64,34 @@ struct TerrainVertex {
     float x, y, z;           // world position        offset  0
     float nx, ny, nz;         // normal                offset 12
     float u, v;               // UV (world-space)      offset 24
-    // Dominant-weight ground selection (base/slope/cliff/grass/dirt/road
-    // argmax, re_docs/kenshi/terrain.md:114-136) runs PER-PIXEL in
-    // terrain_forward.slang's fsMain now, not baked here. A same-day
-    // 2026-07-19 first attempt baked ground_id/ground_id2 into these
-    // fields (flat-interpolated, since array-layer indices can't be
-    // lerped) — real bug: adjacent vertices on a slope often disagree on
-    // the dominant layer, and flat interpolation paints each whole
-    // triangle from one vertex's decision, producing dense triangle-shaped
-    // seams (confirmed via screenshots). fsMain now recomputes the same
-    // argmax per-pixel from the already-smoothly-interpolated normal and a
-    // live tex_overlay_mask sample instead. These 4 floats are unused
-    // leftover slots — same status `splat[4]` had before that whole
-    // rewrite (was [grass,rock,dirt,snow], computed on CPU but never
-    // sampled by any shader). Kept (not removed) purely to avoid touching
-    // vertex stride/layout across every caller for an already-dead field.
-    float ground_id;          // unused
-    float ground_id2;         // unused
-    float blend_alpha;        // unused
-    float _reserved;          // unused
+    // task #182 (2026-07-19b): baked chunk-local [0,1] UV (local_u,
+    // local_v), smoothly interpolated by the rasterizer across ANY LOD
+    // triangle exactly like position/normal already are — used by
+    // terrain_forward.slang's fsMain to bilinear-sample
+    // TerrainChunk::steepness_ssbo at the fragment's true full-res grid
+    // location, independent of which LOD tier's (sparse) triangle corners
+    // are actually being interpolated. Field names are historical
+    // (ground_id/ground_id2, from an abandoned per-vertex argmax attempt
+    // the same day — see git history) — not renamed to avoid touching the
+    // GPU attrib layout's implicit field order.
+    float ground_id;          // local_u
+    float ground_id2;         // local_v
+    // task #182k (2026-07-19): geomorph target normal for L0->L1, XZ only
+    // (compressed — Y is reconstructed in-shader via sqrt(1-x^2-z^2),
+    // always valid/positive for a heightfield-derived normal, which never
+    // points downward). Repurposes the last 2 previously-dead floats in
+    // this same aGround float4 GPU slot (terrain_renderer.cpp's Init() —
+    // no attrib/stride/layout change needed, just a new interpretation of
+    // bytes already being uploaded and read). Computed the same way as
+    // morph_y (parity-based neighbour averaging, terrain_gen.cpp's
+    // "Geomorph targets" pass) — real Kenshi's own terrain.hlsl morphs
+    // BOTH position and normal (`normal = lerp(normal, normal1, morph)`),
+    // this closes that gap; morph_y alone left a residual lighting-
+    // smoothness difference across the LOD0->LOD1 boundary (confirmed via
+    // a colour-coded LOD-tier debug overlay, 2026-07-19 — visible patches
+    // matched LOD tier boundaries exactly).
+    float morph_nx;           // geomorph target normal.x for L0→L1
+    float morph_nz;           // geomorph target normal.z for L0→L1
     float morph_y;            // geomorph target Y for L0→L1; guarded by TERRAIN_MORPH_DATA_ENABLED
 };
 static_assert(sizeof(TerrainVertex) == 52, "TerrainVertex size mismatch");
@@ -260,6 +283,23 @@ struct TerrainChunk {
     GpuStaticBuffer ibo_lod[3];        // L1: 64×64, L2: 32×32, L3: 16×16
     GpuStaticBuffer skirt_vbo;         // TerrainVertex * TERRAIN_SKIRT_VERTS (Item 7)
     GpuStaticBuffer skirt_ibo;         // uint16_t * TERRAIN_SKIRT_IDX
+    // Task #182 (2026-07-19), shading-mismatch fix: baked full-resolution
+    // (LOD0) per-vertex steepness (1-normal.y), one float per TERRAIN_VERTS
+    // grid node, row-major (same idx() as BuildLodIboStitched). Decimated
+    // LOD1-3 triangles only carry 3 corner normals across up to an 8×8-cell
+    // span, so interpolating N.y across THAT triangle (the pre-fix approach)
+    // silently discards real local steepness variation -- measured via
+    // md.scan_shading_mismatch(): flip_rate=4.37% of pixels picked the wrong
+    // ground layer (grass/slope/cliff) relative to the true fine-resolution
+    // terrain, worst at LOD3/step=8. This buffer lets terrain_forward.slang
+    // bilinearly resample the REAL full-res field regardless of which LOD
+    // triangle is actually being rasterised -- decoupling ground-layer
+    // selection from mesh LOD, the only way to fix it (any per-vertex
+    // attribute baked onto the LOD triangle's own 3 corners has the exact
+    // same interpolation error as the normal itself). GPU_TARGET_STORAGE
+    // (gpu_hal.h) so it rides the same GpuUploadBatch as vbo/ibo/skirt in
+    // s_upload_core -- no extra synchronous per-chunk GPU submit.
+    GpuStaticBuffer steepness_ssbo;
     NavMesh          navmesh;
     TerrainHeightmap heightmap;         // CPU copy for height queries
     TerrainPassGrid  pass_grid;         // L2-inspired O(1) passability bitmask
@@ -278,6 +318,22 @@ struct TerrainChunk {
     // ARCHITECTURE note in terrain_gen.cpp's biome-assignment block for the
     // real-Kenshi (blendmap.png/blendinfo.dat) precedent this mirrors.
     float            blend_layers[4] = {0.f, 1.f, 2.f, 0.f};
+    // Task #182h (2026-07-19): per-LOD-tier max geometric error, for
+    // pixel-error-adaptive LOD switching (real Ogre3D Terrain component
+    // technique — setMaxPixelError, see re_docs/kenshi/terrain.md's
+    // setOgreBuildLimits subsection). lod_error[i] = the largest absolute
+    // height difference (world units) between TERRAIN_LOD_STEPS[i]'s
+    // decimated mesh and the true full-resolution heightmap, anywhere in
+    // this chunk — computed once at TerrainGen_Build time (same corner-
+    // interpolation formula as md.scan_shading_mismatch()'s steepness
+    // check, just tracking max |height delta| instead). Flat/low-relief
+    // chunks get a small error (can drop to a coarse LOD much closer
+    // without visible simplification); rugged/cliff-heavy chunks get a
+    // large error (should stay at fine LOD until much farther away) —
+    // replaces render_quality.h's fixed world-distance LOD cutoffs with a
+    // per-chunk-adaptive distance, capped by those same fixed values as a
+    // worst-case ceiling (game/src/render/npc_render.cpp).
+    float            lod_error[3] = {0.f, 0.f, 0.f};
     bool             loaded = false;
     // Set true at the end of TerrainGen_Build — independent of `loaded` (which
     // means "GPU buffers uploaded", set by TerrainGen_Upload). Lets callers

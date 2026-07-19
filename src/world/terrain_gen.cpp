@@ -36,6 +36,58 @@ static void s_load_biomemap() {
         fprintf(stderr, "[TerrainGen] md_biomemap.png not found — biome lookup falls back to default\n");
 }
 
+// ── Blendmap touch check (task #182e, 2026-07-19: FPS fix) ───────────────────
+// game/data/textures/md_biome_blend.png (real Kenshi blendmap.png, 1:1 copy,
+// private/md_gen_biome_blendmap.py) — same file terrain_forward.slang samples
+// per-pixel for the comboAlternates crossfade. Loaded here ONLY to answer a
+// per-CHUNK yes/no question at generation time: does this chunk's zone block
+// contain ANY non-zero R/G/B pixel at all? The vast majority of chunks never
+// touch any of the 3 rare combo-alternate biomes, so gating the whole 18-
+// sample crossfade block behind a per-chunk UNIFORM flag (not a per-pixel
+// dynamic branch, which measured ~3x FPS regression on Intel HD 520 — likely
+// both sides of short branches with texture fetches get executed and masked
+// on this hardware/driver) should recover most of the lost performance:
+// SIMD/warp divergence only matters for per-PIXEL branches: a per-chunk
+// uniform flag means the ENTIRE draw call's fragments take the same path.
+static uint8_t* s_blendmap     = nullptr;
+static int      s_blendmap_w   = 0, s_blendmap_h = 0;
+static bool     s_blendmap_tried = false;
+
+static void s_load_blendmap() {
+    if (s_blendmap_tried) return;
+    s_blendmap_tried = true;
+    int comp = 0;
+    s_blendmap = stbi_load("game/data/textures/md_biome_blend.png", &s_blendmap_w, &s_blendmap_h, &comp, 4);
+    if (!s_blendmap)
+        fprintf(stderr, "[TerrainGen] md_biome_blend.png not found — combo-alternate gating defaults to always-on (safe, slower)\n");
+}
+
+// zx,zy: 0..63 zone grid coords (chunk==zone, 1:1, CHUNK_SIZE==zone size).
+// Returns true if ANY pixel in this zone's blendmap block (dilated by 1
+// pixel on each side, to catch GPU bilinear-filter bleed from an adjacent
+// zone's non-zero pixels right at the shared border) has R, G, or B > 0.
+// Conservative by design (checks whole own block + margin, not exact
+// footprint) — a false positive just costs one skipped-uniform-branch's
+// worth of unnecessary sampling on a chunk that turns out fully zero-weight
+// anyway (cheap); a false negative would silently drop a real, visible
+// crossfade (expensive to debug) — this trades a little perf for zero risk
+// of reintroducing the "seams" bug via an over-eager skip.
+static bool s_blendmap_touch(int zx, int zy) {
+    if (!s_blendmap) return true; // no data loaded — never silently skip
+    float scale = (float)s_blendmap_w / 64.0f;
+    int x0 = (int)(zx * scale) - 1, x1 = (int)((zx + 1) * scale) + 1;
+    int y0 = (int)(zy * scale) - 1, y1 = (int)((zy + 1) * scale) + 1;
+    if (x0 < 0) x0 = 0; if (x1 > s_blendmap_w) x1 = s_blendmap_w;
+    if (y0 < 0) y0 = 0; if (y1 > s_blendmap_h) y1 = s_blendmap_h;
+    for (int py = y0; py < y1; ++py) {
+        for (int px = x0; px < x1; ++px) {
+            const uint8_t* p = s_blendmap + ((size_t)py * s_blendmap_w + px) * 4;
+            if (p[0] != 0 || p[1] != 0 || p[2] != 0) return true;
+        }
+    }
+    return false;
+}
+
 // zx,zy: 0..63 zone grid coords. Returns false (no data) if biomemap missing.
 // Mode (most frequent colour) over the zone's whole pixel block, not a
 // single centre-pixel sample — same noise-robustness rationale as the old
@@ -698,12 +750,25 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             s_verts_buf[vi].u = fmodf(wx * 0.125f, 2048.0f);
             s_verts_buf[vi].v = fmodf(wz * 0.125f, 2048.0f);
 
-            // Per-vertex ground_id/ground_id2/blend_alpha filled in a later
-            // pass (s_ground_pick loop, after out.ground_layers/blend_layers
-            // are resolved below) — this used to compute a generic-BiomeType
-            // procedural splat[4] here, but it was dead: no shader has ever
-            // sampled it (2026-07-19 replaced with real per-vertex dominant-
-            // weight ground selection, see terrain_chunk.h's TerrainVertex).
+            // Task #182 (2026-07-19b): repurposed these two long-dead slots
+            // (ground_id/ground_id2 — nothing has written them since the
+            // per-pixel ground-selection rewrite earlier today, see
+            // TerrainVertex's doc comment) as a baked chunk-local [0,1] UV
+            // (local_u, local_v), smoothly interpolated by the rasterizer
+            // across ANY LOD triangle exactly like position/normal already
+            // are — used by terrain_forward.slang's fsMain to bilinear-
+            // sample TerrainChunk::steepness_ssbo at the fragment's true
+            // full-res grid location, independent of which LOD tier's
+            // (sparse) triangle corners are actually being interpolated.
+            s_verts_buf[vi].ground_id  = (float)col / (float)TERRAIN_GRID;  // local_u
+            s_verts_buf[vi].ground_id2 = (float)row / (float)TERRAIN_GRID;  // local_v
+            // morph_nx/morph_nz: placeholder here (normals aren't computed
+            // until a later pass, needs neighbour heights) — the "Geomorph
+            // targets" pass below overwrites these with the real parity-
+            // averaged morph target once s_verts_buf's normals are fully
+            // populated.
+            s_verts_buf[vi].morph_nx = 0.f;
+            s_verts_buf[vi].morph_nz = 0.f;
 
             // Nav positions (flat float array for Recast)
             s_nav_pos[vi * 3 + 0] = wx;
@@ -910,25 +975,111 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     for (int row = 0; row <= TERRAIN_GRID; ++row) {
         for (int col = 0; col <= TERRAIN_GRID; ++col) {
             int vi = s_idx(col, row);
-            float fy;
-            if ((col & 1) == 0 && (row & 1) == 0) {
+            float fy, fnx, fny, fnz;
+            // Task #182i (2026-07-19): freeze the chunk border to its own
+            // real height — never morph it. BuildLodIboStitched always
+            // draws chunk borders at full resolution/true height regardless
+            // of LOD tier (that's the whole T-junction fix); if geomorph
+            // moves a border vertex, a chunk mid-ramp (lod_blend>0) renders
+            // its border offset from its neighbour's border (which is
+            // either still real-height at blend=0, or moved by a DIFFERENT
+            // blend value — neighbouring chunks are almost never exactly
+            // equidistant from the camera) and the shared edge splits open
+            // again, exactly like the original T-junction gap. Confirmed by
+            // code inspection, not by screenshot — the reported seams
+            // persisted after the first geomorph pass despite it looking
+            // correct in isolated flythrough screenshots, which is exactly
+            // what you'd expect from a bug that only shows up when two
+            // SPECIFIC neighbouring chunks disagree on their own blend
+            // factor, not from any single chunk's own shape. Same rule
+            // applies to the normal below (task #182k) for the same reason.
+            bool on_border = (row == 0) || (row == TERRAIN_GRID) ||
+                             (col == 0) || (col == TERRAIN_GRID);
+            if (on_border) {
                 fy = s_verts_buf[vi].y;
+                fnx = s_verts_buf[vi].nx; fny = s_verts_buf[vi].ny; fnz = s_verts_buf[vi].nz;
+            } else if ((col & 1) == 0 && (row & 1) == 0) {
+                fy = s_verts_buf[vi].y;
+                fnx = s_verts_buf[vi].nx; fny = s_verts_buf[vi].ny; fnz = s_verts_buf[vi].nz;
             } else if ((col & 1) != 0 && (row & 1) == 0) {
-                fy = (s_verts_buf[s_idx(col-1, row)].y +
-                      s_verts_buf[s_idx(col+1, row)].y) * 0.5f;
+                const auto& a = s_verts_buf[s_idx(col-1, row)];
+                const auto& b = s_verts_buf[s_idx(col+1, row)];
+                fy  = (a.y  + b.y)  * 0.5f;
+                fnx = (a.nx + b.nx) * 0.5f;
+                fny = (a.ny + b.ny) * 0.5f;
+                fnz = (a.nz + b.nz) * 0.5f;
             } else if ((col & 1) == 0 && (row & 1) != 0) {
-                fy = (s_verts_buf[s_idx(col, row-1)].y +
-                      s_verts_buf[s_idx(col, row+1)].y) * 0.5f;
+                const auto& a = s_verts_buf[s_idx(col, row-1)];
+                const auto& b = s_verts_buf[s_idx(col, row+1)];
+                fy  = (a.y  + b.y)  * 0.5f;
+                fnx = (a.nx + b.nx) * 0.5f;
+                fny = (a.ny + b.ny) * 0.5f;
+                fnz = (a.nz + b.nz) * 0.5f;
             } else {
-                fy = (s_verts_buf[s_idx(col-1, row-1)].y +
-                      s_verts_buf[s_idx(col+1, row-1)].y +
-                      s_verts_buf[s_idx(col-1, row+1)].y +
-                      s_verts_buf[s_idx(col+1, row+1)].y) * 0.25f;
+                const auto& a = s_verts_buf[s_idx(col-1, row-1)];
+                const auto& b = s_verts_buf[s_idx(col+1, row-1)];
+                const auto& c = s_verts_buf[s_idx(col-1, row+1)];
+                const auto& d = s_verts_buf[s_idx(col+1, row+1)];
+                fy  = (a.y  + b.y  + c.y  + d.y)  * 0.25f;
+                fnx = (a.nx + b.nx + c.nx + d.nx) * 0.25f;
+                fny = (a.ny + b.ny + c.ny + d.ny) * 0.25f;
+                fnz = (a.nz + b.nz + c.nz + d.nz) * 0.25f;
             }
             s_verts_buf[vi].morph_y = fy;
+            // Task #182k: averaging 2-4 unit normals doesn't yield a unit
+            // vector — renormalize before storing. Only x/z are kept (the
+            // GPU slot has 2 free floats, not 3 — see TerrainVertex's doc
+            // comment); the shader reconstructs y = sqrt(1-x^2-z^2), valid
+            // since a properly renormalized heightfield normal always has
+            // a positive y and this matches it exactly (up to fp rounding).
+            float nlen = sqrtf(fnx*fnx + fny*fny + fnz*fnz);
+            if (nlen > 1e-6f) { fnx /= nlen; fnz /= nlen; }
+            s_verts_buf[vi].morph_nx = fnx;
+            s_verts_buf[vi].morph_nz = fnz;
         }
     }
 #endif
+
+    // ── Task #182h: per-LOD-tier max geometric error (pixel-error LOD) ───────────
+    // See TerrainChunk::lod_error's doc comment. Same "decimated-triangle-
+    // corner interpolation vs real fine-res height" measurement approach as
+    // md.scan_shading_mismatch() (lua_scenario_api.cpp), tracking max
+    // |height delta| instead of averaging a steepness delta. Cheap: reuses
+    // s_verts_buf (already fully built above), one more pass over it.
+    {
+        auto y_at = [](int col, int row) -> float {
+            return s_verts_buf[s_idx(col, row)].y;
+        };
+        for (int si = 0; si < 3; ++si) {
+            int step = TERRAIN_LOD_STEPS[si];
+            int G = TERRAIN_GRID / step;
+            float max_err = 0.f;
+            for (int kr = 0; kr < G; ++kr) {
+                for (int kc = 0; kc < G; ++kc) {
+                    int c0 = kc*step, r0 = kr*step, c1 = c0+step, r1 = r0+step;
+                    float y_bl = y_at(c0, r0), y_br = y_at(c1, r0);
+                    float y_tl = y_at(c0, r1), y_tr = y_at(c1, r1);
+                    for (int fr = r0; fr <= r1; ++fr) {
+                        for (int fc = c0; fc <= c1; ++fc) {
+                            if (fr == r0 || fr == r1 || fc == c0 || fc == c1) continue; // exact at corners/edges
+                            float lx = (float)(fc - c0) / (float)step;
+                            float ly = (float)(fr - r0) / (float)step;
+                            float y_interp;
+                            if (lx + ly <= 1.f) {
+                                y_interp = y_bl*(1.f-lx-ly) + y_br*lx + y_tl*ly;
+                            } else {
+                                float wx = 1.f - lx, wy = 1.f - ly;
+                                y_interp = y_tr*(1.f-wx-wy) + y_br*wx + y_tl*wy;
+                            }
+                            float err = fabsf(y_at(fc, fr) - y_interp);
+                            if (err > max_err) max_err = err;
+                        }
+                    }
+                }
+            }
+            out.lod_error[si] = max_err;
+        }
+    }
 
     // ── Item 7: Geometry skirt ────────────────────────────────────────────────────
     // Hang 2m-deep quads from each edge to close gaps between adjacent chunks.
@@ -985,56 +1136,42 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
         out.ground_layers[4] = (float)bd.tex_dirt;
         out.ground_layers[5] = (float)bd.tex_road;
 
-        // monkey_dust ARCHITECTURE NOTE: real Kenshi cross-fades between up to
-        // 3 alternate per-page biome material sets via a SEPARATE blendmap.png
-        // (confirmed: data/newland/land/blendmap.png -- every RGBA channel is
-        // strictly binary 0/255, not pre-blurred; the smooth transition comes
-        // from the GPU's own bilinear sampling of that binary mask at runtime,
-        // not from the stored data). Material IDENTITY is a per-page constant
-        // (biomeData bounding-box uniform selecting diffuseMaps1/2/3), NOT
-        // something sampled continuously -- only the WEIGHT is a smooth
-        // per-pixel sample. We mirror that split: blend_layers below is a
-        // per-CHUNK constant (this chunk's one blend-target neighbour's
-        // biome, picked once here, like a page's fixed alternate material),
-        // while the actual blend WEIGHT comes from a LINEAR-filtered texture
-        // sampled per-pixel in the shader (tools/md_gen_biome_blendmap.py +
-        // tex_biome_blend). An earlier version tried to pack BOTH the target
-        // texture index and the weight into one NEAREST-filtered texture
-        // sampled per-pixel -- confirmed broken (large un-blended hard edges)
-        // because a per-pixel-sampled index can't be filtered/interpolated
-        // meaningfully, unlike a per-pixel weight.
-        // v4: a chunk at a 3-way zone corner has TWO differing boundaries to
-        // cross-fade, not one -- blending only the first (v3) left the
-        // second hard-edged (confirmed visually: a 3-biome chunk row showed
-        // one blended seam and one still-hard seam). Slot B reuses
-        // blend_layers.w (previously unused padding -- TerrainPomFragUBO is
-        // already at the Intel HD 520 128-byte hard cap) for just the
-        // second neighbour's BASE index, no slope/cliff variation for that
-        // slot -- a deliberate simplification since zone boundaries are
-        // primarily a base-colour effect. tools/md_gen_biome_blendmap.py's
-        // blend_dir2 MUST pick the same second neighbour with the same rule.
-        out.blend_layers[0] = out.ground_layers[0];
+        // monkey_dust ARCHITECTURE NOTE (2026-07-19, task #182c/d, superseding
+        // the per-chunk "neighbour heuristic" below this comment used to
+        // contain): real Kenshi's blend identity is NOT "which neighbouring
+        // zone is this chunk closest to" at all -- confirmed via full Ghidra
+        // decompile of the render-time lookup chain (FUN_140a09630 ->
+        // FUN_140a16e50 -> the SAME ground/slope/grass/dirt/road "index"
+        // table terrain_gen.cpp's own s_resolve_biome() already uses) plus
+        // cross-referencing real Kenshi FCS "Biomes" entries: blendmap.png's
+        // R/G/B channels (each strictly binary 0/255) each independently
+        // select one of a SMALL, WORLD-WIDE-CONSTANT set of up to 8 real,
+        // NAMED alternate biomes (found by index: R-alone="Canyonlands
+        // Crater", G-alone="Mafic Enclaves", R+G="Artery", B-alone=
+        // "Canyonlands", G+B="desert" -- verified against real FCS data,
+        // see re_docs/kenshi/terrain.md). This is a GLOBAL palette, not a
+        // per-chunk/per-page one -- so, unlike the old code here, MD no
+        // longer needs (or should have) each chunk guessing its own
+        // "nearest differing neighbour": that heuristic was the actual
+        // root cause of the persistent hard-seam/"square grid" bug (two
+        // adjacent chunks routinely picked DIFFERENT guessed neighbours,
+        // so their blend targets disagreed right at the shared edge).
+        // The real fix lives in TerrainRenderer's new global comboAlternates
+        // SSBO (terrain_renderer.cpp/.h) + terrain_forward.slang's fsMain,
+        // which resolve the 3 single-channel alternates ONCE (BiomeRegistry::
+        // ForColor(255,0,0)/(0,255,0)/(0,0,255)) and sample blendmap.png's
+        // R/G/B directly as per-pixel weights toward those fixed globals --
+        // no per-chunk identity data needed at all.
+        // TerrainChunk::blend_layers.x REPURPOSED (task #182e, 2026-07-19,
+        // FPS fix — was fully vestigial for one same-day pass, see the
+        // blend_layers.x doc comment above) as a per-chunk "does this chunk
+        // touch any comboAlternates biome at all" uniform flag — see
+        // s_blendmap_touch's doc comment. .y/.z/.w remain genuinely unused.
+        s_load_blendmap();
+        out.blend_layers[0] = s_blendmap_touch(zx, zy) ? 1.f : 0.f;
         out.blend_layers[1] = out.ground_layers[1];
         out.blend_layers[2] = out.ground_layers[2];
-        out.blend_layers[3] = out.ground_layers[0];  // slot B base; no-op default
-        static const int kDX[4] = { -1, 1, 0, 0 };
-        static const int kDZ[4] = {  0, 0,-1, 1 };
-        int found = 0;
-        for (int n = 0; n < 4 && found < 2; ++n) {
-            int nzx = zx + kDX[n], nzy = zy + kDZ[n];
-            if (nzx < 0 || nzx > 63 || nzy < 0 || nzy > 63) continue;
-            const BiomeDef& nbd = s_resolve_biome(nzx, nzy);
-            if (nbd.tex_base != bd.tex_base || nbd.tex_slope != bd.tex_slope || nbd.tex_cliff != bd.tex_cliff) {
-                if (found == 0) {
-                    out.blend_layers[0] = (float)nbd.tex_base;
-                    out.blend_layers[1] = (float)nbd.tex_slope;
-                    out.blend_layers[2] = (float)nbd.tex_cliff;
-                } else {
-                    out.blend_layers[3] = (float)nbd.tex_base;
-                }
-                ++found;
-            }
-        }
+        out.blend_layers[3] = out.ground_layers[0];
 
         // Dominant-weight ground selection happens PER-PIXEL in
         // terrain_forward.slang's fsMain now (2026-07-19 correction), not

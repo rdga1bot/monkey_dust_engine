@@ -181,9 +181,9 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
 
     // Map GL target → SDL_GPU buffer usage.
     // 0x8893 = GL_ELEMENT_ARRAY_BUFFER value (avoid GL header dependency in SDL-only builds).
-    SDL_GPUBufferUsageFlags usage = (target == 0x8893u)
-                                    ? SDL_GPU_BUFFERUSAGE_INDEX
-                                    : SDL_GPU_BUFFERUSAGE_VERTEX;
+    SDL_GPUBufferUsageFlags usage = (target == 0x8893u)  ? SDL_GPU_BUFFERUSAGE_INDEX
+                                   : (target == GPU_TARGET_STORAGE) ? SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ
+                                   : SDL_GPU_BUFFERUSAGE_VERTEX;
     (void)target;
 
     SDL_GPUBufferCreateInfo buf_info = {};
@@ -231,9 +231,9 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
 void GpuStaticBuffer::InitEmpty(unsigned int target, uint32_t size) {
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
-    SDL_GPUBufferUsageFlags usage = (target == 0x8893u)
-                                    ? SDL_GPU_BUFFERUSAGE_INDEX
-                                    : SDL_GPU_BUFFERUSAGE_VERTEX;
+    SDL_GPUBufferUsageFlags usage = (target == 0x8893u)  ? SDL_GPU_BUFFERUSAGE_INDEX
+                                   : (target == GPU_TARGET_STORAGE) ? SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ
+                                   : SDL_GPU_BUFFERUSAGE_VERTEX;
     SDL_GPUBufferCreateInfo buf_info = {};
     buf_info.usage = usage;
     buf_info.size  = size;

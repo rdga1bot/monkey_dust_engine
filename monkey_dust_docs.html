@@ -182,7 +182,7 @@
 <div id="sidebar">
   <div class="sidebar-logo">
     <div class="title">monkey_dust</div>
-    <div class="subtitle">Developer Docs · v26.4 · 2026-07-11</div>
+    <div class="subtitle">Developer Docs · v26.5 · 2026-07-19</div>
   </div>
   <div class="sidebar-search">
     <input type="text" id="search-input" placeholder="Пошук..." oninput="filterNav(this.value)">
@@ -254,7 +254,7 @@
 <section class="doc-section" id="intro">
   <div class="breadcrumb"><span>Документація</span> <span class="sep">›</span> Огляд</div>
   <div class="hero">
-    <div class="version-badge">v26.4 · C++17 · SDL3 + SDL_GPU (Vulkan) · flecs · Jolt · Recast · 1747 тестів · 2026-07-11</div>
+    <div class="version-badge">v26.5 · C++17 · SDL3 + SDL_GPU (Vulkan) · flecs · Jolt · Recast · 1750 тестів · 2026-07-19</div>
     <h1>monkey_dust</h1>
     <p style="font-size:17px;color:var(--text);margin-bottom:0;">
       Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Бекенд: SDL3 + SDL_GPU (Vulkan), виключний — OpenGL/Raylib повністю видалено (FIX-8). AI архітектура натхненна механіками Alien: Isolation. Kenshi asset pipeline (KEN-1–8): cgltf GLB, ozz-animation, Jolt CharacterVirtual, DetourCrowd. Terrain atlas <code>world_hmap.r32</code> (67 MB, 4096 зон). Цільове залізо: Intel HD 520 (AVX2).
@@ -1261,32 +1261,34 @@ TerrainAtlas_SetHeight(zx, zy, col, row, h + g_brush_str * dt);
     <div class="callout-title">TerrainAtlas_SmoothBoundaries() — виклик обов'язковий після Load()</div>
     Kenshi <code>fullmap.tif</code> має стрибки висот до 22.9 m на першій внутрішній вершині зони (71° cliff → NdotL=0 → чорний сектор). <code>SmoothBoundaries()</code> з N=15 усуває це: кожний крок ≤10°, NdotL≥0.65.
   </div>
-  <pre><code>// main.cpp та editor_world_3d_sdlgpu.h:
-TerrainAtlas_Load("game/data/terrain/world_hmap.r32");
+  <pre><code>// main.cpp та scene_render.cpp:
+TerrainAtlas_Load("game/data/terrain/world_hmap");  // raw uint16 .r16 (2026-07-19, was .r32)
 TerrainAtlas_SmoothBoundaries();   // ← ОБОВ'ЯЗКОВО до TerrainGen_Build()
 // ...
-// terrain_pom.frag:
+// terrain_forward.slang (єдиний термейн-шейдер, 2026-07-19 — POM/forward split видалено):
 float ndl = max(dot(N, sun_dir), 0.57);  // 0.57 = dot((0,1,0),(0.57,0.57,0.57)) = flat NdotL</code></pre>
   <div class="callout warn">
     <div class="callout-title">F3 Brush — безпечна зона: ≥16 вершин від межі зони (≥125 m)</div>
-    F3 зберігає через <code>TerrainAtlas_Save()</code> прямо у <code>world_hmap.r32</code>. При наступному старті <code>SmoothBoundaries()</code> перезаписує col=1..15 від межі зони — правки в тій зоні будуть частково відкочені. Редагуй далі 125 m від краю зони або знову виклич <code>SmoothBoundaries()</code> перед <code>TerrainGen_Build()</code>.
+    F3 зберігає через <code>TerrainAtlas_Save()</code> у sparse <code>*_edits.r32</code> overlay (не в сам read-only <code>.r16</code>). При наступному старті <code>SmoothBoundaries()</code> перезаписує col=1..15 від межі зони — правки в тій зоні будуть частково відкочені. Редагуй далі 125 m від краю зони або знову виклич <code>SmoothBoundaries()</code> перед <code>TerrainGen_Build()</code>.
   </div>
 
   <h3>Cross-chunk нормалі через atlas (без seams)</h3>
   <p>Крайові нормалі чанків обчислюються з <code>s_atlas_h[]</code> сусідніх зон — без читання файлів.
   Ліва/права/нижня/верхня грані отримують сусідній рядок/стовпець через <code>atlas_h(zx±1, zy, ...)</code> або <code>atlas_h(zx, zy±1, ...)</code>. Результат: нульові seam-артефакти між чанками.</p>
 
+  <div class="callout ok">
+    <div class="callout-title">LOD T-junction фікс — BuildLodIboStitched (2026-07-19)</div>
+    Окрема від boundary-height проблема вище: сусідні чанки на РІЗНИХ LOD-рівнях мали розбіжну межу (груба сторона — пряма лінія між рідкими точками, до 19.4 м розбіжності з реальним рельєфом). <code>BuildLodIboStitched()</code> (<code>terrain_chunk.h</code>) малює межу КОЖНОГО чанка завжди повною роздільністю, незалежно від децимації інтер'єру — будь-які два сусіди завжди точно збігаються.
+  </div>
+
   <h3>Генерація atlas</h3>
-  <pre><code># Повне перегенерування (4096 зон з fullmap.tif):
-python3 tools/md_extract_terrain.py extract   # → tmp/zone_X_Y.r32 (65×65 float)
-python3 tools/md_extract_terrain.py pack_atlas # → game/data/terrain/world_hmap.r32
+  <pre><code># Повний Kenshi terrain pipeline (tools/tif_to_r32.py замінив видалений md_extract_terrain.py):
+python3 tools/tif_to_r32.py       # fullmap.tif → world_hmap.r16 (raw uint16, seam=0.0m)
+python3 tools/md_worldmap_gen.py  # regen world_map.png</code></pre>
 
-# Backup оригіналу (зберігати локально, не пушити):
-cp game/data/terrain/world_hmap.r32 game/data/terrain/world_hmap_backup.r32</code></pre>
-
-  <div class="callout tip">
-    <div class="callout-title">Процедурна регенерація у майбутньому</div>
-    Atlas зберігає <strong>тільки float-висоти</strong> (незалежно від джерела). Замінити вміст зон через <code>TerrainAtlas_SetHeight()</code> або перегенерувати через FBM/AI heightmap і упакувати через <code>pack_atlas()</code> — повна сумісність із рушієм.
+  <div class="callout warn">
+    <div class="callout-title">Процедурної генерації немає (видалено 2026-07-19)</div>
+    Реальний Kenshi теж не має процедурної генерації термейну — увесь ландшафт авторський. <code>TerrainMaster</code>/<code>md_master_hmap</code> (макро-геометрія для колишнього noise-fallback) видалені повністю разом з недосяжною fallback-гілкою в <code>TerrainGen_Build</code>. <code>SimplexNoise2</code>/<code>FBM2</code> лишились як прості noise-примітиви (тестові фікстури), нічого реального не підпирають.
   </div>
 </section>
 
@@ -2145,6 +2147,8 @@ MD_LOG_INFO("frame %llu dt=%.3f", g_logic_ctx.frame_index, g_logic_ctx.dt);</cod
     <tr><td><strong>KEN-MIG P4</strong></td><td>gamedata.base FCS binary parser; ItemDef[2048]; ResearchSystem + prereqs; LoadMods() + mod directory scan; 60 зон (WR_MAX_ZONES=128); BuildingIntegrity BFS; FactionSystem::LoadFromFcs; fauna configs 5 presets</td><td><span class="badge done">✓ 2026-05-23</span></td></tr>
     <tr><td><strong>KEN-MIG P5</strong></td><td>ShopInventory+PriceCalc (ShopSlot[32], ItemGrade, namespace PriceCalc); WageSystem PayDailyWages() 1/день(1440 тіків); ItemInstance(8B)+EquipmentSlots[7]=EquipmentComponent(64B); BuildingState phases+PowerGrid; RaceModifiers(6 рас)+XP soft-cap+TraitBitmask; ParryWindow CalcParryChance; ZoneState persistence (OnPlayerEnter+PurgeZone, 800m); DialogSystem ConditionEvaluator+DialogDef</td><td><span class="badge done">✓ 2026-05-24</span></td></tr>
     <tr><td><strong>KEN-MIG P6</strong></td><td>7 BT need-survival leaves wired у BuildWanderBT Selector: <code>actSeekFood</code> (hunger+hysteresis), <code>actSeekBed</code> (fatigue+is_sleeping flag), <code>actSurgery</code> (FieldMedic≥10, 2× clinic), <code>actRepairSkeleton</code> (Engineering≥1, 2× station), <code>actVendorTend</code> (TickRestock), <code>actBuyFromVendor</code> (faction-wealth economy), <code>actRepairItem</code> (condition/s per Engineering); CombatDispatch: weapon(−2)/armour(−3) condition degradation per hit; FactionSystem::GetWealth/ModWealth; NpcDialogSystem (namespace md, E-key ImGui popup, SDL_GPU path)</td><td><span class="badge done">✓ 2026-05-24 · 1557 tests</span></td></tr>
+    <tr><td colspan="3" style="opacity:.55;font-size:12px;padding-top:10px">Ця таблиця не оновлювалась між 2026-05-24 і 2026-07-19 — за повну хронологію цього періоду дивись <code>CLAUDE_STATE.md</code> / <code>CLAUDE_HISTORY.md</code>.</td></tr>
+    <tr><td><strong>Terrain rewrite + procgen removal + LOD fix</strong></td><td>Термейн-шейдинг → per-pixel dominant-weight (єдиний <code>terrain_forward.slang</code>, <code>terrain_pom.slang</code>/<code>terrain_albedo_bake.slang</code> видалені); процедурна генерація термейну видалена повністю (<code>TerrainMaster</code>/<code>md_master_hmap</code>, недосяжна noise-fallback гілка, 2D Heightmap-панель) — реальні Kenshi-зони завжди в межах, процедурна генерація не існує і в оригінальному Kenshi; <code>world_hmap</code> мігровано <code>.r32</code>→raw <code>.r16</code> (виміряно ~5× швидше за PNG16); LOD T-junction фікс — <code>BuildLodIboStitched()</code>, межа кожного чанка завжди повної роздільності (кількісно підтверджено: розрив був до 19.4 м, тепер watertightness-тест + 0 вироджених трикутників на реальних даних)</td><td><span class="badge done">✓ 2026-07-19 · 1750 tests</span></td></tr>
   </table>
 </section>
 

@@ -195,6 +195,12 @@ struct OzzScratch {
     ozz::vector<ozz::math::Float4x4>       models;
     ozz::animation::SamplingJob::Context   ctx_a;
     ozz::animation::SamplingJob::Context   ctx_b;
+    // Posture/slider-pose delta scratch (ApplyPostureDelta) — dedicated
+    // context so re-sampling the posture clip twice per call doesn't thrash
+    // ctx_a/ctx_b's cached cursor state for the base/over clips.
+    ozz::vector<ozz::math::SoaTransform>   posture_neutral;
+    ozz::vector<ozz::math::SoaTransform>   posture_current;
+    ozz::animation::SamplingJob::Context   ctx_posture;
 };
 static thread_local OzzScratch g_scratch;
 
@@ -298,13 +304,74 @@ void OzzAnimator::ModelsToOutBones(
         mat4_identity(out_bones + b * 16);
 }
 
+// ── OzzAnimator::ApplyPostureDelta ────────────────────────────────────────────
+// Kenshi RE (editor_char_preview_sdlgpu.cpp's apply_slider): Posture/Shoulder-
+// set/Neck-position sliders map linearly to a time position on a dedicated
+// "postures"-style clip (setTimePosition(length * slider*0.01)). Composing
+// the RAW pose at that time directly would bake in whatever arbitrary pose
+// the clip happens to hold at the neutral slider value too — instead we
+// compute a LOCAL rotation delta between the neutral-time pose and the
+// current-time pose (conjugate(pose_neutral) * pose_current) and apply that
+// delta on top of the base animation's already-sampled local rotation. This
+// composes to an exact identity at the neutral slider value regardless of
+// the clip's absolute pose there, and bones the clip never actually animates
+// (single static keyframe) naturally produce an identity delta too, since
+// sampling a constant track at any two ratios returns the same quaternion —
+// no separate "which bones does this clip affect" mask needed.
+void OzzAnimator::ApplyPostureDelta(
+    ozz::vector<ozz::math::SoaTransform>& locals,
+    int posture_clip, float t_neutral, float t_current) const
+{
+    if (posture_clip < 0 || posture_clip >= (int)anims_.size() || !anims_[posture_clip]) return;
+    if (t_current == t_neutral) return;  // exact no-op — avoids 2 wasted SamplingJobs at default
+
+    const ozz::animation::Animation* anim = anims_[posture_clip].get();
+    const float dur = anim->duration();
+    const float ratio_n = (dur > 0.05f) ? fmodf(t_neutral,  dur) / dur : 0.f;
+    const float ratio_c = (dur > 0.05f) ? fmodf(t_current, dur) / dur : 0.f;
+
+    OzzScratch& sc = g_scratch;
+    sc.posture_neutral.resize(skel_->num_soa_joints());
+    sc.posture_current.resize(skel_->num_soa_joints());
+
+    if (sc.ctx_posture.max_tracks() < anim->num_tracks())
+        sc.ctx_posture.Resize(anim->num_tracks());
+
+    {
+        ozz::animation::SamplingJob sj;
+        sj.animation = anim;
+        sj.context   = &sc.ctx_posture;
+        sj.ratio     = ratio_n;
+        sj.output    = ozz::make_span(sc.posture_neutral);
+        if (!sj.Run()) return;
+    }
+    {
+        ozz::animation::SamplingJob sj;
+        sj.animation = anim;
+        sj.context   = &sc.ctx_posture;  // same clip's context — re-sample at a new ratio, standard scrub usage
+        sj.ratio     = ratio_c;
+        sj.output    = ozz::make_span(sc.posture_current);
+        if (!sj.Run()) return;
+    }
+
+    using namespace ozz::math;
+    const int num_soa = (int)locals.size();
+    for (int slot = 0; slot < num_soa && slot < (int)sc.posture_neutral.size(); ++slot) {
+        const SoaQuaternion delta = Conjugate(sc.posture_neutral[slot].rotation)
+                                   * sc.posture_current[slot].rotation;
+        locals[slot].rotation = locals[slot].rotation * delta;
+    }
+}
+
 // ── OzzAnimator::Sample ───────────────────────────────────────────────────────
 
 void OzzAnimator::Sample(int clip_idx, float time_s,
                          float* out_bones,
                          float* out_model_xyz,
                          const float (*bone_scales)[3],
-                         const float (*pos_scales)[3]) const {
+                         const float (*pos_scales)[3],
+                         int posture_clip, float posture_t_neutral,
+                         float posture_t_current) const {
     if (!loaded_ || clip_idx < 0 || clip_idx >= (int)anims_.size()
                  || !anims_[clip_idx]) {
         for (int b = 0; b < OZZ_ANIM_MAX_BONES; ++b) mat4_identity(out_bones + b*16);
@@ -334,6 +401,8 @@ void OzzAnimator::Sample(int clip_idx, float time_s,
         return;
     }
 
+    ApplyPostureDelta(sc.locals_a, posture_clip, posture_t_neutral, posture_t_current);
+
     if (pos_scales)
         ScaleSoATranslations(sc.locals_a, bone_to_ozz_, bone_count_,
                              skel_->num_joints(), pos_scales);
@@ -356,16 +425,22 @@ void OzzAnimator::Blend(int base_clip, float base_t,
                         int over_clip,  float over_t,
                         const bool* /*lower_mask*/, float* out_bones,
                         const float (*bone_scales)[3],
-                        const float (*pos_scales)[3]) const {
+                        const float (*pos_scales)[3],
+                        int posture_clip, float posture_t_neutral,
+                        float posture_t_current) const {
     if (!loaded_) {
         for (int b = 0; b < OZZ_ANIM_MAX_BONES; ++b) mat4_identity(out_bones + b*16);
         return;
     }
     if (base_clip < 0 || base_clip >= (int)anims_.size() || !anims_[base_clip]) {
-        Sample(over_clip, over_t, out_bones);  return;
+        Sample(over_clip, over_t, out_bones, nullptr, bone_scales, pos_scales,
+               posture_clip, posture_t_neutral, posture_t_current);
+        return;
     }
     if (over_clip < 0 || over_clip >= (int)anims_.size() || !anims_[over_clip]) {
-        Sample(base_clip, base_t, out_bones);  return;
+        Sample(base_clip, base_t, out_bones, nullptr, bone_scales, pos_scales,
+               posture_clip, posture_t_neutral, posture_t_current);
+        return;
     }
 
     const ozz::animation::Animation* anim_base = anims_[base_clip].get();
@@ -419,6 +494,8 @@ void OzzAnimator::Blend(int base_clip, float base_t,
     bj.layers     = ozz::make_span(layers);
     bj.output     = ozz::make_span(sc.blended);
     if (!bj.Run()) { Sample(base_clip, base_t, out_bones); return; }
+
+    ApplyPostureDelta(sc.blended, posture_clip, posture_t_neutral, posture_t_current);
 
     if (pos_scales)
         ScaleSoATranslations(sc.blended, bone_to_ozz_, bone_count_,

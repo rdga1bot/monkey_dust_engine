@@ -22,12 +22,19 @@ static constexpr int BODY_MAX_BONES = 64;  // must equal OZZ_ANIM_MAX_BONES
 struct CharBodyState {
     float bone_scales[BODY_MAX_BONES][3];  // vertex scale per bone, default {1,1,1}
     float pos_scales [BODY_MAX_BONES][3];  // positional scale, default {1,1,1}
+    // Raw chardef body[4] Posture slider value (Kenshi range 0-70, neutral=35)
+    // — NOT a scale, kept separately for OzzAnimator's posture pose-delta
+    // (ApplyPostureDelta): NpcRender maps this to a time position on the
+    // "postures" clip (t = clip_duration * posture * 0.01, matching Kenshi's
+    // own setTimePosition(length*slider*0.01) — see char_customization.cpp).
+    float posture = 35.f;
 
     void Reset() {
         for (int b = 0; b < BODY_MAX_BONES; ++b) {
             bone_scales[b][0] = bone_scales[b][1] = bone_scales[b][2] = 1.f;
             pos_scales [b][0] = pos_scales [b][1] = pos_scales [b][2] = 1.f;
         }
+        posture = 35.f;
     }
 };
 
@@ -36,4 +43,5 @@ struct CharBodyState {
 // multiply skill/hunger modifiers on top — avoids drift from accumulated deltas.
 struct BodyBaseline {
     float bone_scales[BODY_MAX_BONES][3];
+    float posture = 35.f;
 };

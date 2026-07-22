@@ -13,6 +13,8 @@ on:
       - 'include/**'
       - 'src/**'
       - 'CMakeLists.txt'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch: {}
 
 # ── Підхід 1: GitHub Releases artifact ───────────────────────────────────────
 # engine CI (public, ∞ хв) будує libmonkey_dust_engine.a + усі deps

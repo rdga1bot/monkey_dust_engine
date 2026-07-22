@@ -158,7 +158,12 @@ public:
         return MdEntity(e.id());
     }
     void Destroy(MdEntity e) { Handle(e).destruct(); }
-    bool Valid(MdEntity e) const { return Handle(e).is_alive(); }
+    // flecs's ecs_is_alive() requires entity != 0 (ecs_check, aborts in
+    // debug builds otherwise) — MdEntity::Null() is id_=0, so it must be
+    // rejected here before ever reaching is_alive().
+    bool Valid(MdEntity e) const {
+        return e != MdEntity::Null() && Handle(e).is_alive();
+    }
 
     template<typename T>
     void Remove(MdEntity e) { Handle(e).template remove<T>(); }
@@ -184,8 +189,17 @@ public:
 
     // Destroys every MdRegistry-managed entity (tagged MdManagedTag) —
     // does NOT touch flecs's own internal bootstrap/module entities.
+    // defer_begin/defer_end: destructing an entity mid-.each() mutates its
+    // own table (locked for the duration of iteration) — flecs's internal
+    // ecs_assert(!table->_->lock) catches this in debug builds (SIGABRT);
+    // in release (NDEBUG) the assert compiles away and the mutation still
+    // happens, silently violating "no reg mutation during view.each()".
+    // Deferring queues the destructs until after iteration completes.
     void Clear() {
-        Raw().query<MdManagedTag>().each([](flecs::entity e, MdManagedTag) { e.destruct(); });
+        auto& w = Raw();
+        w.defer_begin();
+        w.query<MdManagedTag>().each([](flecs::entity e, MdManagedTag) { e.destruct(); });
+        w.defer_end();
     }
 
     // Reconstruct an MdEntity from a stored uint32 index (e.g.

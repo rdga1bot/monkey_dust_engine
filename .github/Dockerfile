@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # ── Системні пакети ───────────────────────────────────────────────────────────
 RUN apt-get update -q && apt-get install -y --no-install-recommends \
-    cmake ninja-build ccache git ca-certificates \
+    build-essential cmake ninja-build ccache git ca-certificates \
     liblua5.4-dev \
     libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
     libxkbcommon-dev libxkbcommon-x11-dev \

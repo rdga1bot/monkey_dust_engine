@@ -63,11 +63,14 @@ jobs:
       # renderdoc_app.h: single header, MIT-licensed, from RenderDoc SDK.
       # Locally found via /usr/include (RenderDoc apt/pacman package) — the
       # CI runner has no such install, so fetch just this one header instead.
+      # Pinned to a commit SHA (not the mutable v1.x branch) + checksummed,
+      # same reproducibility bar as the JoltPhysics tag pin above.
       - name: Fetch renderdoc_app.h
         run: |
           mkdir -p third_party/renderdoc
           curl -sSfL -o third_party/renderdoc/renderdoc_app.h \
-            https://raw.githubusercontent.com/baldurk/renderdoc/v1.x/renderdoc/api/app/renderdoc_app.h
+            https://raw.githubusercontent.com/baldurk/renderdoc/f8c90b0032c3e9c87a692ed640b91e53d9c139ee/renderdoc/api/app/renderdoc_app.h
+          echo "b7005e7dc34c3635046868bbd76d81b9b055aede0f56daa0bd39fedee0639ffb  third_party/renderdoc/renderdoc_app.h" | sha256sum -c -
 
       - name: Install system dependencies
         run: |

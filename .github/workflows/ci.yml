@@ -60,6 +60,15 @@ jobs:
             https://github.com/guillaumeblanc/ozz-animation \
             third_party/ozz-animation
 
+      # renderdoc_app.h: single header, MIT-licensed, from RenderDoc SDK.
+      # Locally found via /usr/include (RenderDoc apt/pacman package) — the
+      # CI runner has no such install, so fetch just this one header instead.
+      - name: Fetch renderdoc_app.h
+        run: |
+          mkdir -p third_party/renderdoc
+          curl -sSfL -o third_party/renderdoc/renderdoc_app.h \
+            https://raw.githubusercontent.com/baldurk/renderdoc/v1.x/renderdoc/api/app/renderdoc_app.h
+
       - name: Install system dependencies
         run: |
           sudo apt-get update -q
@@ -106,6 +115,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_FLAGS=-I$(pwd)/third_party/renderdoc \
             -DUSE_SDL3=ON \
             -DMD_STATIC_DEPS=OFF \
             -DCMAKE_PREFIX_PATH=/opt/sdl3

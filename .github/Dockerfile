@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # ── Системні пакети ───────────────────────────────────────────────────────────
 RUN apt-get update -q && apt-get install -y --no-install-recommends \
-    cmake ninja-build ccache git ca-certificates \
+    build-essential cmake ninja-build ccache git ca-certificates \
     liblua5.4-dev \
     libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
     libxkbcommon-dev libxkbcommon-x11-dev \
@@ -23,7 +23,7 @@ RUN apt-get update -q && apt-get install -y --no-install-recommends \
 # ── SDL3 (статично) ───────────────────────────────────────────────────────────
 RUN git clone --depth=1 --branch release-3.4.8 \
       https://github.com/libsdl-org/SDL /tmp/SDL3_src && \
-    cmake -S /tmp/SDL3_src -B /tmp/SDL3_build \
+    cmake -S /tmp/SDL3_src -B /tmp/SDL3_build -G Ninja \
       -DSDL_STATIC=ON -DSDL_SHARED=OFF \
       -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF \
       -DSDL_X11_XSCRNSAVER=OFF -DSDL_X11_XTEST=OFF \

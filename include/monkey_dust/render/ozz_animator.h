@@ -49,20 +49,37 @@ public:
     // pos_scales:    optional float[OZZ_ANIM_MAX_BONES][3] per-bone translation scale
     //   Applied to SoaTransform::translation before LocalToModel (stretches limbs).
     //   Matches editor's setBonePositionalSize / s_posScale formula.
+    // posture_clip/t_neutral/t_current: optional slider-pose delta (Kenshi
+    // Posture/Shoulder-set/Neck-position sliders map to animation time on a
+    // "postures"-style clip). Composed as a LOCAL rotation delta — conjugate(
+    // pose_at(t_neutral)) * pose_at(t_current) — onto every bone BEFORE
+    // LocalToModel, so posture_clip<0 or t_current==t_neutral is an exact
+    // no-op (identity delta), and bones that clip doesn't animate (single
+    // static keyframe) also naturally get an identity delta since sampling
+    // a constant track at any ratio returns the same pose. Matches
+    // tools/editor/editor_char_preview_sdlgpu.cpp's apply_slider exactly,
+    // just ported to the real gameplay skinning path instead of the
+    // editor-only standalone cgltf loader. See ozz_animator.cpp's
+    // ApplyPostureDelta for the SoA quaternion math.
     void Sample(int clip_idx, float time_s,
                 float* out_bones,
                 float* out_model_xyz = nullptr,
                 const float (*bone_scales)[3] = nullptr,
-                const float (*pos_scales)[3]  = nullptr) const;
+                const float (*pos_scales)[3]  = nullptr,
+                int posture_clip = -1, float posture_t_neutral = 0.f,
+                float posture_t_current = 0.f) const;
 
     // Upper/lower body split:
     //   lower_mask[b]=true  → bone b driven by over_clip (lower body walk)
     //   lower_mask[b]=false → bone b driven by base_clip (upper body walk / full)
+    // posture_clip/t_neutral/t_current: see Sample's doc comment above.
     void Blend(int base_clip, float base_t,
                int over_clip,  float over_t,
                const bool* lower_mask, float* out_bones,
                const float (*bone_scales)[3] = nullptr,
-               const float (*pos_scales)[3]  = nullptr) const;
+               const float (*pos_scales)[3]  = nullptr,
+               int posture_clip = -1, float posture_t_neutral = 0.f,
+               float posture_t_current = 0.f) const;
 
     // Output raw world matrices per bone (before inv_bind multiply).
     // Used by editor preview: applies its own scale formula (s_posScale + s_boneScales).
@@ -100,4 +117,9 @@ private:
                           float* out_bones,
                           float* out_model_xyz,
                           const float (*bone_scales)[3] = nullptr) const;
+
+    // See Sample()'s doc comment. No-op if posture_clip < 0 or times equal.
+    void ApplyPostureDelta(ozz::vector<ozz::math::SoaTransform>& locals,
+                            int posture_clip, float t_neutral,
+                            float t_current) const;
 };

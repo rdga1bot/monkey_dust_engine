@@ -1,4 +1,5 @@
 #include <monkey_dust/world/transform_soa.h>
+#include <monkey_dust/world/transform_soa_simd.h>
 #include <monkey_dust/world/world_transform.h>
 #include <monkey_dust/ecs/registry.h>
 #include <monkey_dust/platform/md_log.h>
@@ -168,18 +169,10 @@ void TransformSoA::AdvanceFrame() {
 
 MD_HOT void TransformSoA::BulkComputeDistSq(float cam_x, float cam_z) {
 #ifdef __AVX2__
-    __m256 cx8 = _mm256_set1_ps(cam_x);
-    __m256 cz8 = _mm256_set1_ps(cam_z);
-    int n8 = active_count & ~7;
-    for (int i = 0; i < n8; i += 8) {
-        __m256 dx = _mm256_sub_ps(_mm256_load_ps(px + i), cx8);
-        __m256 dz = _mm256_sub_ps(_mm256_load_ps(pz + i), cz8);
-        _mm256_store_ps(dist_sq + i, _mm256_fmadd_ps(dx, dx, _mm256_mul_ps(dz, dz)));
-    }
-    for (int i = n8; i < active_count; ++i) {
-        float dx = px[i] - cam_x, dz = pz[i] - cam_z;
-        dist_sq[i] = dx*dx + dz*dz;
-    }
+    // Extracted to transform_soa_simd_avx2.cpp (Phase 2.2/3 audit) — same
+    // math as before, now independently testable/callable regardless of
+    // this TU's own compile flags. Behavior unchanged.
+    md::simd::ComputeDistSqAVX2(px, pz, cam_x, cam_z, dist_sq, active_count);
 #elif defined(__SSE2__)
     __m128 cx4 = _mm_set1_ps(cam_x);
     __m128 cz4 = _mm_set1_ps(cam_z);
@@ -194,10 +187,7 @@ MD_HOT void TransformSoA::BulkComputeDistSq(float cam_x, float cam_z) {
         dist_sq[i] = dx*dx + dz*dz;
     }
 #else
-    for (int i = 0; i < active_count; ++i) {
-        float dx = px[i] - cam_x, dz = pz[i] - cam_z;
-        dist_sq[i] = dx*dx + dz*dz;
-    }
+    md::simd::ComputeDistSqScalar(px, pz, cam_x, cam_z, dist_sq, active_count);
 #endif
 }
 

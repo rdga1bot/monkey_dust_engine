@@ -1,6 +1,7 @@
 #pragma once
 #include <monkey_dust/ecs/md_entity.h>
 #include <monkey_dust/ecs/registry.h>
+#include <monkey_dust/platform/md_log.h>
 #include <flecs.h>
 #include <tuple>
 #include <type_traits>
@@ -195,7 +196,41 @@ public:
     // in release (NDEBUG) the assert compiles away and the mutation still
     // happens, silently violating "no reg mutation during view.each()".
     // Deferring queues the destructs until after iteration completes.
+    // Point 1 (concurrency audit): Clear() is NOT stage-aware (builds a
+    // fresh, non-static query and calls .each() directly, bypassing
+    // MdEach()'s t_stage_override check) — see job_graph.h's caveat. No
+    // current call site reaches Clear() from inside a JobGraph batch (both
+    // real callers — editor_toolbar.cpp, scene_serializer.h — are
+    // editor-only, main-thread, outside JobGraph::Run()'s window), so this
+    // is a latent-risk guard, not a fix for an active bug: it turns future
+    // silent UB into a loud signal instead. Deliberately NOT gated behind
+    // #ifndef NDEBUG: CLAUDE.md's own documented default build is
+    // `-DCMAKE_BUILD_TYPE=Release` (confirmed via build/CMakeCache.txt), so
+    // an NDEBUG-gated check would never fire in the configuration this
+    // project actually builds/tests with day to day. The check itself is a
+    // single pointer compare — negligible next to Clear()'s own query+.each()
+    // cost — so there is no real reason to gate it at all.
+    //
+    // Early-return (not just log-and-continue): Clear()'s body calls
+    // defer_begin()/query().each()/defer_end() on the RAW (non-stage) world
+    // — running that while a JobGraph wave's readonly_begin(true) is active
+    // is exactly the "structural op during readonly mode" hazard flecs's own
+    // FLECS_SANITIZE checks (Debug builds, engine/CMakeLists.txt) assert on.
+    // Confirmed by running this guard's own test under
+    // -DCMAKE_BUILD_TYPE=Debug -DMD_SANITIZE=asan (Phase 4.4 audit): logging
+    // alone still let Clear() run its unsafe body and abort — skipping the
+    // body once the hazard is detected is the actual fix, not just a louder
+    // warning.
     void Clear() {
+        if (md_registry_detail::t_stage_override != nullptr) {
+            MD_LOG(MD_LOG_ERROR,
+                   "[MdRegistry] Clear() called while a JobGraph stage is "
+                   "active — Clear()'s query+.each() does not route through "
+                   "t_stage_override and will race with concurrent staged "
+                   "query iteration. Move this call outside the JobGraph "
+                   "batch. Clear() was NOT executed.");
+            return;
+        }
         auto& w = Raw();
         w.defer_begin();
         w.query<MdManagedTag>().each([](flecs::entity e, MdManagedTag) { e.destruct(); });

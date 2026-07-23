@@ -70,6 +70,19 @@ void JobGraph::Run() {
     // batch that WRITES R must be registered before P (same check shape
     // as RenderPassGraph::Validate() — catches wrong registration order,
     // does not by itself make anything run in parallel, see header note).
+    //
+    // Point 3 (concurrency audit): escalated WARNING -> ERROR. Deliberately
+    // NOT an abort()/assert() — searched engine/ and game/ for an existing
+    // "debug-build critical-invariant" abort pattern to reuse (as originally
+    // requested) and found none (only vendored third-party Jolt/glm/doctest
+    // call std::abort); CLAUDE.md's own hard rule is "no assert()" project-
+    // wide. Also: this project's documented default build is
+    // `-DCMAKE_BUILD_TYPE=Release` (confirmed via build/CMakeCache.txt), so
+    // any #ifndef NDEBUG-gated abort would silently never fire in the
+    // configuration actually used day to day — discovered directly while
+    // building Point 1's guard against this same build. MD_LOG_ERROR is
+    // always-on (no NDEBUG gate) and loud enough to be noticed without
+    // violating either constraint.
     for (int pi = 0; pi < count_; ++pi) {
         const Entry& P = entries_[pi];
         for (int ri = 0; ri < P.desc.read_count; ++ri) {
@@ -82,7 +95,7 @@ void JobGraph::Run() {
             }
             if (writer_idx < 0 || writer_idx == pi) continue;  // no writer, or self (RMW)
             if (writer_idx > pi) {
-                MD_LOG(MD_LOG_WARNING,
+                MD_LOG(MD_LOG_ERROR,
                        "[JobGraph] '%s' reads resource 0x%08x but writer '%s' "
                        "is registered AFTER it", P.name, res, entries_[writer_idx].name);
             }
@@ -90,17 +103,25 @@ void JobGraph::Run() {
     }
 
     // Wave assignment: wave[i] = 1 + max(wave[j]) over every j < i this
-    // batch Conflicts() with, or 0 if none. Same-wave batches have no
+    // batch MustSerialize() with, or 0 if none. Same-wave batches have no
     // declared conflict with each other or with anything in an earlier
     // wave, so they're independent enough to run concurrently (see the
     // header's structural-op caveat — declared-independent is necessary,
     // not sufficient, for a batch that touches MdRegistry directly).
+    //
+    // Point 2: MustSerialize() adds allows_concurrent==false as an
+    // UNCONDITIONAL serialization requirement, on top of Conflicts()'s
+    // tag-overlap check — a batch that performs unstaged structural ECS
+    // ops must never share a wave with anything, regardless of tags.
+    auto must_serialize = [](const JobBatchDesc& a, const JobBatchDesc& b) {
+        return !a.allows_concurrent || !b.allows_concurrent || Conflicts(a, b);
+    };
     int wave[MAX_BATCHES] = {};
     int max_wave = 0;
     for (int i = 0; i < count_; ++i) {
         int w = 0;
         for (int j = 0; j < i; ++j)
-            if (Conflicts(entries_[j].desc, entries_[i].desc) && wave[j] + 1 > w)
+            if (must_serialize(entries_[j].desc, entries_[i].desc) && wave[j] + 1 > w)
                 w = wave[j] + 1;
         wave[i] = w;
         if (w > max_wave) max_wave = w;
@@ -140,6 +161,19 @@ void JobGraph::Run() {
             }
             JobSystem::Get().Flush();
             raw.readonly_end();
+            // Phase 4.4 (audit): release each used slot's stage claim right
+            // after this wave, instead of leaving it in the global
+            // g_staged_jobs array until the next Run() reassigns it (or,
+            // worst case, until process exit). ASan caught a real
+            // heap-use-after-free at teardown: a later, unrelated
+            // set_stage_count() call elsewhere (e.g. a test manually
+            // constructing its own stage) can resize/reallocate the main
+            // world's internal stage array, invalidating a stale claim this
+            // array was still holding from a previous wave — flecs::world's
+            // move-assignment (world_t* -> nullptr) properly calls release()
+            // first (see flecs.h's world::operator=(world&&)), so this is a
+            // real fix, not just quieting the sanitizer.
+            for (int i = 0; i < slot; ++i) g_staged_jobs[i].stage = flecs::world(nullptr);
         } else {
             for (int i = 0; i < count_; ++i)
                 if (wave[i] == w) entries_[i].fn(entries_[i].user);

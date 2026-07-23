@@ -1,4 +1,5 @@
 #include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/gpu_resource_tracker.h>
 #include <monkey_dust/platform/md_log.h>
 #include <cstdlib>
 #include <cstdio>
@@ -479,6 +480,7 @@ bool GpuPipeline::Create(const Desc& desc) {
         SDL_ReleaseGPUShader(dev, vert_sh);
         SDL_ReleaseGPUShader(dev, frag_sh);
         sdl_pipeline_ = cached;
+        md::GpuResourceTracker::Get().OnPipelineCreate();
         return true;
     }
 
@@ -499,6 +501,7 @@ bool GpuPipeline::Create(const Desc& desc) {
                SDL_GetError());
         return false;
     }
+    md::GpuResourceTracker::Get().OnPipelineCreate();
     MD_LOG(MD_LOG_INFO, "[GpuPipeline] SDL_GPU pipeline created: %s / %s",
            desc.vert_path, desc.frag_path);
     return true;
@@ -513,6 +516,7 @@ void GpuPipeline::Destroy() {
     if (sdl_pipeline_) {
         SDL_ReleaseGPUGraphicsPipeline(md::GpuDevice::Get().SDLDevice(), sdl_pipeline_);
         sdl_pipeline_ = nullptr;
+        md::GpuResourceTracker::Get().OnPipelineDestroy();
     }
 #endif
 }
@@ -577,8 +581,10 @@ bool GpuComputePipeline::Create(const Desc& desc) {
             if (!sdl_pipeline_)
                 MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] SDL_CreateGPUComputePipeline %s: %s",
                        desc.glsl_path, SDL_GetError());
-            else
+            else {
                 MD_LOG(MD_LOG_INFO, "[GpuComputePipeline] SDL_GPU pipeline: %s", desc.glsl_path);
+                md::GpuResourceTracker::Get().OnComputePipelineCreate();
+            }
         } else {
             MD_LOG(MD_LOG_WARNING, "[GpuComputePipeline] SPIR-V not found: %s", spv);
         }
@@ -594,6 +600,7 @@ void GpuComputePipeline::Destroy() {
     if (sdl_pipeline_) {
         SDL_ReleaseGPUComputePipeline(md::GpuDevice::Get().SDLDevice(), sdl_pipeline_);
         sdl_pipeline_ = nullptr;
+        md::GpuResourceTracker::Get().OnComputePipelineDestroy();
     }
 #endif
 }

@@ -1,4 +1,5 @@
 #include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/gpu_resource_tracker.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/md_fs.h>
 #include <monkey_dust/platform/job_system.h>
@@ -156,6 +157,7 @@ void GpuDepthTexture::Init(int w, int h, bool shadow_border) {
     si.min_lod        = 0.0f;
     si.max_lod        = 0.0f;
     sdl_sampler_ = SDL_CreateGPUSampler(dev, &si);
+    md::GpuResourceTracker::Get().OnDepthTextureCreate();
 #endif
     (void)shadow_border;
 }
@@ -164,7 +166,11 @@ void GpuDepthTexture::Shutdown() {
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     if (sdl_sampler_) { SDL_ReleaseGPUSampler(dev, sdl_sampler_); sdl_sampler_ = nullptr; }
-    if (sdl_tex_)     { SDL_ReleaseGPUTexture(dev, sdl_tex_);     sdl_tex_     = nullptr; }
+    if (sdl_tex_)     {
+        SDL_ReleaseGPUTexture(dev, sdl_tex_);
+        sdl_tex_ = nullptr;
+        md::GpuResourceTracker::Get().OnDepthTextureDestroy();
+    }
 #endif
     w_ = h_ = 0;
 }
@@ -194,6 +200,7 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
         MD_LOG(MD_LOG_WARNING, "[GpuStaticBuffer] SDL_CreateGPUBuffer failed: %s", SDL_GetError());
         return;
     }
+    md::GpuResourceTracker::Get().OnBufferCreate();
 
     // One-shot upload: staging transfer buffer → device buffer.
     SDL_GPUTransferBufferCreateInfo tbuf_info = {};
@@ -240,6 +247,8 @@ void GpuStaticBuffer::InitEmpty(unsigned int target, uint32_t size) {
     sdl_buf_ = SDL_CreateGPUBuffer(dev, &buf_info);
     if (!sdl_buf_)
         MD_LOG(MD_LOG_WARNING, "[GpuStaticBuffer] InitEmpty: SDL_CreateGPUBuffer failed: %s", SDL_GetError());
+    else
+        md::GpuResourceTracker::Get().OnBufferCreate();
 #else
     (void)target; (void)size;
 #endif
@@ -323,6 +332,7 @@ void GpuStaticBuffer::Shutdown() {
     if (sdl_buf_) {
         SDL_ReleaseGPUBuffer(md::GpuDevice::Get().SDLDevice(), sdl_buf_);
         sdl_buf_ = nullptr;
+        md::GpuResourceTracker::Get().OnBufferDestroy();
     }
 #endif
 }
@@ -395,6 +405,7 @@ bool GpuTexture::InitRenderTarget(int w, int h, const GpuSamplerDesc& s) {
         MD_LOG(MD_LOG_WARNING, "[GpuTexture] InitRenderTarget SDL_CreateGPUTexture failed: %s", SDL_GetError());
         return false;
     }
+    md::GpuResourceTracker::Get().OnTextureCreate();
     sdl_sampler_ = CreateSDLSampler(dev, s);
     return true;
 #else
@@ -424,6 +435,7 @@ bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSam
             MD_LOG(MD_LOG_WARNING, "[GpuTexture] SDL_CreateGPUTexture failed: %s", SDL_GetError());
             return false;
         }
+        md::GpuResourceTracker::Get().OnTextureCreate();
 
         uint32_t upload_size = (uint32_t)(w * h * 4);
         SDL_GPUTransferBufferCreateInfo tbuf = {};
@@ -596,6 +608,7 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
         for (int i=0;i<count;++i) md::fs_free(layers[i].buf);
         free(layers); return false;
     }
+    md::GpuResourceTracker::Get().OnTextureCreate();
     fprintf(stderr, "[DDS array] texture created OK\n");
 
     SDL_GPUTransferBufferCreateInfo tbci = {};
@@ -604,6 +617,7 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
     SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbci);
     if (!tb) {
         SDL_ReleaseGPUTexture(dev, sdl_tex_); sdl_tex_ = nullptr;
+        md::GpuResourceTracker::Get().OnTextureDestroy();
         for (int i=0;i<count;++i) md::fs_free(layers[i].buf);
         free(layers); return false;
     }
@@ -625,6 +639,7 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
         fprintf(stderr, "[DDS array] AcquireGPUCommandBuffer returned NULL!\n");
         SDL_ReleaseGPUTransferBuffer(dev, tb);
         SDL_ReleaseGPUTexture(dev, sdl_tex_); sdl_tex_ = nullptr;
+        md::GpuResourceTracker::Get().OnTextureDestroy();
         for (int i=0;i<count;++i) md::fs_free(layers[i].buf);
         free(layers); return false;
     }
@@ -672,7 +687,11 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
     for (int i=0;i<count;++i) md::fs_free(layers[i].buf);
     free(layers);
 
-    if (!sdl_sampler_) { SDL_ReleaseGPUTexture(dev, sdl_tex_); sdl_tex_ = nullptr; return false; }
+    if (!sdl_sampler_) {
+        SDL_ReleaseGPUTexture(dev, sdl_tex_); sdl_tex_ = nullptr;
+        md::GpuResourceTracker::Get().OnTextureDestroy();
+        return false;
+    }
     return true;
 }
 #endif // MD_SDL_GPU (InitFromDDSArray)
@@ -681,7 +700,11 @@ void GpuTexture::Shutdown() {
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     if (sdl_sampler_) { SDL_ReleaseGPUSampler(dev, sdl_sampler_); sdl_sampler_ = nullptr; }
-    if (sdl_tex_)     { SDL_ReleaseGPUTexture(dev, sdl_tex_);     sdl_tex_     = nullptr; }
+    if (sdl_tex_) {
+        SDL_ReleaseGPUTexture(dev, sdl_tex_);
+        sdl_tex_ = nullptr;
+        md::GpuResourceTracker::Get().OnTextureDestroy();
+    }
 #endif
 #ifndef MD_SDL_GPU
     if (id_) { glDeleteTextures(1, &id_); id_ = 0; }

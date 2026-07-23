@@ -88,6 +88,18 @@ struct JobBatchDesc {
     uint32_t writes[MAX_TAGS] = {};
     int      read_count  = 0;
     int      write_count = 0;
+
+    // Point 2 (concurrency audit): true (default) means Conflicts()'s
+    // declared-tag overlap is a SUFFICIENT check for whether this batch may
+    // share a wave with another. Set to false for a batch whose call tree
+    // performs ANY structural ECS operation (Emplace/Remove/Create/Destroy)
+    // NOT routed through MdRegistry::StagedHandle() — such a batch must run
+    // alone in its own wave regardless of declared tags, since a structural
+    // op relocates flecs archetype storage and can invalidate a
+    // concurrently-held reference on a COMPLETELY UNRELATED entity in
+    // another batch, even with zero tag overlap (see this header's caveat
+    // above). Run() enforces this independent of Conflicts().
+    bool allows_concurrent = true;
 };
 
 // Runs one batch's own gather->Submit(...)xN->Flush() sequence. `user` is
@@ -104,8 +116,10 @@ public:
     bool AddBatch(const char* name, const JobBatchDesc& desc, JobBatchFn fn, void* user);
 
     // Validates registration order (a batch reading/writing resource R
-    // must be registered after every batch that writes R — logs a
-    // warning if violated, same shape as RenderPassGraph::Validate()).
+    // must be registered after every batch that writes R — logs
+    // MD_LOG_ERROR if violated, same shape as RenderPassGraph::Validate();
+    // always-on, not gated behind NDEBUG since this project's default build
+    // is Release — see job_graph.cpp's Run() for why).
     // Then groups registered batches into waves: a batch's wave is one
     // past the latest-registered batch it Conflicts() with (0 if none) —
     // same-wave batches have no declared conflict with each other. Wave 0

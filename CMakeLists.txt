@@ -28,6 +28,21 @@ endif()
 # PUBLIC so it propagates to every TU that includes flecs.h through the
 # `flecs` target, not just flecs.c's own compilation.
 target_compile_definitions(flecs PUBLIC $<$<CONFIG:Debug>:FLECS_SANITIZE>)
+# NOTE (Phase 2.1 concurrency audit, 2026-07-23): tests/test_job_graph_stress.cpp
+# + ThreadSanitizer confirmed a real data race in flecs's own
+# world->info.queries_ran_total counter (bare `++` via ecs_os_linc, flecs.h
+# ~L3944-3956, when FLECS_ACCURATE_COUNTERS is undefined — the current
+# state). Tried enabling FLECS_ACCURATE_COUNTERS here to fix it (routes the
+# increment through a real atomic, ecs_os_lainc/posix_lainc using
+# __sync_add_and_fetch) — but this vendored flecs 4.1.6's OWN
+# ecs_query_iter (flecs.c:87183) has a pre-existing type-mismatch bug: it
+# calls ecs_os_linc (expects int64_t*) on ecs_query_t::eval_count, which is
+# declared int32_t — enabling the define does not compile as shipped. NOT
+# fixing this here: it requires patching vendored third-party source
+# (flecs.c), out of this audit's scope without an explicit decision to do
+# so. See the audit report for the full writeup — the race itself is
+# confirmed benign (stats-only counter, never read by query-correctness
+# logic, no entity/component data corruption), just real UB.
 if(NOT TARGET Recast)
     set(RECASTNAVIGATION_DEMO     OFF CACHE BOOL "" FORCE)
     set(RECASTNAVIGATION_TESTS    OFF CACHE BOOL "" FORCE)
@@ -82,6 +97,9 @@ list(FILTER ENGINE_SRC EXCLUDE REGEX "glad_impl\\.cpp$")
 list(FILTER ENGINE_SRC EXCLUDE REGEX "cgltf_impl\\.cpp$")
 # MaskedOcclusionCulling files need specific per-file compile flags (see below).
 list(FILTER ENGINE_SRC EXCLUDE REGEX "vendor/moc/.*\\.cpp$")
+# transform_soa_simd_avx2.cpp needs its own unconditional -mavx2/-mfma (or
+# /arch:AVX2) regardless of build type/config — same reasoning as MOC below.
+list(FILTER ENGINE_SRC EXCLUDE REGEX "transform_soa_simd_avx2\\.cpp$")
 # embedded_fonts.cpp moved to tools/ — only editor needs it, not the engine lib.
 list(FILTER ENGINE_SRC EXCLUDE REGEX "vendor/fonts/.*\\.cpp$")
 add_library(monkey_dust_engine STATIC ${ENGINE_SRC})
@@ -149,6 +167,24 @@ else()
     set_source_files_properties(${MOC_AVX512_CPP} PROPERTIES
         COMPILE_FLAGS "/arch:SSE2")
 endif()
+
+# ── transform_soa_simd_avx2.cpp (Phase 2.2/3 audit) ──────────────────────────
+# Same per-TU-flags pattern as MOC above: this file must ALWAYS have AVX2
+# available regardless of CMAKE_BUILD_TYPE, so tests/test_transform_soa_simd_
+# parity.cpp can call md::simd::ComputeDistSqAVX2 directly and compare it
+# against the scalar reference on any build config, not just Release/MSVC
+# (the only configs that currently get a global AVX2 flag — see the
+# CMAKE_BUILD_TYPE STREQUAL "Release" block further down).
+set(TRANSFORM_SOA_AVX2_CPP src/world/transform_soa_simd_avx2.cpp)
+target_sources(monkey_dust_engine PRIVATE ${TRANSFORM_SOA_AVX2_CPP})
+if(NOT MSVC)
+    set_source_files_properties(${TRANSFORM_SOA_AVX2_CPP} PROPERTIES
+        COMPILE_FLAGS "-mavx2 -mfma")
+else()
+    set_source_files_properties(${TRANSFORM_SOA_AVX2_CPP} PROPERTIES
+        COMPILE_FLAGS "/arch:AVX2")
+endif()
+
 add_library(monkey_dust::engine ALIAS monkey_dust_engine)
 
 target_include_directories(monkey_dust_engine
@@ -234,8 +270,33 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     if(MSVC)
         target_compile_options(monkey_dust_engine PRIVATE /O2 /arch:AVX2)
     else()
-        target_compile_options(monkey_dust_engine PRIVATE -O2 -march=x86-64-v2)
+        # Phase 3 (audit): -march=x86-64-v2 alone has NO AVX2 — README.md's
+        # own documented target hardware is "Intel HD 520 (Skylake AVX2)",
+        # so transform_soa.cpp's #ifdef __AVX2__ BulkComputeDistSq/
+        # BulkComputeLOD path was silently compiling to its SSE2/scalar
+        # fallback on every Linux/Mac Release build, while Windows (MSVC
+        # /arch:AVX2 above) got the real vectorized path — an unintentional
+        # per-platform behavior/perf split, not a deliberate choice. Chose
+        # aligning flags over runtime CPU dispatch: the project's own
+        # documented minimum hardware already guarantees AVX2/FMA, so there
+        # is no compatibility need runtime dispatch would serve, and this is
+        # zero runtime overhead vs a dispatch branch on every call.
+        target_compile_options(monkey_dust_engine PRIVATE -O2 -march=x86-64-v2 -mavx2 -mfma)
     endif()
+endif()
+
+# ── Warning hygiene (Phase 4.3 audit) ────────────────────────────────────────
+# PRIVATE: only monkey_dust_engine's OWN sources get these flags, not the
+# vendored third_party/ subdirectories added above (flecs/Jolt/recast/ozz
+# each configure their own warning levels; recastnavigation's own CMakeLists
+# already sets -Wall/-Werror for its own targets independently of this).
+# Not -Werror here — this is a count-and-report exercise (see audit report),
+# not a "fix everything now" change; escalating to -Werror is a follow-up
+# decision once the current warning list has been triaged.
+if(MSVC)
+    target_compile_options(monkey_dust_engine PRIVATE /W4)
+else()
+    target_compile_options(monkey_dust_engine PRIVATE -Wall -Wextra)
 endif()
 
 # ── Precompiled Header (PCH) ─────────────────────────────────────────────────

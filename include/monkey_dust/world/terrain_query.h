@@ -16,8 +16,12 @@
 // full-world source since long before this rewrite, just never used here.
 // Bonus: md.terrain_height/probe-height now work ANYWHERE in the world,
 // not only inside whichever 9x9 window happens to be streamed in.
-// IsWalkable stays chunk-based (TerrainChunk::pass_grid has no atlas-wide
-// equivalent — out of scope for this phase, see plan's own scope notes).
+// Phase 9: IsWalkable ALSO now reads TerrainAtlas_IsWalkableWorld directly
+// — turns out TerrainChunk::pass_grid was never actually built from a
+// NavMesh despite its own doc comment (TerrainPassGrid_Build(NavMesh&) is
+// dead code nothing calls); the real population is a slope threshold over
+// heightmap data (terrain_gen.cpp's "PassGrid (lightweight, from heightmap
+// slope)" comment), just as atlas-derivable as height itself.
 
 #include <monkey_dust/world/terrain_chunk.h>
 #include <monkey_dust/world/chunk_def.h>
@@ -124,11 +128,25 @@ public:
         else             { nx = 0.f; ny = 1.f; nz = 0.f; }
     }
 
-    // L2-style geodata passability: O(1) walkability check via TerrainPassGrid.
-    // Returns true if world position (wx,wz) is in a walkable terrain cell.
-    // Used as cheap pre-filter in SenseSystem LOS before expensive Detour raycast.
+    // L2-style geodata passability: O(1) slope-threshold walkability check.
+    // Returns true if world position (wx,wz) is walkable (or unready/
+    // unmapped — safe default, never falsely blocks movement).
+    //
+    // Phase 9 (quadtree-LOD rewrite, see plan at
+    // /home/rdga1/.claude/plans/serene-pondering-teapot.md): now reads
+    // TerrainAtlas_IsWalkableWorld directly, same as GetHeight's Phase 5
+    // atlas path — works anywhere in the real Kenshi world, not only inside
+    // whichever 9x9 chunk window happens to be streamed in. Falls back to
+    // the old per-chunk TerrainPassGrid when Init() didn't get a real
+    // zone_ox/zone_oz (TerrainChunk::pass_grid itself is unchanged, still
+    // populated by TerrainGen_Build using the exact same slope rule).
     bool IsWalkable(float wx, float wz) const {
         if (!ready_) return true;
+        if (has_atlas_mapping_ && TerrainAtlas_Loaded()) {
+            float ax = wx - world_off_x_ + (float)zone_ox_ * chunk_size_;
+            float az = wz - world_off_z_ + (float)zone_oz_ * chunk_size_;
+            return TerrainAtlas_IsWalkableWorld(ax, az);
+        }
         float rel_x = wx - world_off_x_;
         float rel_z = wz - world_off_z_;
         int cx = (int)(rel_x / chunk_size_);

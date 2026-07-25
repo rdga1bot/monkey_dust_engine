@@ -290,6 +290,10 @@ void TerrainRenderer::Shutdown() {
     fallback_steepness_ssbo_.Shutdown();
     combo_alt_ssbo_.Shutdown();
     combo_alt_ready_ = false;
+    // Shared LOD IBOs (built once in Init(), see its own comment) — missed
+    // here until the 2026-07-25 ASan/Vulkan-validation pass (VUID-
+    // vkDestroyDevice-device-05137, "3 leaked objects") caught it.
+    for (int li = 0; li < TERRAIN_LOD_LEVELS; ++li) lod_ibo_shared_[li].Shutdown();
 
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();

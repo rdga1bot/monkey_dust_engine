@@ -74,7 +74,8 @@ jobs:
             cmake ninja-build ccache \
             liblua5.4-dev libgtest-dev \
             libx11-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libwayland-dev wayland-protocols libegl1-mesa-dev libdrm-dev libgbm-dev
+            libwayland-dev wayland-protocols libegl1-mesa-dev libdrm-dev libgbm-dev \
+            libvulkan-dev
 
       - name: Cache SDL3
         id: sdl3

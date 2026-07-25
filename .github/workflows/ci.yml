@@ -83,7 +83,8 @@ jobs:
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
             libxkbcommon-dev libxkbcommon-x11-dev \
             libwayland-dev wayland-protocols \
-            libegl1-mesa-dev libdrm-dev libgbm-dev
+            libegl1-mesa-dev libdrm-dev libgbm-dev \
+            libvulkan-dev
 
       # SDL3: кешується по версії — build тільки при cache miss (1 раз).
       - name: Cache SDL3

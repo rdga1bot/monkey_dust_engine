@@ -43,6 +43,13 @@ public:
     // must cover. Returns the real [min,max] height range found so the
     // caller can pass matching values to Draw() for decoding.
     bool Init(int zx0, int zy0, int zone_span, float& out_height_min, float& out_height_max);
+    // Re-samples TerrainAtlas over a NEW zone rectangle and replaces just the
+    // height texture — releases the old one first. Cheap relative to Init():
+    // does NOT recreate the pipeline or unit-patch mesh (those don't depend
+    // on which region is loaded). Call whenever the caller's tracked window
+    // (e.g. SceneRender::zone_ox/oz) actually moves; Init() must have
+    // succeeded once already (ready_ must be true).
+    bool RebuildRegion(int zx0, int zy0, int zone_span, float& out_height_min, float& out_height_max);
     void Shutdown();
     bool IsReady() const { return ready_; }
 

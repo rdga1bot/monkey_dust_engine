@@ -329,12 +329,24 @@ bool GpuPipeline::Create(const Desc& desc) {
     // These combinations are silent GPU hangs or garbage output on Gen9 ANV.
     // Fail fast at pipeline creation rather than debugging corrupted frames.
 #ifdef DEBUG
+    // 2026-07-25: vert_samplers>0 + frag_samplers>0 downgraded from a hard
+    // block to a log-only note. Was documented as a full-OS-freeze hang
+    // (~2026-06-01) — empirically DISPROVEN via an isolated standalone test
+    // (real vertex texture fetch displacing position + a fragment sampler,
+    // full draw call, Vulkan validation layer active): 0 hang, 0 crash, 0
+    // validation errors on this exact Intel HD 520/Mesa 26.1.4/SDL3 3.4.12
+    // stack. Driver/SDL3 updates since June most likely fixed the original
+    // bug. Kept as a log line (not a hard return false) since the test was
+    // a minimal isolated case, not this project's full shader complexity —
+    // if something unexpected shows up on a real vertex-texture-fetch
+    // shader, this line is where to look first, but it should no longer
+    // block legitimate work outright.
     if (desc.vert_samplers > 0 && desc.frag_samplers > 0) {
-        MD_LOG(MD_LOG_WARNING,
-            "[GpuPipeline] INVALID: vert_samplers=%u + frag_samplers=%u — "
-            "full OS freeze on Intel Gen9 ANV. Use VBO for vertex height reads. (%s)",
+        MD_LOG(MD_LOG_INFO,
+            "[GpuPipeline] vert_samplers=%u + frag_samplers=%u — previously "
+            "documented as a Gen9 ANV hang, disproven 2026-07-25 (isolated "
+            "test, current Mesa/SDL3). Proceeding. (%s)",
             desc.vert_samplers, desc.frag_samplers, desc.vert_path);
-        return false;
     }
     if (desc.vert_storage_bufs > 0 && desc.frag_samplers > 0) {
         MD_LOG(MD_LOG_WARNING,

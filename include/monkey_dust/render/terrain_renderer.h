@@ -39,9 +39,11 @@ public:
         float world_origin_x;   // world X → UV 0.5
         float world_origin_z;   // world Z → UV 0.5
         float world_to_uv;      // UV per metre (1 / kenshi_view_metres)
-        // Mesh-LOD dithered crossfade (task #43) — every caller that set
-        // this to nonzero was removed by task #158 (2026-07-15); kept in
-        // the layout for source/UBO compatibility, effectively always 0.
+        // Geomorph blend factor (task #182g, 2026-07-19 — repurposed from an
+        // unused dithered-discard crossfade, task #43/#158): 0=full detail,
+        // ramping to 1 as this chunk approaches its LOD-tier distance
+        // threshold. Which baked target it blends toward is picked by
+        // lod_tier below.
         float lod_blend;
         float cam_pos_ws[4];    // xyz=camera world position, w=unused (fog distance)
         // No longer consumed by the shader (was the per-chunk albedo-bake
@@ -52,6 +54,17 @@ public:
         // for this rewrite.
         float chunk_origin_x;
         float chunk_origin_z;
+        // 2026-07-25: which LOD tier is being drawn (0-3) — needed so vsMain
+        // knows which baked morph target (aMorphY / aMorphY23.x / aMorphY23.y)
+        // lod_blend above should lerp toward. Set from DrawRaw's own `lod`
+        // parameter (already used for IBO selection), so this is always in
+        // sync with the actual mesh being drawn. MUST stay positioned right
+        // here (immediately after chunk_origin_z) — this struct mirrors
+        // terrain_forward.slang's TerrainFwdVert byte-for-byte, and that
+        // shader struct doesn't declare pos_offset_x/z below at all (never
+        // read there), so lod_tier has to land before them, not after, or
+        // the shader would read pos_offset_x's bytes as lod_tier.
+        int   lod_tier;
         // Applied to aPos.xz BEFORE everything else (projection, vWorldPos,
         // vDist) — lets a single static, absolute-Kenshi-metres vertex
         // buffer (the game's whole-world compact-VBO background, task
@@ -59,9 +72,12 @@ public:
         // local terrain window (tnoff_x/z) without rebuilding the buffer
         // every time that window re-centres. Zero for every other caller
         // (BeginRawBatch defaults it to 0,0) — no behaviour change there.
+        // NOT read by the shader (see lod_tier's comment above) — kept at
+        // the end so every DrawRaw/DrawRawChunk caller's argument list
+        // stays unchanged.
         float pos_offset_x;
         float pos_offset_z;
-        // 112 bytes total
+        // 116 bytes total
     };
 
     // Fragment UBO: sun(32) + world_params(16) + ground_layers_a/b(32) + fog_color_near(16)
@@ -98,14 +114,6 @@ public:
     // the 2026-07-19 rewrite) but kept loaded; see biome_def.h's
     // kGroundNmlPaths comment. Must be called after Init().
     bool InitGroundTextureArray();
-
-    // Load the tiling generic-detail RGB tint texture used by
-    // terrain_forward.slang's albedo blend (was loaded as a side effect of
-    // InitPOM's detail_path parameter before the 2026-07-19 POM removal —
-    // now its own small entry point). Pass nullptr/empty to leave
-    // tex_detail_ unset (FillSamplerBindings falls back to a neutral white
-    // 1×1, same as any other missing texture).
-    bool InitDetailTexture(const char* path);
 
     // Load the stitched grass/dirt/road painted mask (md_overlay_mask.png,
     // tools/md_stitch_overlay_mask.py — R=grass,G=secondary,B=dirt,A=road,
@@ -240,7 +248,6 @@ private:
     bool        tex_loaded_        = false;
     bool        ground_array_ready_= false;
 
-    GpuTexture  tex_detail_;   // generic tiling detail-tint texture (InitDetailTexture)
     GpuTexture  tex_overlay_mask_;      // R=grass,G=secondary,B=dirt,A=road painted mask — zone-lookup path only
     bool        overlay_mask_ready_ = false;
     GpuTexture  tex_biome_blend_;       // R/G/B=neighbour base/slope/cliff idx, A=blend weight — zone-lookup path only
@@ -288,7 +295,7 @@ private:
     SDL_GPUSampler* fallback_mask_sampler_   = nullptr;
     SDL_GPUTexture* fallback_blend_tex_      = nullptr;
     SDL_GPUSampler* fallback_blend_sampler_  = nullptr;
-    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const;
+    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[4]) const;
     // Task #182: binding 0 = zoneGroundLayers (global), binding 1 = the
     // chunk's own steepness_ssbo (or fallback_steepness_ssbo_ if unbaked),
     // binding 2 = comboAlternates (global, see combo_alt_ssbo_'s doc comment;

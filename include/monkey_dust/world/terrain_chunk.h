@@ -55,11 +55,13 @@ static constexpr int   TERRAIN_LOD_IDX[3]    = {
 //     view and would produce excessive triangle counts at the game's
 //     closer thresholds.
 
-// Vertex layout (stride = 52 bytes):
-//   location 0: vec3 pos    (12)
-//   location 1: vec3 normal (12)
-//   location 2: vec2 uv     (8)   — world-space UV for texture tiling
-//   location 3: vec4 ground (16)  — unused, see ground_id's doc comment
+// Vertex layout (stride = 60 bytes):
+//   location 0: vec3 pos     (12)
+//   location 1: vec3 normal  (12)
+//   location 2: vec2 uv      (8)   — world-space UV for texture tiling
+//   location 3: vec4 ground  (16)  — local_u/local_v/morph_nx/morph_nz, see ground_id's doc comment
+//   location 4: float morphY (4)   — geomorph target Y for L0→L1
+//   location 5: vec2 morphY23 (8)  — geomorph target Y for L1→L2 (x), L2→L3 (y)
 struct TerrainVertex {
     float x, y, z;           // world position        offset  0
     float nx, ny, nz;         // normal                offset 12
@@ -93,8 +95,22 @@ struct TerrainVertex {
     float morph_nx;           // geomorph target normal.x for L0→L1
     float morph_nz;           // geomorph target normal.z for L0→L1
     float morph_y;            // geomorph target Y for L0→L1; guarded by TERRAIN_MORPH_DATA_ENABLED
+    // 2026-07-25: extends the same geomorph scheme to the two farther LOD
+    // transitions, which previously had no morph target at all ("aMorphY
+    // only covers this one transition, not LOD1->LOD2/LOD2->LOD3, which
+    // remain hard pops" — this comment used to say that; user-reported
+    // "flat plane overlapping detailed ground" at a fixed camera distance
+    // was exactly that hard pop). Position-only (no normal-morph target
+    // for these two, unlike morph_nx/nz above) — a deliberate scope cut:
+    // these are farther, less perceptually critical transitions, and
+    // skipping the normal target keeps the vertex growth to 8 bytes
+    // instead of 24. Computed the same parity-based neighbour-averaging
+    // as morph_y (terrain_gen.cpp's "Geomorph targets" pass), generalized
+    // to stride 2 (L1→L2) and stride 4 (L2→L3) — see TERRAIN_LOD_STEPS.
+    float morph_y2;           // geomorph target Y for L1→L2
+    float morph_y3;           // geomorph target Y for L2→L3
 };
-static_assert(sizeof(TerrainVertex) == 52, "TerrainVertex size mismatch");
+static_assert(sizeof(TerrainVertex) == 60, "TerrainVertex size mismatch");
 
 // Builds an LOD index buffer whose CHUNK BOUNDARY is always drawn at full
 // resolution (step=1), regardless of how decimated the interior is (step

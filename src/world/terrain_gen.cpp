@@ -1038,6 +1038,57 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
             s_verts_buf[vi].morph_nz = fnz;
         }
     }
+
+    // ── Geomorph targets (L1→L2 and L2→L3 transitions) ───────────────────────────
+    // 2026-07-25: same parity-based scheme as the L0→L1 pass above, generalized to
+    // stride 2 (L1→L2, TERRAIN_LOD_STEPS[1]=4) and stride 4 (L2→L3,
+    // TERRAIN_LOD_STEPS[2]=8) — every LOD tier is exactly double the previous, so
+    // the same odd/even-neighbour-average logic applies with "±1" replaced by
+    // "±step_from" and the parity test done at step_from granularity. Border
+    // always frozen to real height — same T-junction-stitching reason as the
+    // L0→L1 pass (BuildLodIboStitched always draws chunk borders at full
+    // resolution regardless of LOD tier; morphing a border vertex would split
+    // that shared edge open again). Position (Y) only — see
+    // TerrainVertex::morph_y2's doc comment for why normal-morph is skipped for
+    // these two farther, less perceptually critical transitions.
+    //
+    // Only iterates vertices that actually belong to the FROM tier (step
+    // TERRAIN_LOD_STEPS[si]) — vertices outside that stride are never sampled by
+    // the corresponding LOD draw, so their morph_y2/morph_y3 value is simply
+    // never read.
+    for (int pass = 0; pass < 2; ++pass) {
+        int step_from = TERRAIN_LOD_STEPS[pass];      // 2 (L1) / 4 (L2)
+        int step_to   = step_from * 2;                // 4 (L2) / 8 (L3)
+        for (int row = 0; row <= TERRAIN_GRID; row += step_from) {
+            for (int col = 0; col <= TERRAIN_GRID; col += step_from) {
+                int vi = s_idx(col, row);
+                bool on_border = (row == 0) || (row == TERRAIN_GRID) ||
+                                 (col == 0) || (col == TERRAIN_GRID);
+                float fy;
+                if (on_border) {
+                    fy = s_verts_buf[vi].y;
+                } else if ((col % step_to) == 0 && (row % step_to) == 0) {
+                    fy = s_verts_buf[vi].y;
+                } else if ((col % step_to) != 0 && (row % step_to) == 0) {
+                    const auto& a = s_verts_buf[s_idx(col - step_from, row)];
+                    const auto& b = s_verts_buf[s_idx(col + step_from, row)];
+                    fy = (a.y + b.y) * 0.5f;
+                } else if ((col % step_to) == 0 && (row % step_to) != 0) {
+                    const auto& a = s_verts_buf[s_idx(col, row - step_from)];
+                    const auto& b = s_verts_buf[s_idx(col, row + step_from)];
+                    fy = (a.y + b.y) * 0.5f;
+                } else {
+                    const auto& a = s_verts_buf[s_idx(col - step_from, row - step_from)];
+                    const auto& b = s_verts_buf[s_idx(col + step_from, row - step_from)];
+                    const auto& c = s_verts_buf[s_idx(col - step_from, row + step_from)];
+                    const auto& d = s_verts_buf[s_idx(col + step_from, row + step_from)];
+                    fy = (a.y + b.y + c.y + d.y) * 0.25f;
+                }
+                if (pass == 0) s_verts_buf[vi].morph_y2 = fy;
+                else           s_verts_buf[vi].morph_y3 = fy;
+            }
+        }
+    }
 #endif
 
     // ── Task #182h: per-LOD-tier max geometric error (pixel-error LOD) ───────────

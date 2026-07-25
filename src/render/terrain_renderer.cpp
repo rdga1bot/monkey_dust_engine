@@ -17,24 +17,27 @@ bool TerrainRenderer::Init() {
     pd.vert_path = "shaders/terrain_forward.vert";
     pd.frag_path = "shaders/terrain_forward.frag";
 
-    // TerrainVertex layout (stride=52) — this is now the ONLY terrain
+    // TerrainVertex layout (stride=60) — this is now the ONLY terrain
     // pipeline (2026-07-19: no more POM/forward split, see
     // shaders/slang/terrain_forward.slang's file header):
-    //   loc 0: vec3 pos     offset  0
-    //   loc 1: vec3 normal  offset 12
-    //   loc 2: vec2 uv      offset 24
-    //   loc 3: vec4 ground  offset 32  (ground_id, ground_id2, blend_alpha, _reserved — was aSplat)
-    //   loc 4: float morphY offset 48  (task #182g, 2026-07-19: WIRED UP — was declared in
+    //   loc 0: vec3 pos       offset  0
+    //   loc 1: vec3 normal    offset 12
+    //   loc 2: vec2 uv        offset 24
+    //   loc 3: vec4 ground    offset 32  (ground_id, ground_id2, blend_alpha, _reserved — was aSplat)
+    //   loc 4: float morphY   offset 48  (task #182g, 2026-07-19: WIRED UP — was declared in
     //          TerrainVertex/stride math but never added to the pipeline's own vertex input
     //          layout, so the shader could never actually read it regardless of its own code —
     //          see terrain_forward.slang's aMorphY doc comment for the other half of this fix)
-    pd.layout.count      = 5;
-    pd.layout.stride     = 52;  // pos(12)+norm(12)+uv(8)+ground(16)+morph_y(4)
+    //   loc 5: vec2 morphY23  offset 52  (2026-07-25: geomorph target Y for L1→L2 (x)/L2→L3 (y),
+    //          same "declared in TerrainVertex, must also be added HERE" trap as loc 4 above)
+    pd.layout.count      = 6;
+    pd.layout.stride     = 60;  // pos(12)+norm(12)+uv(8)+ground(16)+morph_y(4)+morph_y23(8)
     pd.layout.attribs[0] = { 0,  0, GpuAttribFmt::F3 };  // aPos
     pd.layout.attribs[1] = { 1, 12, GpuAttribFmt::F3 };  // aNormal
     pd.layout.attribs[2] = { 2, 24, GpuAttribFmt::F2 };  // aUV
     pd.layout.attribs[3] = { 3, 32, GpuAttribFmt::F4 };  // aGround
     pd.layout.attribs[4] = { 4, 48, GpuAttribFmt::F1 };  // aMorphY
+    pd.layout.attribs[5] = { 5, 52, GpuAttribFmt::F2 };  // aMorphY23
 
     pd.raster.depth_test  = true;
     pd.raster.depth_write = true;
@@ -45,15 +48,19 @@ bool TerrainRenderer::Init() {
     pd.frag_uniform_bufs = 1;  // slot 0: TerrainFragUBO
     // b5 (baked per-chunk albedo) removed 2026-07-19 — per-vertex ground
     // selection replaced BakeAlbedo entirely, see FillSamplerBindings.
-    pd.frag_samplers     = 5;  // b0=kenshi colour overlay, b1=ground DDS array, b2=detail tint, b3=overlay mask, b4=biome blend
-    // b5,b6 (right after the 5 samplers, SDL_GPU set=2 contiguous layout):
-    // b5=per-zone ground-layer lookup (zone_layers_ssbo_), used only when
+    // b2 (generic detail tint) removed 2026-07-25 — see terrain_forward.
+    // slang's tex_detail comment (was a POM-leftover texture, never had a
+    // real tiling frequency, became visibly obvious once the overlay went
+    // native-resolution).
+    pd.frag_samplers     = 4;  // b0=kenshi colour overlay, b1=ground DDS array, b2=overlay mask, b3=biome blend
+    // b4,b5,b6 (right after the 4 samplers, SDL_GPU set=2 contiguous layout):
+    // b4=per-zone ground-layer lookup (zone_layers_ssbo_), used only when
     // TerrainFragUBO.use_zone_lookup.x>0.5 (synthesis/compact-LOD2
-    // background draws — see SetBatchZoneLookup). b6=per-chunk baked
+    // background draws — see SetBatchZoneLookup). b5=per-chunk baked
     // full-res steepness (task #182, 2026-07-19 — see TerrainChunk::
     // steepness_ssbo's doc comment), read by fsMain's per-chunk (non-
     // lookup) branch instead of interpolating N.y across the LOD triangle.
-    // b7=comboAlternates (task #182c/d, 2026-07-19) — small GLOBAL (not
+    // b6=comboAlternates (task #182c/d, 2026-07-19) — small GLOBAL (not
     // per-chunk) table of the real Kenshi biome-crossfade alternates, see
     // combo_alt_ssbo_'s doc comment (terrain_renderer.h).
     pd.frag_storage_bufs = 3;
@@ -269,33 +276,10 @@ bool TerrainRenderer::InitBiomeBlend(const char* path)
 #endif
 }
 
-bool TerrainRenderer::InitDetailTexture(const char* path)
-{
-#ifdef MD_SDL_GPU
-    if (!path || !path[0]) return false;
-    GpuSamplerDesc sd;
-    sd.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP;
-    sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
-    sd.wrap_s     = GpuSamplerDesc::Wrap::REPEAT;
-    sd.wrap_t     = GpuSamplerDesc::Wrap::REPEAT;
-    sd.gen_mipmap = true;
-    sd.flip_v     = false;
-    tex_detail_.Shutdown();
-    if (!tex_detail_.InitFromFile(path, sd)) {
-        fprintf(stderr, "[TerrainRenderer] detail texture '%s' failed — using neutral fallback\n", path);
-        return false;
-    }
-    return true;
-#else
-    return false;
-#endif
-}
-
 void TerrainRenderer::Shutdown() {
     tex_colour_.Shutdown();
     tex_ground_array_.Shutdown();
     tex_ground_nml_array_.Shutdown();
-    tex_detail_.Shutdown();
     tex_overlay_mask_.Shutdown();
     overlay_mask_ready_ = false;
     tex_biome_blend_.Shutdown();
@@ -358,7 +342,7 @@ bool TerrainRenderer::InitKenshiOverlay(const char* path)
 
 
 #ifdef MD_SDL_GPU
-void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const
+void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[4]) const
 {
     bool valid = tex_loaded_ && tex_colour_.Valid()
                  && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
@@ -370,22 +354,19 @@ void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) c
               && tex_ground_array_.SDLTexture() && tex_ground_array_.SDLSampler();
     out[1].texture = ga ? tex_ground_array_.SDLTexture() : nullptr;
     out[1].sampler = ga ? tex_ground_array_.SDLSampler() : nullptr;
-    // b2: generic detail tint (InitDetailTexture; fallback=white 1×1 → neutral blend)
-    bool det = tex_detail_.Valid()
-               && tex_detail_.SDLTexture() && tex_detail_.SDLSampler();
-    out[2].texture = det ? tex_detail_.SDLTexture() : fallback_tex_;
-    out[2].sampler = det ? tex_detail_.SDLSampler() : fallback_sampler_;
-    // b3: painted grass/dirt/road mask — zone-lookup draw path only (the
+    // b2: painted grass/dirt/road mask — zone-lookup draw path only (the
     // per-chunk near/mid path resolves this at generation time instead).
+    // 2026-07-25: was b3 — b2 (generic detail tint, InitDetailTexture)
+    // removed entirely, see terrain_forward.slang's tex_detail comment.
     bool mv = overlay_mask_ready_ && tex_overlay_mask_.Valid()
               && tex_overlay_mask_.SDLTexture() && tex_overlay_mask_.SDLSampler();
-    out[3].texture = mv ? tex_overlay_mask_.SDLTexture() : fallback_mask_tex_;
-    out[3].sampler = mv ? tex_overlay_mask_.SDLSampler() : fallback_mask_sampler_;
-    // b4: procedural biome-crossfade blend map — zone-lookup draw path only.
+    out[2].texture = mv ? tex_overlay_mask_.SDLTexture() : fallback_mask_tex_;
+    out[2].sampler = mv ? tex_overlay_mask_.SDLSampler() : fallback_mask_sampler_;
+    // b3: procedural biome-crossfade blend map — zone-lookup draw path only.
     bool bv = biome_blend_ready_ && tex_biome_blend_.Valid()
               && tex_biome_blend_.SDLTexture() && tex_biome_blend_.SDLSampler();
-    out[4].texture = bv ? tex_biome_blend_.SDLTexture() : fallback_blend_tex_;
-    out[4].sampler = bv ? tex_biome_blend_.SDLSampler() : fallback_blend_sampler_;
+    out[3].texture = bv ? tex_biome_blend_.SDLTexture() : fallback_blend_tex_;
+    out[3].sampler = bv ? tex_biome_blend_.SDLSampler() : fallback_blend_sampler_;
 }
 
 void TerrainRenderer::FillStorageBindings(SDL_GPUBuffer* out[3], const TerrainChunk* chunk)
@@ -446,6 +427,7 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     vubo.world_origin_z = world_origin_z;
     vubo.world_to_uv    = world_to_uv;
     vubo.lod_blend      = lod_blend;
+    vubo.lod_tier       = lod_clamped;
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
     vubo.chunk_origin_x = chunk.center_x - CHUNK_SIZE * 0.5f;
@@ -473,10 +455,10 @@ void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
     fubo.blend_layers[2] = chunk.blend_layers[2]; fubo.blend_layers[3] = chunk.blend_layers[3];
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[5];
+    SDL_GPUTextureSamplerBinding bindings[4];
     FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 5);
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 4);
 
     SDL_GPUBuffer* sbufs[3];
     FillStorageBindings(sbufs, &chunk);
@@ -563,10 +545,10 @@ void TerrainRenderer::Draw(GpuCommandBuffer& cb,
     fubo.blend_layers[2] = chunk.blend_layers[2]; fubo.blend_layers[3] = chunk.blend_layers[3];
     cb.PushFragmentUniforms(0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[5];
+    SDL_GPUTextureSamplerBinding bindings[4];
     FillSamplerBindings(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    cb.BindFragmentSamplers(0, bindings, 5);
+    cb.BindFragmentSamplers(0, bindings, 4);
 
     SDL_GPUBuffer* sbufs[3];
     FillStorageBindings(sbufs, &chunk);
@@ -595,6 +577,7 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     vubo.world_origin_z = world_origin_z;
     vubo.world_to_uv    = world_to_uv;
     vubo.lod_blend      = 0.f;
+    vubo.lod_tier       = lod_clamped;  // inert while lod_blend=0.f above, set for cleanliness
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
     // No single chunk at BeginRawBatch time (per-chunk draws happen later
@@ -631,14 +614,14 @@ void TerrainRenderer::BeginRawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
     // this same frame into the normal per-chunk DrawRawChunk path below.
     batch_fubo_base_.use_zone_lookup[0] = 0.f;
 
-    SDL_GPUTextureSamplerBinding bindings[5];
+    SDL_GPUTextureSamplerBinding bindings[4];
     FillSamplerBindings(bindings);
     if (bindings[0].texture && bindings[0].sampler)
-        SDL_BindGPUFragmentSamplers(rp, 0, bindings, 5);
+        SDL_BindGPUFragmentSamplers(rp, 0, bindings, 4);
 
-    // Always bound (cheap, read-only) — b5 (zoneGroundLayers) only actually
+    // Always bound (cheap, read-only) — b4 (zoneGroundLayers) only actually
     // read by the shader when use_zone_lookup=1 (synthesis/compact-LOD2
-    // draws); b6 (per-chunk steepness) is never read on this batch path
+    // draws); b5 (per-chunk steepness) is never read on this batch path
     // (BeginRawBatch has no single "current chunk" — same reasoning as
     // chunk_origin_x/z=0,0 above) but must still be bound to something
     // valid since the pipeline declares 2 storage buffers. DrawRawChunk
@@ -672,7 +655,7 @@ void TerrainRenderer::DrawRawChunk(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
     fubo.blend_layers[2] = chunk.blend_layers[2]; fubo.blend_layers[3] = chunk.blend_layers[3];
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    // Task #182: re-bind b6 with THIS chunk's own baked steepness (BeginRawBatch
+    // Task #182: re-bind b5 with THIS chunk's own baked steepness (BeginRawBatch
     // bound the shared fallback, since it has no single "current chunk").
     SDL_GPUBuffer* sbufs[3];
     FillStorageBindings(sbufs, &chunk);

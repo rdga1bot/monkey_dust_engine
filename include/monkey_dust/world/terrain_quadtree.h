@@ -32,6 +32,14 @@ public:
     // (root itself is depth 0); leaf node size = world_size_m / 2^max_depth.
     void Init(float world_size_m, int max_depth);
 
+    // Same as above but with an explicit root min-corner instead of always
+    // centring on (0,0) — needed to match a TerrainQuadtreeRenderer's own
+    // region origin, which lives in whatever session-local floating
+    // coordinate space the caller's world streaming uses (see
+    // SceneRender::tnoff_x/z's own doc comment for why that's not the same
+    // as "absolute world metres").
+    void Init(float origin_x, float origin_z, float world_size_m, int max_depth);
+
     const TerrainQuadNode& Root() const { return root_; }
     int MaxDepth() const { return max_depth_; }
 

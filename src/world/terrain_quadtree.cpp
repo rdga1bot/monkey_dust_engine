@@ -2,8 +2,12 @@
 #include <cmath>
 
 void TerrainQuadtree::Init(float world_size_m, int max_depth) {
-    root_.origin_x = -world_size_m * 0.5f;
-    root_.origin_z = -world_size_m * 0.5f;
+    Init(-world_size_m * 0.5f, -world_size_m * 0.5f, world_size_m, max_depth);
+}
+
+void TerrainQuadtree::Init(float origin_x, float origin_z, float world_size_m, int max_depth) {
+    root_.origin_x = origin_x;
+    root_.origin_z = origin_z;
     root_.size     = world_size_m;
     root_.depth    = 0;
     max_depth_     = max_depth;

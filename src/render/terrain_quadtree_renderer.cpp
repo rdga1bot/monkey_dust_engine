@@ -4,20 +4,26 @@
 #include <monkey_dust/render/gpu_device.h>
 #include <cstring>
 #include <cstdio>
+#include <algorithm>
 
 // Vertex-stage constant buffer — MUST mirror QuadVert in
 // shaders/slang/terrain_quadtree.slang field-for-field (same byte-offset
 // discipline as TerrainVertUBO/TerrainFwdVert, see terrain_renderer.h).
 struct QuadVertUBO {
-    float vp[16];          // 64B, float4x4
-    float origin_x;        // one float4 slot: origin_x,origin_z,size_m,height_min_m
+    float vp[16];              // 64B, float4x4
+    float origin_x;            // float4 slot: origin_x,origin_z,size_m,height_min_m
     float origin_z;
     float size_m;
     float height_min_m;
-    float height_max_m;    // next float4 slot: height_max_m + 3 pad floats
-    float _pad0, _pad1, _pad2;
+    float height_max_m;        // float4 slot: height_max_m,region_origin_x,region_origin_z,region_size
+    float region_origin_x;
+    float region_origin_z;
+    float region_size;
+    float morph_t;             // float4 slot: morph_t,grid_n,pad,pad
+    float grid_n;
+    float _pad0, _pad1;
 };
-static_assert(sizeof(QuadVertUBO) == 96, "QuadVertUBO size mismatch");
+static_assert(sizeof(QuadVertUBO) == 112, "QuadVertUBO size mismatch");
 
 bool TerrainQuadtreeRenderer::BuildUnitPatchMesh() {
     constexpr int N  = kPatchN;
@@ -50,22 +56,49 @@ bool TerrainQuadtreeRenderer::BuildUnitPatchMesh() {
     return true;
 }
 
-bool TerrainQuadtreeRenderer::UploadHeightmap(int zx, int zy, float& out_height_min, float& out_height_max) {
-    constexpr int N = 65; // zone native resolution: col,row in 0..64
-    static float   h_tmp[N * N];
-    static uint8_t rgba[N * N * 4];
+// TerrainAtlas zones are 65x65 samples (col,row in 0..64) — 64 steps/zone,
+// matching TERRAIN_GRID_LEVELS-independent atlas resolution, not the
+// per-chunk render mesh's own TERRAIN_GRID (128). See terrain_gen.h's
+// "col,row in 0..64" doc comment.
+static constexpr int kZoneGridStep64 = 64;
+
+// Maps a global region-grid sample index (0..zone_span*64) to (zone index,
+// local col/row 0..64) — zones share their boundary vertex (zone Z's
+// col=64 == zone Z+1's col=0), so only the very last global sample needs
+// the "clamp into the last zone's col=64" special case.
+static void s_region_sample_to_zone(int gi, int zone_span, int& zi, int& local) {
+    zi    = gi / kZoneGridStep64;
+    local = gi % kZoneGridStep64;
+    if (zi >= zone_span) { zi = zone_span - 1; local = kZoneGridStep64; }
+}
+
+bool TerrainQuadtreeRenderer::UploadHeightmapRegion(int zx0, int zy0, int zone_span,
+                                                     float& out_height_min, float& out_height_max) {
+    constexpr int kMaxRes = 1025; // hard cap: zone_span<=16 -> 1025 samples/axis
+    const int N = zone_span * kZoneGridStep64 + 1;
+    if (N > kMaxRes) {
+        fprintf(stderr, "[TerrainQuadtreeRenderer] region too large: zone_span=%d -> %dx%d samples (cap %d)\n",
+                zone_span, N, N, kMaxRes);
+        return false;
+    }
+    static float   h_tmp[kMaxRes * kMaxRes];
+    static uint8_t rgba[kMaxRes * kMaxRes * 4];
 
     float hmin = 1e9f, hmax = -1e9f;
     for (int row = 0; row < N; ++row) {
+        int zzi, zlocal_row;
+        s_region_sample_to_zone(row, zone_span, zzi, zlocal_row);
         for (int col = 0; col < N; ++col) {
-            float h = TerrainAtlas_GetHeight(zx, zy, col, row);
+            int zxi, zlocal_col;
+            s_region_sample_to_zone(col, zone_span, zxi, zlocal_col);
+            float h = TerrainAtlas_GetHeight(zx0 + zxi, zy0 + zzi, zlocal_col, zlocal_row);
             h_tmp[row * N + col] = h;
             if (h < hmin) hmin = h;
             if (h > hmax) hmax = h;
         }
     }
     float range = hmax - hmin;
-    if (range < 1.f) range = 1.f; // avoid div-by-zero on a perfectly flat zone
+    if (range < 1.f) range = 1.f; // avoid div-by-zero on a perfectly flat region
 
     // Pack uint16 height into R(low byte)+G(high byte) of an RGBA8 texture
     // (see header doc comment — this HAL has no R16 GPU format yet).
@@ -96,7 +129,8 @@ bool TerrainQuadtreeRenderer::UploadHeightmap(int zx, int zy, float& out_height_
     return true;
 }
 
-bool TerrainQuadtreeRenderer::Init(int zx, int zy, float& out_height_min, float& out_height_max) {
+bool TerrainQuadtreeRenderer::Init(int zx0, int zy0, int zone_span,
+                                    float& out_height_min, float& out_height_max) {
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/terrain_quadtree.vert";
     pd.frag_path = "shaders/terrain_quadtree.frag";
@@ -120,7 +154,12 @@ bool TerrainQuadtreeRenderer::Init(int zx, int zy, float& out_height_min, float&
         return false;
     }
     if (!BuildUnitPatchMesh()) return false;
-    if (!UploadHeightmap(zx, zy, out_height_min, out_height_max)) return false;
+    if (!UploadHeightmapRegion(zx0, zy0, zone_span, out_height_min, out_height_max)) return false;
+
+    region_size_     = (float)zone_span * CHUNK_SIZE;
+    region_origin_x_ = (float)zx0 * CHUNK_SIZE;
+    region_origin_z_ = (float)zy0 * CHUNK_SIZE;
+
     ready_ = true;
     return true;
 }
@@ -134,9 +173,18 @@ void TerrainQuadtreeRenderer::Shutdown() {
     ready_ = false;
 }
 
+float TerrainQuadtreeRenderer::ComputeMorphT(float dist, int depth, const float* lod_distances) {
+    float near_d = lod_distances[depth];
+    float far_d  = (depth == 0) ? (lod_distances[0] * 2.f) : lod_distances[depth - 1];
+    if (far_d <= near_d) return 0.f; // degenerate config — never morph rather than divide by ~0
+    float t = (dist - near_d) / (far_d - near_d);
+    return std::max(0.f, std::min(1.f, t));
+}
+
 void TerrainQuadtreeRenderer::Draw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                                     const float* vp16,
                                     float origin_x, float origin_z, float size_m,
+                                    float morph_t,
                                     float height_min_m, float height_max_m) {
     if (!ready_ || !height_tex_ || !height_sampler_) return;
 
@@ -149,11 +197,16 @@ void TerrainQuadtreeRenderer::Draw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
 
     QuadVertUBO vubo{};
     memcpy(vubo.vp, vp16, 64);
-    vubo.origin_x     = origin_x;
-    vubo.origin_z     = origin_z;
-    vubo.size_m       = size_m;
-    vubo.height_min_m = height_min_m;
-    vubo.height_max_m = height_max_m;
+    vubo.origin_x       = origin_x;
+    vubo.origin_z       = origin_z;
+    vubo.size_m         = size_m;
+    vubo.height_min_m   = height_min_m;
+    vubo.height_max_m   = height_max_m;
+    vubo.region_origin_x = region_origin_x_;
+    vubo.region_origin_z = region_origin_z_;
+    vubo.region_size     = region_size_;
+    vubo.morph_t        = morph_t;
+    vubo.grid_n         = (float)kPatchN;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
 
     SDL_GPUTextureSamplerBinding vtsb{ height_tex_, height_sampler_ };

@@ -4,52 +4,76 @@
 #include <SDL3/SDL_gpu.h>
 #include <cstdint>
 
-// Quadtree-LOD terrain rewrite, Phase 1 (see plan at
-// /home/rdga1/.claude/plans/serene-pondering-teapot.md). Renders ONE
-// hardcoded unit patch with real GPU vertex-texture-fetch (VTF) height
-// displacement — no traversal, no LOD selection, no geomorphing yet
-// (Phase 2+). Confirms the vert_samplers>0 + frag_samplers>0 pattern
-// (empirically disproven as unsafe on this hardware, 2026-07-25 — see
-// CLAUDE.md's "Intel HD 520 — Hardware Checklist") works end-to-end inside
-// the real engine and not just the isolated standalone test harness.
+// Quadtree-LOD terrain rewrite, Phase 1-3 (see plan at
+// /home/rdga1/.claude/plans/serene-pondering-teapot.md). Renders the nodes
+// TerrainQuadtree::SelectVisible picks with real GPU vertex-texture-fetch
+// (VTF) height displacement AND continuous CDLOD-style geomorphing (Phase
+// 3) — no per-node CPU-baked morph targets (unlike the old TNKN=9 chunk
+// system's discrete per-LOD-tier bake, terrain_gen.cpp): each vertex
+// computes its own "coarser parent grid" target height in the shader from
+// grid parity, since the same shared unit-patch mesh is reused at every
+// depth/position with no per-instance CPU data beyond a handful of UBO
+// scalars.
 //
 // Unit-patch mesh: a single NxN-quad grid in LOCAL [0,1]^2 space (float2
 // per vertex, no world position baked in — that's the whole CDLOD trick,
-// see plan point 2) shared by every instance drawn. Height comes from a
-// vertex-stage Sample() against a heightmap texture, not from CPU-baked
-// vertex data.
+// see plan point 2) shared by every instance drawn.
 //
-// Heightmap encoding: GpuTexture (gpu_hal.h) only supports RGBA8 upload
-// today (InitFromMemory) — no R16/R32F GPU format exists yet in this HAL.
-// Rather than add one for a Phase-1 proof, the uint16 height is packed into
-// the R (low byte) + G (high byte) channels of an RGBA8 texture; vsMain
-// reconstructs h16 = r*255 + g*255*256. This is safe under bilinear
-// filtering because the reconstruction is linear in r and g (no intra-byte
-// carry during interpolation) — filtering the two channels independently
-// and reconstructing is equivalent to filtering the reconstructed height
-// directly.
+// Heightmap: ONE texture covers the WHOLE traversed region (all of
+// TerrainQuadtree's root extent), sampled by every node via its own
+// origin/size mapped into that texture's UV space — not one texture per
+// node (Phase 1's simplification, wrong once more than one node is ever
+// drawn at once: neighbouring nodes must sample the SAME underlying height
+// data at their shared border, or seams are guaranteed regardless of any
+// morphing). GpuTexture (gpu_hal.h) only supports RGBA8 upload today — no
+// R16/R32F GPU format exists yet in this HAL. Rather than add one now, the
+// uint16 height is packed into the R (low byte) + G (high byte) channels
+// of an RGBA8 texture; vsMain reconstructs h16 = r*255 + g*255*256. Safe
+// under bilinear filtering because the reconstruction is linear in r and g
+// (no intra-byte carry during interpolation).
 class TerrainQuadtreeRenderer {
 public:
-    // Builds the pipeline + unit-patch mesh, then samples TerrainAtlas zone
-    // (zx,zy) over its native 65x65 grid and uploads the packed heightmap
-    // texture. Returns the real [min,max] height range found so the caller
-    // can pass matching values to Draw() for decoding.
-    bool Init(int zx, int zy, float& out_height_min, float& out_height_max);
+    // Builds the pipeline + unit-patch mesh, then samples TerrainAtlas over
+    // the zone rectangle [zx0,zx0+zone_span) x [zy0,zy0+zone_span) at
+    // native resolution (zone_span*64+1 samples/axis) and uploads ONE
+    // packed heightmap texture covering that whole region. Every node
+    // later passed to Draw() must lie within this region — this defines
+    // the same bounds the caller's TerrainQuadtree::Init() world_size_m
+    // must cover. Returns the real [min,max] height range found so the
+    // caller can pass matching values to Draw() for decoding.
+    bool Init(int zx0, int zy0, int zone_span, float& out_height_min, float& out_height_max);
     void Shutdown();
     bool IsReady() const { return ready_; }
 
-    // Draws the single hardcoded patch. origin_x/origin_z/size_m define its
-    // world-space footprint (must match the world region the heightmap
-    // texture was sampled from at Init() time — Phase 1 has exactly one
-    // fixed patch, no re-sampling per call).
+    float RegionOriginX() const { return region_origin_x_; }
+    float RegionOriginZ() const { return region_origin_z_; }
+    float RegionSize()    const { return region_size_; }
+
+    // Draws one node from TerrainQuadtree::SelectVisible's output.
+    // morph_t (already computed by the caller, see TerrainQuadtreeRenderer
+    // ::ComputeMorphT) is this node's CDLOD morph factor in [0,1]: 0 = full
+    // own-depth detail, 1 = vertices fully morphed toward the shape this
+    // node's PARENT (one depth shallower) would show at this location —
+    // matching that shape exactly at t=1 is what makes swapping to the
+    // parent (when the camera moves far enough that this node's own
+    // recursion threshold is crossed) produce no visible pop.
     void Draw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
               const float* vp16,
               float origin_x, float origin_z, float size_m,
+              float morph_t,
               float height_min_m, float height_max_m);
+
+    // t = saturate((dist - lod_distances[depth]) / (parent_threshold - lod_distances[depth])),
+    // where parent_threshold = lod_distances[depth-1] (or a value larger
+    // than lod_distances[0] for the root, which has no parent to morph
+    // toward — root morph_t is always 0). dist = camera-to-node-centre
+    // distance, same metric SelectVisible used to pick this node.
+    static float ComputeMorphT(float dist, int depth, const float* lod_distances);
 
 private:
     bool BuildUnitPatchMesh();
-    bool UploadHeightmap(int zx, int zy, float& out_height_min, float& out_height_max);
+    bool UploadHeightmapRegion(int zx0, int zy0, int zone_span,
+                               float& out_height_min, float& out_height_max);
 
     static constexpr int kPatchN = 64; // 64x64 quads -> 65x65 verts, uint32 IBO
 
@@ -60,6 +84,10 @@ private:
 
     SDL_GPUTexture* height_tex_     = nullptr;
     SDL_GPUSampler* height_sampler_ = nullptr;
+
+    float region_origin_x_ = 0.f;
+    float region_origin_z_ = 0.f;
+    float region_size_     = 0.f;
 
     bool ready_ = false;
 };

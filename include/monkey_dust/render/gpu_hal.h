@@ -595,6 +595,24 @@ struct GpuSamplerDesc {
 class GpuTexture {
 public:
     bool InitFromFile  (const char* path,              const GpuSamplerDesc& s = {});
+    // Uncompressed (DDPF_RGB, NOT BC1/BC3) single 2D DDS texture — no
+    // zlib/DEFLATE decode, same rationale as world_hmap.r16 vs PNG16 (see
+    // tools/md_hmap_io.py's doc comment): for large flat textures (e.g. the
+    // 16384x16384 Kenshi terrain colour atlas), stb_image's PNG decode cost
+    // dominates startup (measured ~17s for that one file) while a plain
+    // fread is a fraction of that. Chosen as a real DDS (not a custom raw
+    // format) so the file stays openable in standard tools (RenderDoc,
+    // GIMP's DDS plugin, texconv) for visual sanity-checking — see
+    // tools/md_stitch_terrain.py's dds_header_uncompressed_rgba() for the
+    // exact header this reads (masks R=0x000000FF G=0x0000FF00 B=0x00FF0000
+    // A=0xFF000000, i.e. already in this class's native RGBA8 byte order —
+    // pixel data is a direct fread with no expand/swizzle pass, same as the
+    // earlier from-scratch raw-format version that measured ~1.9-2.5s here
+    // (vs ~10.6s for an RGB-then-expand version, vs ~17.3s for PNG).
+    // Dispatched automatically by InitFromFile() when path ends in ".dds"
+    // and the pixelformat is DDPF_RGB (as opposed to the existing BC1/BC3
+    // array loader, InitFromDDSArray, which stays untouched).
+    bool InitFromDDS   (const char* path,              const GpuSamplerDesc& s = {});
     bool InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSamplerDesc& s = {});
     // Allocates a COLOR_TARGET|SAMPLER texture with NO data upload (SDL_GPU
     // only) — for render-to-texture targets whose first write is a render

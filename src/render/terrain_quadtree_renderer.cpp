@@ -19,11 +19,29 @@ struct QuadVertUBO {
     float region_origin_x;
     float region_origin_z;
     float region_size;
-    float morph_t;             // float4 slot: morph_t,grid_n,pad,pad
+    float morph_t;             // float4 slot: morph_t,grid_n,texel_step_m,pad
     float grid_n;
-    float _pad0, _pad1;
+    float texel_step_m;        // world-metre spacing between height-texture texels (normal reconstruction)
+    float _pad1;
+    float cam_pos_ws[4];       // xyz=camera world position (vDist/fog), w=unused
 };
-static_assert(sizeof(QuadVertUBO) == 112, "QuadVertUBO size mismatch");
+static_assert(sizeof(QuadVertUBO) == 128, "QuadVertUBO size mismatch");
+
+// Fragment UBO — mirrors terrain_quadtree.slang's QuadFrag byte-for-byte.
+// Deliberately smaller than TerrainRenderer::TerrainFragUBO: this shader
+// only ever runs the "zone-lookup" shading branch (see Draw()'s doc
+// comment), so ground_layers_a/b, blend_layers (comboAlternates gate) and
+// use_zone_lookup (a runtime toggle between two branches this shader never
+// has) don't apply here.
+struct QuadFragUBO {
+    float sun_dir_str[4];     // xyz=dir, w=strength
+    float ambient[4];         // xyz=colour, w=unused
+    float world_params[4];    // xy=origin_xz, z=world_to_uv, w=unused
+    float fog_color_near[4];  // xyz=fog colour, w=fog_near
+    float fog_far;
+    float _pad[3];
+};
+static_assert(sizeof(QuadFragUBO) == 80, "QuadFragUBO size mismatch");
 
 bool TerrainQuadtreeRenderer::BuildUnitPatchMesh() {
     constexpr int N  = kPatchN;
@@ -126,6 +144,7 @@ bool TerrainQuadtreeRenderer::UploadHeightmapRegion(int zx0, int zy0, int zone_s
     height_sampler_ = tex.TakeSDLSampler();
     out_height_min  = hmin;
     out_height_max  = hmin + range;
+    region_texel_step_m_ = ((float)zone_span * CHUNK_SIZE) / (float)(N - 1);
     return true;
 }
 
@@ -146,8 +165,15 @@ bool TerrainQuadtreeRenderer::Init(int zx0, int zy0, int zone_span,
 
     pd.vert_uniform_bufs = 1; // slot 0: QuadVertUBO
     pd.vert_samplers     = 1; // heightTex — VTF, confirmed safe 2026-07-25
-    pd.frag_uniform_bufs = 0;
-    pd.frag_samplers     = 0;
+    pd.frag_uniform_bufs = 1; // slot 0: QuadFragUBO
+    // b0=kenshi colour overlay, b1=ground DDS array, b2=grass/dirt/road
+    // mask — the same 3 "zone-lookup path" samplers terrain_forward.slang's
+    // fsMain uses (BORROWED from the caller's TerrainRenderer, see Draw()'s
+    // doc comment — this class never loads its own copy).
+    pd.frag_samplers     = 3;
+    // b3 (right after the 3 samplers, SDL_GPU set=2 contiguous layout):
+    // per-zone ground-layer lookup, same BORROWED SSBO.
+    pd.frag_storage_bufs = 1;
 
     if (!pipeline_.Create(pd)) {
         fprintf(stderr, "[TerrainQuadtreeRenderer] pipeline create failed\n");
@@ -185,7 +211,12 @@ void TerrainQuadtreeRenderer::Draw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
                                     const float* vp16,
                                     float origin_x, float origin_z, float size_m,
                                     float morph_t,
-                                    float height_min_m, float height_max_m) {
+                                    float height_min_m, float height_max_m,
+                                    const TerrainRenderer::SunParams& sun,
+                                    float cam_x, float cam_y, float cam_z,
+                                    float world_origin_x, float world_origin_z, float world_to_uv,
+                                    float fog_far, const float fog_color[3], float fog_near,
+                                    const TerrainRenderer& ground) {
     if (!ready_ || !height_tex_ || !height_sampler_) return;
 
     SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
@@ -207,10 +238,33 @@ void TerrainQuadtreeRenderer::Draw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
     vubo.region_size     = region_size_;
     vubo.morph_t        = morph_t;
     vubo.grid_n         = (float)kPatchN;
+    vubo.texel_step_m   = region_texel_step_m_;
+    vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
+    vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
 
     SDL_GPUTextureSamplerBinding vtsb{ height_tex_, height_sampler_ };
     SDL_BindGPUVertexSamplers(rp, 0, &vtsb, 1);
+
+    QuadFragUBO fubo{};
+    fubo.sun_dir_str[0] = sun.dir[0]; fubo.sun_dir_str[1] = sun.dir[1];
+    fubo.sun_dir_str[2] = sun.dir[2]; fubo.sun_dir_str[3] = sun.strength;
+    fubo.ambient[0]     = sun.ambient[0]; fubo.ambient[1] = sun.ambient[1];
+    fubo.ambient[2]     = sun.ambient[2]; fubo.ambient[3] = 0.f;
+    fubo.world_params[0] = world_origin_x; fubo.world_params[1] = world_origin_z;
+    fubo.world_params[2] = world_to_uv;    fubo.world_params[3] = 0.f;
+    fubo.fog_color_near[0] = fog_color[0]; fubo.fog_color_near[1] = fog_color[1];
+    fubo.fog_color_near[2] = fog_color[2]; fubo.fog_color_near[3] = fog_near;
+    fubo.fog_far = fog_far;
+    SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
+
+    SDL_GPUTextureSamplerBinding bindings[3];
+    ground.GetSharedGroundSamplers(bindings);
+    if (!bindings[0].texture || !bindings[0].sampler) return;
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 3);
+
+    SDL_GPUBuffer* sbuf = ground.ZoneGroundLayersSSBO();
+    SDL_BindGPUFragmentStorageBuffers(rp, 0, &sbuf, 1);
 
     SDL_DrawGPUIndexedPrimitives(rp, patch_idx_count_, 1, 0, 0, 0);
 }

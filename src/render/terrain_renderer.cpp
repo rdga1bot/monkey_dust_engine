@@ -393,6 +393,14 @@ void TerrainRenderer::FillStorageBindings(SDL_GPUBuffer* out[3], const TerrainCh
     // already-initialized) rather than risk another unsafe lazy Init().
     out[2] = combo_alt_ready_ ? combo_alt_ssbo_.SDLBuffer() : fallback_steepness_ssbo_.SDLBuffer();
 }
+
+void TerrainRenderer::GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[3]) const {
+    SDL_GPUTextureSamplerBinding all[4];
+    FillSamplerBindings(all);
+    out[0] = all[0];  // tex_colour
+    out[1] = all[1];  // tex_ground_array
+    out[2] = all[2];  // tex_overlay_mask
+}
 #endif
 
 void TerrainRenderer::DrawRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,

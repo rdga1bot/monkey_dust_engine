@@ -177,6 +177,17 @@ public:
 
     bool IsReady() const;
 
+    // Exposes 3 of the 4 already-loaded ground-shading textures (colour
+    // overlay, per-biome ground DDS array, grass/dirt/road mask, in that
+    // order) for other renderers that need the SAME data without a second,
+    // wasteful ~1GB reload — e.g. TerrainQuadtreeRenderer (quadtree-LOD
+    // rewrite Phase 7, see its own Draw() doc comment). tex_biome_blend
+    // deliberately excluded: no caller of this needs it yet.
+    void GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[3]) const;
+    // Per-zone (64x64=4096) ground-layer lookup SSBO — same data
+    // UploadZoneGroundLayers populates, exposed for the same reuse reason.
+    SDL_GPUBuffer* ZoneGroundLayersSSBO() const { return zone_layers_ssbo_.SDLBuffer(); }
+
     // Batch API: hoists pipeline/UBO/sampler/IBO outside the per-chunk loop.
     // Reduces API calls from 6/chunk to 2/chunk for large worlds.
     // BeginRawBatch: bind pipeline, push vertex+frag UBO, bind sampler, bind shared IBO.

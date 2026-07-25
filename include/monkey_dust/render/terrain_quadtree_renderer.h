@@ -1,6 +1,7 @@
 #pragma once
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/terrain_renderer.h>
 #include <SDL3/SDL_gpu.h>
 #include <cstdint>
 
@@ -57,11 +58,32 @@ public:
     // matching that shape exactly at t=1 is what makes swapping to the
     // parent (when the camera moves far enough that this node's own
     // recursion threshold is crossed) produce no visible pop.
+    //
+    // Real Kenshi ground-texture shading (Phase 7 — see terrain_quadtree
+    // .slang's fsMain doc comment): reuses terrain_forward.slang's
+    // "zone-lookup" fsMain branch (the same one the editor's whole-world
+    // synthesis view already uses) rather than duplicating it — a quadtree
+    // node, like that branch's synthesis mesh, spans a variable, multi-zone
+    // area per draw call with no single "current chunk" to have baked a
+    // fixed ground_layers_a/b for. `ground` supplies the 3 already-loaded
+    // shading textures (colour overlay, ground DDS array, grass/dirt/road
+    // mask — see TerrainRenderer::GetSharedGroundSamplers) and the per-zone
+    // lookup SSBO, BORROWED from the caller's existing TerrainRenderer
+    // instance — this class never loads its own copy of the ~1GB ground
+    // texture set. world_origin_x/z + world_to_uv map this node's session-
+    // local world position to the colour atlas's UV space, same convention
+    // as TerrainRenderer::DrawRaw's own world_origin_x/z/world_to_uv
+    // parameters (callers should pass the identical values).
     void Draw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
               const float* vp16,
               float origin_x, float origin_z, float size_m,
               float morph_t,
-              float height_min_m, float height_max_m);
+              float height_min_m, float height_max_m,
+              const TerrainRenderer::SunParams& sun,
+              float cam_x, float cam_y, float cam_z,
+              float world_origin_x, float world_origin_z, float world_to_uv,
+              float fog_far, const float fog_color[3], float fog_near,
+              const TerrainRenderer& ground);
 
     // t = saturate((dist - lod_distances[depth]) / (parent_threshold - lod_distances[depth])),
     // where parent_threshold = lod_distances[depth-1] (or a value larger
@@ -88,6 +110,11 @@ private:
     float region_origin_x_ = 0.f;
     float region_origin_z_ = 0.f;
     float region_size_     = 0.f;
+    // World-space distance between adjacent height-texture texels — needed
+    // by vsMain's central-difference normal reconstruction (a fixed step in
+    // world metres, not a fixed UV fraction, so the normal stays correct
+    // regardless of region_span). Computed once in UploadHeightmapRegion.
+    float region_texel_step_m_ = 1.f;
 
     bool ready_ = false;
 };

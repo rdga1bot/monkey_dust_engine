@@ -99,6 +99,17 @@ struct JobSystem {
 
     int  NumWorkers() const { return num_workers_; }
 
+    // Audit Phase 2b (TSan falsification pair, AUDIT_PLAN_v1.md): forces every
+    // Submit() to run its job synchronously on the calling thread instead of
+    // queueing it to a worker. Wired to --jobgraph-serial (scenario_driver.cpp)
+    // — running the same scenario once with this OFF (default, real parallel
+    // dispatch) and once with it ON under TSan, a race report present only in
+    // the OFF run is a real data race in job-parallel code; one present in
+    // BOTH runs is a lower-layer issue (allocator, logging, etc.) unrelated to
+    // this job system's own parallelism. Call before Init() or any Submit().
+    void SetForceSerial(bool v) { force_serial_ = v; }
+    bool ForceSerial() const { return force_serial_; }
+
 private:
     static int SDLCALL s_worker_entry(void* self);
     void worker_loop();
@@ -109,6 +120,7 @@ private:
     int           count_                 = 0;  // jobs in queue
     int           inflight_              = 0;  // jobs queued + executing
     bool          quit_                  = false;
+    bool          force_serial_          = false;
     int           num_workers_           = 0;
     int           batch_size_            = 16;
     int           cfg_worker_override_   = 0;

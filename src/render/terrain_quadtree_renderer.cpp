@@ -74,34 +74,44 @@ bool TerrainQuadtreeRenderer::BuildUnitPatchMesh() {
     return true;
 }
 
-// Region texture SUBSAMPLE resolution: 64 steps/zone (65 subsample points),
-// HALF of TerrainAtlas's real resolution (ATLAS_VERTS=129, i.e. TERRAIN_GRID
-// =128 real steps/zone, terrain_gen.cpp) — chosen to keep the region texture
-// within kMaxRes below at the zone spans this project actually uses (game's
-// TNKN=9, editor's 16-zone window), not because the atlas itself is 64
-// steps/zone (it never has been; an earlier doc comment here claimed
-// "65x65 samples (col,row in 0..64)", which was simply wrong).
-static constexpr int kZoneGridStep64 = 64;
+// Region texture SUBSAMPLE resolution: matches TerrainAtlas's real
+// resolution exactly (TERRAIN_GRID=128 steps/zone, terrain_chunk.h) — was
+// 64 (half-resolution) until 2026-07-26's bug #3 investigation ("character
+// floating above terrain"): the region heightmap texture only fed the
+// vertex-shader mesh at 64 steps/zone (7.2m spacing) while the player's
+// rendered Y (TerrainQuery::GetHeight -> TerrainAtlas_SampleWorld) reads
+// the full 128-step/zone (3.6m) atlas directly — on rugged terrain the
+// coarser mesh's bilinear interpolation between its own samples could miss
+// a real atlas feature by a measured worst case of 19.35m (avg 0.43m,
+// measured via a temporary subsample-error scan over this region), visually
+// a player standing over a local dip/rise the mesh smoothed away. Now equal
+// to TERRAIN_GRID, so kAtlasStepScale below is always 1 (kept, not
+// simplified away, so a future TERRAIN_GRID change doesn't silently
+// reintroduce the col/row scale bug the constant was introduced to fix —
+// see its own doc comment). kMaxRes below was raised to match (16-zone
+// editor window: 16*128+1=2049, was 16*64+1=1025).
+static constexpr int kZoneGridStep64 = TERRAIN_GRID;
 // Real-atlas steps covered by one kZoneGridStep64 subsample step. MUST use
 // TerrainAtlas_GetHeight's real col/row range (0..TERRAIN_GRID) — passing a
 // kZoneGridStep64-space index directly to it, unscaled, was a real bug
 // (2026-07-26, quadtree-LOD terrain rewrite Phase 7 investigation): with
-// scale=1, a "boundary" between two 64-subsample zone blocks landed at REAL
-// atlas col 63 of the first zone (its own MIDPOINT, since a real zone spans
-// 0..128) spliced directly against col 0 of the NEXT zone — two unrelated
-// points in the actual terrain, producing large, essentially random height
+// scale=1 back when kZoneGridStep64 was 64 (half TERRAIN_GRID), a
+// "boundary" between two 64-subsample zone blocks landed at REAL atlas col
+// 63 of the first zone (its own MIDPOINT, since a real zone spans 0..128)
+// spliced directly against col 0 of the NEXT zone — two unrelated points in
+// the actual terrain, producing large, essentially random height
 // discontinuities (confirmed via TerrainQuadtreeRenderer::UploadHeightmapRegion's
 // adjacent-sample scan: deltas up to 157.8m over one region-sample step) that
 // showed up as near-vertical spike walls in the real geometry. See
 // CLAUDE_STATE.md for the full investigation.
-static constexpr int kAtlasStepScale = TERRAIN_GRID / kZoneGridStep64; // 128/64 = 2
+static constexpr int kAtlasStepScale = TERRAIN_GRID / kZoneGridStep64; // 128/128 = 1
 
-// Maps a global region-grid sample index (0..zone_span*64) to (zone index,
-// local col/row 0..64, in kZoneGridStep64 SUBSAMPLE units — caller must
-// scale by kAtlasStepScale before passing to TerrainAtlas_GetHeight) — zones
-// share their boundary vertex (zone Z's col=64 == zone Z+1's col=0), so only
-// the very last global sample needs the "clamp into the last zone's col=64"
-// special case.
+// Maps a global region-grid sample index (0..zone_span*kZoneGridStep64) to
+// (zone index, local col/row 0..kZoneGridStep64, in kZoneGridStep64
+// SUBSAMPLE units — caller must scale by kAtlasStepScale before passing to
+// TerrainAtlas_GetHeight) — zones share their boundary vertex (zone Z's
+// col=kZoneGridStep64 == zone Z+1's col=0), so only the very last global
+// sample needs the "clamp into the last zone's last col" special case.
 static void s_region_sample_to_zone(int gi, int zone_span, int& zi, int& local) {
     zi    = gi / kZoneGridStep64;
     local = gi % kZoneGridStep64;
@@ -110,7 +120,7 @@ static void s_region_sample_to_zone(int gi, int zone_span, int& zi, int& local) 
 
 bool TerrainQuadtreeRenderer::UploadHeightmapRegion(int zx0, int zy0, int zone_span,
                                                      float& out_height_min, float& out_height_max) {
-    constexpr int kMaxRes = 1025; // hard cap: zone_span<=16 -> 1025 samples/axis
+    constexpr int kMaxRes = 2049; // hard cap: zone_span<=16 -> 2049 samples/axis
     const int N = zone_span * kZoneGridStep64 + 1;
     if (N > kMaxRes) {
         fprintf(stderr, "[TerrainQuadtreeRenderer] region too large: zone_span=%d -> %dx%d samples (cap %d)\n",

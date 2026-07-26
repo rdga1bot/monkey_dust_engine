@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 
 // Granite-style terrain migration, Phase 2 (plan at
 // /home/rdga1/.claude/plans/serene-pondering-teapot.md): replaces

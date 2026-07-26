@@ -8,13 +8,13 @@
 // shaders/slang/terrain_patch.slang field-for-field.
 struct PatchVertUBO {
     float vp[16];
-    float origin_x, origin_z, patch_size, lod;
+    float origin_x, origin_z, patch_size, tier_n;
     float world_origin_x, world_origin_z, world_extent, height_min_m;
-    float height_max_m;
-    float _pad0[3];
+    float height_max_m, lod, _pad0[2];
+    float neighbor_tier_n[4];
     float cam_pos_ws[4];
 };
-static_assert(sizeof(PatchVertUBO) == 128, "PatchVertUBO size mismatch");
+static_assert(sizeof(PatchVertUBO) == 144, "PatchVertUBO size mismatch");
 
 struct PatchFragUBO {
     float sun_dir_str[4];
@@ -30,14 +30,22 @@ bool TerrainPatchRenderer::BuildTierMesh(int tier, int quads_per_edge) {
     const int N = quads_per_edge;
     const int VC = (N + 1) * (N + 1);
     const int IC = N * N * 6;
-    static float    verts[(kPatchN + 1) * (kPatchN + 1) * 2];
+    // 3 floats/vertex now: aUV.xy + aEdgeMask (Phase 4).
+    static float    verts[(kPatchN + 1) * (kPatchN + 1) * 3];
     static uint32_t idx[kPatchN * kPatchN * 6];
 
     for (int row = 0; row <= N; ++row) {
         for (int col = 0; col <= N; ++col) {
             int vi = row * (N + 1) + col;
-            verts[vi * 2 + 0] = (float)col / (float)N;
-            verts[vi * 2 + 1] = (float)row / (float)N;
+            verts[vi * 3 + 0] = (float)col / (float)N;
+            verts[vi * 3 + 1] = (float)row / (float)N;
+            // Edge mask: 1=-X(col==0), 2=+X(col==N), 4=-Z(row==0), 8=+Z(row==N).
+            uint32_t mask = 0;
+            if (col == 0) mask |= 1u;
+            if (col == N) mask |= 2u;
+            if (row == 0) mask |= 4u;
+            if (row == N) mask |= 8u;
+            verts[vi * 3 + 2] = (float)mask;
         }
     }
     int ii = 0;
@@ -62,9 +70,10 @@ bool TerrainPatchRenderer::Init(SDL_GPUDevice* /*dev*/) {
     pd.vert_path = "shaders/terrain_patch.vert";
     pd.frag_path = "shaders/terrain_patch.frag";
 
-    pd.layout.count      = 1;
-    pd.layout.stride     = 8; // float2 aUV
+    pd.layout.count      = 2;
+    pd.layout.stride     = 12; // float2 aUV + float aEdgeMask
     pd.layout.attribs[0] = { 0, 0, GpuAttribFmt::F2 };
+    pd.layout.attribs[1] = { 1, 8, GpuAttribFmt::F1 };
 
     pd.raster.depth_test  = true;
     pd.raster.depth_write = true;
@@ -104,6 +113,7 @@ void TerrainPatchRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
 void TerrainPatchRenderer::DrawOne(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                                     const float* vp16,
                                     float origin_x, float origin_z, float patch_size, float lod,
+                                    const float neighbor_tier_n[4],
                                     const TerrainWorldHeightmap& hmap,
                                     const TerrainRenderer::SunParams& sun,
                                     float cam_x, float cam_y, float cam_z,
@@ -128,12 +138,17 @@ void TerrainPatchRenderer::DrawOne(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
     vubo.origin_x = origin_x;
     vubo.origin_z = origin_z;
     vubo.patch_size = patch_size;
-    vubo.lod = lod;
+    vubo.tier_n = (float)TierN(tier);
     vubo.world_origin_x = 0.f; // TerrainWorldHeightmap covers [0, world_extent) both axes
     vubo.world_origin_z = 0.f;
     vubo.world_extent   = hmap.WorldExtent();
     vubo.height_min_m   = hmap.HeightMin();
     vubo.height_max_m   = hmap.HeightMax();
+    vubo.lod = lod;
+    vubo.neighbor_tier_n[0] = neighbor_tier_n[0];
+    vubo.neighbor_tier_n[1] = neighbor_tier_n[1];
+    vubo.neighbor_tier_n[2] = neighbor_tier_n[2];
+    vubo.neighbor_tier_n[3] = neighbor_tier_n[3];
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));

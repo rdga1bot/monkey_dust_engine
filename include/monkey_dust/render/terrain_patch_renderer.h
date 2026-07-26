@@ -13,10 +13,13 @@
 // comparison; this is additive, not a replacement, until Phase 8 removes
 // the old system entirely.
 //
-// Phase 3 scope: builds the discrete LOD mesh tiers and draws exactly
-// ONE hardcoded patch (no instancing yet, Phase 5; no neighbor-LOD snap
-// yet, Phase 4) — smallest possible proof that VTF sampling from the new
-// world-wide texture actually works end-to-end in a real draw call.
+// Phase 3 built the discrete LOD mesh tiers and single-patch VTF draw.
+// Phase 4 (this revision) adds neighbor-LOD edge snapping: each tier's
+// mesh bakes an edge-mask vertex attribute (which of the 4 patch edges a
+// vertex sits on) at build time; DrawOne now takes the 4 neighbor tier
+// indices so the shader can snap this patch's edge vertices to align
+// with a COARSER neighbor's own grid, eliminating T-junction cracks at
+// LOD boundaries. Instancing (Phase 5) still pending.
 class TerrainPatchRenderer {
 public:
     bool Init(SDL_GPUDevice* dev);
@@ -26,12 +29,21 @@ public:
     static constexpr int kPatchN = 64;    // finest tier: 64x64 quads
     static constexpr int kNumTiers = 7;   // 64,32,16,8,4,2,1 quads/edge
 
-    // Phase 3: draws one patch at the given world origin/size/lod using
-    // tier = round(lod) (clamped to [0,kNumTiers-1]) -- no neighbor snap,
-    // no instancing.
+    // tier_n_ [t] = quads/edge for tier t (64,32,16,8,4,2,1) -- exposed so
+    // callers (TerrainPatchGrid-driven selection, Phase 5+) can convert a
+    // neighbor's LOD float into the tier_n value DrawOne's neighbor_tier_n
+    // params expect without duplicating the halving sequence.
+    static int TierN(int tier) { return tier >= 0 && tier < kNumTiers ? (kPatchN >> tier) : 0; }
+
+    // Draws one patch at the given world origin/size/lod using
+    // tier = round(lod) (clamped to [0,kNumTiers-1]). neighbor_tier_n
+    // (order: -X,+X,-Z,+Z) should be TierN(neighbor's own rounded LOD) --
+    // pass 0 (or this patch's own TierN) for "no coarser neighbor to snap
+    // against" (world edge, or a same-or-finer neighbor).
     void DrawOne(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                  const float* vp16,
                  float origin_x, float origin_z, float patch_size, float lod,
+                 const float neighbor_tier_n[4],
                  const TerrainWorldHeightmap& hmap,
                  const TerrainRenderer::SunParams& sun,
                  float cam_x, float cam_y, float cam_z,

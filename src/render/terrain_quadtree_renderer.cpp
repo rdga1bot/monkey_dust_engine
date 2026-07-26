@@ -2,9 +2,12 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/world/terrain_gen.h>
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/platform/job_system.h>
+#include <SDL3/SDL_timer.h>
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
+#include <chrono>
 
 // Vertex-stage constant buffer — MUST mirror QuadVert in
 // shaders/slang/terrain_quadtree.slang field-for-field (same byte-offset
@@ -118,18 +121,29 @@ static void s_region_sample_to_zone(int gi, int zone_span, int& zi, int& local) 
     if (zi >= zone_span) { zi = zone_span - 1; local = kZoneGridStep64; }
 }
 
-bool TerrainQuadtreeRenderer::UploadHeightmapRegion(int zx0, int zy0, int zone_span,
-                                                     float& out_height_min, float& out_height_max) {
-    constexpr int kMaxRes = 2049; // hard cap: zone_span<=16 -> 2049 samples/axis
+// Pure-CPU sampling + RGBA packing — shared between the synchronous
+// UploadHeightmapRegion (used once by Init(), where blocking at startup is
+// already accepted, see scene_render.cpp's SDL_WaitForGPUIdle comment) and
+// KickRebuildAsync's JobSystem worker. MUST NOT touch any GPU resource —
+// JobSystem's own contract (job_system.h): "jobs must not touch... GPU
+// resources", enforced here structurally by simply never calling into
+// gpu_hal from this function. h_tmp/rgba must each be at least
+// kMaxRes*kMaxRes (resp. *4) floats/bytes — callers own that storage
+// (TerrainQuadtreeRenderer::h_tmp_/rgba_ in practice) so two concurrent
+// callers on the SAME instance would corrupt each other's buffer; callers
+// are responsible for their own single-flight guard (rebuild_in_flight_
+// for the async path, or simply never called concurrently for the sync
+// Init() path).
+bool TerrainQuadtreeRenderer::s_sample_and_pack(int zx0, int zy0, int zone_span,
+                                                 float* h_tmp, uint8_t* rgba,
+                                                 int& out_N, float& out_hmin, float& out_hmax,
+                                                 float& out_texel_step_m) {
     const int N = zone_span * kZoneGridStep64 + 1;
     if (N > kMaxRes) {
         fprintf(stderr, "[TerrainQuadtreeRenderer] region too large: zone_span=%d -> %dx%d samples (cap %d)\n",
                 zone_span, N, N, kMaxRes);
         return false;
     }
-    static float   h_tmp[kMaxRes * kMaxRes];
-    static uint8_t rgba[kMaxRes * kMaxRes * 4];
-
     float hmin = 1e9f, hmax = -1e9f;
     for (int row = 0; row < N; ++row) {
         int zzi, zlocal_row;
@@ -162,6 +176,22 @@ bool TerrainQuadtreeRenderer::UploadHeightmapRegion(int zx0, int zy0, int zone_s
         rgba[i * 4 + 3] = 255;
     }
 
+    out_N            = N;
+    out_hmin         = hmin;
+    out_hmax         = hmin + range;
+    out_texel_step_m = ((float)zone_span * CHUNK_SIZE) / (float)(N - 1);
+    return true;
+}
+
+bool TerrainQuadtreeRenderer::UploadHeightmapRegion(int zx0, int zy0, int zone_span,
+                                                     float& out_height_min, float& out_height_max) {
+    auto t0 = std::chrono::steady_clock::now();
+    int N = 0;
+    if (!s_sample_and_pack(zx0, zy0, zone_span, h_tmp_, rgba_, N,
+                            out_height_min, out_height_max, region_texel_step_m_))
+        return false;
+    auto t1 = std::chrono::steady_clock::now();
+
     GpuSamplerDesc sd;
     sd.min_filter = GpuSamplerDesc::Filter::LINEAR;
     sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
@@ -171,12 +201,88 @@ bool TerrainQuadtreeRenderer::UploadHeightmapRegion(int zx0, int zy0, int zone_s
     sd.flip_v     = false;
 
     GpuTexture tex;
-    if (!tex.InitFromMemory(rgba, N, N, sd)) return false;
+    if (!tex.InitFromMemory(rgba_, N, N, sd)) return false;
     height_tex_     = tex.TakeSDLTexture();
     height_sampler_ = tex.TakeSDLSampler();
-    out_height_min  = hmin;
-    out_height_max  = hmin + range;
-    region_texel_step_m_ = ((float)zone_span * CHUNK_SIZE) / (float)(N - 1);
+    auto t2 = std::chrono::steady_clock::now();
+    if (getenv("MD_QT_DEBUG")) {
+        auto ms = [](auto a, auto b){ return std::chrono::duration<double,std::milli>(b-a).count(); };
+        fprintf(stderr, "[QTDBG] UploadHeightmapRegion(sync) N=%d sample+pack=%.2fms gpu_upload=%.2fms total=%.2fms\n",
+                N, ms(t0,t1), ms(t1,t2), ms(t0,t2));
+    }
+    return true;
+}
+
+void TerrainQuadtreeRenderer::s_run_rebuild_job(void* p) {
+    RebuildJobArgs* a = (RebuildJobArgs*)p;
+    a->out_ok = s_sample_and_pack(a->zx0, a->zy0, a->zone_span, a->h_tmp, a->rgba,
+                                   a->out_N, a->out_hmin, a->out_hmax, a->out_texel_step_m);
+}
+
+bool TerrainQuadtreeRenderer::KickRebuildAsync(int zx0, int zy0, int zone_span,
+                                                float local_origin_x, float local_origin_z) {
+    if (!ready_) return false;
+    if (SDL_GetAtomicInt(&rebuild_in_flight_) > 0) return false; // previous job still running
+
+    rebuild_job_args_.zx0             = zx0;
+    rebuild_job_args_.zy0             = zy0;
+    rebuild_job_args_.zone_span       = zone_span;
+    rebuild_job_args_.local_origin_x  = local_origin_x;
+    rebuild_job_args_.local_origin_z  = local_origin_z;
+    rebuild_job_args_.h_tmp           = h_tmp_;
+    rebuild_job_args_.rgba            = rgba_;
+    rebuild_job_args_.out_ok          = false;
+
+    JobSystem::Get().Submit(s_run_rebuild_job, &rebuild_job_args_, &rebuild_in_flight_);
+    rebuild_has_pending_result_ = true;
+    return true;
+}
+
+bool TerrainQuadtreeRenderer::RebuildInFlight() const {
+    return SDL_GetAtomicInt(&rebuild_in_flight_) > 0;
+}
+
+bool TerrainQuadtreeRenderer::PollRebuildApply(float& out_height_min, float& out_height_max) {
+    if (!rebuild_has_pending_result_) return false;
+    if (SDL_GetAtomicInt(&rebuild_in_flight_) > 0) return false; // still running
+    rebuild_has_pending_result_ = false;
+    if (!rebuild_job_args_.out_ok) return false;
+
+    auto t0 = std::chrono::steady_clock::now();
+    GpuSamplerDesc sd;
+    sd.min_filter = GpuSamplerDesc::Filter::LINEAR;
+    sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    sd.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    sd.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    sd.gen_mipmap = false;
+    sd.flip_v     = false;
+
+    GpuTexture tex;
+    if (!tex.InitFromMemory(rebuild_job_args_.rgba, rebuild_job_args_.out_N, rebuild_job_args_.out_N, sd))
+        return false;
+
+    // Old texture stays live (still what Draw() has been using every frame
+    // this job was in flight) right up until this point — only released
+    // once the replacement is fully ready, so there is never a frame where
+    // height_tex_ is null/half-built.
+    if (height_tex_)     { SDL_ReleaseGPUTexture(md::GpuDevice::Get().SDLDevice(), height_tex_); }
+    if (height_sampler_) { SDL_ReleaseGPUSampler(md::GpuDevice::Get().SDLDevice(), height_sampler_); }
+    height_tex_     = tex.TakeSDLTexture();
+    height_sampler_ = tex.TakeSDLSampler();
+
+    region_size_          = (float)rebuild_job_args_.zone_span * CHUNK_SIZE;
+    region_origin_x_      = rebuild_job_args_.local_origin_x;
+    region_origin_z_      = rebuild_job_args_.local_origin_z;
+    region_texel_step_m_  = rebuild_job_args_.out_texel_step_m;
+    out_height_min        = rebuild_job_args_.out_hmin;
+    out_height_max        = rebuild_job_args_.out_hmax;
+
+    if (getenv("MD_QT_DEBUG")) {
+        auto t1 = std::chrono::steady_clock::now();
+        fprintf(stderr, "[QTDBG] PollRebuildApply N=%d gpu_upload=%.2fms (sample+pack ran off-thread)\n",
+                rebuild_job_args_.out_N,
+                std::chrono::duration<double, std::milli>(t1 - t0).count());
+    }
     return true;
 }
 
@@ -219,6 +325,9 @@ bool TerrainQuadtreeRenderer::Init(int zx0, int zy0, int zone_span,
     region_origin_x_ = local_origin_x;
     region_origin_z_ = local_origin_z;
 
+    SDL_SetAtomicInt(&rebuild_in_flight_, 0);
+    rebuild_has_pending_result_ = false;
+
     ready_ = true;
     return true;
 }
@@ -240,6 +349,13 @@ bool TerrainQuadtreeRenderer::RebuildRegion(int zx0, int zy0, int zone_span,
 }
 
 void TerrainQuadtreeRenderer::Shutdown() {
+    // A KickRebuildAsync job writes into THIS instance's h_tmp_/rgba_ scratch
+    // members from a worker thread — must not still be running when this
+    // object (and that memory) goes away. Spin-wait rather than a global
+    // JobSystem::Flush() (which would also wait on unrelated in-flight work,
+    // e.g. animation/pathing jobs from other systems) since rebuild_in_flight_
+    // is this instance's own counter.
+    while (SDL_GetAtomicInt(&rebuild_in_flight_) > 0) { SDL_Delay(1); }
     if (height_tex_)     { SDL_ReleaseGPUTexture(md::GpuDevice::Get().SDLDevice(), height_tex_); height_tex_ = nullptr; }
     if (height_sampler_) { SDL_ReleaseGPUSampler(md::GpuDevice::Get().SDLDevice(), height_sampler_); height_sampler_ = nullptr; }
     patch_vbo_.Shutdown();

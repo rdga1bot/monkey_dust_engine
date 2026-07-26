@@ -237,6 +237,7 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
 
 void GpuStaticBuffer::InitEmpty(unsigned int target, uint32_t size) {
 #ifdef MD_SDL_GPU
+    if (size == 0) { sdl_buf_ = nullptr; return; } // SDL_CreateGPUBuffer asserts on size<4 (audit S1-0b)
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     SDL_GPUBufferUsageFlags usage = (target == 0x8893u)  ? SDL_GPU_BUFFERUSAGE_INDEX
                                    : (target == GPU_TARGET_STORAGE) ? SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ

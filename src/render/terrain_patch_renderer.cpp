@@ -12,7 +12,17 @@
 struct PatchVertUBO {
     float vp[16];
     float patch_size, tier_n, world_origin_x, world_origin_z;
-    float world_extent, height_min_m, height_max_m, _pad0;
+    // res_texels: TerrainWorldHeightmap::Resolution() (texel count/axis) --
+    // needed in the shader to correct the vertex-grid UV (worldX/world_extent,
+    // vertex i at i/(res_texels-1)) into the half-texel-centered UV a GPU
+    // sampler actually reads a texture at (texel i centered at (i+0.5)/
+    // res_texels). Without this, SampleLevel silently samples up to half a
+    // texel away from the intended world position -- confirmed via a real
+    // --exec repro (camera placed at TerrainQuery's exact reported ground
+    // height ended up embedded inside solid rendered terrain) that this is
+    // large enough to fully bury a character on steep local slopes, even
+    // though the per-axis error is under one texel (~3.6m) everywhere.
+    float world_extent, height_min_m, height_max_m, res_texels;
     float cam_pos_ws[4];
 };
 static_assert(sizeof(PatchVertUBO) == 112, "PatchVertUBO size mismatch");
@@ -169,6 +179,7 @@ void TerrainPatchRenderer::DrawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer
     vubo.world_extent   = hmap.WorldExtent();
     vubo.height_min_m   = hmap.HeightMin();
     vubo.height_max_m   = hmap.HeightMax();
+    vubo.res_texels     = (float)hmap.Resolution();
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));

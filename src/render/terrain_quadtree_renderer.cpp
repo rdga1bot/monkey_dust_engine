@@ -149,6 +149,7 @@ bool TerrainQuadtreeRenderer::UploadHeightmapRegion(int zx0, int zy0, int zone_s
 }
 
 bool TerrainQuadtreeRenderer::Init(int zx0, int zy0, int zone_span,
+                                    float local_origin_x, float local_origin_z,
                                     float& out_height_min, float& out_height_max) {
     GpuPipeline::Desc pd;
     pd.vert_path = "shaders/terrain_quadtree.vert";
@@ -183,14 +184,15 @@ bool TerrainQuadtreeRenderer::Init(int zx0, int zy0, int zone_span,
     if (!UploadHeightmapRegion(zx0, zy0, zone_span, out_height_min, out_height_max)) return false;
 
     region_size_     = (float)zone_span * CHUNK_SIZE;
-    region_origin_x_ = (float)zx0 * CHUNK_SIZE;
-    region_origin_z_ = (float)zy0 * CHUNK_SIZE;
+    region_origin_x_ = local_origin_x;
+    region_origin_z_ = local_origin_z;
 
     ready_ = true;
     return true;
 }
 
 bool TerrainQuadtreeRenderer::RebuildRegion(int zx0, int zy0, int zone_span,
+                                             float local_origin_x, float local_origin_z,
                                              float& out_height_min, float& out_height_max) {
     if (!ready_) return false;
     if (height_tex_)     { SDL_ReleaseGPUTexture(md::GpuDevice::Get().SDLDevice(), height_tex_); height_tex_ = nullptr; }
@@ -200,8 +202,8 @@ bool TerrainQuadtreeRenderer::RebuildRegion(int zx0, int zy0, int zone_span,
         return false;
     }
     region_size_     = (float)zone_span * CHUNK_SIZE;
-    region_origin_x_ = (float)zx0 * CHUNK_SIZE;
-    region_origin_z_ = (float)zy0 * CHUNK_SIZE;
+    region_origin_x_ = local_origin_x;
+    region_origin_z_ = local_origin_z;
     return true;
 }
 

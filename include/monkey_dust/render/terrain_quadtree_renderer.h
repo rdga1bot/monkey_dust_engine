@@ -35,21 +35,46 @@
 class TerrainQuadtreeRenderer {
 public:
     // Builds the pipeline + unit-patch mesh, then samples TerrainAtlas over
-    // the zone rectangle [zx0,zx0+zone_span) x [zy0,zy0+zone_span) at
-    // native resolution (zone_span*64+1 samples/axis) and uploads ONE
-    // packed heightmap texture covering that whole region. Every node
-    // later passed to Draw() must lie within this region — this defines
-    // the same bounds the caller's TerrainQuadtree::Init() world_size_m
-    // must cover. Returns the real [min,max] height range found so the
-    // caller can pass matching values to Draw() for decoding.
-    bool Init(int zx0, int zy0, int zone_span, float& out_height_min, float& out_height_max);
+    // the ABSOLUTE zone rectangle [zx0,zx0+zone_span) x [zy0,zy0+zone_span)
+    // at native resolution (zone_span*64+1 samples/axis) and uploads ONE
+    // packed heightmap texture covering that whole region.
+    //
+    // local_origin_x/z: the region's origin EXPRESSED IN WHATEVER
+    // COORDINATE SPACE the caller's TerrainQuadtree lives in — this is
+    // what gets stored as region_origin_x_/z_ and compared against node
+    // origins in the shader's regionUV computation, so it MUST match
+    // exactly. Deliberately separate from zx0/zy0 (always absolute Kenshi
+    // zone indices — TerrainAtlas itself is absolute-only): a caller whose
+    // camera/tree lives in absolute Kenshi metres (e.g. the editor's
+    // free-fly viewport) passes local_origin_x = zx0*CHUNK_SIZE (same
+    // value, effectively a no-op translation); a caller using a floating
+    // SESSION-LOCAL window (e.g. the game's SceneRender::tnoff_x/z, see
+    // its own doc comment) must pass THAT origin instead — passing the
+    // absolute value there mixes coordinate spaces, pushes regionUV far
+    // outside [0,1], and (since the height sampler clamps-to-edge) makes
+    // every vertex read the same single edge texel: a perfectly flat mesh
+    // (confirmed root cause of a real regression, 2026-07-26 — the game's
+    // Phase 7 wiring passed the absolute value here while its tree used
+    // tnoff_x, silently flattening all terrain while leaving the albedo,
+    // which uses its own correctly-computed world_origin_x/z, unaffected —
+    // exactly why it looked "textured but flat").
+    //
+    // Every node later passed to Draw() must lie within this region — this
+    // defines the same bounds the caller's TerrainQuadtree::Init()
+    // world_size_m must cover, with THAT SAME coordinate-space origin.
+    // Returns the real [min,max] height range found so the caller can pass
+    // matching values to Draw() for decoding.
+    bool Init(int zx0, int zy0, int zone_span, float local_origin_x, float local_origin_z,
+              float& out_height_min, float& out_height_max);
     // Re-samples TerrainAtlas over a NEW zone rectangle and replaces just the
     // height texture — releases the old one first. Cheap relative to Init():
     // does NOT recreate the pipeline or unit-patch mesh (those don't depend
     // on which region is loaded). Call whenever the caller's tracked window
     // (e.g. SceneRender::zone_ox/oz) actually moves; Init() must have
-    // succeeded once already (ready_ must be true).
-    bool RebuildRegion(int zx0, int zy0, int zone_span, float& out_height_min, float& out_height_max);
+    // succeeded once already (ready_ must be true). local_origin_x/z: see
+    // Init()'s doc comment — same coordinate-space requirement.
+    bool RebuildRegion(int zx0, int zy0, int zone_span, float local_origin_x, float local_origin_z,
+                        float& out_height_min, float& out_height_max);
     void Shutdown();
     bool IsReady() const { return ready_; }
 

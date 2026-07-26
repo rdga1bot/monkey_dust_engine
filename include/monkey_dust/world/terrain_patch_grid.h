@@ -67,7 +67,21 @@ public:
     // FrustumPlanes/TerrainQuadtree::SelectVisible's own AabbInFrustum
     // used) and fills out[] with every patch whose AABB is at least
     // partially in view. Returns the count (capped at max_out).
-    int SelectVisible(const float frustum_planes[16], VisiblePatch* out, int max_out) const;
+    //
+    // max_lod_cull (default: no extra cull, matches every existing test
+    // and caller unchanged): the 4 frustum planes here are SIDE planes
+    // only (left/right/top/bottom, same convention MdCamera::
+    // FrustumPlanes uses) -- there is no far-plane/distance test in that
+    // convention anywhere in this codebase. Without an explicit distance
+    // cutoff, patches many kilometres past any reasonable draw/fog
+    // distance still pass the side-plane test and get fully vertex-
+    // shaded (VTF height + normal sampling) only to be clipped by the
+    // GPU afterward -- wasted work, and the actual real-world cause of a
+    // measured "GPU load >80%" regression (patch(lod) already encodes
+    // distance via UpdateLOD's own formula, so this reuses that value
+    // directly instead of a redundant distance computation here).
+    int SelectVisible(const float frustum_planes[16], VisiblePatch* out, int max_out,
+                       float max_lod_cull = 1e9f) const;
 
 private:
     float world_origin_x_ = 0.f, world_origin_z_ = 0.f;

@@ -57,16 +57,19 @@ bool AabbInFrustum(float ox, float oz, float size, float ymin, float ymax, const
 }
 } // namespace
 
-int TerrainPatchGrid::SelectVisible(const float frustum_planes[16], VisiblePatch* out, int max_out) const {
+int TerrainPatchGrid::SelectVisible(const float frustum_planes[16], VisiblePatch* out, int max_out,
+                                     float max_lod_cull) const {
     int count = 0;
     for (int iz = 0; iz < nz_ && count < max_out; ++iz) {
         float oz = world_origin_z_ + (float)iz * patch_size_;
         for (int ix = 0; ix < nx_ && count < max_out; ++ix) {
+            float lod = lod_[(size_t)iz * nx_ + ix];
+            if (lod > max_lod_cull) continue;
             float ox = world_origin_x_ + (float)ix * patch_size_;
             if (!AabbInFrustum(ox, oz, patch_size_, kAabbMinY, kAabbMaxY, frustum_planes)) continue;
             out[count].ix = ix; out[count].iz = iz;
             out[count].origin_x = ox; out[count].origin_z = oz;
-            out[count].lod = lod_[(size_t)iz * nx_ + ix];
+            out[count].lod = lod;
             ++count;
         }
     }

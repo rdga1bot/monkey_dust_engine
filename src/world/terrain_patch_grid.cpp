@@ -28,8 +28,15 @@ void TerrainPatchGrid::UpdateLOD(const float cam_pos[3]) {
             float cx = world_origin_x_ + ((float)ix + 0.5f) * patch_size_;
             float dx = cam_pos[0] - cx, dz = cam_pos[2] - cz;
             float dist_sq = dx * dx + dz * dz;
-            // 0.5*log2(dist^2) == log2(dist) without a sqrt.
-            float lod = (dist_sq > 1e-3f) ? 0.5f * log2f(dist_sq) : 0.f;
+            // log2(dist / patch_size) -- distance normalized by patch_size
+            // so tier thresholds scale with this grid's own patch size
+            // (tier t starts at roughly patch_size*2^t): without the
+            // patch_size_ divisor, dist_sq alone saturates max_lod by
+            // ~64m regardless of patch size, putting nearly the entire
+            // visible world at the coarsest 1-quad/edge mesh. Equivalent
+            // to 0.5*log2(dist_sq / patch_size^2).
+            float norm_dist_sq = dist_sq / (patch_size_ * patch_size_);
+            float lod = (norm_dist_sq > 1e-3f) ? 0.5f * log2f(norm_dist_sq) : 0.f;
             if (lod < 0.f) lod = 0.f;
             if (lod > (float)max_lod_) lod = (float)max_lod_;
             lod_[(size_t)iz * nx_ + ix] = lod;

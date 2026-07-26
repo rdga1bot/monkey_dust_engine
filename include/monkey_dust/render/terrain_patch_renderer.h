@@ -14,12 +14,25 @@
 // the old system entirely.
 //
 // Phase 3 built the discrete LOD mesh tiers and single-patch VTF draw.
-// Phase 4 (this revision) adds neighbor-LOD edge snapping: each tier's
-// mesh bakes an edge-mask vertex attribute (which of the 4 patch edges a
-// vertex sits on) at build time; DrawOne now takes the 4 neighbor tier
-// indices so the shader can snap this patch's edge vertices to align
-// with a COARSER neighbor's own grid, eliminating T-junction cracks at
-// LOD boundaries. Instancing (Phase 5) still pending.
+// Phase 4 added neighbor-LOD edge snapping: each tier's mesh bakes an
+// edge-mask vertex attribute (which of the 4 patch edges a vertex sits
+// on) at build time, and the shader snaps a patch's edge vertices to
+// align with a COARSER neighbor's own grid, eliminating T-junction
+// cracks at LOD boundaries.
+//
+// Phase 5 (this revision) replaces the old one-draw-call-per-patch API
+// with real hardware instancing: per-patch data (origin, own LOD, 4
+// neighbor tiers) moves out of the per-draw uniform buffer into a
+// per-instance VERTEX attribute stream bound at slot=1 (GpuVertexLayout's
+// inst_attribs, VERTEXINPUTRATE_INSTANCE) -- this deliberately avoids
+// the storage-buffer-based instancing NpcRender uses, since this
+// pipeline needs frag_samplers=3 and vert_storage_bufs>0 combined with
+// frag_samplers>0 is a hard pipeline-creation failure / documented SDL3
+// 3.4.8 silent-corruption bug on this hardware (see plan at
+// /home/rdga1/.claude/plans/serene-pondering-teapot.md, Architecture §5).
+// All patches sharing the same LOD tier (mesh) now batch into ONE
+// instanced SDL_DrawGPUIndexedPrimitives call instead of one call per
+// patch.
 class TerrainPatchRenderer {
 public:
     bool Init(SDL_GPUDevice* dev);
@@ -28,28 +41,43 @@ public:
 
     static constexpr int kPatchN = 64;    // finest tier: 64x64 quads
     static constexpr int kNumTiers = 7;   // 64,32,16,8,4,2,1 quads/edge
+    static constexpr int kMaxInstancesPerTier = 4096;
 
     // tier_n_ [t] = quads/edge for tier t (64,32,16,8,4,2,1) -- exposed so
-    // callers (TerrainPatchGrid-driven selection, Phase 5+) can convert a
-    // neighbor's LOD float into the tier_n value DrawOne's neighbor_tier_n
-    // params expect without duplicating the halving sequence.
+    // callers (TerrainPatchGrid-driven selection) can convert a
+    // neighbor's LOD float into the tier_n value Instance::neighbor_tier_n
+    // expects without duplicating the halving sequence.
     static int TierN(int tier) { return tier >= 0 && tier < kNumTiers ? (kPatchN >> tier) : 0; }
 
-    // Draws one patch at the given world origin/size/lod using
-    // tier = round(lod) (clamped to [0,kNumTiers-1]). neighbor_tier_n
-    // (order: -X,+X,-Z,+Z) should be TierN(neighbor's own rounded LOD) --
-    // pass 0 (or this patch's own TierN) for "no coarser neighbor to snap
-    // against" (world edge, or a same-or-finer neighbor).
-    void DrawOne(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
-                 const float* vp16,
-                 float origin_x, float origin_z, float patch_size, float lod,
-                 const float neighbor_tier_n[4],
-                 const TerrainWorldHeightmap& hmap,
-                 const TerrainRenderer::SunParams& sun,
-                 float cam_x, float cam_y, float cam_z,
-                 float world_origin_x, float world_origin_z, float world_to_uv,
-                 float fog_far, const float fog_color[3], float fog_near,
-                 const TerrainRenderer& ground);
+    // One patch's per-instance data (28 bytes: matches inst_stride).
+    // neighbor_tier_n order: -X,+X,-Z,+Z. Pass 0 (or this patch's own
+    // TierN) for "no coarser neighbor to snap against" (world edge, or a
+    // same-or-finer neighbor) -- same convention Phase 4's DrawOne used.
+    struct Instance {
+        float origin_x, origin_z, lod;
+        float neighbor_tier_n[4];
+    };
+
+    // Uploads this frame's per-tier instance batches. MUST be called
+    // OUTSIDE any active render pass (issues one SDL_GPU copy pass per
+    // non-empty tier) and BEFORE the render pass that calls DrawBatch.
+    // counts[t]==0 (or insts[t]==nullptr) skips tier t entirely --
+    // DrawBatch(t) becomes a no-op for that tier this frame.
+    void UploadInstances(SDL_GPUCommandBuffer* cmd,
+                          const Instance* const insts[kNumTiers],
+                          const int counts[kNumTiers]);
+
+    // Draws every instance uploaded for `tier` this frame as ONE
+    // instanced indexed draw call. No-op if UploadInstances wasn't
+    // called this frame or uploaded 0 instances for this tier.
+    void DrawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int tier,
+                   const float* vp16, float patch_size,
+                   const TerrainWorldHeightmap& hmap,
+                   const TerrainRenderer::SunParams& sun,
+                   float cam_x, float cam_y, float cam_z,
+                   float world_origin_x, float world_origin_z, float world_to_uv,
+                   float fog_far, const float fog_color[3], float fog_near,
+                   const TerrainRenderer& ground);
 
 private:
     bool BuildTierMesh(int tier, int quads_per_edge);
@@ -58,6 +86,9 @@ private:
     GpuStaticBuffer tier_vbo_[kNumTiers];
     GpuStaticBuffer tier_ibo_[kNumTiers];
     uint32_t        tier_idx_count_[kNumTiers] = {};
+
+    GpuVertexBuffer inst_vbo_[kNumTiers];
+    uint32_t        inst_count_[kNumTiers] = {};
 
     bool ready_ = false;
 };

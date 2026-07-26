@@ -5,16 +5,17 @@
 #include <algorithm>
 
 // Vertex-stage constant buffer — MUST mirror PatchVert in
-// shaders/slang/terrain_patch.slang field-for-field.
+// shaders/slang/terrain_patch.slang field-for-field. Phase 5: per-patch
+// fields (origin/lod/neighbor_tier_n) moved to the per-instance vertex
+// stream (Instance, below) — this UBO now holds only what's constant
+// across an entire tier's batched instanced draw.
 struct PatchVertUBO {
     float vp[16];
-    float origin_x, origin_z, patch_size, tier_n;
-    float world_origin_x, world_origin_z, world_extent, height_min_m;
-    float height_max_m, lod, _pad0[2];
-    float neighbor_tier_n[4];
+    float patch_size, tier_n, world_origin_x, world_origin_z;
+    float world_extent, height_min_m, height_max_m, _pad0;
     float cam_pos_ws[4];
 };
-static_assert(sizeof(PatchVertUBO) == 144, "PatchVertUBO size mismatch");
+static_assert(sizeof(PatchVertUBO) == 112, "PatchVertUBO size mismatch");
 
 struct PatchFragUBO {
     float sun_dir_str[4];
@@ -59,7 +60,7 @@ bool TerrainPatchRenderer::BuildTierMesh(int tier, int quads_per_edge) {
             idx[ii++] = v10; idx[ii++] = v01; idx[ii++] = v11;
         }
     }
-    tier_vbo_[tier].Init(0x8892u /*GL_ARRAY_BUFFER*/, verts, (size_t)VC * 2 * sizeof(float));
+    tier_vbo_[tier].Init(0x8892u /*GL_ARRAY_BUFFER*/, verts, (size_t)VC * 3 * sizeof(float));
     tier_ibo_[tier].Init(0x8893u /*GL_ELEMENT_ARRAY_BUFFER*/, idx, (size_t)IC * sizeof(uint32_t));
     tier_idx_count_[tier] = (uint32_t)IC;
     return true;
@@ -74,6 +75,15 @@ bool TerrainPatchRenderer::Init(SDL_GPUDevice* /*dev*/) {
     pd.layout.stride     = 12; // float2 aUV + float aEdgeMask
     pd.layout.attribs[0] = { 0, 0, GpuAttribFmt::F2 };
     pd.layout.attribs[1] = { 1, 8, GpuAttribFmt::F1 };
+
+    // Per-instance stream (slot=1, INSTANCE rate): origin.xy + own lod +
+    // 4 neighbor tier_n -- see Instance struct / header comment.
+    pd.layout.inst_count      = 3;
+    pd.layout.inst_stride     = 28;
+    pd.layout.inst_per_vertex = false;
+    pd.layout.inst_attribs[0] = { 2, 0,  GpuAttribFmt::F2 }; // aInstOrigin
+    pd.layout.inst_attribs[1] = { 3, 8,  GpuAttribFmt::F1 }; // aInstLod
+    pd.layout.inst_attribs[2] = { 4, 12, GpuAttribFmt::F4 }; // aInstNeighborTierN
 
     pd.raster.depth_test  = true;
     pd.raster.depth_write = true;
@@ -95,6 +105,7 @@ bool TerrainPatchRenderer::Init(SDL_GPUDevice* /*dev*/) {
     for (int t = 0; t < kNumTiers; ++t) {
         if (!BuildTierMesh(t, quads)) return false;
         quads = std::max(1, quads / 2);
+        inst_vbo_[t].Init(kMaxInstancesPerTier, sizeof(Instance));
     }
 
     ready_ = true;
@@ -105,38 +116,52 @@ void TerrainPatchRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
     for (int t = 0; t < kNumTiers; ++t) {
         tier_vbo_[t].Shutdown();
         tier_ibo_[t].Shutdown();
+        inst_vbo_[t].Shutdown();
+        inst_count_[t] = 0;
     }
     pipeline_.Destroy();
     ready_ = false;
 }
 
-void TerrainPatchRenderer::DrawOne(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
-                                    const float* vp16,
-                                    float origin_x, float origin_z, float patch_size, float lod,
-                                    const float neighbor_tier_n[4],
-                                    const TerrainWorldHeightmap& hmap,
-                                    const TerrainRenderer::SunParams& sun,
-                                    float cam_x, float cam_y, float cam_z,
-                                    float world_origin_x, float world_origin_z, float world_to_uv,
-                                    float fog_far, const float fog_color[3], float fog_near,
-                                    const TerrainRenderer& ground) {
-    if (!ready_ || !hmap.IsReady()) return;
+void TerrainPatchRenderer::UploadInstances(SDL_GPUCommandBuffer* cmd,
+                                            const Instance* const insts[kNumTiers],
+                                            const int counts[kNumTiers]) {
+    if (!ready_) return;
+    for (int t = 0; t < kNumTiers; ++t) {
+        int n = counts[t];
+        if (n <= 0 || !insts[t]) { inst_count_[t] = 0; continue; }
+        if (n > kMaxInstancesPerTier) n = kMaxInstancesPerTier;
+        void* dst = inst_vbo_[t].MapWrite();
+        memcpy(dst, insts[t], (size_t)n * sizeof(Instance));
+        inst_vbo_[t].Unmap();
+        inst_vbo_[t].Upload(cmd);
+        inst_count_[t] = (uint32_t)n;
+    }
+}
 
-    int tier = (int)(lod + 0.5f);
-    if (tier < 0) tier = 0;
-    if (tier > kNumTiers - 1) tier = kNumTiers - 1;
+void TerrainPatchRenderer::DrawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int tier,
+                                      const float* vp16, float patch_size,
+                                      const TerrainWorldHeightmap& hmap,
+                                      const TerrainRenderer::SunParams& sun,
+                                      float cam_x, float cam_y, float cam_z,
+                                      float world_origin_x, float world_origin_z, float world_to_uv,
+                                      float fog_far, const float fog_color[3], float fog_near,
+                                      const TerrainRenderer& ground) {
+    if (!ready_ || !hmap.IsReady()) return;
+    if (tier < 0 || tier >= kNumTiers) return;
+    if (inst_count_[tier] == 0) return;
 
     SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
 
     SDL_GPUBufferBinding vb{ tier_vbo_[tier].SDLBuffer(), 0u };
     SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_GPUBufferBinding instvb{ inst_vbo_[tier].SDLBuffer(), 0u };
+    SDL_BindGPUVertexBuffers(rp, 1, &instvb, 1);
     SDL_GPUBufferBinding ib{ tier_ibo_[tier].SDLBuffer(), 0u };
     SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
 
     PatchVertUBO vubo{};
     memcpy(vubo.vp, vp16, 64);
-    vubo.origin_x = origin_x;
-    vubo.origin_z = origin_z;
     vubo.patch_size = patch_size;
     vubo.tier_n = (float)TierN(tier);
     vubo.world_origin_x = 0.f; // TerrainWorldHeightmap covers [0, world_extent) both axes
@@ -144,11 +169,6 @@ void TerrainPatchRenderer::DrawOne(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
     vubo.world_extent   = hmap.WorldExtent();
     vubo.height_min_m   = hmap.HeightMin();
     vubo.height_max_m   = hmap.HeightMax();
-    vubo.lod = lod;
-    vubo.neighbor_tier_n[0] = neighbor_tier_n[0];
-    vubo.neighbor_tier_n[1] = neighbor_tier_n[1];
-    vubo.neighbor_tier_n[2] = neighbor_tier_n[2];
-    vubo.neighbor_tier_n[3] = neighbor_tier_n[3];
     vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
     vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
     SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
@@ -176,6 +196,6 @@ void TerrainPatchRenderer::DrawOne(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* 
     SDL_GPUBuffer* sbuf = ground.ZoneGroundLayersSSBO();
     SDL_BindGPUFragmentStorageBuffers(rp, 0, &sbuf, 1);
 
-    SDL_DrawGPUIndexedPrimitives(rp, tier_idx_count_[tier], 1, 0, 0, 0);
+    SDL_DrawGPUIndexedPrimitives(rp, tier_idx_count_[tier], inst_count_[tier], 0, 0, 0);
 }
 #endif // MD_SDL_GPU

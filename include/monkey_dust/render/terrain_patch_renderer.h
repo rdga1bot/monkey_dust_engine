@@ -39,11 +39,20 @@ public:
     void Shutdown(SDL_GPUDevice* dev);
     bool IsReady() const { return ready_; }
 
-    static constexpr int kPatchN = 64;    // finest tier: 64x64 quads
-    static constexpr int kNumTiers = 7;   // 64,32,16,8,4,2,1 quads/edge
+    // task #299 (2026-07-27): finest tier was 64 quads/edge -> 300m/64 =
+    // 4.6875m/vertex, ~23% COARSER than both our own source heightmap's
+    // native density (CHUNK_SIZE/TERRAIN_GRID = 460.8/128 = 3.6m) and real
+    // Kenshi's actual in-game resolution (RE-confirmed, re_docs/kenshi/
+    // terrain.md: 129 verts/460.8m tile = 3.6m) -- i.e. the render was
+    // under-sampling data that's already available at higher density,
+    // reading as sharper/more faceted terrain than the source supports.
+    // 128 quads/edge -> 300/128 = 2.34m/vertex, finer than Kenshi's own
+    // resolution (safety margin, not just parity).
+    static constexpr int kPatchN = 128;   // finest tier: 128x128 quads
+    static constexpr int kNumTiers = 8;   // 128,64,32,16,8,4,2,1 quads/edge
     static constexpr int kMaxInstancesPerTier = 4096;
 
-    // tier_n_ [t] = quads/edge for tier t (64,32,16,8,4,2,1) -- exposed so
+    // tier_n_ [t] = quads/edge for tier t (128,64,32,16,8,4,2,1) -- exposed so
     // callers (TerrainPatchGrid-driven selection) can convert a
     // neighbor's LOD float into the tier_n value Instance::neighbor_tier_n
     // expects without duplicating the halving sequence.

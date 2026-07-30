@@ -113,6 +113,71 @@ static float s_grass_density_at(float wx, float wz) {
     return r > g ? r : g;
 }
 
+// ── Real Kenshi grasssplits density (KEN-CLUTTER v4) ──────────────────────────
+// tools/md_stitch_grasssplits.py decodes the real, authored grasssplits/
+// fullmap.<zx>.<zy>.raw tiles (257x257 uint16 density grid per WorldRegistry
+// zone) into one combined u8 map. Confirmed this session against the real,
+// linked Ogre PagedGeometry library (kenshi_x64.exe contains Forests::
+// GrassLoader/PagedGeometry RTTI + literal "..\..\source\GrassLoader.cpp"
+// paths) — GrassLoader::setDensityMap() treats each pixel as a 0..1
+// probability that a candidate grass slot spawns there, exactly the
+// random<density model s_grass_density_at above already approximates via
+// md_overlay_mask (a colour-blend mask, not real placement data). This is
+// the REAL placement density where available; only covers a 16x16 zone
+// sub-rect locally (zx 10-25, zy 16-31), NOT the whole world — falls back
+// to s_grass_density_at (biome fill_prob only) outside that rect, same
+// graceful-degradation pattern as s_grass_density_at's own missing-file path.
+static uint8_t* s_kgd_density = nullptr;
+static int      s_kgd_w = 0, s_kgd_h = 0;
+static int      s_kgd_origin_zx = 0, s_kgd_origin_zy = 0;
+static bool     s_kgd_tried = false;
+
+static void s_load_kenshi_grass_density() {
+    if (s_kgd_tried) return;
+    s_kgd_tried = true;
+    uint32_t raw_len = 0;
+    char* raw = md::fs_read_alloc("game/data/textures/md_grasssplits_density.raw", &raw_len);
+    if (!raw || raw_len <= 8) {
+        fprintf(stderr, "[ClutterGen] md_grasssplits_density.raw not found — "
+                        "real grasssplits placement disabled (overlay-mask fallback only)\n");
+        return;
+    }
+    int32_t ozx, ozy;
+    memcpy(&ozx, raw,     4);
+    memcpy(&ozy, raw + 4, 4);
+    uint32_t pixel_count = raw_len - 8;
+    // W=H for this stitcher (square zone rect) isn't guaranteed in general,
+    // but the sqrt reconstruction only works for the square case it always
+    // produces (16x16 zones -> 4097x4097) — reject anything else rather
+    // than guess a wrong W/H split.
+    uint32_t side = (uint32_t)(int)(sqrtf((float)pixel_count) + 0.5f);
+    if ((uint64_t)side * side != (uint64_t)pixel_count) {
+        fprintf(stderr, "[ClutterGen] md_grasssplits_density.raw non-square payload (%u px) — ignoring\n",
+                pixel_count);
+        md::fs_free(raw);
+        return;
+    }
+    s_kgd_w = s_kgd_h = (int)side;
+    s_kgd_origin_zx = ozx;
+    s_kgd_origin_zy = ozy;
+    s_kgd_density = (uint8_t*)raw + 8;  // raw intentionally never freed — same lifetime as s_grass_density
+}
+
+// Returns true (density written) if (wx,wz) falls within the locally-covered
+// grasssplits zone rect; false if the caller should fall back to
+// s_grass_density_at instead.
+static bool s_kenshi_grass_density_at(float wx, float wz, float* out_density) {
+    if (!s_kgd_density) return false;
+    float zone_fx = wx / CHUNK_SIZE - (float)s_kgd_origin_zx;
+    float zone_fz = wz / CHUNK_SIZE - (float)s_kgd_origin_zy;
+    if (zone_fx < 0.f || zone_fz < 0.f) return false;
+    int px = (int)(zone_fx * 256.f);
+    int py = (int)(zone_fz * 256.f);
+    if (px < 0 || px >= s_kgd_w || py < 0 || py >= s_kgd_h) return false;
+    *out_density = s_kgd_density[(size_t)py * (size_t)s_kgd_w + (size_t)px] / 255.f;
+    return true;
+}
+
 static bool load_source_glb(const char* path, ClutterSource& out, float layer) {
     cgltf_options opts = {};
     cgltf_data*   data = nullptr;
@@ -228,6 +293,7 @@ bool ClutterGen_LoadSources() {
     s_sources_ready = false;
     for (int i = 0; i < kSourceCount; ++i) s_sources_ready |= s_sources[i].loaded;
     s_load_grass_density();
+    s_load_kenshi_grass_density();
     return ok;
 }
 
@@ -283,7 +349,9 @@ void ClutterGen_Build(TerrainChunk& chunk, const char* biome_slug) {
             // comment). Floor of 0.25 keeps bare/dirt patches lightly
             // scattered (real ground still has occasional rocks/debris off
             // the painted grass mask) rather than a hard on/off cutoff.
-            float density  = s_grass_density_at(ox + lx, oz + lz);
+            float density;
+            if (!s_kenshi_grass_density_at(ox + lx, oz + lz, &density))
+                density = s_grass_density_at(ox + lx, oz + lz);
             float eff_prob = fill_prob * (0.25f + 0.75f * density);
             if (p01 > eff_prob) continue;
 

@@ -148,6 +148,7 @@ void JobSystem::Shutdown() {
 }
 
 void JobSystem::Submit(void (*fn)(void*), void* data) {
+    if (force_serial_) { fn(data); return; }
     SDL_LockMutex(mtx_);
     while (count_ >= MAX_JOBS)           // back-pressure: queue full
         SDL_WaitCondition(cv_cap_, mtx_);
@@ -170,6 +171,12 @@ void JobSystem::Flush() {
 // Counter is incremented here, decremented atomically when job completes.
 // Caller can spin-wait on counter instead of blocking Flush().
 void JobSystem::Submit(void (*fn)(void*), void* data, SDL_AtomicInt* counter) {
+    if (force_serial_) {
+        SDL_AtomicIncRef(counter);
+        fn(data);
+        SDL_AtomicDecRef(counter);
+        return;
+    }
     SDL_LockMutex(mtx_);
     while (count_ >= MAX_JOBS)
         SDL_WaitCondition(cv_cap_, mtx_);

@@ -68,17 +68,53 @@ bool BiomeRegistry::LoadFromFile(const char* path) {
             char slug[MAX_SLUG_LEN] = {0};
             BiomeDef& d = e.def;
             int lr = 0, lg = 0, lb = 0;
-            int n = sscanf(p + 6, "%47s %d %d %d %d %d %d %f %f %f %f %f %f %d %d %d",
+            int consumed = 0;
+            int n = sscanf(p + 6, "%47s %d %d %d %d %d %d %f %f %f %f %f %f %d %d %d%n",
                 slug, &d.tex_base, &d.tex_slope, &d.tex_cliff,
                 &d.tex_grass, &d.tex_dirt, &d.tex_road,
                 &d.fog_r, &d.fog_g, &d.fog_b,
                 &d.sky_horizon_r, &d.sky_horizon_g, &d.sky_horizon_b,
-                &lr, &lg, &lb);
+                &lr, &lg, &lb, &consumed);
             if (n == 16) {
                 strncpy(e.slug, slug, MAX_SLUG_LEN - 1);
                 e.legend_rgb[0] = (uint8_t)lr;
                 e.legend_rgb[1] = (uint8_t)lg;
                 e.legend_rgb[2] = (uint8_t)lb;
+                // Trailing per-layer tiling + slope-band fields (see this
+                // file's format comment): tile_base_x/y tile_slope_x/y
+                // tile_cliff_x/y ... -- only cliff tiling (fields 5,6 of
+                // that 12-number block) is needed live; the rest is
+                // consumed by tools/md_bake_ground_layers.py offline.
+                // Missing (older biome_table.txt) -> BiomeDef's in-class
+                // defaults (1.0, 1.0) stand, matching "no scale change".
+                float tiling[12];
+                int consumed2 = 0;
+                int got = sscanf(p + 6 + consumed, "%f %f %f %f %f %f %f %f %f %f %f %f%n",
+                    &tiling[0], &tiling[1], &tiling[2], &tiling[3], &tiling[4], &tiling[5],
+                    &tiling[6], &tiling[7], &tiling[8], &tiling[9], &tiling[10], &tiling[11],
+                    &consumed2);
+                if (got == 12) {
+                    d.cliff_tiling_x = tiling[4];
+                    d.cliff_tiling_y = tiling[5];
+                    // Trailing slope-band block (6 floats, unused live —
+                    // see comment above) then brightness_fix (1 float,
+                    // 19th trailing field overall). Missing (older
+                    // biome_table.txt) -> BiomeDef's in-class default
+                    // (1.0, no-op) stands.
+                    float slope_band[6];
+                    int consumed3 = 0;
+                    int got2 = sscanf(p + 6 + consumed + consumed2,
+                        "%f %f %f %f %f %f%n",
+                        &slope_band[0], &slope_band[1], &slope_band[2],
+                        &slope_band[3], &slope_band[4], &slope_band[5],
+                        &consumed3);
+                    if (got2 == 6) {
+                        float bf = 1.0f;
+                        if (sscanf(p + 6 + consumed + consumed2 + consumed3, "%f", &bf) == 1) {
+                            d.brightness_fix = bf;
+                        }
+                    }
+                }
                 ++biome_count_;
             }
             continue;

@@ -237,6 +237,7 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
 
 void GpuStaticBuffer::InitEmpty(unsigned int target, uint32_t size) {
 #ifdef MD_SDL_GPU
+    if (size == 0) { sdl_buf_ = nullptr; return; } // SDL_CreateGPUBuffer asserts on size<4 (audit S1-0b)
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     SDL_GPUBufferUsageFlags usage = (target == 0x8893u)  ? SDL_GPU_BUFFERUSAGE_INDEX
                                    : (target == GPU_TARGET_STORAGE) ? SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ
@@ -498,8 +499,14 @@ bool GpuTexture::InitFromDDS(const char* path, const GpuSamplerDesc& s) {
               SDL_GPUTextureTransferInfo src = {};
               src.transfer_buffer = tb;
               src.offset          = tb_off;
-              src.pixels_per_row  = (Uint32)mw;
-              src.rows_per_layer  = (Uint32)mh;
+              // BC3's 4x4 texel block extent: bufferRowLength/bufferImageHeight
+              // must be a multiple of 4 even when a small mip's own width/height
+              // (dst.w/dst.h below) drops under 4 (VUID-vkCmdCopyBufferToImage-
+              // bufferRowLength/bufferImageHeight-09106/09107) — s_bc_mip_bytes
+              // already rounds the byte size up the same way, this just makes
+              // the transfer-layout fields agree with that rounding.
+              src.pixels_per_row  = (Uint32)((mw + 3) & ~3);
+              src.rows_per_layer  = (Uint32)((mh + 3) & ~3);
               SDL_GPUTextureRegion dst = {};
               dst.texture   = sdl_tex_;
               dst.mip_level = (Uint32)m;
@@ -820,8 +827,11 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
             SDL_GPUTextureTransferInfo src = {};
             src.transfer_buffer = tb;
             src.offset          = tb_off;
-            src.pixels_per_row  = (Uint32)mw;
-            src.rows_per_layer  = (Uint32)mh;
+            // See InitFromDDS's identical comment above — BC1/BC3's 4x4 block
+            // extent requires bufferRowLength/bufferImageHeight rounded up to
+            // a multiple of 4 for small mips, independent of dst.w/dst.h.
+            src.pixels_per_row  = (Uint32)((mw + 3) & ~3);
+            src.rows_per_layer  = (Uint32)((mh + 3) & ~3);
             SDL_GPUTextureRegion dst = {};
             dst.texture   = sdl_tex_;
             dst.mip_level = (Uint32)m;

@@ -294,62 +294,25 @@ struct TerrainChunk {
     ChunkCoord      coord;
     float           center_x = 0.f;    // world-space centre (set by TerrainGen_Build)
     float           center_z = 0.f;
-    GpuStaticBuffer vbo;               // TerrainVertex * TERRAIN_VERTS
-    GpuStaticBuffer ibo;               // uint16_t * TERRAIN_IDX  (L0: 128×128)
-    GpuStaticBuffer ibo_lod[3];        // L1: 64×64, L2: 32×32, L3: 16×16
-    GpuStaticBuffer skirt_vbo;         // TerrainVertex * TERRAIN_SKIRT_VERTS (Item 7)
-    GpuStaticBuffer skirt_ibo;         // uint16_t * TERRAIN_SKIRT_IDX
-    // Task #182 (2026-07-19), shading-mismatch fix: baked full-resolution
-    // (LOD0) per-vertex steepness (1-normal.y), one float per TERRAIN_VERTS
-    // grid node, row-major (same idx() as BuildLodIboStitched). Decimated
-    // LOD1-3 triangles only carry 3 corner normals across up to an 8×8-cell
-    // span, so interpolating N.y across THAT triangle (the pre-fix approach)
-    // silently discards real local steepness variation -- measured via
-    // md.scan_shading_mismatch(): flip_rate=4.37% of pixels picked the wrong
-    // ground layer (grass/slope/cliff) relative to the true fine-resolution
-    // terrain, worst at LOD3/step=8. This buffer lets terrain_forward.slang
-    // bilinearly resample the REAL full-res field regardless of which LOD
-    // triangle is actually being rasterised -- decoupling ground-layer
-    // selection from mesh LOD, the only way to fix it (any per-vertex
-    // attribute baked onto the LOD triangle's own 3 corners has the exact
-    // same interpolation error as the normal itself). GPU_TARGET_STORAGE
-    // (gpu_hal.h) so it rides the same GpuUploadBatch as vbo/ibo/skirt in
-    // s_upload_core -- no extra synchronous per-chunk GPU submit.
-    GpuStaticBuffer steepness_ssbo;
+    // task terrain-dedup (2026-07-29): vbo/ibo/ibo_lod/skirt_vbo/skirt_ibo/
+    // steepness_ssbo/ground_layers/blend_layers/lod_error REMOVED — verified
+    // zero readers anywhere in engine/game/tools (same investigation that
+    // found TerrainRenderer's own draw pipeline dead, terrain_renderer.h's
+    // class doc comment). These fields fed ONLY that now-removed draw
+    // pipeline; TerrainPatchRenderer/Granite (the sole active renderer)
+    // reads its own single world-wide heightmap texture instead, never
+    // per-chunk GPU mesh buffers. What's still genuinely used below:
+    // heightmap (physics/TerrainQuery/SampleHeight), pass_grid (AI
+    // walkability), navmesh/props/coord/center. NOT investigated (separate,
+    // still-open question): BuildLodIboStitched above stays, since tests/
+    // test_md_terrain.cpp and md.scan_terrain_seam_tjunctions() (lua_
+    // scenario_api.cpp) call it directly as a pure geometry function,
+    // independent of chunk.ibo_lod's now-removed GPU upload.
     NavMesh          navmesh;
     TerrainHeightmap heightmap;         // CPU copy for height queries
     TerrainPassGrid  pass_grid;         // L2-inspired O(1) passability bitmask
     ChunkPropInstance props[CHUNK_MAX_PROPS];
     int              prop_count = 0;    // valid entries in props[]
-    // GroundTexLayer indices: 0=base,1=slope,2=cliff (per biome), 3=grass,4=dirt,5=road (global)
-    float            ground_layers[6] = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f};
-    // Procedural biome crossfade targets: xyz=slot A (base/slope/cliff of the
-    // FIRST grid-adjacent neighbour chunk whose resolved biome differs),
-    // w=slot B (base index only of the SECOND differing neighbour, for
-    // chunks at a 3-way zone corner -- one blended boundary isn't enough
-    // there, confirmed visually). Equal to ground_layers[0]/this chunk's own
-    // base when no such neighbour exists -- blend weight is then always 0
-    // regardless of the mask texture, so a stray nonzero sample still blends
-    // into itself (a no-op) rather than showing a wrong texture. See
-    // ARCHITECTURE note in terrain_gen.cpp's biome-assignment block for the
-    // real-Kenshi (blendmap.png/blendinfo.dat) precedent this mirrors.
-    float            blend_layers[4] = {0.f, 1.f, 2.f, 0.f};
-    // Task #182h (2026-07-19): per-LOD-tier max geometric error, for
-    // pixel-error-adaptive LOD switching (real Ogre3D Terrain component
-    // technique — setMaxPixelError, see re_docs/kenshi/terrain.md's
-    // setOgreBuildLimits subsection). lod_error[i] = the largest absolute
-    // height difference (world units) between TERRAIN_LOD_STEPS[i]'s
-    // decimated mesh and the true full-resolution heightmap, anywhere in
-    // this chunk — computed once at TerrainGen_Build time (same corner-
-    // interpolation formula as md.scan_shading_mismatch()'s steepness
-    // check, just tracking max |height delta| instead). Flat/low-relief
-    // chunks get a small error (can drop to a coarse LOD much closer
-    // without visible simplification); rugged/cliff-heavy chunks get a
-    // large error (should stay at fine LOD until much farther away) —
-    // replaces render_quality.h's fixed world-distance LOD cutoffs with a
-    // per-chunk-adaptive distance, capped by those same fixed values as a
-    // worst-case ceiling (game/src/render/npc_render.cpp).
-    float            lod_error[3] = {0.f, 0.f, 0.f};
     bool             loaded = false;
     // Set true at the end of TerrainGen_Build — independent of `loaded` (which
     // means "GPU buffers uploaded", set by TerrainGen_Upload). Lets callers

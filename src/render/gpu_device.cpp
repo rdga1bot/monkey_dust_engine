@@ -43,6 +43,21 @@ bool GpuDevice::Init(SDL_Window* window) {
 
 void GpuDevice::Shutdown() {
     if (device_) {
+        // 2026-07-25: async uploads (e.g. GpuTexture::InitFromDDSArray)
+        // submit a command buffer and release their host-side transfer
+        // buffer immediately after, with no fence wait — correct as long
+        // as SOME later frame's own sync (BeginFrame's fence wait, or just
+        // elapsed wall-clock during normal play) catches up before the
+        // buffer's memory is reused. A script that calls md.quit() only a
+        // few ticks after a large upload (e.g. the 125-layer/699MB ground
+        // texture array) skips all of that — SDL_DestroyGPUDevice below
+        // could then run while the GPU copy is still in flight, corrupting
+        // the Intel ANV driver's internal state (observed: SIGABRT heap
+        // corruption and SIGSEGV in __munmap, both inside libvulkan_intel.so
+        // during this exact Shutdown() call, both only under --exec
+        // scenarios that quit quickly — never during normal interactive
+        // use, which naturally gives every upload time to finish).
+        SDL_WaitForGPUIdle(device_);
         SDL_DestroyGPUDevice(device_);
         device_ = nullptr;
         window_ = nullptr;

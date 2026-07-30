@@ -12,6 +12,18 @@ struct BiomeDef {
     int  tex_grass, tex_dirt, tex_road;    // per-biome ground layer indices
     float fog_r, fog_g, fog_b;
     float sky_horizon_r, sky_horizon_g, sky_horizon_b;
+    // Real per-biome cliff UV tiling scale (Kenshi FCS "tiling X/Y 2",
+    // confirmed against tmp_/kenshi_re/materials/deferred/terrainfp4.hlsl's
+    // computeBiome() -- texCoords.yz/xz * scales0.zw). Multiplies the
+    // shared world/5000 base coordinate (terrain.hlsl's main_vs); defaults
+    // to 1.0 for any biome_table.txt predating this field (see
+    // BiomeRegistry::LoadFromFile).
+    float cliff_tiling_x = 1.0f, cliff_tiling_y = 1.0f;
+    // Real per-biome albedo multiplier (Kenshi FCS "brightness fix",
+    // confirmed against terrainfp4.hlsl:212 -- biome.albedo.rgb *=
+    // brightnessFix.x). Defaults to 1.0 (no-op) for any biome_table.txt
+    // predating this field.
+    float brightness_fix = 1.0f;
 };
 
 class BiomeRegistry {

@@ -33,6 +33,11 @@ public:
     // anim_mode: 0=static, 1=wind sway (vegetation), 2=character bob
     // normals_xyz: parallel array [count*3] of terrain surface normals (G-2 tilt).
     // nullptr = no tilt (props stay upright, e.g. vegetation).
+    // quats_xyzw: parallel array [count*4] of real per-instance placement
+    // rotations (FeatureScatter — real Kenshi authored orientation, not a
+    // terrain-tilt approximation). nullptr = use normals_xyz/tilt instead
+    // (existing procedural-prop behaviour, unchanged). Takes priority over
+    // normals_xyz when both are non-null (see prop.vert's model_quat.w!=0 check).
     void DrawRaw(
 #ifdef MD_SDL_GPU
         SDL_GPURenderPass*    rp,
@@ -45,7 +50,8 @@ public:
         float        scale       = SCALE,
         float        anim_mode   = 0.0f,
         float        anim_time   = 0.0f,
-        const float* normals_xyz = nullptr);
+        const float* normals_xyz = nullptr,
+        const float* quats_xyzw  = nullptr);
 
 private:
     PropMesh    mesh_;

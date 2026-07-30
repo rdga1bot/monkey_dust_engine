@@ -59,18 +59,23 @@ void PropRenderer::Shutdown() {
     mesh_.Shutdown();
 }
 
-// Vertex UBO layout (std140, 112 bytes):
+// Vertex UBO layout (std140, 128 bytes):
 //   mat4 vp              — 64 bytes
 //   vec4 model_pos_scale — 16 bytes (xyz=world pos, w=scale)
 //   vec4 anim_params     — 16 bytes (x=time, y=mode, z=mesh_height, w=phase)
 //   vec4 model_normal    — 16 bytes (xyz=terrain normal; (0,1,0) = no tilt, G-2)
+//   vec4 model_quat      — 16 bytes (xyzw; w==0 = unused, falls back to model_normal tilt)
+// 128B is the documented push-constant ceiling on this project's target
+// hardware (CLAUDE.md's Intel HD 520 checklist) — right at the limit, not
+// over it; verified live before this became the shipped size.
 struct alignas(16) PropVertUBO {
     float vp[16];              // 64 bytes
     float model_pos_scale[4];  // 16 bytes
     float anim_params[4];      // 16 bytes
     float model_normal[4];     // 16 bytes
+    float model_quat[4];       // 16 bytes
 };
-static_assert(sizeof(PropVertUBO) == 112, "PropVertUBO size mismatch");
+static_assert(sizeof(PropVertUBO) == 128, "PropVertUBO size mismatch");
 
 void PropRenderer::DrawRaw(
 #ifdef MD_SDL_GPU
@@ -84,7 +89,8 @@ void PropRenderer::DrawRaw(
     float        scale,
     float        anim_mode,
     float        anim_time,
-    const float* normals_xyz)
+    const float* normals_xyz,
+    const float* quats_xyzw)
 {
     if (!mesh_.loaded || count <= 0) return;
     if (count > MAX_PROPS) count = MAX_PROPS;
@@ -147,6 +153,15 @@ void PropRenderer::DrawRaw(
             v_ubo.model_normal[2] = 0.f;
         }
         v_ubo.model_normal[3] = 0.f;
+
+        if (quats_xyzw) {
+            memcpy(v_ubo.model_quat, quats_xyzw + i * 4, 16);
+        } else {
+            v_ubo.model_quat[0] = 0.f;
+            v_ubo.model_quat[1] = 0.f;
+            v_ubo.model_quat[2] = 0.f;
+            v_ubo.model_quat[3] = 0.f;  // w==0 -> shader falls back to model_normal tilt
+        }
 
         SDL_PushGPUVertexUniformData(cmd, 0, &v_ubo, sizeof(v_ubo));
         SDL_DrawGPUIndexedPrimitives(rp, mesh_.index_count, 1, 0, 0, 0);

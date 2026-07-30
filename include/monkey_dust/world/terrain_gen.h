@@ -34,20 +34,20 @@ std::mutex& TerrainGen_StagingMutex();
 // lookup tables without duplicating the biomemap-sampling logic.
 const BiomeDef& TerrainGen_ResolveBiome(int zx, int zy);
 
-// Upload VBO/IBO to GPU. Call from main (render) thread after TerrainGen_Build.
-// Implemented in engine/src/render/terrain_upload.cpp (GPU-aware TU, not linked
-// by test binaries that only call TerrainGen_Build).
+// task terrain-dedup (2026-07-29): TerrainGen_Upload now only marks
+// chunk.loaded=true — the GPU mesh buffers it used to build (vbo/ibo/
+// ibo_lod/skirt_vbo/skirt_ibo/steepness_ssbo) were removed, verified zero
+// readers (TerrainPatchRenderer/Granite is the sole active renderer and
+// reads its own world-wide heightmap texture instead). Kept as a function
+// (not inlined at call sites) since dozens of call sites pair it with
+// TerrainGen_Build and a future per-chunk GPU resource may need it again.
+// Implemented in engine/src/render/terrain_upload.cpp (still a separate,
+// GPU-aware TU for that reason, even though it's now tiny).
 void TerrainGen_Upload(TerrainChunk& chunk);
 
-// Staging buffer accessors (filled by TerrainGen_Build, consumed by TerrainGen_Upload).
-// Valid only until the next TerrainGen_Build call.
-const TerrainVertex* TerrainGen_StagedVerts();
-const uint16_t*      TerrainGen_StagedIndices();
-const TerrainVertex* TerrainGen_StagedSkirtVerts();   // Item 7: skirt geometry
-const uint16_t*      TerrainGen_StagedSkirtIndices();
-
-// Async upload path (Item 5): upload from caller-provided buffers instead of
-// the shared static staging buffers (avoids race when worker thread reuses staging).
+// Async upload path (Item 5): same as TerrainGen_Upload now (no staged
+// buffers left to select between shared-static vs caller-provided) — kept
+// as a distinct overload so existing call sites don't need touching.
 void TerrainGen_UploadFrom(TerrainChunk& chunk,
                            const TerrainVertex* verts,
                            const uint16_t*      idx,
@@ -95,3 +95,15 @@ bool  TerrainAtlas_HasEdits();
 // call sites (editor camera, prop placement) — samples the REAL Kenshi zone
 // data directly, at full atlas resolution.
 float TerrainAtlas_SampleWorld(float wx, float wz);
+
+// Quadtree-LOD terrain rewrite, Phase 9 (see plan at
+// /home/rdga1/.claude/plans/serene-pondering-teapot.md): world-space
+// walkability at (wx,wz), same slope-threshold rule TerrainGen_Build's own
+// per-chunk pass_grid uses (TerrainPassGrid — NOT built from a NavMesh
+// despite that struct's own doc comment/TerrainPassGrid_Build function,
+// which is dead code nothing calls; the REAL population is exactly this
+// three-sample slope check over TerrainAtlas height data, terrain_gen.cpp's
+// own "4. NavMesh (disabled) + PassGrid (lightweight, from heightmap
+// slope)" comment). Works anywhere in the real Kenshi world, same as
+// TerrainAtlas_SampleWorld — no per-chunk grid needed.
+bool TerrainAtlas_IsWalkableWorld(float wx, float wz);

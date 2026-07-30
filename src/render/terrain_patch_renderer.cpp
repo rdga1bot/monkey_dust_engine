@@ -41,22 +41,17 @@ bool TerrainPatchRenderer::BuildTierMesh(int tier, int quads_per_edge) {
     const int N = quads_per_edge;
     const int VC = (N + 1) * (N + 1);
     const int IC = N * N * 6;
-    // 3 floats/vertex now: aUV.xy + aEdgeMask (Phase 4).
-    static float    verts[(kPatchN + 1) * (kPatchN + 1) * 3];
+    // 2 floats/vertex: aUV.xy only -- no edge-mask (see header comment on
+    // why per-vertex edge snapping was replaced with a whole-patch tier
+    // clamp, matching the real Granite reference).
+    static float    verts[(kPatchN + 1) * (kPatchN + 1) * 2];
     static uint32_t idx[kPatchN * kPatchN * 6];
 
     for (int row = 0; row <= N; ++row) {
         for (int col = 0; col <= N; ++col) {
             int vi = row * (N + 1) + col;
-            verts[vi * 3 + 0] = (float)col / (float)N;
-            verts[vi * 3 + 1] = (float)row / (float)N;
-            // Edge mask: 1=-X(col==0), 2=+X(col==N), 4=-Z(row==0), 8=+Z(row==N).
-            uint32_t mask = 0;
-            if (col == 0) mask |= 1u;
-            if (col == N) mask |= 2u;
-            if (row == 0) mask |= 4u;
-            if (row == N) mask |= 8u;
-            verts[vi * 3 + 2] = (float)mask;
+            verts[vi * 2 + 0] = (float)col / (float)N;
+            verts[vi * 2 + 1] = (float)row / (float)N;
         }
     }
     int ii = 0;
@@ -70,7 +65,7 @@ bool TerrainPatchRenderer::BuildTierMesh(int tier, int quads_per_edge) {
             idx[ii++] = v10; idx[ii++] = v01; idx[ii++] = v11;
         }
     }
-    tier_vbo_[tier].Init(0x8892u /*GL_ARRAY_BUFFER*/, verts, (size_t)VC * 3 * sizeof(float));
+    tier_vbo_[tier].Init(0x8892u /*GL_ARRAY_BUFFER*/, verts, (size_t)VC * 2 * sizeof(float));
     tier_ibo_[tier].Init(0x8893u /*GL_ELEMENT_ARRAY_BUFFER*/, idx, (size_t)IC * sizeof(uint32_t));
     tier_idx_count_[tier] = (uint32_t)IC;
     return true;
@@ -81,19 +76,20 @@ bool TerrainPatchRenderer::Init(SDL_GPUDevice* /*dev*/) {
     pd.vert_path = "shaders/terrain_patch.vert";
     pd.frag_path = "shaders/terrain_patch.frag";
 
-    pd.layout.count      = 2;
-    pd.layout.stride     = 12; // float2 aUV + float aEdgeMask
+    pd.layout.count      = 1;
+    pd.layout.stride     = 8; // float2 aUV
     pd.layout.attribs[0] = { 0, 0, GpuAttribFmt::F2 };
-    pd.layout.attribs[1] = { 1, 8, GpuAttribFmt::F1 };
 
-    // Per-instance stream (slot=1, INSTANCE rate): origin.xy + own lod +
-    // 4 neighbor tier_n -- see Instance struct / header comment.
-    pd.layout.inst_count      = 3;
-    pd.layout.inst_stride     = 28;
+    // Per-instance stream (slot=1, INSTANCE rate): origin.xy + own
+    // (already neighbor-clamped) lod -- see Instance struct / header
+    // comment. No per-edge neighbor data needed: the CPU-side clamp in
+    // SceneRender::UpdateGraniteTerrain already bumps a patch to its
+    // coarsest neighbor's tier before it ever reaches here.
+    pd.layout.inst_count      = 2;
+    pd.layout.inst_stride     = 12;
     pd.layout.inst_per_vertex = false;
-    pd.layout.inst_attribs[0] = { 2, 0,  GpuAttribFmt::F2 }; // aInstOrigin
-    pd.layout.inst_attribs[1] = { 3, 8,  GpuAttribFmt::F1 }; // aInstLod
-    pd.layout.inst_attribs[2] = { 4, 12, GpuAttribFmt::F4 }; // aInstNeighborTierN
+    pd.layout.inst_attribs[0] = { 2, 0, GpuAttribFmt::F2 }; // aInstOrigin
+    pd.layout.inst_attribs[1] = { 3, 8, GpuAttribFmt::F1 }; // aInstLod
 
     pd.raster.depth_test  = true;
     pd.raster.depth_write = true;
@@ -103,7 +99,7 @@ bool TerrainPatchRenderer::Init(SDL_GPUDevice* /*dev*/) {
     pd.vert_uniform_bufs = 1;
     pd.vert_samplers     = 1; // heightTex — VTF, confirmed safe 2026-07-25
     pd.frag_uniform_bufs = 1;
-    pd.frag_samplers     = 3; // tex_colour, tex_ground array, tex_overlay_mask
+    pd.frag_samplers     = 3; // tex_colour, tex_ground array, tex_ground_baked
     pd.frag_storage_bufs = 1; // zoneGroundLayers
 
     if (!pipeline_.Create(pd)) {

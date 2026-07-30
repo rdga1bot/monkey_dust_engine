@@ -36,57 +36,10 @@ static void s_load_biomemap() {
         fprintf(stderr, "[TerrainGen] md_biomemap.png not found — biome lookup falls back to default\n");
 }
 
-// ── Blendmap touch check (task #182e, 2026-07-19: FPS fix) ───────────────────
-// game/data/textures/md_biome_blend.png (real Kenshi blendmap.png, 1:1 copy,
-// private/md_gen_biome_blendmap.py) — same file terrain_forward.slang samples
-// per-pixel for the comboAlternates crossfade. Loaded here ONLY to answer a
-// per-CHUNK yes/no question at generation time: does this chunk's zone block
-// contain ANY non-zero R/G/B pixel at all? The vast majority of chunks never
-// touch any of the 3 rare combo-alternate biomes, so gating the whole 18-
-// sample crossfade block behind a per-chunk UNIFORM flag (not a per-pixel
-// dynamic branch, which measured ~3x FPS regression on Intel HD 520 — likely
-// both sides of short branches with texture fetches get executed and masked
-// on this hardware/driver) should recover most of the lost performance:
-// SIMD/warp divergence only matters for per-PIXEL branches: a per-chunk
-// uniform flag means the ENTIRE draw call's fragments take the same path.
-static uint8_t* s_blendmap     = nullptr;
-static int      s_blendmap_w   = 0, s_blendmap_h = 0;
-static bool     s_blendmap_tried = false;
-
-static void s_load_blendmap() {
-    if (s_blendmap_tried) return;
-    s_blendmap_tried = true;
-    int comp = 0;
-    s_blendmap = stbi_load("game/data/textures/md_biome_blend.png", &s_blendmap_w, &s_blendmap_h, &comp, 4);
-    if (!s_blendmap)
-        fprintf(stderr, "[TerrainGen] md_biome_blend.png not found — combo-alternate gating defaults to always-on (safe, slower)\n");
-}
-
-// zx,zy: 0..63 zone grid coords (chunk==zone, 1:1, CHUNK_SIZE==zone size).
-// Returns true if ANY pixel in this zone's blendmap block (dilated by 1
-// pixel on each side, to catch GPU bilinear-filter bleed from an adjacent
-// zone's non-zero pixels right at the shared border) has R, G, or B > 0.
-// Conservative by design (checks whole own block + margin, not exact
-// footprint) — a false positive just costs one skipped-uniform-branch's
-// worth of unnecessary sampling on a chunk that turns out fully zero-weight
-// anyway (cheap); a false negative would silently drop a real, visible
-// crossfade (expensive to debug) — this trades a little perf for zero risk
-// of reintroducing the "seams" bug via an over-eager skip.
-static bool s_blendmap_touch(int zx, int zy) {
-    if (!s_blendmap) return true; // no data loaded — never silently skip
-    float scale = (float)s_blendmap_w / 64.0f;
-    int x0 = (int)(zx * scale) - 1, x1 = (int)((zx + 1) * scale) + 1;
-    int y0 = (int)(zy * scale) - 1, y1 = (int)((zy + 1) * scale) + 1;
-    if (x0 < 0) x0 = 0; if (x1 > s_blendmap_w) x1 = s_blendmap_w;
-    if (y0 < 0) y0 = 0; if (y1 > s_blendmap_h) y1 = s_blendmap_h;
-    for (int py = y0; py < y1; ++py) {
-        for (int px = x0; px < x1; ++px) {
-            const uint8_t* p = s_blendmap + ((size_t)py * s_blendmap_w + px) * 4;
-            if (p[0] != 0 || p[1] != 0 || p[2] != 0) return true;
-        }
-    }
-    return false;
-}
+// task terrain-dedup (2026-07-29): s_load_blendmap/s_blendmap_touch REMOVED
+// (compiler-confirmed unused after removing their only caller, the dead
+// per-chunk blend_layers[0] write) — existed solely to gate the now-removed
+// TerrainRenderer draw pipeline's combo-alternate crossfade branch.
 
 // zx,zy: 0..63 zone grid coords. Returns false (no data) if biomemap missing.
 // Mode (most frequent colour) over the zone's whole pixel block, not a
@@ -638,14 +591,14 @@ static inline int s_idx(int col, int row) { return row * (TERRAIN_GRID + 1) + co
 
 // ── TerrainGen_Build ──────────────────────────────────────────────────────────
 
-static TerrainVertex s_verts_buf[TERRAIN_VERTS];
-static uint16_t      s_idx_buf  [TERRAIN_IDX];
-// separate float[] nav positions (x,y,z per vert)
-static float         s_nav_pos  [TERRAIN_VERTS * 3];
-static int           s_nav_tri  [TERRAIN_IDX];   // same indices, cast to int
-// Item 7: skirt staging buffers (4 edges × 65 × 2 verts, 4 × 64 × 6 indices)
-static TerrainVertex s_skirt_v  [TERRAIN_SKIRT_VERTS];  // 520 verts
-static uint16_t      s_skirt_i  [TERRAIN_SKIRT_IDX];    // 1536 indices
+// task terrain-dedup (2026-07-29): s_verts_buf/s_idx_buf/s_skirt_v/s_skirt_i
+// (fed only the now-removed chunk.vbo/ibo/skirt_vbo/skirt_ibo GPU buffers)
+// and s_nav_pos/s_nav_tri (computed but never exposed via any accessor —
+// per-chunk Recast navmesh has been disabled since before this session,
+// NPC pathfinding uses the NavSystem singleton instead, see this
+// function's own "4. NavMesh (disabled)" comment below) all REMOVED —
+// verified zero readers, same investigation as terrain_renderer.h's class
+// doc comment.
 
 // See terrain_gen.h's doc comment on TerrainGen_StagingMutex(): guards the
 // buffers above across the main thread's synchronous Build+Upload fallback
@@ -709,9 +662,6 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     // old-location and new-location heights for this chunk.
     out.loaded = false;
 
-    float world_origin_x = coord.x * CHUNK_SIZE;
-    float world_origin_z = coord.z * CHUNK_SIZE;
-
     // ── 1. Heights ────────────────────────────────────────────────────────────
     if (!p.force_noise && p.zone_origin_x >= 0) {
         int zx = p.zone_origin_x + coord.x;
@@ -767,525 +717,30 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     }
     // (zone_origin_x >= 0 branch closes above via its own else-if)
 
-    // ── 2. Vertices ────────────────────────────────────────────────────────────
-    for (int row = 0; row <= TERRAIN_GRID; ++row) {
-        for (int col = 0; col <= TERRAIN_GRID; ++col) {
-            int vi = s_idx(col, row);
-            float h = out.heightmap.h[vi];
-            float wx = world_origin_x + col * TERRAIN_STEP + p.world_offset_x;
-            float wz = world_origin_z + row * TERRAIN_STEP + p.world_offset_z;
-
-            s_verts_buf[vi].x = wx;
-            s_verts_buf[vi].y = h;
-            s_verts_buf[vi].z = wz;
-
-            // UV: repeat every ~8m so texture looks natural at any terrain scale.
-            // Wrapped with fmodf at a large-but-bounded modulus (2048, an exact
-            // multiple of every downstream tiling multiplier used in the terrain
-            // shaders — *0.125 then *4.0 — so wrapping never introduces a seam)
-            // as a defensive precision margin against wx/wz being absolute world
-            // coordinates (up to a few thousand metres). NOTE: a suspected
-            // UV-magnitude/mip-precision bug was investigated as the cause of a
-            // "flat ground" report this session and ruled out by GPU debug (forcing
-            // mip0-only made no difference); the actual cause was an inherently
-            // low-contrast source texture (Kenshi's own swamp mud DDS) for that
-            // test zone, not a rendering bug. This wrap is kept as a reasonable,
-            // harmless precision margin, not a confirmed fix for anything.
-            s_verts_buf[vi].u = fmodf(wx * 0.125f, 2048.0f);
-            s_verts_buf[vi].v = fmodf(wz * 0.125f, 2048.0f);
-
-            // Task #182 (2026-07-19b): repurposed these two long-dead slots
-            // (ground_id/ground_id2 — nothing has written them since the
-            // per-pixel ground-selection rewrite earlier today, see
-            // TerrainVertex's doc comment) as a baked chunk-local [0,1] UV
-            // (local_u, local_v), smoothly interpolated by the rasterizer
-            // across ANY LOD triangle exactly like position/normal already
-            // are — used by terrain_forward.slang's fsMain to bilinear-
-            // sample TerrainChunk::steepness_ssbo at the fragment's true
-            // full-res grid location, independent of which LOD tier's
-            // (sparse) triangle corners are actually being interpolated.
-            s_verts_buf[vi].ground_id  = (float)col / (float)TERRAIN_GRID;  // local_u
-            s_verts_buf[vi].ground_id2 = (float)row / (float)TERRAIN_GRID;  // local_v
-            // morph_nx/morph_nz: placeholder here (normals aren't computed
-            // until a later pass, needs neighbour heights) — the "Geomorph
-            // targets" pass below overwrites these with the real parity-
-            // averaged morph target once s_verts_buf's normals are fully
-            // populated.
-            s_verts_buf[vi].morph_nx = 0.f;
-            s_verts_buf[vi].morph_nz = 0.f;
-
-            // Nav positions (flat float array for Recast)
-            s_nav_pos[vi * 3 + 0] = wx;
-            s_nav_pos[vi * 3 + 1] = h;
-            s_nav_pos[vi * 3 + 2] = wz;
-
-            // Zero normal — filled in step 3
-            s_verts_buf[vi].nx = 0.0f;
-            s_verts_buf[vi].ny = 0.0f;
-            s_verts_buf[vi].nz = 0.0f;
-        }
-    }
-
-    // ── 3. Indices + accumulate normals ───────────────────────────────────────
-    // Accumulate face normals into nx/ny/nz, then normalize per vertex.
-    int ii = 0;
-    for (int row = 0; row < TERRAIN_GRID; ++row) {
-        for (int col = 0; col < TERRAIN_GRID; ++col) {
-            uint16_t bl = (uint16_t)s_idx(col,   row);
-            uint16_t br = (uint16_t)s_idx(col+1, row);
-            uint16_t tl = (uint16_t)s_idx(col,   row+1);
-            uint16_t tr = (uint16_t)s_idx(col+1, row+1);
-
-            // Triangle 0: bl, br, tl
-            s_idx_buf[ii+0] = bl; s_idx_buf[ii+1] = br; s_idx_buf[ii+2] = tl;
-            s_nav_tri[ii+0] = bl; s_nav_tri[ii+1] = br; s_nav_tri[ii+2] = tl;
-
-            // Triangle 1: br, tr, tl
-            s_idx_buf[ii+3] = br; s_idx_buf[ii+4] = tr; s_idx_buf[ii+5] = tl;
-            s_nav_tri[ii+3] = br; s_nav_tri[ii+4] = tr; s_nav_tri[ii+5] = tl;
-
-            // Accumulate face normals for each triangle
-            auto accum_normal = [&](uint16_t a, uint16_t b, uint16_t c) {
-                TerrainVertex& va = s_verts_buf[a];
-                TerrainVertex& vb = s_verts_buf[b];
-                TerrainVertex& vc = s_verts_buf[c];
-                float ex = vb.x - va.x, ey = vb.y - va.y, ez = vb.z - va.z;
-                float fx = vc.x - va.x, fy = vc.y - va.y, fz = vc.z - va.z;
-                float nx = ey * fz - ez * fy;
-                float ny = ez * fx - ex * fz;
-                float nz = ex * fy - ey * fx;
-                for (uint16_t idx : {a, b, c}) {
-                    s_verts_buf[idx].nx += nx;
-                    s_verts_buf[idx].ny += ny;
-                    s_verts_buf[idx].nz += nz;
-                }
-            };
-            // Reversed winding for normal accumulation so normals point +Y (upward).
-            // Vertex winding in world space (XZ plane, Y up) is CW for the render
-            // pipeline (SDL_GPU Vulkan uses Y-down NDC after viewport flip → no cull).
-            accum_normal(bl, tl, br);
-            accum_normal(tl, tr, br);
-
-            ii += 6;
-        }
-    }
-
-    // Normalize accumulated normals
-    for (int i = 0; i < TERRAIN_VERTS; ++i) {
-        float& nx = s_verts_buf[i].nx;
-        float& ny = s_verts_buf[i].ny;
-        float& nz = s_verts_buf[i].nz;
-        float len = sqrtf(nx*nx + ny*ny + nz*nz);
-        if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
-        else { nx = 0.0f; ny = 1.0f; nz = 0.0f; }
-    }
-
-    // Slope/cliff splat weight is now computed PROCEDURALLY in the fragment
-    // shader from the (already edge-smoothed, via TerrainAtlas_SmoothBoundaries)
-    // vertex normal — matches the real Kenshi shader (terrainfp4.hlsl::main_fs:
-    // `weights = smoothstep(...)` from `slope = 1.0 - normal.y`), not a per-vertex
-    // baked weight. aSplat is no longer used by the atlas (real-terrain) path;
-    // kept only for the force_noise fallback path above (Variant B, unrelated
-    // to matching Kenshi) and for vertex-layout compatibility.
-
-    // ── Cross-chunk normal stitching ──────────────────────────────────────────
-    // Edge vertices only have normals from triangles within this chunk.
-    // Two paths: atlas (zone_origin_x>=0) samples the BSS atlas; noise path
-    // calls s_gen_height on the adjacent chunk coord.
-
-    // Noise-path stitching: sample neighbor heights via s_gen_height.
-    // s_edge(col,row): col/row may be -1 or TERRAIN_GRID+1 — wraps to neighbor chunk.
-    if (p.force_noise) {
-        auto s_edge = [&](int col, int row) -> float {
-            ChunkCoord nc = coord;
-            if      (col < 0)              { nc.x--; col += TERRAIN_GRID; }
-            else if (col > TERRAIN_GRID)   { nc.x++; col -= TERRAIN_GRID; }
-            if      (row < 0)              { nc.z--; row += TERRAIN_GRID; }
-            else if (row > TERRAIN_GRID)   { nc.z++; row -= TERRAIN_GRID; }
-            return s_gen_height(col, row, nc, p);
-        };
-
-        auto fix_n = [&](int col, int row,
-                         float hL, float hR, float hD, float hU) {
-            float dhdx = (hR - hL) / (2.0f * TERRAIN_STEP);
-            float dhdz = (hU - hD) / (2.0f * TERRAIN_STEP);
-            float nx = -dhdx, ny = 1.0f, nz = -dhdz;
-            float len = sqrtf(nx*nx + ny*ny + nz*nz);
-            if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
-            int vi = s_idx(col, row);
-            s_verts_buf[vi].nx = nx;
-            s_verts_buf[vi].ny = ny;
-            s_verts_buf[vi].nz = nz;
-        };
-
-        for (int row = 1; row < TERRAIN_GRID; ++row) {
-            fix_n(TERRAIN_GRID, row,
-                out.heightmap.h[s_idx(TERRAIN_GRID-1, row)],
-                s_edge(TERRAIN_GRID+1, row),
-                out.heightmap.h[s_idx(TERRAIN_GRID, row-1)],
-                out.heightmap.h[s_idx(TERRAIN_GRID, row+1)]);
-            fix_n(0, row,
-                s_edge(-1, row),
-                out.heightmap.h[s_idx(1, row)],
-                out.heightmap.h[s_idx(0, row-1)],
-                out.heightmap.h[s_idx(0, row+1)]);
-        }
-        for (int col = 1; col < TERRAIN_GRID; ++col) {
-            fix_n(col, 0,
-                out.heightmap.h[s_idx(col-1, 0)],
-                out.heightmap.h[s_idx(col+1, 0)],
-                s_edge(col, -1),
-                out.heightmap.h[s_idx(col, 1)]);
-            fix_n(col, TERRAIN_GRID,
-                out.heightmap.h[s_idx(col-1, TERRAIN_GRID)],
-                out.heightmap.h[s_idx(col+1, TERRAIN_GRID)],
-                out.heightmap.h[s_idx(col, TERRAIN_GRID-1)],
-                s_edge(col, TERRAIN_GRID+1));
-        }
-        // Four corners: all four neighbours contribute — sample diagonals via s_edge.
-        const int G = TERRAIN_GRID;
-        fix_n(0,  0,  s_edge(-1,0),   out.heightmap.h[s_idx(1,0)],  s_edge(0,-1),  out.heightmap.h[s_idx(0,1)]);
-        fix_n(G,  0,  out.heightmap.h[s_idx(G-1,0)], s_edge(G+1,0), s_edge(G,-1),  out.heightmap.h[s_idx(G,1)]);
-        fix_n(0,  G,  s_edge(-1,G),   out.heightmap.h[s_idx(1,G)],  out.heightmap.h[s_idx(0,G-1)], s_edge(0,G+1));
-        fix_n(G,  G,  out.heightmap.h[s_idx(G-1,G)], s_edge(G+1,G), out.heightmap.h[s_idx(G,G-1)], s_edge(G,G+1));
-    }
-
-    // Atlas-path stitching (unchanged).
-    if (!p.force_noise && p.zone_origin_x >= 0 && s_atlas_loaded) {
-        int zx0 = p.zone_origin_x + coord.x;
-        int zy0 = p.zone_origin_z + coord.z;
-
-        // Get height from atlas with bounds check
-        auto atlas_h = [&](int zx, int zy, int col, int row) -> float {
-            if (zx < 0 || zx >= ATLAS_ZONES || zy < 0 || zy >= ATLAS_ZONES) return 0.f;
-            col = col < 0 ? 0 : (col > ATLAS_VERTS-1 ? ATLAS_VERTS-1 : col);
-            row = row < 0 ? 0 : (row > ATLAS_VERTS-1 ? ATLAS_VERTS-1 : row);
-            return s_atlas_h[s_atlas_hi(zx, zy, col, row)];
-        };
-
-        auto fix_normal = [&](int col, int row,
-                               float hL, float hR, float hD, float hU) {
-            float dhdx = (hR - hL) / (2.0f * TERRAIN_STEP);
-            float dhdz = (hU - hD) / (2.0f * TERRAIN_STEP);
-            float nx = -dhdx, ny = 1.0f, nz = -dhdz;
-            float len = sqrtf(nx*nx + ny*ny + nz*nz);
-            if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
-            int vi = s_idx(col, row);
-            s_verts_buf[vi].nx = nx;
-            s_verts_buf[vi].ny = ny;
-            s_verts_buf[vi].nz = nz;
-        };
-
-        // Right edge (col = TERRAIN_GRID): hR comes from col=1 of zone (zx0+1)
-        for (int row = 1; row < TERRAIN_GRID; ++row) {
-            fix_normal(TERRAIN_GRID, row,
-                out.heightmap.h[s_idx(TERRAIN_GRID-1, row)],
-                atlas_h(zx0+1, zy0, 1, row),
-                out.heightmap.h[s_idx(TERRAIN_GRID, row-1)],
-                out.heightmap.h[s_idx(TERRAIN_GRID, row+1)]);
-        }
-        // Left edge (col = 0): hL comes from col=TERRAIN_GRID-1 of zone (zx0-1)
-        for (int row = 1; row < TERRAIN_GRID; ++row) {
-            fix_normal(0, row,
-                atlas_h(zx0-1, zy0, TERRAIN_GRID-1, row),
-                out.heightmap.h[s_idx(1, row)],
-                out.heightmap.h[s_idx(0, row-1)],
-                out.heightmap.h[s_idx(0, row+1)]);
-        }
-        // Bottom edge (row = 0): hD comes from row=TERRAIN_GRID-1 of zone (zx0, zy0-1)
-        for (int col = 1; col < TERRAIN_GRID; ++col) {
-            fix_normal(col, 0,
-                out.heightmap.h[s_idx(col-1, 0)],
-                out.heightmap.h[s_idx(col+1, 0)],
-                atlas_h(zx0, zy0-1, col, TERRAIN_GRID-1),
-                out.heightmap.h[s_idx(col, 1)]);
-        }
-        // Top edge (row = TERRAIN_GRID): hU comes from row=1 of zone (zx0, zy0+1)
-        for (int col = 1; col < TERRAIN_GRID; ++col) {
-            fix_normal(col, TERRAIN_GRID,
-                out.heightmap.h[s_idx(col-1, TERRAIN_GRID)],
-                out.heightmap.h[s_idx(col+1, TERRAIN_GRID)],
-                out.heightmap.h[s_idx(col, TERRAIN_GRID-1)],
-                atlas_h(zx0, zy0+1, col, 1));
-        }
-    }
-
-    // ── Geomorph targets (L0→L1 transition) ──────────────────────────────────────
-    // Guarded by TERRAIN_MORPH_DATA_ENABLED (terrain_chunk.h) — CPU-side computation
-    // only; the GPU visual effect is a SEPARATE flag, shaders/terrain_pom.vert's own
-    // TERRAIN_GEOMORPH_ENABLED (currently 0). morph_y field kept in TerrainVertex
-    // ready to use once that shader flag is flipped.
-#if TERRAIN_MORPH_DATA_ENABLED
-    for (int row = 0; row <= TERRAIN_GRID; ++row) {
-        for (int col = 0; col <= TERRAIN_GRID; ++col) {
-            int vi = s_idx(col, row);
-            float fy, fnx, fny, fnz;
-            // Task #182i (2026-07-19): freeze the chunk border to its own
-            // real height — never morph it. BuildLodIboStitched always
-            // draws chunk borders at full resolution/true height regardless
-            // of LOD tier (that's the whole T-junction fix); if geomorph
-            // moves a border vertex, a chunk mid-ramp (lod_blend>0) renders
-            // its border offset from its neighbour's border (which is
-            // either still real-height at blend=0, or moved by a DIFFERENT
-            // blend value — neighbouring chunks are almost never exactly
-            // equidistant from the camera) and the shared edge splits open
-            // again, exactly like the original T-junction gap. Confirmed by
-            // code inspection, not by screenshot — the reported seams
-            // persisted after the first geomorph pass despite it looking
-            // correct in isolated flythrough screenshots, which is exactly
-            // what you'd expect from a bug that only shows up when two
-            // SPECIFIC neighbouring chunks disagree on their own blend
-            // factor, not from any single chunk's own shape. Same rule
-            // applies to the normal below (task #182k) for the same reason.
-            bool on_border = (row == 0) || (row == TERRAIN_GRID) ||
-                             (col == 0) || (col == TERRAIN_GRID);
-            if (on_border) {
-                fy = s_verts_buf[vi].y;
-                fnx = s_verts_buf[vi].nx; fny = s_verts_buf[vi].ny; fnz = s_verts_buf[vi].nz;
-            } else if ((col & 1) == 0 && (row & 1) == 0) {
-                fy = s_verts_buf[vi].y;
-                fnx = s_verts_buf[vi].nx; fny = s_verts_buf[vi].ny; fnz = s_verts_buf[vi].nz;
-            } else if ((col & 1) != 0 && (row & 1) == 0) {
-                const auto& a = s_verts_buf[s_idx(col-1, row)];
-                const auto& b = s_verts_buf[s_idx(col+1, row)];
-                fy  = (a.y  + b.y)  * 0.5f;
-                fnx = (a.nx + b.nx) * 0.5f;
-                fny = (a.ny + b.ny) * 0.5f;
-                fnz = (a.nz + b.nz) * 0.5f;
-            } else if ((col & 1) == 0 && (row & 1) != 0) {
-                const auto& a = s_verts_buf[s_idx(col, row-1)];
-                const auto& b = s_verts_buf[s_idx(col, row+1)];
-                fy  = (a.y  + b.y)  * 0.5f;
-                fnx = (a.nx + b.nx) * 0.5f;
-                fny = (a.ny + b.ny) * 0.5f;
-                fnz = (a.nz + b.nz) * 0.5f;
-            } else {
-                const auto& a = s_verts_buf[s_idx(col-1, row-1)];
-                const auto& b = s_verts_buf[s_idx(col+1, row-1)];
-                const auto& c = s_verts_buf[s_idx(col-1, row+1)];
-                const auto& d = s_verts_buf[s_idx(col+1, row+1)];
-                fy  = (a.y  + b.y  + c.y  + d.y)  * 0.25f;
-                fnx = (a.nx + b.nx + c.nx + d.nx) * 0.25f;
-                fny = (a.ny + b.ny + c.ny + d.ny) * 0.25f;
-                fnz = (a.nz + b.nz + c.nz + d.nz) * 0.25f;
-            }
-            s_verts_buf[vi].morph_y = fy;
-            // Task #182k: averaging 2-4 unit normals doesn't yield a unit
-            // vector — renormalize before storing. Only x/z are kept (the
-            // GPU slot has 2 free floats, not 3 — see TerrainVertex's doc
-            // comment); the shader reconstructs y = sqrt(1-x^2-z^2), valid
-            // since a properly renormalized heightfield normal always has
-            // a positive y and this matches it exactly (up to fp rounding).
-            float nlen = sqrtf(fnx*fnx + fny*fny + fnz*fnz);
-            if (nlen > 1e-6f) { fnx /= nlen; fnz /= nlen; }
-            s_verts_buf[vi].morph_nx = fnx;
-            s_verts_buf[vi].morph_nz = fnz;
-        }
-    }
-
-    // ── Geomorph targets (L1→L2 and L2→L3 transitions) ───────────────────────────
-    // 2026-07-25: same parity-based scheme as the L0→L1 pass above, generalized to
-    // stride 2 (L1→L2, TERRAIN_LOD_STEPS[1]=4) and stride 4 (L2→L3,
-    // TERRAIN_LOD_STEPS[2]=8) — every LOD tier is exactly double the previous, so
-    // the same odd/even-neighbour-average logic applies with "±1" replaced by
-    // "±step_from" and the parity test done at step_from granularity. Border
-    // always frozen to real height — same T-junction-stitching reason as the
-    // L0→L1 pass (BuildLodIboStitched always draws chunk borders at full
-    // resolution regardless of LOD tier; morphing a border vertex would split
-    // that shared edge open again). Position (Y) only — see
-    // TerrainVertex::morph_y2's doc comment for why normal-morph is skipped for
-    // these two farther, less perceptually critical transitions.
-    //
-    // Only iterates vertices that actually belong to the FROM tier (step
-    // TERRAIN_LOD_STEPS[si]) — vertices outside that stride are never sampled by
-    // the corresponding LOD draw, so their morph_y2/morph_y3 value is simply
-    // never read.
-    for (int pass = 0; pass < 2; ++pass) {
-        int step_from = TERRAIN_LOD_STEPS[pass];      // 2 (L1) / 4 (L2)
-        int step_to   = step_from * 2;                // 4 (L2) / 8 (L3)
-        for (int row = 0; row <= TERRAIN_GRID; row += step_from) {
-            for (int col = 0; col <= TERRAIN_GRID; col += step_from) {
-                int vi = s_idx(col, row);
-                bool on_border = (row == 0) || (row == TERRAIN_GRID) ||
-                                 (col == 0) || (col == TERRAIN_GRID);
-                float fy;
-                if (on_border) {
-                    fy = s_verts_buf[vi].y;
-                } else if ((col % step_to) == 0 && (row % step_to) == 0) {
-                    fy = s_verts_buf[vi].y;
-                } else if ((col % step_to) != 0 && (row % step_to) == 0) {
-                    const auto& a = s_verts_buf[s_idx(col - step_from, row)];
-                    const auto& b = s_verts_buf[s_idx(col + step_from, row)];
-                    fy = (a.y + b.y) * 0.5f;
-                } else if ((col % step_to) == 0 && (row % step_to) != 0) {
-                    const auto& a = s_verts_buf[s_idx(col, row - step_from)];
-                    const auto& b = s_verts_buf[s_idx(col, row + step_from)];
-                    fy = (a.y + b.y) * 0.5f;
-                } else {
-                    const auto& a = s_verts_buf[s_idx(col - step_from, row - step_from)];
-                    const auto& b = s_verts_buf[s_idx(col + step_from, row - step_from)];
-                    const auto& c = s_verts_buf[s_idx(col - step_from, row + step_from)];
-                    const auto& d = s_verts_buf[s_idx(col + step_from, row + step_from)];
-                    fy = (a.y + b.y + c.y + d.y) * 0.25f;
-                }
-                if (pass == 0) s_verts_buf[vi].morph_y2 = fy;
-                else           s_verts_buf[vi].morph_y3 = fy;
-            }
-        }
-    }
-#endif
-
-    // ── Task #182h: per-LOD-tier max geometric error (pixel-error LOD) ───────────
-    // See TerrainChunk::lod_error's doc comment. Same "decimated-triangle-
-    // corner interpolation vs real fine-res height" measurement approach as
-    // md.scan_shading_mismatch() (lua_scenario_api.cpp), tracking max
-    // |height delta| instead of averaging a steepness delta. Cheap: reuses
-    // s_verts_buf (already fully built above), one more pass over it.
-    {
-        auto y_at = [](int col, int row) -> float {
-            return s_verts_buf[s_idx(col, row)].y;
-        };
-        for (int si = 0; si < 3; ++si) {
-            int step = TERRAIN_LOD_STEPS[si];
-            int G = TERRAIN_GRID / step;
-            float max_err = 0.f;
-            for (int kr = 0; kr < G; ++kr) {
-                for (int kc = 0; kc < G; ++kc) {
-                    int c0 = kc*step, r0 = kr*step, c1 = c0+step, r1 = r0+step;
-                    float y_bl = y_at(c0, r0), y_br = y_at(c1, r0);
-                    float y_tl = y_at(c0, r1), y_tr = y_at(c1, r1);
-                    for (int fr = r0; fr <= r1; ++fr) {
-                        for (int fc = c0; fc <= c1; ++fc) {
-                            if (fr == r0 || fr == r1 || fc == c0 || fc == c1) continue; // exact at corners/edges
-                            float lx = (float)(fc - c0) / (float)step;
-                            float ly = (float)(fr - r0) / (float)step;
-                            float y_interp;
-                            if (lx + ly <= 1.f) {
-                                y_interp = y_bl*(1.f-lx-ly) + y_br*lx + y_tl*ly;
-                            } else {
-                                float wx = 1.f - lx, wy = 1.f - ly;
-                                y_interp = y_tr*(1.f-wx-wy) + y_br*wx + y_tl*wy;
-                            }
-                            float err = fabsf(y_at(fc, fr) - y_interp);
-                            if (err > max_err) max_err = err;
-                        }
-                    }
-                }
-            }
-            out.lod_error[si] = max_err;
-        }
-    }
-
-    // ── Item 7: Geometry skirt ────────────────────────────────────────────────────
-    // Hang 2m-deep quads from each edge to close gaps between adjacent chunks.
-    // 4 edges × (TERRAIN_GRID+1) × 2 verts; indices are skirt-local (0-based).
-    {
-        const float SKIRT_DROP = 2.0f;
-        int sv = 0, si = 0;
-
-        auto add_strip = [&](int col0, int row0, int dc, int dr) {
-            uint16_t base = (uint16_t)sv;
-            for (int k = 0; k <= TERRAIN_GRID; ++k) {
-                int col = col0 + dc * k, row = row0 + dr * k;
-                int vi = s_idx(col, row);
-                s_skirt_v[sv]   = s_verts_buf[vi];                   // top
-                s_skirt_v[sv+1] = s_verts_buf[vi];                   // bottom
-                s_skirt_v[sv+1].y      -= SKIRT_DROP;
-                s_skirt_v[sv+1].morph_y -= SKIRT_DROP;
-                sv += 2;
-                if (k < TERRAIN_GRID) {
-                    uint16_t t = base + (uint16_t)(k * 2);
-                    s_skirt_i[si++] = t;     s_skirt_i[si++] = t+1; s_skirt_i[si++] = t+2;
-                    s_skirt_i[si++] = t+2;   s_skirt_i[si++] = t+1; s_skirt_i[si++] = t+3;
-                }
-            }
-        };
-
-        add_strip(0,            0,            1, 0);  // South edge (row=0)
-        add_strip(0,            TERRAIN_GRID, 1, 0);  // North edge (row=GRID)
-        add_strip(0,            0,            0, 1);  // West  edge (col=0)
-        add_strip(TERRAIN_GRID, 0,            0, 1);  // East  edge (col=GRID)
-    }
-
+    // task terrain-dedup (2026-07-29): removed here (all verified zero
+    // readers, same investigation as terrain_renderer.h class doc comment):
+    // vertex/index building (fed only chunk.vbo/ibo, now removed), cross-
+    // chunk normal stitching + geomorph targets (fed only s_verts_buf
+    // fields uploaded to the same dead vbo), per-LOD-tier lod_error
+    // (out.lod_error field removed), and skirt geometry (fed only
+    // chunk.skirt_vbo/skirt_ibo, also removed). heights (step 1 above) and
+    // pass_grid/coord/center (below) are unaffected -- those are the parts
+    // physics/TerrainQuery/AI actually read.
     out.coord    = coord;
     out.center_x = p.world_offset_x + coord.x * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
     out.center_z = p.world_offset_z + coord.z * CHUNK_SIZE + CHUNK_SIZE * 0.5f;
     // out.loaded already set false at function entry — Upload() sets it true.
 
-    // Biome ground-texture lookup — direct biomemap.png colour → real FCS
-    // Biomes entry (BiomeDef::ForColor), precise per-chunk. grass/dirt/road
-    // are now genuinely per-biome (real FCS data) — previously global
-    // constants shared by every biome, confirmed wrong this session (real
-    // biomes have distinct grass/dirt/road textures, e.g. desert's grass
-    // differs from Blister Sands' grass).
-    if (p.zone_origin_x >= 0) {
-        int zx = p.zone_origin_x + coord.x;
-        int zy = p.zone_origin_z + coord.z;
-        s_load_biomemap();
-
-        const BiomeDef& bd = s_resolve_biome(zx, zy);
-        out.ground_layers[0] = (float)bd.tex_base;
-        out.ground_layers[1] = (float)bd.tex_slope;
-        out.ground_layers[2] = (float)bd.tex_cliff;
-        out.ground_layers[3] = (float)bd.tex_grass;
-        out.ground_layers[4] = (float)bd.tex_dirt;
-        out.ground_layers[5] = (float)bd.tex_road;
-
-        // monkey_dust ARCHITECTURE NOTE (2026-07-19, task #182c/d, superseding
-        // the per-chunk "neighbour heuristic" below this comment used to
-        // contain): real Kenshi's blend identity is NOT "which neighbouring
-        // zone is this chunk closest to" at all -- confirmed via full Ghidra
-        // decompile of the render-time lookup chain (FUN_140a09630 ->
-        // FUN_140a16e50 -> the SAME ground/slope/grass/dirt/road "index"
-        // table terrain_gen.cpp's own s_resolve_biome() already uses) plus
-        // cross-referencing real Kenshi FCS "Biomes" entries: blendmap.png's
-        // R/G/B channels (each strictly binary 0/255) each independently
-        // select one of a SMALL, WORLD-WIDE-CONSTANT set of up to 8 real,
-        // NAMED alternate biomes (found by index: R-alone="Canyonlands
-        // Crater", G-alone="Mafic Enclaves", R+G="Artery", B-alone=
-        // "Canyonlands", G+B="desert" -- verified against real FCS data,
-        // see re_docs/kenshi/terrain.md). This is a GLOBAL palette, not a
-        // per-chunk/per-page one -- so, unlike the old code here, MD no
-        // longer needs (or should have) each chunk guessing its own
-        // "nearest differing neighbour": that heuristic was the actual
-        // root cause of the persistent hard-seam/"square grid" bug (two
-        // adjacent chunks routinely picked DIFFERENT guessed neighbours,
-        // so their blend targets disagreed right at the shared edge).
-        // The real fix lives in TerrainRenderer's new global comboAlternates
-        // SSBO (terrain_renderer.cpp/.h) + terrain_forward.slang's fsMain,
-        // which resolve the 3 single-channel alternates ONCE (BiomeRegistry::
-        // ForColor(255,0,0)/(0,255,0)/(0,0,255)) and sample blendmap.png's
-        // R/G/B directly as per-pixel weights toward those fixed globals --
-        // no per-chunk identity data needed at all.
-        // TerrainChunk::blend_layers.x REPURPOSED (task #182e, 2026-07-19,
-        // FPS fix — was fully vestigial for one same-day pass, see the
-        // blend_layers.x doc comment above) as a per-chunk "does this chunk
-        // touch any comboAlternates biome at all" uniform flag — see
-        // s_blendmap_touch's doc comment. .y/.z/.w remain genuinely unused.
-        s_load_blendmap();
-        out.blend_layers[0] = s_blendmap_touch(zx, zy) ? 1.f : 0.f;
-        out.blend_layers[1] = out.ground_layers[1];
-        out.blend_layers[2] = out.ground_layers[2];
-        out.blend_layers[3] = out.ground_layers[0];
-
-        // Dominant-weight ground selection happens PER-PIXEL in
-        // terrain_forward.slang's fsMain now (2026-07-19 correction), not
-        // baked per-vertex here. A per-vertex argmax + flat-interpolated
-        // ground_id/ground_id2 looked right on paper ("baked into the mesh
-        // vertex" per re_docs/kenshi/terrain.md:114-136) but is unstable in
-        // practice: adjacent vertices on a slope routinely pick different
-        // dominant layers from tiny per-vertex normal differences, and flat
-        // interpolation paints each WHOLE triangle from just one vertex's
-        // decision — every such disagreement became a hard triangle-shaped
-        // seam (confirmed via screenshots: dense diamond/zigzag artifacts
-        // exactly matching the mesh's triangulation). The fragment shader
-        // already has everything it needs to make the same decision
-        // per-pixel instead — the interpolated normal (smooth by
-        // construction) and a live tex_overlay_mask sample — so nothing is
-        // baked here anymore; ground_id/ground_id2/blend_alpha in
-        // TerrainVertex (terrain_chunk.h) are unused leftover slots, same
-        // status as the original dead splat[4] before this rewrite.
-    }
+    // Ensures md_biomemap.png is loaded (lazy, tried-once) for external
+    // TerrainGen_ResolveBiome() callers (e.g. editor's s_build_zone_
+    // ground_layers -- feeds Granite's live zoneGroundLayers SSBO). The
+    // per-chunk ground_layers/blend_layers writes that used to follow here
+    // were removed (task terrain-dedup, 2026-07-29) -- those fields fed
+    // only the now-removed TerrainRenderer draw pipeline; s_load_blendmap/
+    // s_blendmap_touch existed solely to compute blend_layers[0], now gone
+    // too. Per-pixel ground selection in Granite's terrain_patch.frag reads
+    // the SSBO directly, no per-chunk biome data needed here.
+    if (p.zone_origin_x >= 0) s_load_biomemap();
 
     // ── 4. NavMesh (disabled) + PassGrid (lightweight, from heightmap slope) ────
     // Per-chunk NavMesh disabled: NPC pathfinding uses NavSystem singleton.
@@ -1319,13 +774,10 @@ bool TerrainGen_Build(TerrainChunk& out, ChunkCoord coord, const TerrainGenParam
     return true;
 }
 
-// Accessors for the staging buffers — used by terrain_upload.cpp (GPU side).
-// Kept here so GPU code does not share this translation unit (avoids pulling
-// glad symbols into test binaries that only call TerrainGen_Build).
-const TerrainVertex* TerrainGen_StagedVerts()         { return s_verts_buf; }
-const uint16_t*      TerrainGen_StagedIndices()       { return s_idx_buf;   }
-const TerrainVertex* TerrainGen_StagedSkirtVerts()    { return s_skirt_v;   }
-const uint16_t*      TerrainGen_StagedSkirtIndices()  { return s_skirt_i;   }
+// task terrain-dedup (2026-07-29): TerrainGen_StagedVerts/StagedIndices/
+// StagedSkirtVerts/StagedSkirtIndices REMOVED — their only caller
+// (terrain_upload.cpp's s_upload_core) no longer needs staged mesh data,
+// see that file's own updated comment.
 
 // ── TerrainChunk::SampleHeight ────────────────────────────────────────────────
 

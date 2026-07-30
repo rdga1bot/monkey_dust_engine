@@ -14,11 +14,23 @@
 // the old system entirely.
 //
 // Phase 3 built the discrete LOD mesh tiers and single-patch VTF draw.
-// Phase 4 added neighbor-LOD edge snapping: each tier's mesh bakes an
-// edge-mask vertex attribute (which of the 4 patch edges a vertex sits
-// on) at build time, and the shader snaps a patch's edge vertices to
-// align with a COARSER neighbor's own grid, eliminating T-junction
-// cracks at LOD boundaries.
+// Phase 4 (2026-07-28, replaced -- see below) added neighbor-LOD edge
+// snapping: each tier's mesh baked an edge-mask vertex attribute and the
+// shader snapped edge vertices to align with a coarser neighbor's grid.
+//
+// Phase 4-replacement (verified against the actual reference this whole
+// migration is named after -- Themaister/Granite, renderer/ground.cpp):
+// the real Granite does NOT snap individual edge vertices. Its
+// GroundPatch::refresh() computes `lods = max(inner_lod, vec4(nx,px,nz,
+// pz neighbor lods))` -- i.e. if any neighbor is coarser, the WHOLE
+// patch draws one tier coarser too, picking a different (coarser) static
+// mesh entirely rather than deforming its own finer mesh's edge
+// vertices. Adopted here (CPU-side in SceneRender::UpdateGraniteTerrain,
+// same formula) because it's strictly simpler -- no edge-mask vertex
+// attribute, no per-vertex shader branch, no aInstNeighborTierN stream --
+// at the cost of some patches rendering one tier coarser than their own
+// ideal distance-based LOD near a coarser neighbor (the same tradeoff
+// the reference implementation accepts).
 //
 // Phase 5 (this revision) replaces the old one-draw-call-per-patch API
 // with real hardware instancing: per-patch data (origin, own LOD, 4
@@ -52,19 +64,17 @@ public:
     static constexpr int kNumTiers = 8;   // 128,64,32,16,8,4,2,1 quads/edge
     static constexpr int kMaxInstancesPerTier = 4096;
 
-    // tier_n_ [t] = quads/edge for tier t (128,64,32,16,8,4,2,1) -- exposed so
-    // callers (TerrainPatchGrid-driven selection) can convert a
-    // neighbor's LOD float into the tier_n value Instance::neighbor_tier_n
-    // expects without duplicating the halving sequence.
+    // tier_n_ [t] = quads/edge for tier t (128,64,32,16,8,4,2,1). Still used
+    // by DrawBatch to fill PatchVertUBO's (now shader-unused) tier_n field.
     static int TierN(int tier) { return tier >= 0 && tier < kNumTiers ? (kPatchN >> tier) : 0; }
 
-    // One patch's per-instance data (28 bytes: matches inst_stride).
-    // neighbor_tier_n order: -X,+X,-Z,+Z. Pass 0 (or this patch's own
-    // TierN) for "no coarser neighbor to snap against" (world edge, or a
-    // same-or-finer neighbor) -- same convention Phase 4's DrawOne used.
+    // One patch's per-instance data (12 bytes: matches inst_stride).
+    // `lod` here is the FINAL, already-neighbor-clamped tier this patch
+    // was bucketed into (see the header's Granite-reference comment
+    // above) -- callers must apply the max(own, neighbors) clamp
+    // themselves before choosing which tier's instance array to append to.
     struct Instance {
         float origin_x, origin_z, lod;
-        float neighbor_tier_n[4];
     };
 
     // Uploads this frame's per-tier instance batches. MUST be called

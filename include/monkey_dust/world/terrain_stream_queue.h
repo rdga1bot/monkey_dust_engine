@@ -12,11 +12,17 @@
 // ── TerrainStreamQueue ────────────────────────────────────────────────────────
 // Single-producer / single-consumer async queue for terrain chunk generation.
 //
-// Worker thread:  TerrainGen_Build() → copies staged data → ready = true
-// Main thread:    TerrainGen_UploadFrom() + Jolt + PropGen → consumed = true
+// Worker thread:  TerrainGen_Build() → ready = true
+// Main thread:    TerrainGen_Upload() + Jolt + PropGen → consumed = true
 //
-// Per-slot staging copies (TERRAIN_VERTS*52 + TERRAIN_IDX*2 + skirt) ≈ 271 KB.
-// CAPACITY=14 (2×TNKN) → ~3.8 MB BSS; well within 4-8 GB system RAM budget.
+// task terrain-dedup (2026-07-29): per-slot staged_v/i/sv/si mesh-buffer
+// copies REMOVED — TerrainGen_Build no longer produces GPU mesh data (its
+// vbo/ibo/skirt output had zero readers, verified; TerrainPatchRenderer/
+// Granite renders from its own world-wide heightmap texture, not per-chunk
+// meshes), so there is nothing left to stage/copy for the main thread's
+// upload step. TerrainGen_Upload(chunk) now just flips loaded=true.
+// CAPACITY=14 (2×TNKN) — clutter staging below is the only remaining
+// meaningful per-slot payload.
 
 struct TerrainBuildSlot {
     // Request fields — written by main thread before enqueue
@@ -26,12 +32,6 @@ struct TerrainBuildSlot {
     JPH::BodyID*     jolt_id    = nullptr;  // pointer into terrain_jolt_ids[phsz][phsx]
     int              atlas_ex   = 0;        // zone_origin_x + chunk coord.x for PropGen biome
     int              atlas_ez   = 0;        // zone_origin_z + chunk coord.z
-
-    // Per-slot copies of staging buffers — written by worker after Build
-    TerrainVertex staged_v [TERRAIN_VERTS];
-    uint16_t      staged_i [TERRAIN_IDX];
-    TerrainVertex staged_sv[TERRAIN_SKIRT_VERTS];
-    uint16_t      staged_si[TERRAIN_SKIRT_IDX];
 
     // KEN-CLUTTER Tier 2: per-slot clutter staging (variable count, unlike the
     // fixed-size terrain grid above — see clutter_vc/clutter_ic).
@@ -93,9 +93,7 @@ public:
             if (s.consumed.load(std::memory_order_relaxed)) continue;
             if (!s.ready.load(std::memory_order_acquire))   continue;
             if (s.chunk) {
-                TerrainGen_UploadFrom(*s.chunk,
-                                      s.staged_v, s.staged_i,
-                                      s.staged_sv, s.staged_si);
+                TerrainGen_Upload(*s.chunk);
                 ClutterGen_UploadFrom(*s.chunk, s.clutter_v, s.clutter_vc,
                                       s.clutter_i, s.clutter_ic);
                 fn(s);
@@ -136,12 +134,6 @@ private:
                 {
                     std::lock_guard<std::mutex> tg_lock(TerrainGen_StagingMutex());
                     TerrainGen_Build(*s.chunk, s.coord, s.params);
-
-                    // Copy staging buffers into per-slot storage before marking ready
-                    memcpy(s.staged_v,  TerrainGen_StagedVerts(),        sizeof(s.staged_v));
-                    memcpy(s.staged_i,  TerrainGen_StagedIndices(),       sizeof(s.staged_i));
-                    memcpy(s.staged_sv, TerrainGen_StagedSkirtVerts(),    sizeof(s.staged_sv));
-                    memcpy(s.staged_si, TerrainGen_StagedSkirtIndices(),  sizeof(s.staged_si));
                 }
 
                 // KEN-CLUTTER Tier 2: bake dense clutter on this same worker thread

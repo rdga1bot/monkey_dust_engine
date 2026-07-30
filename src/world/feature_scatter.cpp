@@ -1,0 +1,168 @@
+#include <monkey_dust/world/feature_scatter.h>
+#include <monkey_dust/platform/md_log.h>
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <cmath>
+
+FeatureScatterSystem& FeatureScatterSystem::Get() {
+    static FeatureScatterSystem s;
+    return s;
+}
+
+// Mirrors tools/md_convert_features.py's sanitize() exactly — same
+// basename/strip-.mesh/non-alnum-to-underscore rule, so a mesh_path from
+// the scatter file always resolves to the .glb that script produced.
+static void s_sanitize(const char* kenshi_path, char* out, int out_sz) {
+    const char* slash = kenshi_path;
+    for (const char* p = kenshi_path; *p; ++p)
+        if (*p == '\\' || *p == '/') slash = p + 1;
+
+    int n = 0;
+    for (const char* p = slash; *p && n < out_sz - 1; ++p) {
+        char c = *p;
+        // Strip a trailing ".mesh" (case-insensitive) once we reach it.
+        if ((c == '.' || c == 'M' || c == 'm') &&
+            (strncasecmp(p, ".mesh", 5) == 0) && p[5] == '\0') {
+            break;
+        }
+        bool alnum = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                     (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '-';
+        out[n++] = alnum ? c : '_';
+    }
+    out[n] = '\0';
+}
+
+int FeatureScatterSystem::FindOrSkipMesh(const char* kenshi_mesh_path) const {
+    char name[64];
+    s_sanitize(kenshi_mesh_path, name, sizeof(name));
+    for (int i = 0; i < mesh_count_; ++i)
+        if (strcmp(mesh_names_[i], name) == 0) return i;
+    return -1;
+}
+
+bool FeatureScatterSystem::Init(const char* scatter_path, const char* mesh_dir) {
+    FILE* f = fopen(scatter_path, "r");
+    if (!f) {
+        MD_LOG(MD_LOG_WARNING, "[FeatureScatter] cannot open %s — no real scatter objects loaded", scatter_path);
+        return false;
+    }
+
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        if (line[0] == '#' || line[0] == '\n' || line[0] == '\0') continue;
+
+        char mesh_path[256];
+        float x, y, z, sx, sy, sz, qw, qx, qy, qz;
+        // mesh_path|x|y|z|sx|sy|sz|qw|qx|qy|qz — pipe-delimited, mesh_path
+        // itself never contains '|' (Kenshi backslash paths only).
+        char* p = line;
+        char* bar = strchr(p, '|');
+        if (!bar) continue;
+        int mp_len = (int)(bar - p);
+        if (mp_len >= (int)sizeof(mesh_path)) mp_len = (int)sizeof(mesh_path) - 1;
+        memcpy(mesh_path, p, (size_t)mp_len);
+        mesh_path[mp_len] = '\0';
+        p = bar + 1;
+
+        if (sscanf(p, "%f|%f|%f|%f|%f|%f|%f|%f|%f|%f",
+                   &x, &y, &z, &sx, &sy, &sz, &qw, &qx, &qy, &qz) != 10) {
+            continue;
+        }
+
+        if (placement_count_ >= MAX_PLACEMENTS) {
+            MD_LOG(MD_LOG_WARNING, "[FeatureScatter] MAX_PLACEMENTS (%d) hit, dropping remaining rows", MAX_PLACEMENTS);
+            break;
+        }
+
+        int mesh_idx = FindOrSkipMesh(mesh_path);
+        if (mesh_idx < 0) {
+            if (mesh_count_ >= MAX_MESHES) {
+                MD_LOG(MD_LOG_WARNING, "[FeatureScatter] MAX_MESHES (%d) hit, skipping %s", MAX_MESHES, mesh_path);
+                continue;
+            }
+            char name[64];
+            s_sanitize(mesh_path, name, sizeof(name));
+            char glb_path[320];
+            snprintf(glb_path, sizeof(glb_path), "%s/%s.glb", mesh_dir, name);
+            mesh_idx = mesh_count_;
+            if (!renderers_[mesh_idx].Init(glb_path)) {
+                MD_LOG(MD_LOG_WARNING, "[FeatureScatter] failed to load %s (from %s) — skipping its placements", glb_path, mesh_path);
+                continue; // don't reserve a mesh slot for a mesh that failed to load
+            }
+            strncpy(mesh_names_[mesh_idx], name, sizeof(mesh_names_[mesh_idx]) - 1);
+            ++mesh_count_;
+        }
+
+        Placement& pl = placements_[placement_count_++];
+        pl.mesh_idx = (int16_t)mesh_idx;
+        pl.x = x; pl.y = y; pl.z = z;
+        pl.sx = sx; pl.sy = sy; pl.sz = sz;
+        pl.qw = qw; pl.qx = qx; pl.qy = qy; pl.qz = qz;
+    }
+    fclose(f);
+
+    MD_LOG(MD_LOG_INFO, "[FeatureScatter] loaded %d real placements across %d unique meshes from %s",
+           placement_count_, mesh_count_, scatter_path);
+    return true;
+}
+
+void FeatureScatterSystem::Shutdown() {
+    for (int i = 0; i < mesh_count_; ++i) renderers_[i].Shutdown();
+    mesh_count_ = 0;
+    placement_count_ = 0;
+}
+
+void FeatureScatterSystem::Draw(
+#ifdef MD_SDL_GPU
+    SDL_GPURenderPass*    rp,
+    SDL_GPUCommandBuffer* cmd,
+#endif
+    const float* vp16,
+    const float* sun32,
+    float        cam_x,
+    float        cam_z,
+    float        radius)
+{
+    if (placement_count_ <= 0) return;
+    const float r2 = radius * radius;
+
+    // Reused across every mesh type this frame — avoids MAX_MESHES separate
+    // fixed buffers (would be ~1.8MB of mostly-unused BSS) and any malloc.
+    static float pos_buf[MAX_DRAW_BATCH * 3];
+    static float quat_buf[MAX_DRAW_BATCH * 4];
+
+    for (int m = 0; m < mesh_count_; ++m) {
+        int n = 0;
+        // Uniform scale doesn't vary per mesh type here (each instance's
+        // own non-uniform sx/sy/sz is baked into pos via the mesh's own
+        // vertex data scale at conversion time for the common (1,1,1)
+        // case; per-instance non-uniform scale beyond that is rare enough
+        // in the real data — per the parser's own doc comment — that
+        // PropRenderer's single per-call `scale` uniform is left at 1.0
+        // and non-uniform outliers render at their nearest uniform
+        // approximation rather than needing a 4th per-instance array).
+        for (int i = 0; i < placement_count_ && n < MAX_DRAW_BATCH; ++i) {
+            const Placement& pl = placements_[i];
+            if (pl.mesh_idx != m) continue;
+            float dx = pl.x - cam_x, dz = pl.z - cam_z;
+            if (dx * dx + dz * dz > r2) continue;
+            pos_buf[n * 3 + 0] = pl.x;
+            pos_buf[n * 3 + 1] = pl.y;
+            pos_buf[n * 3 + 2] = pl.z;
+            quat_buf[n * 4 + 0] = pl.qx;
+            quat_buf[n * 4 + 1] = pl.qy;
+            quat_buf[n * 4 + 2] = pl.qz;
+            quat_buf[n * 4 + 3] = (fabsf(pl.qw) > 0.0001f) ? pl.qw : 1.0f; // never let w==0 slip through (shader's "unused" sentinel)
+            ++n;
+        }
+        if (n == 0) continue;
+        renderers_[m].DrawRaw(
+#ifdef MD_SDL_GPU
+            rp, cmd,
+#endif
+            pos_buf, n, vp16, sun32, /*scale=*/1.0f,
+            /*anim_mode=*/0.0f, /*anim_time=*/0.0f,
+            /*normals_xyz=*/nullptr, /*quats_xyzw=*/quat_buf);
+    }
+}

@@ -1,78 +1,31 @@
 #include <monkey_dust/world/terrain_gen.h>
 
-// TerrainGen_Upload lives in a separate TU so test binaries that call
-// TerrainGen_Build do NOT pull in GpuStaticBuffer::Init (and glad symbols).
-
-// Task #182 (2026-07-19): was a plain uniform decimation (border vertices
-// skipped along with the interior) — replaced by BuildLodIboStitched's
-// always-full-resolution-border construction, which fixes a confirmed
-// T-junction gap (up to 19.4m) between chunks drawn at different LOD
-// tiers. See terrain_chunk.h's BuildLodIboStitched doc comment.
-static void build_lod_ibo(uint16_t* out, int step)
-{
-    BuildLodIboStitched(out, step);
-}
-
-static void s_upload_core(TerrainChunk& chunk,
-                          const TerrainVertex* verts,
-                          const uint16_t*      idx,
-                          const TerrainVertex* skirt_v,
-                          const uint16_t*      skirt_i)
-{
-    // Batched: 7 buffers (vbo+ibo+3×ibo_lod+skirt_vbo+skirt_ibo) in ONE transfer
-    // buffer + ONE command buffer submit, not 7 separate ones — see GpuUploadBatch
-    // doc comment (gpu_hal.h) for why unbatched per-chunk uploads crash the
-    // editor's full 64×64 world load around chunk ~4000 (Intel ANV driver
-    // command-buffer churn corrupts its own heap state).
-    static uint16_t lod_tmp[TERRAIN_LOD_LEVELS][TERRAIN_LOD_IDX[0]];
-    for (int li = 0; li < TERRAIN_LOD_LEVELS; ++li)
-        build_lod_ibo(lod_tmp[li], TERRAIN_LOD_STEPS[li]);
-
-    // Task #182 (2026-07-19), shading-mismatch fix: bake full-res steepness
-    // from the SAME normals already computed by the LOD0 build (verts[i].ny)
-    // — see TerrainChunk::steepness_ssbo's doc comment (terrain_chunk.h).
-    static float steep_tmp[TERRAIN_VERTS];
-    for (int i = 0; i < TERRAIN_VERTS; ++i)
-        steep_tmp[i] = 1.0f - verts[i].ny;
-
-    uint32_t total = sizeof(TerrainVertex) * TERRAIN_VERTS
-                   + sizeof(uint16_t)      * TERRAIN_IDX
-                   + sizeof(TerrainVertex) * TERRAIN_SKIRT_VERTS
-                   + sizeof(uint16_t)      * TERRAIN_SKIRT_IDX
-                   + sizeof(float)         * TERRAIN_VERTS;
-    for (int li = 0; li < TERRAIN_LOD_LEVELS; ++li)
-        total += sizeof(uint16_t) * TERRAIN_LOD_IDX[li];
-
-    GpuUploadBatch batch;
-    batch.Begin(total);
-    batch.Add(chunk.vbo, 0x8892u, verts, sizeof(TerrainVertex) * TERRAIN_VERTS);
-    batch.Add(chunk.ibo, 0x8893u, idx,   sizeof(uint16_t)      * TERRAIN_IDX);
-    for (int li = 0; li < TERRAIN_LOD_LEVELS; ++li)
-        batch.Add(chunk.ibo_lod[li], 0x8893u, lod_tmp[li], sizeof(uint16_t) * TERRAIN_LOD_IDX[li]);
-    // Item 7: skirt geometry upload
-    batch.Add(chunk.skirt_vbo, 0x8892u, skirt_v, sizeof(TerrainVertex) * TERRAIN_SKIRT_VERTS);
-    batch.Add(chunk.skirt_ibo, 0x8893u, skirt_i, sizeof(uint16_t)      * TERRAIN_SKIRT_IDX);
-    batch.Add(chunk.steepness_ssbo, GPU_TARGET_STORAGE, steep_tmp, sizeof(float) * TERRAIN_VERTS);
-    batch.End();
-
-    chunk.loaded = true;
-}
+// task terrain-dedup (2026-07-29): TerrainGen_Upload/UploadFrom used to
+// batch-upload 7 GPU buffers per chunk (vbo/ibo/3×ibo_lod/skirt_vbo/
+// skirt_ibo + steepness_ssbo) — all now REMOVED from TerrainChunk, verified
+// zero readers (TerrainPatchRenderer/Granite is the sole active renderer,
+// reads its own world-wide heightmap texture, never per-chunk GPU mesh
+// data). See terrain_renderer.h's class doc comment and terrain_gen.h's
+// updated TerrainGen_Upload comment for the full investigation. All that's
+// left of "upload" is the loaded=true handoff signal other systems
+// (TerrainQuery, physics readiness checks) already gate on.
+//
+// Kept as a real (non-inline) function in this same, separate GPU-aware TU
+// — even though it no longer touches the GPU at all — purely so the
+// dozens of existing TerrainGen_Build+TerrainGen_Upload call-site pairs
+// across game/tools don't need touching, and so a future per-chunk GPU
+// resource has an obvious place to attach without re-threading every caller.
 
 void TerrainGen_Upload(TerrainChunk& chunk)
 {
-    s_upload_core(chunk,
-                  TerrainGen_StagedVerts(),
-                  TerrainGen_StagedIndices(),
-                  TerrainGen_StagedSkirtVerts(),
-                  TerrainGen_StagedSkirtIndices());
+    chunk.loaded = true;
 }
 
-// Item 5: async upload — caller provides per-slot copies of staging data
 void TerrainGen_UploadFrom(TerrainChunk& chunk,
-                           const TerrainVertex* verts,
-                           const uint16_t*      idx,
-                           const TerrainVertex* skirt_v,
-                           const uint16_t*      skirt_i)
+                           const TerrainVertex* /*verts*/,
+                           const uint16_t*      /*idx*/,
+                           const TerrainVertex* /*skirt_v*/,
+                           const uint16_t*      /*skirt_i*/)
 {
-    s_upload_core(chunk, verts, idx, skirt_v, skirt_i);
+    chunk.loaded = true;
 }

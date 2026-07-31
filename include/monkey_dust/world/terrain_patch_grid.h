@@ -58,6 +58,37 @@ public:
         return LOD(nix, niz);
     }
 
+    // task terrain-lod-seam-cascade-gap (2026-07-31): both call sites
+    // (SceneRender::UpdateGraniteTerrain, editor_world_3d_sdlgpu.cpp) did
+    // their own single-pass "tier = max(own, 4 raw neighbor LODs)" snap —
+    // matching the real Granite reference for a DIRECT tier difference,
+    // but that snap reads each neighbor's RAW distance-based LOD, not that
+    // neighbor's own POST-snap final tier. Confirmed via this project's
+    // own md.scan_terrain_seam_tjunctions() (over_skirt=48, max_gap_m=6.06)
+    // that real, measurable cracks survive: three patches in a row with
+    // natural tiers (1, 1, 3) snap the middle one up to 3 (matching its
+    // coarser right neighbor), but the LEFT patch's snap pass only ever
+    // saw the middle's ORIGINAL natural tier (1), never finding out the
+    // middle patch itself jumped to 3 afterward — a 2-tier cliff with zero
+    // snapping between the left and middle patch. A real T-junction/height
+    // mismatch at their shared edge, not a texture or lighting artifact.
+    //
+    // Fix: precompute the fully-relaxed tier for every grid cell ONCE per
+    // frame (Jacobi-style: each pass reads only the PREVIOUS pass's
+    // tiers, never partially-updated current-pass values, so the result
+    // doesn't depend on iteration order) and let both callers just look
+    // the answer up instead of each re-deriving an incomplete one-hop
+    // version. kRelaxPasses=3 converges any realistic LOD gradient in
+    // this grid (UpdateLOD's log2(dist) formula climbs at most ~1 tier
+    // per doubling of distance, so a chain of unresolved 2-tier cliffs
+    // more than 3 patches deep essentially never occurs in practice) —
+    // cheap at this patch count (O(nx*nz) per pass, same cost class as
+    // UpdateLOD itself).
+    void ComputeSnappedTiers(int num_tiers);
+    int SnappedTier(int ix, int iz) const {
+        return snapped_tier_[(size_t)iz * nx_ + ix];
+    }
+
     struct VisiblePatch {
         int   ix, iz;   // grid indices (for NeighborLOD lookups)
         float origin_x, origin_z;
@@ -99,4 +130,7 @@ private:
     // and why it's generous for this world size).
     static constexpr int kMaxPatches = 16384;
     float lod_[kMaxPatches] = {};
+    // snapped_tier_[iz*nx_+ix] -- filled by ComputeSnappedTiers(), see its
+    // own doc comment above (fully-relaxed, cascade-aware neighbor snap).
+    int   snapped_tier_[kMaxPatches] = {};
 };

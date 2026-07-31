@@ -1,4 +1,5 @@
 #include <monkey_dust/world/terrain_patch_grid.h>
+#include <algorithm>
 #include <cstdio>
 
 void TerrainPatchGrid::Init(float world_origin_x, float world_origin_z, float world_extent,
@@ -40,6 +41,45 @@ void TerrainPatchGrid::UpdateLOD(const float cam_pos[3]) {
             if (lod < 0.f) lod = 0.f;
             if (lod > (float)max_lod_) lod = (float)max_lod_;
             lod_[(size_t)iz * nx_ + ix] = lod;
+        }
+    }
+}
+
+void TerrainPatchGrid::ComputeSnappedTiers(int num_tiers) {
+    static int prev[kMaxPatches];
+    const int n = nx_ * nz_;
+
+    // Pass 0: each cell's own natural tier from lod_ (rounded, clamped),
+    // matching the existing round-to-nearest-int convention both callers
+    // already used for a single patch's own tier.
+    for (int i = 0; i < n; ++i) {
+        int t = (int)(lod_[i] + 0.5f);
+        if (t < 0) t = 0;
+        if (t > num_tiers - 1) t = num_tiers - 1;
+        snapped_tier_[i] = t;
+    }
+
+    // Jacobi relaxation: each pass reads ONLY prev[] (last pass's result),
+    // writes snapped_tier_[] fresh -- order-independent, so a chain of N
+    // unresolved tier cliffs is fully resolved after N passes regardless
+    // of scan direction. See header comment for why 3 passes is enough
+    // for this grid's LOD gradient in practice.
+    constexpr int kRelaxPasses = 3;
+    for (int pass = 0; pass < kRelaxPasses; ++pass) {
+        for (int i = 0; i < n; ++i) prev[i] = snapped_tier_[i];
+        for (int iz = 0; iz < nz_; ++iz) {
+            for (int ix = 0; ix < nx_; ++ix) {
+                int ixl = ix > 0 ? ix - 1 : 0;
+                int ixr = ix < nx_ - 1 ? ix + 1 : nx_ - 1;
+                int izd = iz > 0 ? iz - 1 : 0;
+                int izu = iz < nz_ - 1 ? iz + 1 : nz_ - 1;
+                int t = prev[(size_t)iz * nx_ + ix];
+                t = std::max(t, prev[(size_t)iz  * nx_ + ixl]);
+                t = std::max(t, prev[(size_t)iz  * nx_ + ixr]);
+                t = std::max(t, prev[(size_t)izd * nx_ + ix ]);
+                t = std::max(t, prev[(size_t)izu * nx_ + ix ]);
+                snapped_tier_[(size_t)iz * nx_ + ix] = t;
+            }
         }
     }
 }

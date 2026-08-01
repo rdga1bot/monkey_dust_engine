@@ -1,5 +1,6 @@
 #include <monkey_dust/render/terrain_bake.h>
 #include <algorithm>
+#include <cmath>
 
 int TerrainBake_VertexCount(int N) {
     return (N + 1) * (N + 1) + 4 * (N + 1);
@@ -52,22 +53,50 @@ void EdgeUV(int e, int i, int N, float& u, float& v) {
 
 } // namespace
 
+namespace {
+
+// Forward-difference normal, same formula terrain_patch.vert's vertex
+// shader uses live -- computed here once at bake time instead.
+void ComputeNormal(float origin_x, float origin_z, float patch_size,
+                    TerrainHeightSampleFn sample, float u, float v,
+                    float h0, float step_m,
+                    float& nx, float& ny, float& nz) {
+    float step_uv = step_m / patch_size;
+    float hR = FineHeight(origin_x, origin_z, patch_size, sample, u + step_uv, v);
+    float hU = FineHeight(origin_x, origin_z, patch_size, sample, u, v + step_uv);
+    float inv_step = 1.0f / step_m;
+    float dhdx = (hR - h0) * inv_step;
+    float dhdz = (hU - h0) * inv_step;
+    nx = -dhdx; ny = 1.0f; nz = -dhdz;
+    float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+    if (len > 1e-6f) { nx /= len; ny /= len; nz /= len; }
+    else             { nx = 0.f; ny = 1.f; nz = 0.f; }
+}
+
+} // namespace
+
 void TerrainBake_ComputeVertices(float origin_x, float origin_z,
                                   float patch_size, int N, bool has_coarser,
+                                  float normal_step_m,
                                   TerrainHeightSampleFn sample_height,
                                   TerrainBakedVertex* out) {
     int coarse_n = std::max(1, N / 2);
 
+    auto fill = [&](int idx, float u, float v, float skirt) {
+        float hf = FineHeight(origin_x, origin_z, patch_size, sample_height, u, v);
+        float hc = has_coarser
+            ? CoarseHeight(origin_x, origin_z, patch_size, sample_height, coarse_n, u, v)
+            : hf;
+        float nx, ny, nz;
+        ComputeNormal(origin_x, origin_z, patch_size, sample_height, u, v, hf,
+                      normal_step_m, nx, ny, nz);
+        out[idx] = { u, v, hf, hc, skirt, nx, ny, nz };
+    };
+
     for (int row = 0; row <= N; ++row) {
         for (int col = 0; col <= N; ++col) {
             int vi = row * (N + 1) + col;
-            float u = (float)col / (float)N;
-            float v = (float)row / (float)N;
-            float hf = FineHeight(origin_x, origin_z, patch_size, sample_height, u, v);
-            float hc = has_coarser
-                ? CoarseHeight(origin_x, origin_z, patch_size, sample_height, coarse_n, u, v)
-                : hf;
-            out[vi] = { u, v, hf, hc, 0.0f };
+            fill(vi, (float)col / (float)N, (float)row / (float)N, 0.0f);
         }
     }
 
@@ -77,11 +106,7 @@ void TerrainBake_ComputeVertices(float origin_x, float origin_z,
         for (int i = 0; i <= N; ++i) {
             float u, v;
             EdgeUV(e, i, N, u, v);
-            float hf = FineHeight(origin_x, origin_z, patch_size, sample_height, u, v);
-            float hc = has_coarser
-                ? CoarseHeight(origin_x, origin_z, patch_size, sample_height, coarse_n, u, v)
-                : hf;
-            out[base + i] = { u, v, hf, hc, 1.0f };
+            fill(base + i, u, v, 1.0f);
         }
         base += (N + 1);
     }

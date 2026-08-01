@@ -168,6 +168,27 @@ bool TerrainPatchRenderer::Init(SDL_GPUDevice* /*dev*/) {
         return false;
     }
 
+    // TERRAIN_CA_REBUILD_PROMPT.md Phase 2 §3 -- depth-only early-Z prepass
+    // pipeline. Same vertex layout as pd above (must match tier_vbo_/
+    // inst_vbo_'s real buffer contents), but a SEPARATE vert shader source
+    // file (terrain_patch_prepass.vert, not terrain_patch.vert reused) --
+    // see that file's header comment for why (Intel Gen9 ANV cross-pipeline
+    // vertex codegen divergence, same class of bug already fixed for NPCs
+    // via animated_prepass.vert). shadow_csm.frag is the existing generic
+    // empty depth-only fragment shader (also used by the NPC prepass and
+    // ShadowSystem's cascades).
+    GpuPipeline::Desc pp = pd;
+    pp.vert_path      = "shaders/terrain_patch_prepass.vert";
+    pp.frag_path      = "shaders/shadow_csm.frag";
+    pp.depth_only     = true;
+    pp.frag_uniform_bufs = 0;
+    pp.frag_samplers     = 0;
+    pp.frag_storage_bufs = 0;
+    if (!prepass_pipeline_.Create(pp)) {
+        fprintf(stderr, "[TerrainPatchRenderer] prepass pipeline create failed\n");
+        return false;
+    }
+
     int quads = kPatchN;
     for (int t = 0; t < kNumTiers; ++t) {
         if (!BuildTierMesh(t, quads)) return false;
@@ -187,6 +208,7 @@ void TerrainPatchRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
         inst_count_[t] = 0;
     }
     pipeline_.Destroy();
+    prepass_pipeline_.Destroy();
     ready_ = false;
 }
 
@@ -263,6 +285,43 @@ void TerrainPatchRenderer::DrawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer
 
     SDL_GPUBuffer* sbuf = ground.ZoneGroundLayersSSBO();
     SDL_BindGPUFragmentStorageBuffers(rp, 0, &sbuf, 1);
+
+    SDL_DrawGPUIndexedPrimitives(rp, tier_idx_count_[tier], inst_count_[tier], 0, 0, 0);
+}
+
+void TerrainPatchRenderer::DrawBatchDepthOnly(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int tier,
+                                               const float* vp16, float patch_size,
+                                               const TerrainWorldHeightmap& hmap,
+                                               float cam_x, float cam_y, float cam_z) {
+    if (!ready_ || !hmap.IsReady()) return;
+    if (tier < 0 || tier >= kNumTiers) return;
+    if (inst_count_[tier] == 0) return;
+
+    SDL_BindGPUGraphicsPipeline(rp, prepass_pipeline_.SDLPipeline());
+
+    SDL_GPUBufferBinding vb{ tier_vbo_[tier].SDLBuffer(), 0u };
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_GPUBufferBinding instvb{ inst_vbo_[tier].SDLBuffer(), 0u };
+    SDL_BindGPUVertexBuffers(rp, 1, &instvb, 1);
+    SDL_GPUBufferBinding ib{ tier_ibo_[tier].SDLBuffer(), 0u };
+    SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    PatchVertUBO vubo{};
+    memcpy(vubo.vp, vp16, 64);
+    vubo.patch_size = patch_size;
+    vubo.tier_n = (float)TierN(tier);
+    vubo.world_origin_x = 0.f;
+    vubo.world_origin_z = 0.f;
+    vubo.world_extent   = hmap.WorldExtent();
+    vubo.height_min_m   = hmap.HeightMin();
+    vubo.height_max_m   = hmap.HeightMax();
+    vubo.res_texels     = (float)hmap.Resolution();
+    vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
+    vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
+    SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
+
+    SDL_GPUTextureSamplerBinding vtsb{ hmap.Texture(), hmap.Sampler() };
+    SDL_BindGPUVertexSamplers(rp, 0, &vtsb, 1);
 
     SDL_DrawGPUIndexedPrimitives(rp, tier_idx_count_[tier], inst_count_[tier], 0, 0, 0);
 }

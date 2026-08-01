@@ -59,6 +59,21 @@ bool TerrainBakedRenderer::Init(SDL_GPUDevice* /*dev*/) {
         return false;
     }
 
+    // TERRAIN_CA_REBUILD_PROMPT.md Phase 2 §3 -- depth-only early-Z prepass
+    // pipeline. Separate vert shader source (terrain_baked_prepass.vert),
+    // same rationale as TerrainPatchRenderer's prepass_pipeline_.
+    GpuPipeline::Desc pp = pd;
+    pp.vert_path      = "shaders/terrain_baked_prepass.vert";
+    pp.frag_path      = "shaders/shadow_csm.frag";
+    pp.depth_only     = true;
+    pp.frag_uniform_bufs = 0;
+    pp.frag_samplers     = 0;
+    pp.frag_storage_bufs = 0;
+    if (!prepass_pipeline_.Create(pp)) {
+        fprintf(stderr, "[TerrainBakedRenderer] prepass pipeline create failed\n");
+        return false;
+    }
+
     int quads = kPatchN;
     for (int t = 0; t < kNumTiers; ++t) {
         int ic = TerrainBake_IndexCount(quads);
@@ -129,6 +144,7 @@ void TerrainBakedRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
         }
     }
     pipeline_.Destroy();
+    prepass_pipeline_.Destroy();
     frame_counter_ = 0;
     ready_ = false;
 }
@@ -302,6 +318,33 @@ void TerrainBakedRenderer::DrawSlot(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer*
 
     SDL_GPUBuffer* sbuf = ground.ZoneGroundLayersSSBO();
     SDL_BindGPUFragmentStorageBuffers(rp, 0, &sbuf, 1);
+
+    SDL_DrawGPUIndexedPrimitives(rp, idx_count_[tier], 1, 0, 0, 0);
+}
+
+void TerrainBakedRenderer::DrawSlotDepthOnly(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                                              int tier, int slot, const float* vp16,
+                                              float origin_x, float origin_z, float patch_size, float lod,
+                                              float cam_x, float cam_y, float cam_z) {
+    if (!ready_ || tier < 0 || tier >= kNumTiers) return;
+    if (slot < 0 || slot >= kMaxSlotsPerTier || !slots_[tier][slot].valid) return;
+
+    SDL_BindGPUGraphicsPipeline(rp, prepass_pipeline_.SDLPipeline());
+
+    SDL_GPUBufferBinding vb{ vbo_[tier][slot].SDLBuffer(), 0u };
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_GPUBufferBinding ib{ ibo_[tier].SDLBuffer(), 0u };
+    SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    BakedPatchVertUBO vubo{};
+    memcpy(vubo.vp, vp16, 64);
+    vubo.origin_x = origin_x;
+    vubo.origin_z = origin_z;
+    vubo.patch_size = patch_size;
+    vubo.lod = lod;
+    vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
+    vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
+    SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
 
     SDL_DrawGPUIndexedPrimitives(rp, idx_count_[tier], 1, 0, 0, 0);
 }

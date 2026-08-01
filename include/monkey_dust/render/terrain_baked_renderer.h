@@ -115,6 +115,17 @@ public:
     // Phase 0).
     [[nodiscard]] int ResidentSlotCount(int tier) const;
 
+    // TERRAIN_CA_REBUILD_PROMPT.md Phase 2 §3 -- depth-only early-Z prepass
+    // draw for an already-baked+resident slot (see TerrainPatchRenderer::
+    // DrawBatchDepthOnly's doc comment -- same pattern, baked-path variant).
+    // No-op if this (tier, slot) isn't resident yet (caller should already
+    // be skipping non-ready patches this frame via TryGetOrRequestBakeAsync's
+    // -1 return, same as the main color draw).
+    void DrawSlotDepthOnly(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                            int tier, int slot, const float* vp16,
+                            float origin_x, float origin_z, float patch_size, float lod,
+                            float cam_x, float cam_y, float cam_z);
+
 private:
     struct Slot {
         uint64_t key             = 0;
@@ -123,6 +134,7 @@ private:
     };
 
     GpuPipeline     pipeline_;
+    GpuPipeline     prepass_pipeline_;
     GpuStaticBuffer ibo_[kNumTiers];
     uint32_t        idx_count_[kNumTiers] = {};
     GpuVertexBuffer vbo_[kNumTiers][kMaxSlotsPerTier];

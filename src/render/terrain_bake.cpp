@@ -1,0 +1,88 @@
+#include <monkey_dust/render/terrain_bake.h>
+#include <algorithm>
+
+int TerrainBake_VertexCount(int N) {
+    return (N + 1) * (N + 1) + 4 * (N + 1);
+}
+
+int TerrainBake_IndexCount(int N) {
+    return N * N * 6 + 4 * N * 6;
+}
+
+namespace {
+
+float FineHeight(float origin_x, float origin_z, float patch_size,
+                  TerrainHeightSampleFn sample, float u, float v) {
+    float wx = origin_x + u * patch_size;
+    float wz = origin_z + v * patch_size;
+    return sample(wx, wz);
+}
+
+// Bilinear interpolation of the coarse_n-quads/edge grid's 4 surrounding
+// corners at local (u,v) -- see terrain_bake.h's height_coarse doc comment.
+float CoarseHeight(float origin_x, float origin_z, float patch_size,
+                    TerrainHeightSampleFn sample, int coarse_n, float u, float v) {
+    float step = 1.0f / (float)coarse_n;
+    float cu = u / step, cv = v / step;
+    int c0u = (int)cu, c0v = (int)cv;
+    int c1u = std::min(c0u + 1, coarse_n);
+    int c1v = std::min(c0v + 1, coarse_n);
+    float fu = cu - (float)c0u;
+    float fv = cv - (float)c0v;
+
+    auto corner = [&](int ci, int cj) {
+        return FineHeight(origin_x, origin_z, patch_size, sample,
+                           (float)ci * step, (float)cj * step);
+    };
+    float h00 = corner(c0u, c0v), h10 = corner(c1u, c0v);
+    float h01 = corner(c0u, c1v), h11 = corner(c1u, c1v);
+    float hx0 = h00 + (h10 - h00) * fu;
+    float hx1 = h01 + (h11 - h01) * fu;
+    return hx0 + (hx1 - hx0) * fv;
+}
+
+void EdgeUV(int e, int i, int N, float& u, float& v) {
+    switch (e) {
+        case 0: u = (float)i / (float)N; v = 0.f; break;             // north, row=0
+        case 1: u = (float)i / (float)N; v = 1.f; break;             // south, row=N
+        case 2: u = 0.f; v = (float)i / (float)N; break;             // west,  col=0
+        default: u = 1.f; v = (float)i / (float)N; break;            // east,  col=N
+    }
+}
+
+} // namespace
+
+void TerrainBake_ComputeVertices(float origin_x, float origin_z,
+                                  float patch_size, int N, bool has_coarser,
+                                  TerrainHeightSampleFn sample_height,
+                                  TerrainBakedVertex* out) {
+    int coarse_n = std::max(1, N / 2);
+
+    for (int row = 0; row <= N; ++row) {
+        for (int col = 0; col <= N; ++col) {
+            int vi = row * (N + 1) + col;
+            float u = (float)col / (float)N;
+            float v = (float)row / (float)N;
+            float hf = FineHeight(origin_x, origin_z, patch_size, sample_height, u, v);
+            float hc = has_coarser
+                ? CoarseHeight(origin_x, origin_z, patch_size, sample_height, coarse_n, u, v)
+                : hf;
+            out[vi] = { u, v, hf, hc, 0.0f };
+        }
+    }
+
+    int surf_vc = (N + 1) * (N + 1);
+    int base = surf_vc;
+    for (int e = 0; e < 4; ++e) {
+        for (int i = 0; i <= N; ++i) {
+            float u, v;
+            EdgeUV(e, i, N, u, v);
+            float hf = FineHeight(origin_x, origin_z, patch_size, sample_height, u, v);
+            float hc = has_coarser
+                ? CoarseHeight(origin_x, origin_z, patch_size, sample_height, coarse_n, u, v)
+                : hf;
+            out[base + i] = { u, v, hf, hc, 1.0f };
+        }
+        base += (N + 1);
+    }
+}

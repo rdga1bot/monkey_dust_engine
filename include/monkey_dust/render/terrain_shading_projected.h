@@ -49,6 +49,19 @@ public:
     void Shutdown();
     bool IsReady() const { return ready_; }
 
+    // Recreates gbuf_color_/gbuf_depth_ at the new size if it differs from
+    // what Init() (or the last EnsureSize call) allocated -- call once per
+    // frame, before BeginGBufferPass, with the CURRENT window size. Unlike
+    // the main swapchain (which SDL_GPU resizes automatically on present),
+    // this class's own fixed-size render targets do NOT track window
+    // resizes on their own -- a window resize/maximize that happens after
+    // SceneRender::Init() (common: window managers often resize/reposition
+    // a freshly-created window asynchronously, right after creation) left
+    // this G-buffer permanently stuck at its stale init-time size, so the
+    // terrain content it produces only covered part of the actual window
+    // (background showing through the rest) -- diagnosed live 2026-08-02.
+    void EnsureSize(SDL_GPUDevice* dev, int w, int h);
+
     GpuTexture&      GBufferColor() { return gbuf_color_; }
     GpuDepthTexture&  GBufferDepth() { return gbuf_depth_; }
 

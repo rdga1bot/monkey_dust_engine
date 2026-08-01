@@ -66,6 +66,15 @@ bool TerrainShadingProjected::Init(SDL_GPUDevice* dev, int w, int h) {
     return true;
 }
 
+void TerrainShadingProjected::EnsureSize(SDL_GPUDevice* dev, int w, int h) {
+    if (!ready_ || (w == w_ && h == h_) || w <= 0 || h <= 0) return;
+    resolve_pipeline_.Destroy();
+    gbuf_depth_.Shutdown();
+    gbuf_color_.Shutdown();
+    ready_ = false;
+    Init(dev, w, h);
+}
+
 void TerrainShadingProjected::Shutdown() {
     resolve_pipeline_.Destroy();
     gbuf_depth_.Shutdown();

@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
+#include <chrono>
 
 // Vertex-stage constant buffer -- MUST mirror shaders/terrain_baked.vert's
 // PatchVert field-for-field. One draw call per patch, so everything
@@ -73,11 +74,53 @@ bool TerrainBakedRenderer::Init(SDL_GPUDevice* /*dev*/) {
         quads = quads > 1 ? quads / 2 : 1;
     }
 
+    // Phase 3 -- start the background bake worker. Single consumer of
+    // async_queue_'s request side, single producer of its result side
+    // (mirrors NavSystem's worker exactly, nav_async_queue.h).
+    worker_running_.store(true, std::memory_order_release);
+    worker_ = std::thread([this]() {
+        while (worker_running_.load(std::memory_order_acquire)) {
+            TerrainBakeRequest req;
+            if (!async_queue_.TryDequeueRequest(req)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+            int N = kPatchN >> req.tier;
+            TerrainBakeResult result;
+            result.tier = req.tier;
+            result.patch_key = req.patch_key;
+            result.vertex_count = TerrainBake_VertexCount(N);
+            TerrainBake_ComputeVertices(req.origin_x, req.origin_z, req.patch_size, N,
+                                        req.has_coarser, req.normal_step_m,
+                                        req.sample_height, result.verts);
+            result.valid = true;
+            // Bounded retry, not an infinite spin -- if PumpAsyncResults
+            // hasn't drained in a while (main thread stalled/shutting
+            // down), drop this result rather than hang the worker
+            // forever; the request will simply get re-issued next frame
+            // by TryGetOrRequestBakeAsync once it's no longer "pending".
+            for (int tries = 0; tries < 100; ++tries) {
+                if (async_queue_.TryEnqueueResult(result)) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+    });
+
     ready_ = true;
     return true;
 }
 
 void TerrainBakedRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
+    // Join (not detach) BEFORE any GPU teardown -- this project already
+    // hit a destroy-during-upload race from a detached loader thread
+    // once (CLAUDE.md's Hardware Checklist), fixed by joining before
+    // GpuDevice::Shutdown(). Same rule applies here even though this
+    // worker never touches the GPU directly -- Shutdown() itself
+    // destroys vbo_/ibo_ device buffers right below, which a still-
+    // running worker has no business racing against either.
+    worker_running_.store(false, std::memory_order_release);
+    if (worker_.joinable()) worker_.join();
+
     for (int t = 0; t < kNumTiers; ++t) {
         ibo_[t].Shutdown();
         for (int s = 0; s < kMaxSlotsPerTier; ++s) {
@@ -125,6 +168,91 @@ int TerrainBakedRenderer::GetOrBakePatch(SDL_GPUCommandBuffer* cmd, int tier, ui
     slots[slot].valid           = true;
     slots[slot].last_used_frame = frame_counter_;
     return slot;
+}
+
+bool TerrainBakedRenderer::IsPending(int tier, uint64_t key) const {
+    for (int i = 0; i < kMaxPending; ++i)
+        if (pending_[i].used && pending_[i].tier == tier && pending_[i].key == key) return true;
+    return false;
+}
+
+void TerrainBakedRenderer::MarkPending(int tier, uint64_t key) {
+    for (int i = 0; i < kMaxPending; ++i) {
+        if (!pending_[i].used) {
+            pending_[i] = { tier, key, true };
+            return;
+        }
+    }
+    // Table full -- every slot genuinely in-flight already (bounded by
+    // kMaxPending = 2x queue capacity, so this only happens if the
+    // worker is badly backed up). Silently skip re-marking; the next
+    // frame's IsPending check will still (harmlessly) re-attempt
+    // TryEnqueueRequest, which just fails fast if the queue is full too.
+}
+
+void TerrainBakedRenderer::ClearPending(int tier, uint64_t key) {
+    for (int i = 0; i < kMaxPending; ++i) {
+        if (pending_[i].used && pending_[i].tier == tier && pending_[i].key == key) {
+            pending_[i].used = false;
+            return;
+        }
+    }
+}
+
+int TerrainBakedRenderer::TryGetOrRequestBakeAsync(int tier, uint64_t patch_key,
+                                                    float origin_x, float origin_z, float patch_size,
+                                                    bool has_coarser, float normal_step_m,
+                                                    TerrainHeightSampleFn sample_height) {
+    if (!ready_ || tier < 0 || tier >= kNumTiers) return -1;
+
+    Slot* slots = slots_[tier];
+    for (int s = 0; s < kMaxSlotsPerTier; ++s) {
+        if (slots[s].valid && slots[s].key == patch_key) {
+            slots[s].last_used_frame = frame_counter_;
+            return s;
+        }
+    }
+
+    if (!IsPending(tier, patch_key)) {
+        TerrainBakeRequest req;
+        req.tier = tier;
+        req.patch_key = patch_key;
+        req.origin_x = origin_x; req.origin_z = origin_z; req.patch_size = patch_size;
+        req.has_coarser = has_coarser;
+        req.normal_step_m = normal_step_m;
+        req.sample_height = sample_height;
+        req.valid = true;
+        if (async_queue_.TryEnqueueRequest(req)) MarkPending(tier, patch_key);
+    }
+    return -1; // not ready yet -- caller skips drawing this patch this frame
+}
+
+void TerrainBakedRenderer::PumpAsyncResults(SDL_GPUCommandBuffer* cmd) {
+    if (!ready_) return;
+    TerrainBakeResult result;
+    // Drain everything ready this frame, not just one -- bounded by the
+    // queue's own capacity (8), so this can never loop unboundedly.
+    while (async_queue_.TryDequeueResult(result)) {
+        if (!result.valid || result.tier < 0 || result.tier >= kNumTiers) continue;
+        ClearPending(result.tier, result.patch_key);
+
+        Slot* slots = slots_[result.tier];
+        int empty = -1, oldest = 0;
+        for (int s = 0; s < kMaxSlotsPerTier; ++s) {
+            if (!slots[s].valid && empty < 0) empty = s;
+            if (slots[s].last_used_frame < slots[oldest].last_used_frame) oldest = s;
+        }
+        int slot = empty >= 0 ? empty : oldest;
+
+        void* dst = vbo_[result.tier][slot].MapWrite();
+        memcpy(dst, result.verts, (size_t)result.vertex_count * sizeof(TerrainBakedVertex));
+        vbo_[result.tier][slot].Unmap();
+        vbo_[result.tier][slot].Upload(cmd);
+
+        slots[slot].key             = result.patch_key;
+        slots[slot].valid           = true;
+        slots[slot].last_used_frame = frame_counter_;
+    }
 }
 
 void TerrainBakedRenderer::DrawSlot(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,

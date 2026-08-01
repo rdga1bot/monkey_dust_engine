@@ -105,10 +105,23 @@ public:
     int InstanceCount(int tier) const { return tier >= 0 && tier < kNumTiers ? (int)inst_count_[tier] : 0; }
     uint32_t TierIndexCount(int tier) const { return tier >= 0 && tier < kNumTiers ? tier_idx_count_[tier] : 0; }
 
+    // TERRAIN_CA_REBUILD_PROMPT.md Phase 2 §3 -- depth-only early-Z prepass
+    // draw, same instance batch as DrawBatch but with prepass_pipeline_
+    // (terrain_patch_prepass.vert + shadow_csm.frag, no color output). Must
+    // run inside a depth-only GpuRenderPass (GpuRenderPass::BeginDepthOnly),
+    // BEFORE the main color pass that draws this same tier with DrawBatch --
+    // see NpcRender::CullAndPrepass's Early-Z block for the established
+    // pattern (this mirrors the NPC prepass exactly, just for terrain).
+    void DrawBatchDepthOnly(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int tier,
+                             const float* vp16, float patch_size,
+                             const TerrainWorldHeightmap& hmap,
+                             float cam_x, float cam_y, float cam_z);
+
 private:
     bool BuildTierMesh(int tier, int quads_per_edge);
 
     GpuPipeline     pipeline_;
+    GpuPipeline     prepass_pipeline_;
     GpuStaticBuffer tier_vbo_[kNumTiers];
     GpuStaticBuffer tier_ibo_[kNumTiers];
     uint32_t        tier_idx_count_[kNumTiers] = {};

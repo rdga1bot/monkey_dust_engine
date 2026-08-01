@@ -2,10 +2,13 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/render/terrain_bake.h>
+#include <monkey_dust/render/terrain_bake_async_queue.h>
 #include <monkey_dust/render/terrain_renderer.h>
 #include <monkey_dust/render/terrain_patch_renderer.h>
 #include <SDL3/SDL_gpu.h>
 #include <cstdint>
+#include <thread>
+#include <atomic>
 
 // TERRAIN_CA_REBUILD_PROMPT.md Phase 2 -- GPU-side renderer for the
 // BAKED terrain path (--terrain-path=baked). Companion to
@@ -70,9 +73,41 @@ public:
                   float fog_far, const float fog_color[3], float fog_near,
                   const TerrainRenderer& ground);
 
+    // TERRAIN_CA_REBUILD_PROMPT.md Phase 3 -- async bake path. Real
+    // measurement (terrain_research/perf/PROGRESS.md) found the
+    // synchronous GetOrBakePatch above spikes to 100ms/frame during
+    // heavy camera churn (many new patches at once) -- far over the
+    // ≤2ms/frame budget. Same SPSC-worker pattern as engine/include/
+    // monkey_dust/nav/nav_async_queue.h's NavSystem (mirrored, not
+    // reinvented): a background thread does the actual TerrainBake_
+    // ComputeVertices work; GPU upload of a finished result still
+    // happens ONLY on the main thread inside PumpAsyncResults (SDL_GPU
+    // buffers are not thread-safe to write from a worker).
+    //
+    // Non-blocking: returns the current slot if this patch is already
+    // cached+uploaded, else -1 (not ready yet -- caller should skip
+    // drawing this patch THIS frame; it self-heals within a few frames
+    // as the worker catches up, the same "pop-in while streaming"
+    // tradeoff essentially every background-streaming terrain system
+    // makes). Enqueues a bake request if this key isn't already
+    // pending (tracked internally) -- safe to call every frame for
+    // every visible patch without duplicate-enqueueing.
+    int TryGetOrRequestBakeAsync(int tier, uint64_t patch_key,
+                                  float origin_x, float origin_z, float patch_size,
+                                  bool has_coarser, float normal_step_m,
+                                  TerrainHeightSampleFn sample_height);
+
+    // Drains any results the worker thread has finished since the last
+    // call and uploads them to their target GPU slot (LRU-picked, same
+    // eviction convention as GetOrBakePatch). MUST be called once per
+    // frame, OUTSIDE any active render pass, same constraint as
+    // GetOrBakePatch/UploadInstances.
+    void PumpAsyncResults(SDL_GPUCommandBuffer* cmd);
+
     // Advance the internal frame counter -- call once per frame, after
-    // all this frame's GetOrBakePatch calls, so the NEXT frame's LRU
-    // comparisons see a fresh "used this frame" boundary.
+    // all this frame's GetOrBakePatch/TryGetOrRequestBakeAsync calls, so
+    // the NEXT frame's LRU comparisons see a fresh "used this frame"
+    // boundary.
     void EndFrame() { ++frame_counter_; }
 
     // Read-only per-tier resident-slot count -- same baseline-measurement
@@ -94,5 +129,27 @@ private:
     Slot            slots_[kNumTiers][kMaxSlotsPerTier];
     uint64_t        frame_counter_ = 0;
     bool            ready_ = false;
+
+    // Phase 3 async bake worker -- joined (not detached) in Shutdown,
+    // BEFORE the GPU device tears down (same destroy-during-upload race
+    // this project already hit once for a different loader thread, see
+    // CLAUDE.md's Hardware Checklist "ВИРІШЕНО... editor + md.screenshot()
+    // heap-corruption крах" entry -- joining here is not optional).
+    TerrainBakeAsyncQueue    async_queue_;
+    std::thread              worker_;
+    std::atomic<bool>        worker_running_{false};
+
+    // Small fixed set of (tier,key) pairs currently enqueued/in-flight,
+    // so TryGetOrRequestBakeAsync doesn't spam duplicate requests for a
+    // patch that's still being baked. Sized to the queue's own request
+    // capacity (can never have more truly in-flight than that) with a
+    // little headroom.
+    static constexpr int kMaxPending = TerrainBakeAsyncQueue::CAPACITY * 2;
+    struct PendingEntry { int tier = -1; uint64_t key = 0; bool used = false; };
+    PendingEntry pending_[kMaxPending];
+
+    [[nodiscard]] bool IsPending(int tier, uint64_t key) const;
+    void MarkPending(int tier, uint64_t key);
+    void ClearPending(int tier, uint64_t key);
 };
 #endif

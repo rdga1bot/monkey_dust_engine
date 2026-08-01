@@ -45,6 +45,11 @@ struct TerrainBakedVertex {
     float height_fine;
     float height_coarse;
     float skirt;
+    // Baked at height_fine's position via the same forward-difference
+    // technique terrain_patch.vert's vertex shader used to compute
+    // live -- done once here at bake time instead, since the baked
+    // vertex shader has no heightmap texture left to sample at runtime.
+    float normal_x, normal_y, normal_z;
 };
 
 // Same vertex/index COUNT formulas TerrainPatchRenderer::BuildTierMesh
@@ -66,8 +71,15 @@ using TerrainHeightSampleFn = float (*)(float world_x, float world_z);
 // patch_size, tier resolution quads_per_edge. has_coarser=false for the
 // coarsest tier (no coarser neighbor to morph toward -- height_coarse
 // is set equal to height_fine).
+// normal_step_m: world-metre finite-difference step used for the baked
+// normal (both axes). Same "avoid sub-texel precision noise" concern
+// task #299 documents for the live VTF path applies here too (the
+// underlying source is still a bilinear-interpolated heightmap grid at
+// real texel resolution) -- pass a step comparable to or larger than
+// that texel size, not the raw per-vertex spacing, especially at fine
+// tiers where per-vertex spacing can be sub-texel.
 void TerrainBake_ComputeVertices(float origin_x, float origin_z,
                                   float patch_size, int quads_per_edge,
-                                  bool has_coarser,
+                                  bool has_coarser, float normal_step_m,
                                   TerrainHeightSampleFn sample_height,
                                   TerrainBakedVertex* out_verts);

@@ -29,15 +29,28 @@ class TerrainBakedRenderer {
 public:
     static constexpr int kNumTiers        = TerrainPatchRenderer::kNumTiers;   // 8
     static constexpr int kPatchN           = TerrainPatchRenderer::kPatchN;     // 128
-    // 32 slots/tier x 8 tiers = 256 total -- Phase 0's baseline observed
-    // ~130-140 active patches spread across ~4 active tiers at once;
-    // this leaves real headroom without approaching the ~9.28GB
-    // all-tiers-all-chunks worst case (256 slots at tier-0's own worst-
-    // case per-slot size, ~549KB, is ~137MB total -- still well inside
-    // budget even if every slot were pinned to the most expensive tier,
-    // which never happens in practice since only ~4 tiers are ever
-    // simultaneously active).
-    static constexpr int kMaxSlotsPerTier  = 32;
+    // task terrain-async-bake-lru-thrash (2026-08-01): was 32 -- raised to
+    // 64 after live measurement found a single tier (a mid-distance one,
+    // NOT tier-0) can alone need 39 SIMULTANEOUSLY-visible patches from one
+    // static camera position, exceeding the old 32-slot budget. Phase 0's
+    // "~130-140 active patches spread across ~4 active tiers" baseline was
+    // an AGGREGATE number -- it doesn't rule out one tier alone spiking
+    // well above its even 1/4 share, which is exactly what happened here.
+    // When a tier's pool is smaller than its actual real-time patch count,
+    // EVERY overflow patch cycles bake->evict->re-request forever (each
+    // newly-completed bake evicts an equally-needed sibling that's still
+    // in view), so it never stays resident long enough for the draw loop
+    // to see it -- confirmed live: per-tier resident count plateaued at
+    // exactly 32/39 with the SAME 7 keys stuck "missing" indefinitely,
+    // and per-key tracing showed those keys re-requesting successfully
+    // EVERY frame (IsPending correctly false each time) yet never landing
+    // a stable slot. Not a logic bug in the request/pending code -- a real
+    // capacity shortfall. 64 slots/tier x 8 tiers = 512 total; even the
+    // absolute worst case (every slot pinned to tier-0's own most
+    // expensive per-slot size, ~549KB) is ~274MB -- still trivial against
+    // the documented ~9.28GB all-chunks-all-tiers scenario Phase 2 already
+    // rejected, and comfortably inside the 4-8GB hardware budget.
+    static constexpr int kMaxSlotsPerTier  = 64;
 
     bool Init(SDL_GPUDevice* dev);
     void Shutdown(SDL_GPUDevice* dev);
@@ -140,6 +153,22 @@ private:
     GpuVertexBuffer vbo_[kNumTiers][kMaxSlotsPerTier];
     Slot            slots_[kNumTiers][kMaxSlotsPerTier];
     uint64_t        frame_counter_ = 0;
+    // task terrain-async-bake-lru-thrash (2026-08-01): a second real bug
+    // found via live measurement -- `last_used_frame` used to be stamped
+    // with frame_counter_ (frame-granular), so every slot touched within
+    // the SAME frame ties. The LRU eviction scan (`if (a < b) oldest = b`)
+    // never moves off its initial guess on a tie, so it deterministically
+    // picked the SAME slot (index 0) every time regardless of true age --
+    // when a tier's working set exceeds kMaxSlotsPerTier (e.g. 39 patches
+    // needed, 32 slots available), multiple newly-baked results landing in
+    // the SAME PumpAsyncResults call kept evicting each other out of that
+    // one slot before the draw loop ever saw them, permanently starving a
+    // stable ~7-patch subset (confirmed live: per-tier resident count
+    // plateaued at exactly 32/39 and the same 7 patch keys stayed "missing"
+    // indefinitely). Fix: a monotonic touch_counter_, incremented on every
+    // single slot touch (not once per frame) -- ties become impossible, so
+    // the eviction scan always finds the genuinely least-recently-used slot.
+    uint64_t        touch_counter_ = 0;
     bool            ready_ = false;
 
     // Phase 3 async bake worker -- joined (not detached) in Shutdown,
@@ -157,10 +186,28 @@ private:
     // capacity (can never have more truly in-flight than that) with a
     // little headroom.
     static constexpr int kMaxPending = TerrainBakeAsyncQueue::CAPACITY * 2;
-    struct PendingEntry { int tier = -1; uint64_t key = 0; bool used = false; };
+    // task terrain-async-bake-stall (2026-08-01): a real bug found via live
+    // measurement, not guessed -- TerrainBakeAsyncQueue::TryEnqueueResult's
+    // documented "drop this result" bounded-retry fallback (worker.cpp) only
+    // fires when PumpAsyncResults hasn't drained the results ring in a
+    // while. When it fires, the corresponding pending_ entry was NEVER
+    // cleared (ClearPending only runs on a SUCCESSFUL dequeue in
+    // PumpAsyncResults) -- so IsPending stays true for that (tier,key)
+    // FOREVER, and TryGetOrRequestBakeAsync's `if (!IsPending(...))` guard
+    // permanently blocks re-requesting it. Confirmed live: a static-camera
+    // baked-path session converged to exactly total-7 missing patches and
+    // plateaued there indefinitely (7 == TerrainBakeAsyncQueue::CAPACITY-1,
+    // the max truly-in-flight count -- the worst case where every in-flight
+    // slot happens to be a dropped result at once). Fix: track when each
+    // entry was marked and expire it after kPendingTimeoutFrames frames of
+    // no result -- the request simply gets re-issued, self-healing instead
+    // of deadlocking. Frame-counted (not wall-clock) since frame_counter_
+    // is already the class's own time base (EndFrame()).
+    static constexpr uint64_t kPendingTimeoutFrames = 180; // ~3s at 60fps
+    struct PendingEntry { int tier = -1; uint64_t key = 0; bool used = false; uint64_t marked_frame = 0; };
     PendingEntry pending_[kMaxPending];
 
-    [[nodiscard]] bool IsPending(int tier, uint64_t key) const;
+    [[nodiscard]] bool IsPending(int tier, uint64_t key);
     void MarkPending(int tier, uint64_t key);
     void ClearPending(int tier, uint64_t key);
 };

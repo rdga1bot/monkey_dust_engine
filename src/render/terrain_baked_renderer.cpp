@@ -146,6 +146,7 @@ void TerrainBakedRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
     pipeline_.Destroy();
     prepass_pipeline_.Destroy();
     frame_counter_ = 0;
+    touch_counter_ = 0;
     ready_ = false;
 }
 
@@ -164,7 +165,7 @@ int TerrainBakedRenderer::GetOrBakePatch(SDL_GPUCommandBuffer* cmd, int tier, ui
     }
 
     if (hit >= 0) {
-        slots[hit].last_used_frame = frame_counter_;
+        slots[hit].last_used_frame = ++touch_counter_;
         return hit;
     }
 
@@ -182,20 +183,31 @@ int TerrainBakedRenderer::GetOrBakePatch(SDL_GPUCommandBuffer* cmd, int tier, ui
 
     slots[slot].key             = patch_key;
     slots[slot].valid           = true;
-    slots[slot].last_used_frame = frame_counter_;
+    slots[slot].last_used_frame = ++touch_counter_;
     return slot;
 }
 
-bool TerrainBakedRenderer::IsPending(int tier, uint64_t key) const {
-    for (int i = 0; i < kMaxPending; ++i)
-        if (pending_[i].used && pending_[i].tier == tier && pending_[i].key == key) return true;
+bool TerrainBakedRenderer::IsPending(int tier, uint64_t key) {
+    for (int i = 0; i < kMaxPending; ++i) {
+        if (!pending_[i].used || pending_[i].tier != tier || pending_[i].key != key) continue;
+        // task terrain-async-bake-stall: expire a pending entry whose
+        // result was silently dropped (worker's bounded retry exhausted) --
+        // see this struct's doc comment in the header for the full story.
+        // Without this, IsPending stays true forever and the patch never
+        // gets re-requested.
+        if (frame_counter_ - pending_[i].marked_frame > kPendingTimeoutFrames) {
+            pending_[i].used = false;
+            return false;
+        }
+        return true;
+    }
     return false;
 }
 
 void TerrainBakedRenderer::MarkPending(int tier, uint64_t key) {
     for (int i = 0; i < kMaxPending; ++i) {
         if (!pending_[i].used) {
-            pending_[i] = { tier, key, true };
+            pending_[i] = { tier, key, true, frame_counter_ };
             return;
         }
     }
@@ -224,7 +236,7 @@ int TerrainBakedRenderer::TryGetOrRequestBakeAsync(int tier, uint64_t patch_key,
     Slot* slots = slots_[tier];
     for (int s = 0; s < kMaxSlotsPerTier; ++s) {
         if (slots[s].valid && slots[s].key == patch_key) {
-            slots[s].last_used_frame = frame_counter_;
+            slots[s].last_used_frame = ++touch_counter_;
             return s;
         }
     }
@@ -267,7 +279,7 @@ void TerrainBakedRenderer::PumpAsyncResults(SDL_GPUCommandBuffer* cmd) {
 
         slots[slot].key             = result.patch_key;
         slots[slot].valid           = true;
-        slots[slot].last_used_frame = frame_counter_;
+        slots[slot].last_used_frame = ++touch_counter_;
     }
 }
 

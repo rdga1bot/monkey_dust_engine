@@ -111,3 +111,39 @@ void TerrainBake_ComputeVertices(float origin_x, float origin_z,
         base += (N + 1);
     }
 }
+
+void TerrainBake_ComputeIndices(int N, uint32_t* idx) {
+    int ii = 0;
+    for (int row = 0; row < N; ++row) {
+        for (int col = 0; col < N; ++col) {
+            uint32_t v00 = (uint32_t)(row * (N + 1) + col);
+            uint32_t v10 = v00 + 1;
+            uint32_t v01 = v00 + (uint32_t)(N + 1);
+            uint32_t v11 = v01 + 1;
+            idx[ii++] = v00; idx[ii++] = v01; idx[ii++] = v10;
+            idx[ii++] = v10; idx[ii++] = v01; idx[ii++] = v11;
+        }
+    }
+
+    auto edge_surf_idx = [N](int e, int i) -> int {
+        switch (e) {
+            case 0: return 0 * (N + 1) + i;
+            case 1: return N * (N + 1) + i;
+            case 2: return i * (N + 1) + 0;
+            default: return i * (N + 1) + N;
+        }
+    };
+    int surf_vc = (N + 1) * (N + 1);
+    int skirt_base = surf_vc;
+    for (int e = 0; e < 4; ++e) {
+        int base = skirt_base + e * (N + 1);
+        for (int i = 0; i < N; ++i) {
+            uint32_t s0 = (uint32_t)edge_surf_idx(e, i);
+            uint32_t s1 = (uint32_t)edge_surf_idx(e, i + 1);
+            uint32_t k0 = (uint32_t)(base + i);
+            uint32_t k1 = (uint32_t)(base + i + 1);
+            idx[ii++] = s0; idx[ii++] = k0; idx[ii++] = s1;
+            idx[ii++] = s1; idx[ii++] = k0; idx[ii++] = k1;
+        }
+    }
+}

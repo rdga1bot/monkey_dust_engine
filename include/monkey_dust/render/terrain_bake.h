@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 
 // TERRAIN_CA_REBUILD_PROMPT.md Phase 2 — pure CPU math for baking a
 // TerrainPatchRenderer tier-mesh's per-vertex heights from the real
@@ -83,3 +84,14 @@ void TerrainBake_ComputeVertices(float origin_x, float origin_z,
                                   bool has_coarser, float normal_step_m,
                                   TerrainHeightSampleFn sample_height,
                                   TerrainBakedVertex* out_verts);
+
+// Fills out_idx (must hold at least TerrainBake_IndexCount(quads_per_edge)
+// entries) with the same topology TerrainPatchRenderer::BuildTierMesh
+// generates for the VTF path (surface quads row-major, then 4 skirt
+// edge strips) -- kept as a SEPARATE, independent implementation
+// deliberately, not a refactor of the working, already-verified VTF
+// renderer (see terrain_bake.h's top comment) -- both must produce the
+// identical topology since they address the same TerrainBakedVertex/
+// VTF vertex layouts, verified by tests/test_terrain_bake.cpp against
+// known triangle-count/bounds invariants.
+void TerrainBake_ComputeIndices(int quads_per_edge, uint32_t* out_idx);

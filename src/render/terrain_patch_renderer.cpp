@@ -99,7 +99,7 @@ bool TerrainPatchRenderer::Init(SDL_GPUDevice* /*dev*/) {
     pd.vert_uniform_bufs = 1;
     pd.vert_samplers     = 1; // heightTex — VTF, confirmed safe 2026-07-25
     pd.frag_uniform_bufs = 1;
-    pd.frag_samplers     = 3; // tex_colour, tex_ground array, tex_ground_baked
+    pd.frag_samplers     = 4; // tex_colour, tex_ground array, tex_ground_baked, tex_overlay_mask
     pd.frag_storage_bufs = 1; // zoneGroundLayers
 
     if (!pipeline_.Create(pd)) {
@@ -195,10 +195,10 @@ void TerrainPatchRenderer::DrawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer
     fubo.fog_far = fog_far;
     SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
 
-    SDL_GPUTextureSamplerBinding bindings[3];
+    SDL_GPUTextureSamplerBinding bindings[4];
     ground.GetSharedGroundSamplers(bindings);
     if (!bindings[0].texture || !bindings[0].sampler) return;
-    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 3);
+    SDL_BindGPUFragmentSamplers(rp, 0, bindings, 4);
 
     SDL_GPUBuffer* sbuf = ground.ZoneGroundLayersSSBO();
     SDL_BindGPUFragmentStorageBuffers(rp, 0, &sbuf, 1);

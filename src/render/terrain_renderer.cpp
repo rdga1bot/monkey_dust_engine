@@ -2,6 +2,7 @@
 #include <monkey_dust/world/biome_def.h>
 #include <monkey_dust/tools/graphics_settings.h>
 #include <monkey_dust/render/render_quality.h>
+#include <monkey_dust/platform/md_fs.h>
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -168,6 +169,61 @@ bool TerrainRenderer::InitBiomeBlend(const char* path)
 #endif
 }
 
+bool TerrainRenderer::InitOverlayMask(const char* path)
+{
+#ifdef MD_SDL_GPU
+    GpuSamplerDesc sd;
+    // Same rationale as InitBiomeBlend: LINEAR (not LINEAR_MIPMAP) — this is
+    // a mask sampled at a live per-fragment UV close to the camera, not a
+    // pre-blurred colour texture, and generating mips of a thin-line road
+    // mask would fade it out at exactly the mid distances the detail-restore
+    // layer covers.
+    sd.min_filter = GpuSamplerDesc::Filter::LINEAR;
+    sd.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    sd.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    sd.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    sd.gen_mipmap = false;
+    sd.flip_v     = false;
+
+    tex_overlay_mask_.Shutdown();
+
+    // Fast path: the same pre-baked .raw sidecar clutter_gen.cpp's
+    // s_load_grass_density() already uses (tools/md_stitch_overlay_mask.py)
+    // -- a plain fread instead of stb_image's ~760ms+ single-threaded PNG
+    // DEFLATE decode of this 4096x4096 image (measured here: InitFromFile's
+    // PNG path alone added ~1.9s to game startup). Header = 2x little-endian
+    // uint32 (width,height) then raw RGBA8 bytes; falls back to the .png if
+    // the sidecar is missing/stale (it's gitignored, regenerate-only).
+    uint32_t raw_len = 0;
+    char* raw = md::fs_read_alloc("game/data/textures/md_overlay_mask.raw", &raw_len);
+    if (raw && raw_len > 8) {
+        uint32_t w, h;
+        memcpy(&w, raw,     4);
+        memcpy(&h, raw + 4, 4);
+        bool ok = (uint64_t)raw_len - 8 == (uint64_t)w * h * 4
+                  && tex_overlay_mask_.InitFromMemory(reinterpret_cast<const uint8_t*>(raw + 8),
+                                                       (int)w, (int)h, sd);
+        md::fs_free(raw);
+        if (ok) {
+            overlay_mask_ready_ = true;
+            fprintf(stdout, "[TerrainRenderer] overlay mask loaded (raw sidecar): %ux%u\n", w, h);
+            return true;
+        }
+    }
+
+    if (!tex_overlay_mask_.InitFromFile(path, sd)) {
+        fprintf(stderr, "[TerrainRenderer] overlay mask failed: %s\n", path);
+        overlay_mask_ready_ = false;
+        return false;
+    }
+    overlay_mask_ready_ = true;
+    fprintf(stdout, "[TerrainRenderer] overlay mask loaded: %s\n", path);
+    return true;
+#else
+    return false;
+#endif
+}
+
 void TerrainRenderer::Shutdown() {
     tex_colour_.Shutdown();
     tex_ground_array_.Shutdown();
@@ -176,6 +232,8 @@ void TerrainRenderer::Shutdown() {
     ground_baked_ready_ = false;
     tex_biome_blend_.Shutdown();
     biome_blend_ready_ = false;
+    tex_overlay_mask_.Shutdown();
+    overlay_mask_ready_ = false;
     tex_loaded_         = false;
     ground_array_ready_ = false;
     zone_layers_ssbo_.Shutdown();
@@ -227,7 +285,7 @@ bool TerrainRenderer::InitKenshiOverlay(const char* path)
 
 
 #ifdef MD_SDL_GPU
-void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[4]) const
+void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const
 {
     bool valid = tex_loaded_ && tex_colour_.Valid()
                  && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
@@ -253,14 +311,24 @@ void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[4]) c
               && tex_biome_blend_.SDLTexture() && tex_biome_blend_.SDLSampler();
     out[3].texture = bv ? tex_biome_blend_.SDLTexture() : fallback_blend_tex_;
     out[3].sampler = bv ? tex_biome_blend_.SDLSampler() : fallback_blend_sampler_;
+    // b4: grass/dirt/road paint mask (task terrain-detail-erases-road,
+    // 2026-08-01) — TerrainPatchRenderer's close-range detail-restore layer
+    // only; reuses fallback_mask_tex_/sampler_ (all-zero — no grass/dirt/
+    // road painted anywhere, safe default) since it's the same neutral
+    // shape this slot already had before InitPOM's removal.
+    bool om = overlay_mask_ready_ && tex_overlay_mask_.Valid()
+              && tex_overlay_mask_.SDLTexture() && tex_overlay_mask_.SDLSampler();
+    out[4].texture = om ? tex_overlay_mask_.SDLTexture() : fallback_mask_tex_;
+    out[4].sampler = om ? tex_overlay_mask_.SDLSampler() : fallback_mask_sampler_;
 }
 
-void TerrainRenderer::GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[3]) const {
-    SDL_GPUTextureSamplerBinding all[4];
+void TerrainRenderer::GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[4]) const {
+    SDL_GPUTextureSamplerBinding all[5];
     FillSamplerBindings(all);
     out[0] = all[0];  // tex_colour
     out[1] = all[1];  // tex_ground_array
     out[2] = all[2];  // tex_ground_baked
+    out[3] = all[4];  // tex_overlay_mask
 }
 #endif
 

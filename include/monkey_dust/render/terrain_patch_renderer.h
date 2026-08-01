@@ -98,6 +98,13 @@ public:
                    float fog_far, const float fog_color[3], float fog_near,
                    const TerrainRenderer& ground);
 
+    // task terrain-perf-rebuild Phase 0 (2026-08-01): read-only access to
+    // this frame's per-tier instance/index counts for baseline metrics
+    // (patch count, vertex count) -- no rendering side effect, safe to call
+    // any time after UploadInstances.
+    int InstanceCount(int tier) const { return tier >= 0 && tier < kNumTiers ? (int)inst_count_[tier] : 0; }
+    uint32_t TierIndexCount(int tier) const { return tier >= 0 && tier < kNumTiers ? tier_idx_count_[tier] : 0; }
+
 private:
     bool BuildTierMesh(int tier, int quads_per_edge);
 

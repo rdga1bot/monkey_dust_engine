@@ -39,19 +39,47 @@ static_assert(sizeof(PatchFragUBO) == 80, "PatchFragUBO size mismatch");
 
 bool TerrainPatchRenderer::BuildTierMesh(int tier, int quads_per_edge) {
     const int N = quads_per_edge;
-    const int VC = (N + 1) * (N + 1);
-    const int IC = N * N * 6;
-    // 2 floats/vertex: aUV.xy only -- no edge-mask (see header comment on
-    // why per-vertex edge snapping was replaced with a whole-patch tier
-    // clamp, matching the real Granite reference).
-    static float    verts[(kPatchN + 1) * (kPatchN + 1) * 2];
-    static uint32_t idx[kPatchN * kPatchN * 6];
+    const int SURF_VC = (N + 1) * (N + 1);
+    const int SURF_IC = N * N * 6;
+    // task terrain-ca-rebuild skirt-fix (2026-08-01): cross-tier
+    // T-junction fix. Adjacent patches drawn at DIFFERENT discrete LOD
+    // tiers sample DIFFERENT mip levels of the same world heightmap at
+    // their shared boundary (terrain_patch.vert's tierLod = floor(lod)
+    // selects the mip) -- genuinely different height VALUES at nominally
+    // shared edge positions, not just a vertex-density mismatch. The
+    // whole-patch tier clamp (this renderer's own Granite-reference
+    // approach, see class header) keeps neighbor tiers within 1 step of
+    // each other but does NOT make their sampled heights bit-identical --
+    // residual crack confirmed via magenta-sky-override A/B
+    // (terrain_research/PROGRESS.md 2026-07-31: 145/245/1184 residual px
+    // after the tierLod mip-consistency fix, described there as "a real
+    // cross-tier T-junction crack, needs real stitching or skirt
+    // geometry"). Fix: a vertical skirt wall along all 4 patch edges,
+    // pushed straight down by SKIRT_DEPTH_M in the vertex shader -- hides
+    // any residual height mismatch behind opaque geometry instead of
+    // trying to make two different mip samples agree (the same class of
+    // fix this codebase already used for the OLD TerrainQuadtree's
+    // chunk-border gaps, BuildLodIboStitched). Skirt vertices share the
+    // exact same (u,v) as their surface-edge counterpart -- they sample
+    // the identical height/mip in the vertex shader and only differ by
+    // the shader-applied vertical offset, so they're always attached,
+    // never a horizontal gap of their own.
+    const int SKIRT_VC = 4 * (N + 1);
+    const int SKIRT_IC = 4 * N * 6;
+    const int VC = SURF_VC + SKIRT_VC;
+    const int IC = SURF_IC + SKIRT_IC;
+    // 3 floats/vertex: aUV.xy + aSkirt (0=surface, 1=pushed down in VS).
+    static constexpr int kMaxVC = (kPatchN + 1) * (kPatchN + 1) + 4 * (kPatchN + 1);
+    static constexpr int kMaxIC = kPatchN * kPatchN * 6 + 4 * kPatchN * 6;
+    static float    verts[kMaxVC * 3];
+    static uint32_t idx[kMaxIC];
 
     for (int row = 0; row <= N; ++row) {
         for (int col = 0; col <= N; ++col) {
             int vi = row * (N + 1) + col;
-            verts[vi * 2 + 0] = (float)col / (float)N;
-            verts[vi * 2 + 1] = (float)row / (float)N;
+            verts[vi * 3 + 0] = (float)col / (float)N;
+            verts[vi * 3 + 1] = (float)row / (float)N;
+            verts[vi * 3 + 2] = 0.0f;
         }
     }
     int ii = 0;
@@ -65,7 +93,40 @@ bool TerrainPatchRenderer::BuildTierMesh(int tier, int quads_per_edge) {
             idx[ii++] = v10; idx[ii++] = v01; idx[ii++] = v11;
         }
     }
-    tier_vbo_[tier].Init(0x8892u /*GL_ARRAY_BUFFER*/, verts, (size_t)VC * 2 * sizeof(float));
+
+    // 4 independent edge strips (north/south/west/east) -- each gets its
+    // own (N+1) new skirt vertices appended after the surface block, plus
+    // N quads connecting consecutive surface-edge vertices to their
+    // skirt-vertex counterparts. Corners get two overlapping skirt quads
+    // (one per adjoining edge) -- harmless (both drop to the same depth).
+    auto edgeSurfIdx = [N](int e, int i) -> int {
+        switch (e) {
+            case 0: return 0 * (N + 1) + i;   // north, row=0
+            case 1: return N * (N + 1) + i;   // south, row=N
+            case 2: return i * (N + 1) + 0;   // west,  col=0
+            default: return i * (N + 1) + N;  // east,  col=N
+        }
+    };
+    const int skirtBase = SURF_VC;
+    for (int e = 0; e < 4; ++e) {
+        const int base = skirtBase + e * (N + 1);
+        for (int i = 0; i <= N; ++i) {
+            int surf = edgeSurfIdx(e, i);
+            verts[(base + i) * 3 + 0] = verts[surf * 3 + 0];
+            verts[(base + i) * 3 + 1] = verts[surf * 3 + 1];
+            verts[(base + i) * 3 + 2] = 1.0f;
+        }
+        for (int i = 0; i < N; ++i) {
+            uint32_t s0 = (uint32_t)edgeSurfIdx(e, i);
+            uint32_t s1 = (uint32_t)edgeSurfIdx(e, i + 1);
+            uint32_t k0 = (uint32_t)(base + i);
+            uint32_t k1 = (uint32_t)(base + i + 1);
+            idx[ii++] = s0; idx[ii++] = k0; idx[ii++] = s1;
+            idx[ii++] = s1; idx[ii++] = k0; idx[ii++] = k1;
+        }
+    }
+
+    tier_vbo_[tier].Init(0x8892u /*GL_ARRAY_BUFFER*/, verts, (size_t)VC * 3 * sizeof(float));
     tier_ibo_[tier].Init(0x8893u /*GL_ELEMENT_ARRAY_BUFFER*/, idx, (size_t)IC * sizeof(uint32_t));
     tier_idx_count_[tier] = (uint32_t)IC;
     return true;
@@ -77,8 +138,8 @@ bool TerrainPatchRenderer::Init(SDL_GPUDevice* /*dev*/) {
     pd.frag_path = "shaders/terrain_patch.frag";
 
     pd.layout.count      = 1;
-    pd.layout.stride     = 8; // float2 aUV
-    pd.layout.attribs[0] = { 0, 0, GpuAttribFmt::F2 };
+    pd.layout.stride     = 12; // float3: aUV.xy + aSkirt (0=surface, 1=skirt)
+    pd.layout.attribs[0] = { 0, 0, GpuAttribFmt::F3 };
 
     // Per-instance stream (slot=1, INSTANCE rate): origin.xy + own
     // (already neighbor-clamped) lod -- see Instance struct / header

@@ -117,11 +117,27 @@ public:
                              const TerrainWorldHeightmap& hmap,
                              float cam_x, float cam_y, float cam_z);
 
+    // TERRAIN_CA_REBUILD_PROMPT.md Phase 4 -- Variant A (screen-space
+    // decoupled shading, see terrain_research/perf/PHASE4_PLAN.md). Draws
+    // the SAME instance batch as DrawBatch but with gbuffer_pipeline_
+    // (terrain_patch.vert reused unchanged + terrain_gbuffer_mini.frag),
+    // writing world-pos/packed-normal to a caller-provided render target
+    // instead of doing any ground-layer shading. Must run inside its own
+    // render pass with a DEDICATED depth target (NOT the shared NPC/scene
+    // depth -- see TerrainShadingScreenspace's doc comment for why),
+    // BEFORE the screen-space shading-resolve pass that reads this data
+    // back.
+    void DrawBatchGBuffer(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int tier,
+                          const float* vp16, float patch_size,
+                          const TerrainWorldHeightmap& hmap,
+                          float cam_x, float cam_y, float cam_z);
+
 private:
     bool BuildTierMesh(int tier, int quads_per_edge);
 
     GpuPipeline     pipeline_;
     GpuPipeline     prepass_pipeline_;
+    GpuPipeline     gbuffer_pipeline_;
     GpuStaticBuffer tier_vbo_[kNumTiers];
     GpuStaticBuffer tier_ibo_[kNumTiers];
     uint32_t        tier_idx_count_[kNumTiers] = {};

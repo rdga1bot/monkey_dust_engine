@@ -559,7 +559,11 @@ bool GpuTexture::InitFromDDS(const char* path, const GpuSamplerDesc& s) {
     return ok;
 }
 
+#ifdef MD_SDL_GPU
+bool GpuTexture::InitRenderTarget(int w, int h, const GpuSamplerDesc& s, SDL_GPUTextureFormat format) {
+#else
 bool GpuTexture::InitRenderTarget(int w, int h, const GpuSamplerDesc& s) {
+#endif
     w_ = w; h_ = h;
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
@@ -568,7 +572,8 @@ bool GpuTexture::InitRenderTarget(int w, int h, const GpuSamplerDesc& s) {
 
     SDL_GPUTextureCreateInfo ti = {};
     ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-    ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    ti.format               = format == SDL_GPU_TEXTUREFORMAT_INVALID
+                             ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM : format;
     ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
     ti.width                = (Uint32)w;
     ti.height               = (Uint32)h;

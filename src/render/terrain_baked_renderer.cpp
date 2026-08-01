@@ -74,6 +74,21 @@ bool TerrainBakedRenderer::Init(SDL_GPUDevice* /*dev*/) {
         return false;
     }
 
+    // TERRAIN_CA_REBUILD_PROMPT.md Phase 4 -- Variant A G-buffer pipeline.
+    // Reuses terrain_baked.vert UNCHANGED (safe -- own dedicated depth
+    // target, no cross-pipeline depth-equality concern; same reasoning as
+    // TerrainPatchRenderer::gbuffer_pipeline_).
+    GpuPipeline::Desc gb = pd;
+    gb.frag_path         = "shaders/terrain_gbuffer_mini.frag";
+    gb.frag_uniform_bufs = 0;
+    gb.frag_samplers     = 0;
+    gb.frag_storage_bufs = 0;
+    gb.color_format       = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
+    if (!gbuffer_pipeline_.Create(gb)) {
+        fprintf(stderr, "[TerrainBakedRenderer] gbuffer pipeline create failed\n");
+        return false;
+    }
+
     int quads = kPatchN;
     for (int t = 0; t < kNumTiers; ++t) {
         int ic = TerrainBake_IndexCount(quads);
@@ -145,6 +160,7 @@ void TerrainBakedRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
     }
     pipeline_.Destroy();
     prepass_pipeline_.Destroy();
+    gbuffer_pipeline_.Destroy();
     frame_counter_ = 0;
     touch_counter_ = 0;
     ready_ = false;
@@ -342,6 +358,33 @@ void TerrainBakedRenderer::DrawSlotDepthOnly(SDL_GPURenderPass* rp, SDL_GPUComma
     if (slot < 0 || slot >= kMaxSlotsPerTier || !slots_[tier][slot].valid) return;
 
     SDL_BindGPUGraphicsPipeline(rp, prepass_pipeline_.SDLPipeline());
+
+    SDL_GPUBufferBinding vb{ vbo_[tier][slot].SDLBuffer(), 0u };
+    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    SDL_GPUBufferBinding ib{ ibo_[tier].SDLBuffer(), 0u };
+    SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+
+    BakedPatchVertUBO vubo{};
+    memcpy(vubo.vp, vp16, 64);
+    vubo.origin_x = origin_x;
+    vubo.origin_z = origin_z;
+    vubo.patch_size = patch_size;
+    vubo.lod = lod;
+    vubo.cam_pos_ws[0] = cam_x; vubo.cam_pos_ws[1] = cam_y;
+    vubo.cam_pos_ws[2] = cam_z; vubo.cam_pos_ws[3] = 0.f;
+    SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof(vubo));
+
+    SDL_DrawGPUIndexedPrimitives(rp, idx_count_[tier], 1, 0, 0, 0);
+}
+
+void TerrainBakedRenderer::DrawSlotGBuffer(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                                            int tier, int slot, const float* vp16,
+                                            float origin_x, float origin_z, float patch_size, float lod,
+                                            float cam_x, float cam_y, float cam_z) {
+    if (!ready_ || tier < 0 || tier >= kNumTiers) return;
+    if (slot < 0 || slot >= kMaxSlotsPerTier || !slots_[tier][slot].valid) return;
+
+    SDL_BindGPUGraphicsPipeline(rp, gbuffer_pipeline_.SDLPipeline());
 
     SDL_GPUBufferBinding vb{ vbo_[tier][slot].SDLBuffer(), 0u };
     SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);

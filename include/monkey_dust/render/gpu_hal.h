@@ -623,7 +623,17 @@ public:
     // overwritten by the very next render pass anyway. mip levels (if
     // s.gen_mipmap) are left uninitialized until the caller's own render
     // pass + SDL_GenerateMipmapsForGPUTexture populate them.
+    // format: SDL_GPU only, INVALID(0) = R8G8B8A8_UNORM (previous hardcoded
+    // default, unchanged for existing callers -- this parameter had zero
+    // real call sites before TERRAIN_CA_REBUILD_PROMPT.md Phase 4's
+    // screen-space G-buffer target needed full-float world-space storage,
+    // which R8G8B8A8_UNORM's normalized [0,1] range cannot represent).
+#ifdef MD_SDL_GPU
+    bool InitRenderTarget(int w, int h, const GpuSamplerDesc& s = {},
+                          SDL_GPUTextureFormat format = SDL_GPU_TEXTUREFORMAT_INVALID);
+#else
     bool InitRenderTarget(int w, int h, const GpuSamplerDesc& s = {});
+#endif
     // Load a 2D texture array from multiple BC3/DXT5 DDS files (SDL_GPU only).
     // All files must have identical dimensions, format, and mip count.
     bool InitFromDDSArray(const char* const* paths, int count, const GpuSamplerDesc& s = {});

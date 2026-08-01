@@ -139,6 +139,14 @@ public:
                             float origin_x, float origin_z, float patch_size, float lod,
                             float cam_x, float cam_y, float cam_z);
 
+    // TERRAIN_CA_REBUILD_PROMPT.md Phase 4 -- Variant A G-buffer draw for
+    // an already-baked+resident slot (see TerrainPatchRenderer::
+    // DrawBatchGBuffer's doc comment -- same pattern, baked-path variant).
+    void DrawSlotGBuffer(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                          int tier, int slot, const float* vp16,
+                          float origin_x, float origin_z, float patch_size, float lod,
+                          float cam_x, float cam_y, float cam_z);
+
 private:
     struct Slot {
         uint64_t key             = 0;
@@ -148,6 +156,7 @@ private:
 
     GpuPipeline     pipeline_;
     GpuPipeline     prepass_pipeline_;
+    GpuPipeline     gbuffer_pipeline_;
     GpuStaticBuffer ibo_[kNumTiers];
     uint32_t        idx_count_[kNumTiers] = {};
     GpuVertexBuffer vbo_[kNumTiers][kMaxSlotsPerTier];

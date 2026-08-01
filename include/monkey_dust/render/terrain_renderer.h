@@ -73,14 +73,26 @@ public:
     // selection resolves zone/chunk-boundary blending directly).
     bool InitBiomeBlend(const char* path);
 
+    // Load the Kenshi grass/dirt/road paint mask (md_overlay_mask.png,
+    // tools/md_stitch_overlay_mask.py — R=grass, G=grass2, B=dirt, A=road,
+    // same UV space as tex_colour/InitKenshiOverlay). Was only consumed
+    // offline (tools/md_bake_ground_layers.py) until task
+    // terrain-detail-erases-road (2026-08-01): TerrainPatchRenderer's
+    // close-range detail-restore layer needs this live too, so its fine
+    // detail sample can favour grass/dirt/road over base ground the same
+    // way the far-range bake already does — without it, close-range detail
+    // silently overwrote baked-in roads with pure base texture.
+    bool InitOverlayMask(const char* path);
+
     bool IsReady() const;
 
-    // Exposes 3 of the already-loaded ground-shading textures (colour
+    // Exposes 4 of the already-loaded ground-shading textures (colour
     // overlay, per-biome ground DDS array, offline-baked flat-ground colour,
-    // in that order) — TerrainPatchRenderer/Granite's DrawBatch is the sole
-    // consumer now, avoiding a second, wasteful ~1GB+ reload of the same
-    // data. tex_biome_blend deliberately excluded: no caller of this needs it.
-    void GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[3]) const;
+    // grass/dirt/road paint mask, in that order) — TerrainPatchRenderer/
+    // Granite's DrawBatch is the sole consumer now, avoiding a second,
+    // wasteful ~1GB+ reload of the same data. tex_biome_blend deliberately
+    // excluded: no caller of this needs it.
+    void GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[4]) const;
     // Per-zone (64x64=4096) ground-layer lookup SSBO — same data
     // UploadZoneGroundLayers populates, exposed for the same reuse reason.
     SDL_GPUBuffer* ZoneGroundLayersSSBO() const { return zone_layers_ssbo_.SDLBuffer(); }
@@ -107,6 +119,8 @@ private:
     bool        ground_baked_ready_ = false;
     GpuTexture  tex_biome_blend_;       // R/G/B=neighbour base/slope/cliff idx, A=blend weight — loaded, currently unconsumed (see InitBiomeBlend)
     bool        biome_blend_ready_ = false;
+    GpuTexture  tex_overlay_mask_;      // R=grass, G=grass2, B=dirt, A=road (see InitOverlayMask)
+    bool        overlay_mask_ready_ = false;
 
     // Per-zone ground-layer lookup (see UploadZoneGroundLayers).
     SSBO zone_layers_ssbo_;
@@ -118,6 +132,6 @@ private:
     SDL_GPUSampler* fallback_mask_sampler_   = nullptr;
     SDL_GPUTexture* fallback_blend_tex_      = nullptr;
     SDL_GPUSampler* fallback_blend_sampler_  = nullptr;
-    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[4]) const;
+    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const;
 #endif
 };

@@ -144,6 +144,27 @@ void LuaSystem::RegisterNamespaceFunction(const char* field_name, lua_CFunction 
     lua_pop(L_, 1);
 }
 
+void LuaSystem::RegisterSubNamespaceFunction(const char* sub_table, const char* field_name, lua_CFunction fn) {
+    if (!L_) return;
+    lua_getglobal(L_, "md");
+    if (!lua_istable(L_, -1)) {
+        lua_pop(L_, 1);
+        lua_newtable(L_);
+        lua_pushvalue(L_, -1);
+        lua_setglobal(L_, "md");
+    }
+    lua_getfield(L_, -1, sub_table);
+    if (!lua_istable(L_, -1)) {
+        lua_pop(L_, 1);
+        lua_newtable(L_);
+        lua_pushvalue(L_, -1);
+        lua_setfield(L_, -3, sub_table);
+    }
+    lua_pushcfunction(L_, fn);
+    lua_setfield(L_, -2, field_name);
+    lua_pop(L_, 2);
+}
+
 void LuaSystem::Shutdown() {
     if (L_) { lua_close(L_); L_ = nullptr; }
 }

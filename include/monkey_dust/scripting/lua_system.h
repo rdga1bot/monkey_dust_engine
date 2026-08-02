@@ -44,6 +44,16 @@ public:
     // not re-registered here).
     void RegisterNamespaceFunction(const char* field_name, lua_CFunction fn);
 
+    // Register a C function as a field of a SUB-table under the global
+    // `md` table (e.g. sub_table="editor", field_name="exec" registers
+    // md.editor.exec). Creates both md and md[sub_table] on first use.
+    // EDITOR_AUTOMATION_PLAN_v1.md Phase 2: the plan's API is written as
+    // md.editor.*/md.ecs.* (real nested tables), not flat md.editor_foo()
+    // like every existing binding (RegisterNamespaceFunction) — this is a
+    // deliberate, separate registration path so existing flat bindings are
+    // untouched; new Phase 2+ bindings use this one.
+    void RegisterSubNamespaceFunction(const char* sub_table, const char* field_name, lua_CFunction fn);
+
     // Calls named Lua function(entity_id) → BTStatus
     BTStatus CallAction(const char* func_name, MdEntity e);
 

@@ -29,12 +29,14 @@ bool ClutterRenderer::Init() {
 
     pd.vert_uniform_bufs = 1;  // slot 0: ClutterVert UBO (64 bytes: mat4 vp only)
     pd.frag_uniform_bufs = 1;  // slot 0: PropFrag UBO (32 bytes: sun_dir_str + ambient)
-    pd.frag_samplers     = 2;  // 0=tex_rock, 1=tex_veg (PropTexShared)
+    pd.frag_samplers     = 3;  // 0=tex_rock, 1=tex_veg (PropTexShared), 2=tex_dummy (unused here)
 
     if (!pipeline_.Create(pd)) {
         fprintf(stderr, "[ClutterRenderer] Pipeline creation failed\n");
         return false;
     }
+    static const uint8_t white1x1[4] = {255, 255, 255, 255};
+    tex_dummy_.InitFromMemory(white1x1, 1, 1, GpuSamplerDesc{});
     ready_ = true;
 #endif
     return ready_;
@@ -42,6 +44,7 @@ bool ClutterRenderer::Init() {
 
 void ClutterRenderer::Shutdown() {
     pipeline_.Destroy();
+    tex_dummy_.Shutdown();
     ready_ = false;
 }
 
@@ -70,11 +73,12 @@ void ClutterRenderer::DrawChunk(
 
     PropTexShared& pt = PropTexShared::Get();
     if (pt.ready) {
-        SDL_GPUTextureSamplerBinding sb[2] = {
+        SDL_GPUTextureSamplerBinding sb[3] = {
             { pt.tex_rock->SDLTexture(), pt.tex_rock->SDLSampler() },
             { pt.tex_veg->SDLTexture(),  pt.tex_veg->SDLSampler()  },
+            { tex_dummy_.SDLTexture(),   tex_dummy_.SDLSampler()   },
         };
-        SDL_BindGPUFragmentSamplers(rp, 0, sb, 2);
+        SDL_BindGPUFragmentSamplers(rp, 0, sb, 3);
     }
 
     SDL_PushGPUVertexUniformData(cmd, 0, vp16, 64);

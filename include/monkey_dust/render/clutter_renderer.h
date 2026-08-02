@@ -32,4 +32,10 @@ public:
 private:
     GpuPipeline pipeline_;
     bool        ready_ = false;
+    // 1x1 white dummy — prop.frag now declares a 3rd sampler (tex_custom,
+    // real per-mesh textures on PropRenderer); ClutterRenderer's baked
+    // geometry has no such per-mesh source, but the shared shader/pipeline
+    // sampler count must still match (HD520: no gaps in bindings), so a
+    // dummy keeps binding 2 populated without touching prop.frag itself.
+    GpuTexture  tex_dummy_;
 };

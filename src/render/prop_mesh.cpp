@@ -5,6 +5,9 @@
 // cgltf.h lives in the same directory as this .cpp.
 // CGLTF_IMPLEMENTATION is provided by cgltf_impl.cpp (compiled separately).
 #include "cgltf.h"
+// STB_IMAGE_IMPLEMENTATION lives in stb_image_impl.cpp (compiled separately,
+// same pattern as gpu_hal_buffers.cpp / rd_texture.cpp's existing includes).
+#include "stb_image.h"
 
 #include <cmath>
 #include <cstdio>
@@ -76,6 +79,40 @@ bool PropMesh::LoadGLB(const char* path, float layer) {
         if (world_m[i] != expect) { has_node_transform = true; break; }
     }
 
+    // task propmesh-materials (2026-08-02): this loader previously never
+    // read the primitive's material at all -- PropRenderer always shaded
+    // with one of two shared hardcoded textures (PropTexShared's
+    // tex_rock/tex_veg, selected by the caller-supplied `layer` param),
+    // silently ignoring whatever real per-mesh diffuse texture a GLB
+    // actually embedded (asset pipeline Phase 2/4 finding, see
+    // tools/kenshi_import/CONVENTIONS.md). Decode the primitive's
+    // pbr_metallic_roughness base-color image here when present, so a
+    // real Kenshi-textured GLB (blender_convert.py's output) can light up
+    // with its own texture instead of the rock/veg fallback -- overriding
+    // `layer` to 2.0 to select it in prop.frag. Blender's GLB exporter
+    // embeds images into the binary chunk (image->buffer_view), not an
+    // external/data-uri (image->uri) -- only that path is handled; an
+    // external-URI image is left unsupported (has_custom_tex stays false,
+    // falls back to the old rock/veg behavior, same as before this change).
+    float    effective_layer = layer;
+    uint8_t* decoded_rgba    = nullptr;
+    int      decoded_w = 0, decoded_h = 0;
+    if (prim->material && prim->material->has_pbr_metallic_roughness) {
+        cgltf_texture_view* bctv = &prim->material->pbr_metallic_roughness.base_color_texture;
+        if (bctv->texture && bctv->texture->image) {
+            cgltf_image* img = bctv->texture->image;
+            if (img->buffer_view && img->buffer_view->buffer &&
+                img->buffer_view->buffer->data) {
+                const uint8_t* bytes = (const uint8_t*)img->buffer_view->buffer->data
+                                        + img->buffer_view->offset;
+                int comp = 0;
+                decoded_rgba = stbi_load_from_memory(bytes, (int)img->buffer_view->size,
+                                                      &decoded_w, &decoded_h, &comp, 4);
+                if (decoded_rgba) effective_layer = 2.0f;
+            }
+        }
+    }
+
     // Find POSITION, NORMAL and (optional) TEXCOORD_0 accessors.
     cgltf_accessor* pos_acc  = nullptr;
     cgltf_accessor* norm_acc = nullptr;
@@ -89,6 +126,7 @@ bool PropMesh::LoadGLB(const char* path, float layer) {
     cgltf_size vert_count = pos_acc->count;
     if (vert_count == 0 || vert_count > 131072) {
         fprintf(stderr, "[PropMesh] Unexpected vertex count %zu: %s\n", vert_count, path);
+        if (decoded_rgba) stbi_image_free(decoded_rgba);
         cgltf_free(data);
         return false;
     }
@@ -122,7 +160,7 @@ bool PropMesh::LoadGLB(const char* path, float layer) {
             n[0] = wn[0]; n[1] = wn[1]; n[2] = wn[2];
         }
 
-        s_verts[i] = { p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1], layer };
+        s_verts[i] = { p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1], effective_layer };
         if (p[1] < y_min) y_min = p[1];
         if (p[1] > y_max) y_max = p[1];
     }
@@ -158,8 +196,15 @@ bool PropMesh::LoadGLB(const char* path, float layer) {
 
     cgltf_free(data);
     loaded = true;
-    fprintf(stdout, "[PropMesh] Loaded %zu verts / %zu idx (u%s): %s\n",
-            vert_count, idx_count, indices_u16 ? "16" : "32", path);
+    if (decoded_rgba) {
+        has_custom_tex  = true;
+        custom_tex_rgba = decoded_rgba;
+        custom_tex_w    = decoded_w;
+        custom_tex_h    = decoded_h;
+    }
+    fprintf(stdout, "[PropMesh] Loaded %zu verts / %zu idx (u%s)%s: %s\n",
+            vert_count, idx_count, indices_u16 ? "16" : "32",
+            has_custom_tex ? " +custom_tex" : "", path);
     return true;
 }
 
@@ -168,4 +213,6 @@ void PropMesh::Shutdown() {
     ibo.Shutdown();
     index_count = 0;
     loaded      = false;
+    if (custom_tex_rgba) { stbi_image_free(custom_tex_rgba); custom_tex_rgba = nullptr; }
+    has_custom_tex = false;
 }

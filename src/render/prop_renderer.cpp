@@ -4,6 +4,11 @@
 #include <cstring>
 #include <cstdio>
 
+// Declaration-only include (STB_IMAGE_IMPLEMENTATION lives in
+// stb_image_impl.cpp) — needed here only for stbi_image_free() after
+// uploading PropMesh::custom_tex_rgba to the GPU below.
+#include "stb_image.h"
+
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
 #endif
@@ -20,6 +25,24 @@ bool PropRenderer::Init(const char* glb_path, float layer) {
     }
 
     PropTexShared::Get().Init();  // idempotent; shared across all PropRenderer/ClutterRenderer instances
+
+    // task propmesh-materials (2026-08-02): upload the mesh's own embedded
+    // texture (if any) as a dedicated per-instance GPU texture. Always
+    // create SOME texture here (1x1 white dummy when the mesh has none) —
+    // HD520 sampler binding-order rule: fragment sampler slots must be
+    // bound contiguously from 0 every draw, a missing binding at slot 2
+    // silently reads garbage on this hardware (see CLAUDE.md checklist).
+    if (mesh_.has_custom_tex && mesh_.custom_tex_rgba) {
+        GpuSamplerDesc sd;
+        sd.gen_mipmap = true;
+        tex_custom_.InitFromMemory(mesh_.custom_tex_rgba, mesh_.custom_tex_w,
+                                    mesh_.custom_tex_h, sd);
+        stbi_image_free(mesh_.custom_tex_rgba);
+        mesh_.custom_tex_rgba = nullptr;  // ownership transferred to the GPU; avoid double free in PropMesh::Shutdown
+    } else {
+        static const uint8_t white1x1[4] = {255, 255, 255, 255};
+        tex_custom_.InitFromMemory(white1x1, 1, 1, GpuSamplerDesc{});
+    }
 
 #ifdef MD_SDL_GPU
     GpuPipeline::Desc pd;
@@ -42,7 +65,7 @@ bool PropRenderer::Init(const char* glb_path, float layer) {
 
     pd.vert_uniform_bufs = 1;  // slot 0: PropVert UBO (80 bytes: mat4 vp + vec4 model_pos_scale)
     pd.frag_uniform_bufs = 1;  // slot 0: PropFrag UBO (32 bytes: sun_dir_str + ambient)
-    pd.frag_samplers     = 2;  // 0=tex_rock, 1=tex_veg (PropTexShared)
+    pd.frag_samplers     = 3;  // 0=tex_rock, 1=tex_veg (PropTexShared), 2=tex_custom (per-instance)
 
     if (!pipeline_.Create(pd)) {
         fprintf(stderr, "[PropRenderer] Pipeline creation failed\n");
@@ -57,6 +80,7 @@ bool PropRenderer::Init(const char* glb_path, float layer) {
 void PropRenderer::Shutdown() {
     pipeline_.Destroy();
     mesh_.Shutdown();
+    tex_custom_.Shutdown();
 }
 
 // Vertex UBO layout (std140, 128 bytes):
@@ -111,14 +135,18 @@ void PropRenderer::DrawRaw(
     SDL_GPUBufferBinding ib { mesh_.ibo.SDLBuffer(), 0u };
     SDL_BindGPUIndexBuffer(rp, &ib, idx_size);
 
-    // Bind rock+veg samplers (PropTexShared) — aLayer picks between them in prop.frag.
+    // Bind rock+veg samplers (PropTexShared) + this instance's own texture
+    // (tex_custom_ — real per-mesh diffuse when PropMesh::has_custom_tex,
+    // else the 1x1 white dummy from Init()) — aLayer picks between all 3 in
+    // prop.frag. All 3 slots always bound together (HD520: no gaps).
     PropTexShared& pt = PropTexShared::Get();
     if (pt.ready) {
-        SDL_GPUTextureSamplerBinding sb[2] = {
-            { pt.tex_rock->SDLTexture(), pt.tex_rock->SDLSampler() },
-            { pt.tex_veg->SDLTexture(),  pt.tex_veg->SDLSampler()  },
+        SDL_GPUTextureSamplerBinding sb[3] = {
+            { pt.tex_rock->SDLTexture(),   pt.tex_rock->SDLSampler()   },
+            { pt.tex_veg->SDLTexture(),    pt.tex_veg->SDLSampler()    },
+            { tex_custom_.SDLTexture(),    tex_custom_.SDLSampler()    },
         };
-        SDL_BindGPUFragmentSamplers(rp, 0, sb, 2);
+        SDL_BindGPUFragmentSamplers(rp, 0, sb, 3);
     }
 
     // Push fragment UBO once (sun params are shared for all props).

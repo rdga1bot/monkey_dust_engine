@@ -11,7 +11,11 @@
 //      literal string starts with the "data/" prefix below, because the
 //      ".." segment is caught first.
 //   3. Require the (post ".."-check) path to start with one of the
-//      allowlisted root prefixes: "data/", "game/data/", "automation_out/".
+//      allowlisted root prefixes: "data/", "game/data/", "automation_out/",
+//      "scripts/" (trusted first-party authoring-library source, read via
+//      md.editor.load_script() — Lua's own dofile/loadfile are sandboxed
+//      out, see lua_system.h's doc comment, so that's the only way an
+//      --exec scenario can pull in a shared .lua module).
 // No heap, no exceptions — returns false with no output on any rejection.
 #include <cstring>
 
@@ -29,7 +33,7 @@ inline bool CmdPathValidate(const char* path) {
         ++p;
     }
 
-    static const char* kAllowedRoots[] = { "data/", "game/data/", "automation_out/" };
+    static const char* kAllowedRoots[] = { "data/", "game/data/", "automation_out/", "scripts/" };
     for (const char* root : kAllowedRoots) {
         size_t len = strlen(root);
         if (strncmp(path, root, len) == 0) return true;

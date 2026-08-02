@@ -23,7 +23,7 @@ struct ProjCamUBO {
 };
 static_assert(sizeof(ProjCamUBO) == 16, "ProjCamUBO size mismatch");
 
-bool TerrainShadingProjected::Init(SDL_GPUDevice* dev, int w, int h) {
+bool TerrainShadingProjected::CreateTextures(int w, int h) {
     w_ = w; h_ = h;
 
     GpuSamplerDesc gs;
@@ -40,6 +40,11 @@ bool TerrainShadingProjected::Init(SDL_GPUDevice* dev, int w, int h) {
         MD_LOG(MD_LOG_WARNING, "[TerrainShadingProjected] gbuf_depth_ create failed");
         return false;
     }
+    return true;
+}
+
+bool TerrainShadingProjected::Init(SDL_GPUDevice* dev, int w, int h) {
+    if (!CreateTextures(w, h)) return false;
 
     GpuPipeline::Desc rd;
     rd.vert_path = "shaders/terrain_shading_screenspace.vert";
@@ -66,13 +71,20 @@ bool TerrainShadingProjected::Init(SDL_GPUDevice* dev, int w, int h) {
     return true;
 }
 
+// Only the two render-target textures depend on window size -- resolve_pipeline_
+// depends solely on texture FORMAT (unchanged across a resize), so it must never
+// be touched here. The original version of this function called the full Init()
+// (destroying+recreating the pipeline too), which meant every resize destroyed a
+// GPU pipeline object that a still-in-flight command buffer from the previous
+// frame could still reference -- a real SIGSEGV inside the Intel Vulkan driver,
+// diagnosed live 2026-08-02 even after relocating the call to before
+// AcquireCommandBuffer (that relocation alone only fixed the FIRST-frame case).
 void TerrainShadingProjected::EnsureSize(SDL_GPUDevice* dev, int w, int h) {
+    (void)dev;
     if (!ready_ || (w == w_ && h == h_) || w <= 0 || h <= 0) return;
-    resolve_pipeline_.Destroy();
     gbuf_depth_.Shutdown();
     gbuf_color_.Shutdown();
-    ready_ = false;
-    Init(dev, w, h);
+    CreateTextures(w, h);
 }
 
 void TerrainShadingProjected::Shutdown() {

@@ -88,6 +88,8 @@ public:
                              const TerrainRenderer& ground);
 
 private:
+    bool CreateTextures(int w, int h);
+
     GpuTexture       gbuf_color_;
     GpuDepthTexture   gbuf_depth_;
     GpuPipeline       resolve_pipeline_;

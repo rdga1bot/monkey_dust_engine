@@ -6,8 +6,8 @@
 
 // TERRAIN_CA_REBUILD_PROMPT.md Phase 4 -- Variant A (screen-space decoupled
 // shading, terrain_research/perf/PHASE4_PLAN.md). Owns the two resources
-// TerrainPatchRenderer::DrawBatchGBuffer / TerrainBakedRenderer::DrawSlotGBuffer
-// write into and the fullscreen resolve pass that reads them back:
+// TerrainPatchRenderer::DrawBatchGBuffer writes into and the fullscreen
+// resolve pass that reads them back:
 //
 //   1. gbuf_color_ -- RGBA32F render target. terrain_gbuffer_mini.frag packs
 //      world-pos.xyz into .xyz and normal.xz (16-bit fixed point) into .w
@@ -68,9 +68,8 @@ public:
     // Begin the G-buffer geometry pass -- CLEARs both gbuf_color_ (unused
     // channels don't matter) and gbuf_depth_ (to 1.0). Caller draws terrain
     // instances into the returned pass via TerrainPatchRenderer::
-    // DrawBatchGBuffer / TerrainBakedRenderer::DrawSlotGBuffer, then calls
-    // EndGBufferPass(). Must run BEFORE DrawShadingResolve, outside (and
-    // before) the main color GpuRenderPass.
+    // DrawBatchGBuffer, then calls EndGBufferPass(). Must run BEFORE
+    // DrawShadingResolve, outside (and before) the main color GpuRenderPass.
     SDL_GPURenderPass* BeginGBufferPass(SDL_GPUCommandBuffer* cmd);
     void                EndGBufferPass();
 

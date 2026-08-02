@@ -62,8 +62,22 @@ public:
     // Poll mtime — triggers reload if .so changed on disk.
     void Tick();
 
-    // Force reload (F5 hotkey).
+    // Force reload (F5 hotkey). Returns as soon as the new .so's
+    // editor_panels_init() spawns its background GPU-resource loader
+    // thread — does NOT wait for that thread to finish (deliberate: an
+    // interactive F5 must not block the UI for the 1-3s a full reload
+    // takes). Script callers that need a reload to be fully settled
+    // before continuing (e.g. right before quitting) must call
+    // WaitReloadReady() afterward — see its doc comment.
     void Reload();
+
+    // Blocks until the most recent Load()/Reload()'s background loader
+    // thread has finished. Phase 4 (EDITOR_AUTOMATION_PLAN_v1.md): added
+    // after md.editor.trigger_hot_reload() reproduced a real
+    // SIGSEGV/SIGABRT — a script that reloads and quits shortly after
+    // races that thread against process shutdown. Safe to call even if
+    // nothing is loading (no-op) or multiple times in a row.
+    void WaitReloadReady();
 
     // Called inside ImGui frame. Returns active-viewport bitmask.
     uint32_t BuildUI(float dt, float toolbar_h,

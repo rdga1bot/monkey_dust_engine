@@ -19,6 +19,7 @@ using EditorBuildUIFn  = uint32_t(*)(float dt, float toolbar_h,
 using EditorRenderFn   = void(*)(void* cmd, float dt, uint32_t active_flags);
 using EditorDumpFn     = void(*)(void* file_ptr);
 using EditorReloadShadersFn = void(*)();
+using EditorWaitLoaderReadyFn = void(*)();
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,15 @@ void EditorModule::ReloadShaders() {
 void EditorModule::Shutdown() {
     Unload();
     enabled_ = false;
+}
+
+void EditorModule::WaitReloadReady() {
+#ifdef __linux__
+    if (!handle_) return;
+    auto* fn = reinterpret_cast<EditorWaitLoaderReadyFn>(
+        dlsym(handle_, "editor_panels_wait_loader_ready"));
+    if (fn) fn();
+#endif
 }
 
 // ── load / unload ─────────────────────────────────────────────────────────────

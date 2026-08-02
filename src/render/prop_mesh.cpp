@@ -6,6 +6,7 @@
 // CGLTF_IMPLEMENTATION is provided by cgltf_impl.cpp (compiled separately).
 #include "cgltf.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -29,7 +30,8 @@ bool PropMesh::LoadGLB(const char* path, float layer) {
     }
 
     // Locate first mesh primitive with POSITION + NORMAL.
-    cgltf_primitive* prim = nullptr;
+    cgltf_primitive* prim    = nullptr;
+    cgltf_mesh*      own_mesh = nullptr;
     for (cgltf_size mi = 0; mi < data->meshes_count && !prim; ++mi) {
         for (cgltf_size pi = 0; pi < data->meshes[mi].primitives_count && !prim; ++pi) {
             cgltf_primitive* p = &data->meshes[mi].primitives[pi];
@@ -39,7 +41,7 @@ bool PropMesh::LoadGLB(const char* path, float layer) {
                 if (p->attributes[ai].type == cgltf_attribute_type_position) has_pos  = true;
                 if (p->attributes[ai].type == cgltf_attribute_type_normal)   has_norm = true;
             }
-            if (has_pos && has_norm && p->indices) prim = p;
+            if (has_pos && has_norm && p->indices) { prim = p; own_mesh = &data->meshes[mi]; }
         }
     }
 
@@ -47,6 +49,31 @@ bool PropMesh::LoadGLB(const char* path, float layer) {
         fprintf(stderr, "[PropMesh] No valid primitive with POSITION+NORMAL+indices: %s\n", path);
         cgltf_free(data);
         return false;
+    }
+
+    // task gltfpack-node-transform (2026-08-02): a plain Blender export bakes
+    // object transform into vertex data directly (transform_apply before
+    // export), so historically every GLB this loader saw had an implicit
+    // identity node transform and skipping data->nodes[] here never mattered.
+    // gltfpack's default KHR_mesh_quantization output does NOT do this -- it
+    // relies on a node-level scale/translate to map quantized integers back
+    // to real units, so a loader that ignores node transforms renders
+    // grossly wrong geometry (confirmed live: a 1x1x0.1m tile became a huge
+    // distorted shape). Find the node owning this mesh and apply its WORLD
+    // transform (cgltf_node_transform_world composes the full ancestor
+    // chain) to every position/normal below. Identity for GLBs with no
+    // matching node (world matrix defaults to identity either way).
+    float world_m[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    for (cgltf_size ni = 0; ni < data->nodes_count; ++ni) {
+        if (data->nodes[ni].mesh == own_mesh) {
+            cgltf_node_transform_world(&data->nodes[ni], world_m);
+            break;
+        }
+    }
+    bool has_node_transform = false;
+    for (int i = 0; i < 16; ++i) {
+        float expect = (i == 0 || i == 5 || i == 10 || i == 15) ? 1.0f : 0.0f;
+        if (world_m[i] != expect) { has_node_transform = true; break; }
     }
 
     // Find POSITION, NORMAL and (optional) TEXCOORD_0 accessors.
@@ -76,6 +103,25 @@ bool PropMesh::LoadGLB(const char* path, float layer) {
         cgltf_accessor_read_float(pos_acc,  i, p, 3);
         cgltf_accessor_read_float(norm_acc, i, n, 3);
         if (uv_acc) cgltf_accessor_read_float(uv_acc, i, uv, 2);
+
+        if (has_node_transform) {
+            float wp[3], wn[3];
+            wp[0] = world_m[0]*p[0] + world_m[4]*p[1] + world_m[8]*p[2]  + world_m[12];
+            wp[1] = world_m[1]*p[0] + world_m[5]*p[1] + world_m[9]*p[2]  + world_m[13];
+            wp[2] = world_m[2]*p[0] + world_m[6]*p[1] + world_m[10]*p[2] + world_m[14];
+            // 3x3 part only for normals (no translation); adequate for the
+            // uniform-scale+translate transforms gltfpack's quantization
+            // dequant node emits -- not a full inverse-transpose, so a
+            // future non-uniform-scale source would need revisiting this.
+            wn[0] = world_m[0]*n[0] + world_m[4]*n[1] + world_m[8]*n[2];
+            wn[1] = world_m[1]*n[0] + world_m[5]*n[1] + world_m[9]*n[2];
+            wn[2] = world_m[2]*n[0] + world_m[6]*n[1] + world_m[10]*n[2];
+            float nlen = sqrtf(wn[0]*wn[0] + wn[1]*wn[1] + wn[2]*wn[2]);
+            if (nlen > 1e-8f) { wn[0] /= nlen; wn[1] /= nlen; wn[2] /= nlen; }
+            p[0] = wp[0]; p[1] = wp[1]; p[2] = wp[2];
+            n[0] = wn[0]; n[1] = wn[1]; n[2] = wn[2];
+        }
+
         s_verts[i] = { p[0], p[1], p[2], n[0], n[1], n[2], uv[0], uv[1], layer };
         if (p[1] < y_min) y_min = p[1];
         if (p[1] > y_max) y_max = p[1];

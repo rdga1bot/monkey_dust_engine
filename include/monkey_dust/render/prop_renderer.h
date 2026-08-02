@@ -56,4 +56,10 @@ public:
 private:
     PropMesh    mesh_;
     GpuPipeline pipeline_;
+    // Real per-mesh texture (PropMesh::has_custom_tex) — separate GPU
+    // resource per PropRenderer instance, unlike the two PropTexShared
+    // textures shared across all instances. Bound at set=2 binding=2,
+    // always (even a dummy 1x1 white texture when unused) — HD520 sampler
+    // binding-order rule: no gaps in fragment sampler slots.
+    GpuTexture  tex_custom_;
 };

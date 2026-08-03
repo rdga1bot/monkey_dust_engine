@@ -79,6 +79,13 @@
    namespace _sdl3_input {
        inline bool  s_keys [SDL_SCANCODE_COUNT] = {};  // current frame (game reads)
        inline bool  s_next [SDL_SCANCODE_COUNT] = {};  // filled by EventWatcher
+       // Continuous held-state, kept in sync by the watcher on both
+       // SDL_EVENT_KEY_DOWN/UP — unlike SDL_GetKeyboardState(), this also
+       // reflects synthetic keys injected via SDL_PushEvent (the Live
+       // UI-driver's md.ui.hold_key), since SDL only updates its own
+       // internal keyboard array from real platform-driver key events, not
+       // from queued/pushed ones. See input_key_down's doc comment.
+       inline bool  s_down [SDL_SCANCODE_COUNT] = {};
        inline bool  s_mouse[6]                  = {};
        inline bool  s_mnext[6]                  = {};
        inline bool  s_quit                      = false;
@@ -92,10 +99,17 @@
    inline bool _sdl3_event_watcher(void*, SDL_Event* ev) {
        if (ev->type == SDL_EVENT_QUIT)
            _sdl3_input::s_quit = true;
-       if (ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat) {
+       if (ev->type == SDL_EVENT_KEY_DOWN) {
+           int sc = (int)ev->key.scancode;
+           if (sc >= 0 && sc < SDL_SCANCODE_COUNT) {
+               if (!ev->key.repeat) _sdl3_input::s_next[sc] = true;
+               _sdl3_input::s_down[sc] = true;
+           }
+       }
+       if (ev->type == SDL_EVENT_KEY_UP) {
            int sc = (int)ev->key.scancode;
            if (sc >= 0 && sc < SDL_SCANCODE_COUNT)
-               _sdl3_input::s_next[sc] = true;
+               _sdl3_input::s_down[sc] = false;
        }
        if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
            int b = (int)ev->button.button;
@@ -122,9 +136,14 @@
        _sdl3_input::s_scroll_accum = 0.f;
    }
 
+   // Reads our own watcher-tracked held-state, NOT SDL_GetKeyboardState() —
+   // that array is only updated by the platform video driver processing a
+   // genuine hardware key event; events injected via SDL_PushEvent (Live
+   // UI-driver's md.ui.hold_key) reach the queue/watcher fine but never
+   // reach that internal array, so WASD movement silently did nothing when
+   // driven synthetically even though the queued event itself was real.
    inline bool input_key_down(int key) {
-       int n = 0; const bool* st = SDL_GetKeyboardState(&n);
-       return (key >= 0 && key < n) ? st[key] : false;
+       return (key >= 0 && key < SDL_SCANCODE_COUNT) ? _sdl3_input::s_down[key] : false;
    }
    inline bool input_key_pressed(int key) {
        return (key >= 0 && key < SDL_SCANCODE_COUNT)

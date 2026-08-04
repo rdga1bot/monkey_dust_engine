@@ -190,15 +190,25 @@ bool TerrainPatchRenderer::Init(SDL_GPUDevice* /*dev*/) {
     }
 
     // TERRAIN_CA_REBUILD_PROMPT.md Phase 4 -- Variant A G-buffer pipeline.
-    // Reuses terrain_patch.vert UNCHANGED (safe here, unlike the depth
-    // prepass: this pipeline's depth target is its own DEDICATED texture,
-    // never compared against another pipeline's output, so the Intel Gen9
-    // cross-pipeline codegen-divergence concern that forced a separate
-    // vertex shader for the depth prepass doesn't apply). color_format
+    // Own dedicated vertex shader (terrain_patch_gbuffer.vert, byte-for-
+    // byte copy of terrain_patch.vert) -- see that file's header comment
+    // for why (Intel Gen9 ANV cross-pipeline vertex codegen divergence,
+    // same class of bug already fixed for the depth prepass below and,
+    // originally, NPCs via animated_prepass.vert). Found live 2026-08-04:
+    // reusing terrain_patch.vert's compiled module here (the previous
+    // approach, on the theory that a dedicated depth target made the
+    // known cross-pipeline risk inapplicable) produced a G-buffer whose W
+    // channel (packed normal) varied correctly per-pixel/per-camera-move
+    // but whose XYZ channels (world position) read back CONSTANT
+    // regardless of screen position or a live 3000m camera move --
+    // despite both being written by the SAME single vec4 store in
+    // terrain_gbuffer_mini.frag, ruling out a data-flow bug and matching
+    // this exact known GPU/driver-codegen bug class instead. color_format
     // overridden to RGBA32F -- world-space positions (up to tens of
     // thousands of metres) need full float range, R8G8B8A8_UNORM's
     // normalized [0,1] range cannot represent them.
     GpuPipeline::Desc gb = pd;
+    gb.vert_path         = "shaders/terrain_patch_gbuffer.vert";
     gb.frag_path         = "shaders/terrain_gbuffer_mini.frag";
     gb.frag_uniform_bufs = 0;
     gb.frag_samplers     = 0;

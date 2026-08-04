@@ -1,7 +1,10 @@
-# monkey_dust — Engine
+# monkey_dust Engine — C++17 SDL_GPU/Vulkan Game Engine
 
 Open-source C++17 game engine library for a Flare-inspired isometric RPG sandbox.
-Built around **SDL3 + SDL\_GPU (Vulkan)**, **flecs ECS**, a custom stackless **Behavior Tree VM**, **ozz-animation**, and **Jolt Physics**.
+Built around **[SDL3](https://github.com/libsdl-org/SDL) + SDL\_GPU (Vulkan)**,
+**[flecs](https://github.com/SanderMertens/flecs) ECS**, a custom stackless
+**Behavior Tree VM**, **[ozz-animation](https://github.com/guillaumeblanc/ozz-animation)**,
+and **[Jolt Physics](https://github.com/jrouwe/JoltPhysics)**.
 
 > **Full documentation →** [rdga1bot.github.io/monkey\_dust\_engine/monkey\_dust\_docs.html](https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html)
 

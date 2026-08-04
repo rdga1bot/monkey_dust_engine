@@ -99,6 +99,20 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
             return false;
         }
     }
+    {
+        SDL_GPUSamplerCreateInfo si{};
+        si.min_filter     = SDL_GPU_FILTER_NEAREST;
+        si.mag_filter     = SDL_GPU_FILTER_NEAREST;
+        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        indir_sampler_ = SDL_CreateGPUSampler(dev, &si);
+        if (!indir_sampler_) {
+            MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] indirection sampler create failed: %s", SDL_GetError());
+            return false;
+        }
+    }
     // Initialize every indirection texel to kNotResident -- one big upload,
     // once, at Init() time (INDIR_SIZE^2 = 16384 uint32 = 64KB, trivial).
     {
@@ -166,6 +180,7 @@ void TerrainVtPageCache::Shutdown(SDL_GPUDevice* dev) {
     if (atlas_tex_)     { SDL_ReleaseGPUTexture(dev, atlas_tex_);     atlas_tex_     = nullptr; }
     if (atlas_sampler_) { SDL_ReleaseGPUSampler(dev, atlas_sampler_); atlas_sampler_ = nullptr; }
     if (indir_tex_)     { SDL_ReleaseGPUTexture(dev, indir_tex_);     indir_tex_     = nullptr; }
+    if (indir_sampler_) { SDL_ReleaseGPUSampler(dev, indir_sampler_); indir_sampler_ = nullptr; }
     ready_ = false;
 }
 

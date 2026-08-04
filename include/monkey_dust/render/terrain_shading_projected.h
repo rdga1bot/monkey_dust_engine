@@ -2,6 +2,7 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/render/terrain_renderer.h>
+#include <monkey_dust/render/terrain_vt_page_cache.h>
 #include <SDL3/SDL_gpu.h>
 
 // TERRAIN_CA_REBUILD_PROMPT.md Phase 4 -- Variant A (screen-space decoupled
@@ -79,12 +80,17 @@ public:
     // mirrors TerrainPatchRenderer::DrawBatch exactly (minus vp16/
     // patch_size/hmap, which this pass has no vertex geometry to need) so
     // callers can swap between the two variants with the same data.
+    // terrain-vt Phase 4: `vt` supplies the indirection+atlas textures the
+    // fragment shader samples for a cache hit (see terrain_shading_
+    // screenspace.frag's VT_SampleAlbedo) -- caller must have already
+    // called vt.FlushFillQueue this frame (outside this render pass,
+    // before it opens) so any newly-filled pages are visible here.
     void DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                              const TerrainRenderer::SunParams& sun,
                              float cam_x, float cam_y, float cam_z,
                              float world_origin_x, float world_origin_z, float world_to_uv,
                              float fog_far, const float fog_color[3], float fog_near,
-                             const TerrainRenderer& ground);
+                             const TerrainRenderer& ground, const TerrainVtPageCache& vt);
 
 private:
     bool CreateTextures(int w, int h);

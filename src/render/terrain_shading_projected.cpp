@@ -59,8 +59,8 @@ bool TerrainShadingProjected::Init(SDL_GPUDevice* dev, int w, int h) {
     rd.vert_uniform_bufs  = 0;
     rd.vert_samplers      = 0;
     rd.frag_uniform_bufs  = 2;  // set=3 binding=0 ProjFragUBO, binding=1 ProjCamUBO
-    rd.frag_samplers      = 6;  // set=2: tex_colour,tex_ground,tex_ground_baked,tex_overlay_mask; set=1: gbufPacked,gbufDepth
-    rd.frag_storage_bufs  = 1;  // set=2 binding=4: zoneGroundLayers
+    rd.frag_samplers      = 8;  // set=2: tex_colour,tex_ground,tex_ground_baked,tex_overlay_mask; set=1: gbufPacked,gbufDepth; terrain-vt Phase 4: vtIndirection,vtAtlas
+    rd.frag_storage_bufs  = 1;  // set=2 binding=8: zoneGroundLayers
     if (!resolve_pipeline_.Create(rd)) {
         MD_LOG(MD_LOG_WARNING, "[TerrainShadingProjected] resolve pipeline create failed");
         return false;
@@ -132,8 +132,17 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
                                                    float cam_x, float cam_y, float cam_z,
                                                    float world_origin_x, float world_origin_z, float world_to_uv,
                                                    float fog_far, const float fog_color[3], float fog_near,
-                                                   const TerrainRenderer& ground) {
+                                                   const TerrainRenderer& ground, const TerrainVtPageCache& vt) {
     if (!ready_) return;
+    // terrain-vt Phase 4: defensive -- the atlas/indirection textures must
+    // be valid, non-null objects to bind (SDL_GPU requires a real sampler
+    // binding, not an optional one). Both callers (game, editor) already
+    // Init() this cache right alongside the rest of the granite terrain
+    // pipeline this function itself depends on (`ready_`), so this should
+    // never actually trip in practice -- but bailing cleanly here is far
+    // safer than binding two null textures if that invariant is ever
+    // violated (e.g. a future caller reorders init steps).
+    if (!vt.IsReady()) return;
 
     SDL_BindGPUGraphicsPipeline(rp, resolve_pipeline_.SDLPipeline());
 
@@ -169,6 +178,16 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
         { gbuf_depth_.SDLTexture(), gbuf_depth_.SDLSampler() },
     };
     SDL_BindGPUFragmentSamplers(rp, 4, gbuf_bindings, 2);
+
+    // terrain-vt Phase 4: indirection + physical atlas -- bindings 6/7,
+    // continuing the same contiguous sampler run (see terrain_shading_
+    // screenspace.frag's own doc comment on why the SSBO above must stay
+    // numbered AFTER every sampler in this set).
+    SDL_GPUTextureSamplerBinding vt_bindings[2] = {
+        { vt.IndirectionTexture(), vt.IndirectionSampler() },
+        { vt.AtlasTexture(),       vt.AtlasSampler() },
+    };
+    SDL_BindGPUFragmentSamplers(rp, 6, vt_bindings, 2);
 
     SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
 }

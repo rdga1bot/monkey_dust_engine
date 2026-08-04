@@ -63,6 +63,11 @@ public:
     SDL_GPUTexture* AtlasTexture() const { return atlas_tex_; }
     SDL_GPUSampler* AtlasSampler() const { return atlas_sampler_; }
     SDL_GPUTexture* IndirectionTexture() const { return indir_tex_; }
+    // Semantically irrelevant (Phase 4's consumer only ever reads this
+    // texture via texelFetch, which ignores sampler state entirely) but
+    // SDL_GPU still requires a valid non-null sampler object to bind a
+    // combined-image-sampler resource -- a plain NEAREST/CLAMP sampler.
+    SDL_GPUSampler* IndirectionSampler() const { return indir_sampler_; }
     float PatchSize() const { return patch_size_; }
 
     // Phase 2 (CPU visibility feedback) calls this once per visible patch,
@@ -152,6 +157,7 @@ private:
     SDL_GPUTexture*    atlas_tex_     = nullptr;
     SDL_GPUSampler*    atlas_sampler_ = nullptr;
     SDL_GPUTexture*    indir_tex_     = nullptr;
+    SDL_GPUSampler*    indir_sampler_ = nullptr;
     GpuComputePipeline fill_pipeline_;
 
     SlotInfo slots_[NUM_SLOTS];

@@ -154,7 +154,7 @@ ninja -C build md_tests          # meta-target, depends on flare_ini_parser + fl
 ./build/tests/flare_tile_map
 ```
 
-> The large GTest suite (1750 tests across 200+ suites — FNV · AgentBlackboard · FlowGraph ·
+> The large GTest suite (1633 tests across 223 suites — FNV · AgentBlackboard · FlowGraph ·
 > DirectorSystem · BT VM · Batch 3–31 · M47–M59 · O3DE-1–4 · ZLD-1–2 · FL-3–4 · KEN-1–8 ·
 > VBfA-R1–9 · VBfA-AI1–6, etc.) lives in the private parent
 > [`monkey_dust`](https://github.com/rdga1bot/monkey_dust) game repo's `tests/` directory, not in

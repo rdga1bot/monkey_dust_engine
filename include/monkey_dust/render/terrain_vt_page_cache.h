@@ -47,6 +47,35 @@ public:
     // wanted, same reject-and-retry-next-frame philosophy as the pool
     // itself.
     static constexpr int MAX_FILLS_PER_FRAME = 16;
+    // terrain-vt: real, live regression found and fixed post-Phase-4 --
+    // ONE page (PAGE_TEXELS x PAGE_TEXELS) covers a WHOLE PATCH_SIZE_M
+    // (300m) world square at EVERY tier, including tier 0 (finest,
+    // right under the camera): 300/128 = 2.34m/texel. The live (pre-VT)
+    // shading had no such floor -- its texture tiling ran at native
+    // resolution regardless of geometry LOD, so up close this reads as
+    // an obvious, objectionable checkerboard of flat-colored blocks (a
+    // live screenshot confirmed it, not a theoretical concern). A
+    // correct fix needs hierarchical/clipmap-style pages whose world
+    // footprint shrinks at finer tiers (matching how real sparse
+    // virtual texturing systems avoid exactly this problem) -- real,
+    // substantial rework of the page-key/indirection addressing, not
+    // done here to avoid rushing a second architecture change under
+    // time pressure. Interim fix: only cache tiers at or above this
+    // threshold; RequestPage no-ops for anything finer, so
+    // VT_SampleAlbedo's indirection lookup for that world region always
+    // misses and falls back to the full live inline blend -- pixel-
+    // identical to the pre-VT baseline near the camera, where it
+    // matters most visually. Distant/coarse tiers (where 2.34m/texel
+    // was already imperceptible before this bug was even noticed) still
+    // get the full performance benefit.
+    // Set conservatively high (4 -> real distance ~300*2^4=4800m via
+    // TerrainPatchGrid::UpdateLOD's own dist=patch_size*2^tier formula):
+    // the live screenshot showed blockiness across a wide swath of the
+    // frame (not just the ground right underfoot), so a narrow margin
+    // risked shipping the same complaint again at a slightly greater
+    // distance. Tune down later with live visual verification at each
+    // step, not by assumption.
+    static constexpr int MIN_CACHEABLE_TIER = 4;
     // Indirection texel value meaning "no page resident here".
     static constexpr uint32_t kNotResident = 0xFFFFFFFFu;
 

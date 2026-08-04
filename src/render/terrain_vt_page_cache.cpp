@@ -169,10 +169,10 @@ void TerrainVtPageCache::Shutdown(SDL_GPUDevice* dev) {
     ready_ = false;
 }
 
-int TerrainVtPageCache::FindSlot(int ix, int iz, int tier) const {
+int TerrainVtPageCache::FindSlot(int ix, int iz) const {
     for (int i = 0; i < NUM_SLOTS; ++i) {
         const SlotInfo& s = slots_[i];
-        if (s.used && s.ix == ix && s.iz == iz && s.tier == tier) return i;
+        if (s.used && s.ix == ix && s.iz == iz) return i;
     }
     return -1;
 }
@@ -181,21 +181,58 @@ int TerrainVtPageCache::AllocSlot() {
     for (int i = 0; i < NUM_SLOTS; ++i) {
         if (!slots_[i].used) return i;
     }
-    return -1;  // pool full -- Phase 3 adds eviction; Phase 1 just rejects
+    // Pool full -- evict the least-recently-touched slot (linear scan over
+    // last_touch; NUM_SLOTS=512 is small enough that this is trivially
+    // cheap even called once per newly-seen page per frame -- no
+    // std::map/priority-queue needed, matches this codebase's fixed-array
+    // convention). last_touch is a monotonic per-touch counter, not a
+    // frame timestamp -- see SlotInfo's own doc comment for why that
+    // distinction is the actual fix, not a stylistic preference.
+    int lru = 0;
+    uint64_t oldest = slots_[0].last_touch;
+    for (int i = 1; i < NUM_SLOTS; ++i) {
+        if (slots_[i].last_touch < oldest) { oldest = slots_[i].last_touch; lru = i; }
+    }
+    ++eviction_count_;
+    return lru;
 }
 
 void TerrainVtPageCache::RequestPage(int ix, int iz, int tier) {
     if (!ready_) return;
     if (ix < 0 || iz < 0 || ix >= INDIR_SIZE || iz >= INDIR_SIZE) return;
-    if (FindSlot(ix, iz, tier) >= 0) return;  // already resident (Phase 3: touch LRU here)
+
+    int existing = FindSlot(ix, iz);
+    if (existing >= 0) {
+        slots_[existing].last_touch = ++touch_counter_;  // resident -- bump LRU recency regardless of tier match
+        if (slots_[existing].tier == tier) return;  // same tier, content still valid -- nothing else to do
+        // Different tier requested for an already-resident location: reuse
+        // the SAME slot (indirection already points here, no re-upload
+        // needed) and queue a re-fill with the new tier's content -- see
+        // RequestPage's own doc comment for why this must NOT allocate a
+        // second slot for the same (ix,iz).
+        if (fill_queue_count_ >= MAX_FILLS_PER_FRAME) return;
+        slots_[existing].tier = tier;
+        fill_queue_[fill_queue_count_++] = FillRequest{ix, iz, tier, existing};
+        return;
+    }
+
     if (fill_queue_count_ >= MAX_FILLS_PER_FRAME) return;  // this frame's fill budget exhausted
+    if (invalidate_queue_count_ >= MAX_FILLS_PER_FRAME) return;  // matching cap -- an eviction always needs room in both queues
 
     int slot = AllocSlot();
-    if (slot < 0) return;  // pool full -- reject-on-full, caller retries next frame
+    bool was_used = slots_[slot].used;
+    if (was_used) {
+        // Evicting a DIFFERENT location's slot -- its indirection texel
+        // must be invalidated in the SAME flush, or the indirection
+        // texture keeps pointing a stale (ix,iz) key at a slot that no
+        // longer holds that location's content.
+        invalidate_queue_[invalidate_queue_count_++] =
+            InvalidateRequest{slots_[slot].ix, slots_[slot].iz};
+    } else {
+        ++resident_count_;
+    }
 
-    slots_[slot] = SlotInfo{ix, iz, tier, true};
-    ++resident_count_;
-
+    slots_[slot] = SlotInfo{ix, iz, tier, true, ++touch_counter_};
     fill_queue_[fill_queue_count_++] = FillRequest{ix, iz, tier, slot};
 }
 
@@ -229,10 +266,19 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer
                                          const TerrainWorldHeightmap& hmap, const TerrainRenderer& ground) {
     if (!ready_ || fill_queue_count_ == 0) { fill_queue_count_ = 0; return; }
 
-    // 1) Upload this frame's new indirection texels (copy pass).
+    // 1) Upload this frame's new indirection texels, AND invalidate any
+    // evicted location's OLD texel back to kNotResident first (order
+    // matters only in the pathological case both queues reference the
+    // exact same (ix,iz) in the same frame, which can't happen here: an
+    // invalidate is only ever queued for a DIFFERENT location than the
+    // one being newly written, see RequestPage's eviction branch).
     {
         SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
         if (cp) {
+            for (int i = 0; i < invalidate_queue_count_; ++i) {
+                const InvalidateRequest& r = invalidate_queue_[i];
+                UploadIndirectionTexel(dev, cp, r.ix, r.iz, kNotResident);
+            }
             for (int i = 0; i < fill_queue_count_; ++i) {
                 const FillRequest& r = fill_queue_[i];
                 UploadIndirectionTexel(dev, cp, r.ix, r.iz, (uint32_t)r.slot);
@@ -240,6 +286,7 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer
             SDL_EndGPUCopyPass(cp);
         }
     }
+    invalidate_queue_count_ = 0;
 
     // 2) Dispatch one page-fill compute invocation per queued request, each
     // in its OWN compute pass (Begin/End per dispatch, all still within

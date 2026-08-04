@@ -66,13 +66,29 @@ public:
     float PatchSize() const { return patch_size_; }
 
     // Phase 2 (CPU visibility feedback) calls this once per visible patch,
-    // per frame. If (ix,iz,tier) is already resident, does nothing (Phase
-    // 3 will bump its LRU touch counter here). If not resident: allocates
-    // a free slot and queues a page-fill compute dispatch for THIS frame
-    // (drained by FlushFillQueue) -- unless the slot pool is full or this
-    // frame's fill queue is already at MAX_FILLS_PER_FRAME, in which case
-    // this call is a silent no-op (reject-on-full; caller just calls
-    // again next frame if the page is still wanted).
+    // per frame. Residency key is (ix,iz) ONLY, NOT (ix,iz,tier) -- the
+    // indirection texture has exactly one texel per (ix,iz), so it can
+    // only ever point at ONE tier's slot for a given location at a time.
+    // Keying on the triple (an earlier draft of this class did) let two
+    // different tiers of the same location occupy two different slots
+    // simultaneously with only the more-recently-requested one actually
+    // reachable via indirection -- the other became a silently orphaned
+    // slot, and worse, evicting it later would have invalidated the
+    // WRONG (currently-valid) indirection entry, since both slots shared
+    // the same (ix,iz) indirection texel address. Fixed before ever
+    // shipping any consumer of this class.
+    //
+    // If (ix,iz) is already resident at the SAME tier: just bumps LRU
+    // recency, no-op otherwise. If resident at a DIFFERENT tier: reuses
+    // the SAME slot (no new allocation, no indirection re-upload needed --
+    // it already points here) and queues a re-fill with the new tier's
+    // content. If not resident at all: allocates a free slot (evicting the
+    // globally least-recently-touched one if the pool is full) and queues
+    // a page-fill compute dispatch for THIS frame (drained by
+    // FlushFillQueue) -- unless this frame's fill queue is already at
+    // MAX_FILLS_PER_FRAME, in which case this call is a silent no-op
+    // (reject-on-full; caller just calls again next frame if the page is
+    // still wanted).
     void RequestPage(int ix, int iz, int tier);
 
     // Issues this frame's queued page-fill compute dispatches (raw
@@ -97,17 +113,39 @@ public:
     bool DebugDumpAtlas(SDL_GPUDevice* dev, const char* out_png_path);
 
     int ResidentCount() const { return resident_count_; }
+    // terrain-vt Phase 3: total evictions since Init() -- 0 for the whole
+    // lifetime of a session means NUM_SLOTS never needed to reclaim a slot
+    // (matches Phase 1's own "empirical dial, not a hard number" framing).
+    uint64_t EvictionCount() const { return eviction_count_; }
 
 private:
     struct SlotInfo {
-        int  ix = 0, iz = 0, tier = 0;
-        bool used = false;
+        int      ix = 0, iz = 0, tier = 0;
+        bool     used = false;
+        // terrain-vt Phase 3: monotonic per-touch counter, NOT a
+        // frame-granularity timestamp -- the documented LRU bug in the
+        // deleted TerrainBakedRenderer used a per-frame value, so every
+        // slot touched during the SAME frame tied and eviction always
+        // picked the same one regardless of true recency. A counter that
+        // increments on every single touch (RequestPage hit OR (re)alloc)
+        // makes same-frame ties impossible by construction.
+        uint64_t last_touch = 0;
     };
     struct FillRequest {
         int ix = 0, iz = 0, tier = 0, slot = 0;
     };
+    // terrain-vt Phase 3: when AllocSlot() evicts an in-use slot for a new
+    // page, the OLD page's indirection texel must be invalidated back to
+    // kNotResident in the SAME flush -- otherwise the indirection texture
+    // keeps claiming the old (ix,iz,tier) key still lives in a slot that
+    // now holds a completely different page's content.
+    struct InvalidateRequest {
+        int ix = 0, iz = 0;
+    };
 
-    int FindSlot(int ix, int iz, int tier) const;
+    // Residency key is (ix,iz) only -- see RequestPage's doc comment for
+    // why tier is deliberately NOT part of this lookup.
+    int FindSlot(int ix, int iz) const;
     int AllocSlot();
     void UploadIndirectionTexel(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp, int ix, int iz, uint32_t value);
 
@@ -118,9 +156,13 @@ private:
 
     SlotInfo slots_[NUM_SLOTS];
     int      resident_count_ = 0;
+    uint64_t touch_counter_  = 0;
+    uint64_t eviction_count_ = 0;
 
     FillRequest fill_queue_[MAX_FILLS_PER_FRAME];
     int         fill_queue_count_ = 0;
+    InvalidateRequest invalidate_queue_[MAX_FILLS_PER_FRAME];
+    int                invalidate_queue_count_ = 0;
 
     float patch_size_   = 300.f;
     float world_extent_ = 0.f, height_min_ = 0.f, height_max_ = 0.f, res_texels_ = 0.f;

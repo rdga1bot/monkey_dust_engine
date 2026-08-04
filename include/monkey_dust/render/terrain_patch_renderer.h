@@ -1,7 +1,6 @@
 #pragma once
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_hal.h>
-#include <monkey_dust/render/terrain_renderer.h>
 #include <monkey_dust/render/terrain_world_heightmap.h>
 #include <SDL3/SDL_gpu.h>
 
@@ -64,8 +63,7 @@ public:
     static constexpr int kNumTiers = 8;   // 128,64,32,16,8,4,2,1 quads/edge
     static constexpr int kMaxInstancesPerTier = 4096;
 
-    // tier_n_ [t] = quads/edge for tier t (128,64,32,16,8,4,2,1). Still used
-    // by DrawBatch to fill PatchVertUBO's (now shader-unused) tier_n field.
+    // tier_n_ [t] = quads/edge for tier t (128,64,32,16,8,4,2,1).
     static int TierN(int tier) { return tier >= 0 && tier < kNumTiers ? (kPatchN >> tier) : 0; }
 
     // One patch's per-instance data (12 bytes: matches inst_stride).
@@ -79,24 +77,12 @@ public:
 
     // Uploads this frame's per-tier instance batches. MUST be called
     // OUTSIDE any active render pass (issues one SDL_GPU copy pass per
-    // non-empty tier) and BEFORE the render pass that calls DrawBatch.
-    // counts[t]==0 (or insts[t]==nullptr) skips tier t entirely --
-    // DrawBatch(t) becomes a no-op for that tier this frame.
+    // non-empty tier) and BEFORE the render pass that calls DrawBatchGBuffer/
+    // DrawBatchDepthOnly. counts[t]==0 (or insts[t]==nullptr) skips tier t
+    // entirely -- those become a no-op for that tier this frame.
     void UploadInstances(SDL_GPUCommandBuffer* cmd,
                           const Instance* const insts[kNumTiers],
                           const int counts[kNumTiers]);
-
-    // Draws every instance uploaded for `tier` this frame as ONE
-    // instanced indexed draw call. No-op if UploadInstances wasn't
-    // called this frame or uploaded 0 instances for this tier.
-    void DrawBatch(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int tier,
-                   const float* vp16, float patch_size,
-                   const TerrainWorldHeightmap& hmap,
-                   const TerrainRenderer::SunParams& sun,
-                   float cam_x, float cam_y, float cam_z,
-                   float world_origin_x, float world_origin_z, float world_to_uv,
-                   float fog_far, const float fog_color[3], float fog_near,
-                   const TerrainRenderer& ground);
 
     // task terrain-perf-rebuild Phase 0 (2026-08-01): read-only access to
     // this frame's per-tier instance/index counts for baseline metrics
@@ -118,10 +104,14 @@ public:
                              float cam_x, float cam_y, float cam_z);
 
     // TERRAIN_CA_REBUILD_PROMPT.md Phase 4 -- Variant A (screen-space
-    // decoupled shading, see terrain_research/perf/PHASE4_PLAN.md). Draws
-    // the SAME instance batch as DrawBatch but with gbuffer_pipeline_
-    // (terrain_patch.vert reused unchanged + terrain_gbuffer_mini.frag),
-    // writing world-pos/packed-normal to a caller-provided render target
+    // decoupled shading, see terrain_research/perf/PHASE4_PLAN.md), now the
+    // ONLY terrain shading path in this codebase (see
+    // terrain_research/ARCHITECTURE_AUDIT_2026_08_04.md -- the forward/
+    // inline Variant B this docstring used to compare against, DrawBatch,
+    // was removed entirely). Draws the same instance batch with
+    // gbuffer_pipeline_ (its own dedicated terrain_patch_gbuffer.vert +
+    // terrain_gbuffer_mini.frag), writing world-pos/packed-normal to a
+    // caller-provided render target
     // instead of doing any ground-layer shading. Must run inside its own
     // render pass with a DEDICATED depth target (NOT the shared NPC/scene
     // depth -- see TerrainShadingScreenspace's doc comment for why),
@@ -135,7 +125,6 @@ public:
 private:
     bool BuildTierMesh(int tier, int quads_per_edge);
 
-    GpuPipeline     pipeline_;
     GpuPipeline     prepass_pipeline_;
     GpuPipeline     gbuffer_pipeline_;
     GpuStaticBuffer tier_vbo_[kNumTiers];

@@ -35,11 +35,6 @@ public:
     static constexpr int SLOTS_X     = 32;
     static constexpr int SLOTS_Y     = 16;
     static constexpr int NUM_SLOTS   = SLOTS_X * SLOTS_Y;  // 512 -- atlas: 4096x2048 RGBA8 = 32MB
-    // Indirection texture side length in texels -- one texel per possible
-    // (ix,iz) page-grid coordinate, clamped. 128 covers this world's real
-    // patch-grid extent (~99x99 at patch_size=300m, world_extent=29491.2m)
-    // with headroom for a smaller patch_size chosen later.
-    static constexpr int INDIR_SIZE  = 128;
     // Bounds how many NEW pages get filled in a single frame -- a camera
     // teleport/fast pan could otherwise reveal far more new pages than a
     // budget-conscious per-frame compute cost should absorb in one go;
@@ -47,35 +42,47 @@ public:
     // wanted, same reject-and-retry-next-frame philosophy as the pool
     // itself.
     static constexpr int MAX_FILLS_PER_FRAME = 16;
-    // terrain-vt: real, live regression found and fixed post-Phase-4 --
-    // ONE page (PAGE_TEXELS x PAGE_TEXELS) covers a WHOLE PATCH_SIZE_M
-    // (300m) world square at EVERY tier, including tier 0 (finest,
-    // right under the camera): 300/128 = 2.34m/texel. The live (pre-VT)
-    // shading had no such floor -- its texture tiling ran at native
-    // resolution regardless of geometry LOD, so up close this reads as
-    // an obvious, objectionable checkerboard of flat-colored blocks (a
-    // live screenshot confirmed it, not a theoretical concern). A
-    // correct fix needs hierarchical/clipmap-style pages whose world
-    // footprint shrinks at finer tiers (matching how real sparse
-    // virtual texturing systems avoid exactly this problem) -- real,
-    // substantial rework of the page-key/indirection addressing, not
-    // done here to avoid rushing a second architecture change under
-    // time pressure. Interim fix: only cache tiers at or above this
-    // threshold; RequestPage no-ops for anything finer, so
-    // VT_SampleAlbedo's indirection lookup for that world region always
-    // misses and falls back to the full live inline blend -- pixel-
-    // identical to the pre-VT baseline near the camera, where it
-    // matters most visually. Distant/coarse tiers (where 2.34m/texel
-    // was already imperceptible before this bug was even noticed) still
-    // get the full performance benefit.
-    // Set conservatively high (4 -> real distance ~300*2^4=4800m via
-    // TerrainPatchGrid::UpdateLOD's own dist=patch_size*2^tier formula):
-    // the live screenshot showed blockiness across a wide swath of the
-    // frame (not just the ground right underfoot), so a narrow margin
-    // risked shipping the same complaint again at a slightly greater
-    // distance. Tune down later with live visual verification at each
-    // step, not by assumption.
-    static constexpr int MIN_CACHEABLE_TIER = 4;
+
+    // terrain-vt clipmap fix (this session): the ORIGINAL MIN_CACHEABLE_TIER
+    // interim fix (a constant page footprint at every tier, gated off below
+    // tier 4) was measured to deliver ZERO frame-time benefit on the actual
+    // primary target (Intel HD 520 = RenderTier::Forward, RenderQualityConfig
+    // ::terrain_cr_m=3000m): scene_render.cpp's max_lod_cull works out to
+    // ~log2(3900/300)=~3.7, so a visible patch NEVER reaches tier 4 on this
+    // hardware/setting -- RequestPage's old tier>=4 gate simply never fired,
+    // and every visible pixel kept falling back to the full live blend,
+    // byte-identical to the pre-VT baseline. Real fix: page world FOOTPRINT
+    // now shrinks at finer tiers instead of staying fixed at patch_size_,
+    // so near/mid tiers can be cached too without the checkerboard
+    // blockiness that originally forced the gate. FINE_SUBDIV=4 means tier
+    // 0 subdivides one patch_size_ (300m) cell into a 4x4 grid of 75m
+    // sub-pages (2.34m/texel -> 0.586m/texel, 4x finer); tier 1 uses a 2x2
+    // grid of 150m sub-pages (1.17m/texel); tier>=2 is unchanged, one
+    // page covering the whole 300m cell (2.34m/texel -- already measured
+    // imperceptible at that distance before this bug was ever noticed).
+    // Conservative, not maximal: a much finer subdivision at tier 0 would
+    // look even sharper but multiplies resident-slot pressure (patches near
+    // the camera can occupy up to subdiv*subdiv slots each) -- 4x4 keeps
+    // worst-case resident count (~9 tier-0 patches * 16 + ~6 tier-1 * 4 +
+    // the rest at 1 each, per the live 59-zone stress test's patch-count
+    // order of magnitude) comfortably under NUM_SLOTS=512 with headroom for
+    // LRU churn. Tune later with live visual + resident-count verification,
+    // not by assumption.
+    static constexpr int FINE_SUBDIV = 4;
+    static int SubdivFactor(int tier) {
+        if (tier <= 0) return FINE_SUBDIV;       // 300/4 = 75m footprint
+        if (tier == 1) return FINE_SUBDIV / 2;   // 300/2 = 150m footprint
+        return 1;                                 // 300m footprint (tier >= 2, unchanged)
+    }
+
+    // Indirection texture side length in texels, now at the FINEST
+    // granularity (patch_size_/FINE_SUBDIV = 75m per texel) since that's
+    // the smallest page footprint any tier can use -- coarser tiers just
+    // write the same slot value into a span x span block of texels (see
+    // RequestPage/UploadIndirectionRegion). 512 = old INDIR_SIZE(128) *
+    // FINE_SUBDIV(4), covering the same real world extent (~29491.2m) at
+    // 4x finer addressing.
+    static constexpr int INDIR_SIZE  = 128 * FINE_SUBDIV;
     // Indirection texel value meaning "no page resident here".
     static constexpr uint32_t kNotResident = 0xFFFFFFFFu;
 
@@ -99,44 +106,58 @@ public:
     SDL_GPUSampler* IndirectionSampler() const { return indir_sampler_; }
     float PatchSize() const { return patch_size_; }
 
-    // Phase 2 (CPU visibility feedback) calls this once per visible patch,
-    // per frame. Residency key is (ix,iz) ONLY, NOT (ix,iz,tier) -- the
-    // indirection texture has exactly one texel per (ix,iz), so it can
-    // only ever point at ONE tier's slot for a given location at a time.
-    // Keying on the triple (an earlier draft of this class did) let two
-    // different tiers of the same location occupy two different slots
-    // simultaneously with only the more-recently-requested one actually
-    // reachable via indirection -- the other became a silently orphaned
-    // slot, and worse, evicting it later would have invalidated the
-    // WRONG (currently-valid) indirection entry, since both slots shared
-    // the same (ix,iz) indirection texel address. Fixed before ever
-    // shipping any consumer of this class.
+    // Phase 2 (CPU visibility feedback) calls this once per visible
+    // TerrainPatchGrid patch (patch_ix,patch_iz), per frame, with that
+    // patch's assigned tier -- signature unchanged since before the
+    // clipmap fix, so callers (scene_render.cpp/editor_world_3d_sdlgpu.cpp)
+    // need no changes beyond removing the old MIN_CACHEABLE_TIER gate.
+    // Internally expands into SubdivFactor(tier)^2 sub-page requests (1 for
+    // tier>=2, 4 for tier 1, 16 for tier 0) -- see FINE_SUBDIV's doc
+    // comment. Residency key for each sub-page is its own fine-grid corner
+    // (fine_ix,fine_iz) at FINE_SUBDIV granularity, NOT (patch_ix,patch_iz)
+    // -- the indirection texture has exactly one texel per fine-grid
+    // coordinate, so it can only ever point at ONE page's slot for a given
+    // fine location at a time (same reasoning the original single-tier
+    // design already established for why tier must never be folded into
+    // the residency key -- still true here, just at finer granularity).
     //
-    // If (ix,iz) is already resident at the SAME tier: just bumps LRU
-    // recency, no-op otherwise. If resident at a DIFFERENT tier: reuses
-    // the SAME slot (no new allocation, no indirection re-upload needed --
-    // it already points here) and queues a re-fill with the new tier's
-    // content. If not resident at all: allocates a free slot (evicting the
-    // globally least-recently-touched one if the pool is full) and queues
-    // a page-fill compute dispatch for THIS frame (drained by
-    // FlushFillQueue) -- unless this frame's fill queue is already at
-    // MAX_FILLS_PER_FRAME, in which case this call is a silent no-op
-    // (reject-on-full; caller just calls again next frame if the page is
-    // still wanted).
-    void RequestPage(int ix, int iz, int tier);
+    // If a sub-page's fine corner is already resident at the SAME span:
+    // just bumps LRU recency, no-op otherwise. If resident at a DIFFERENT
+    // span (this patch's tier changed since last frame): reuses the SAME
+    // slot and queues a re-fill. If not resident at all: allocates a free
+    // slot (evicting the globally least-recently-touched one if the pool
+    // is full) and queues a page-fill compute dispatch for THIS frame
+    // (drained by FlushFillQueue) -- unless this frame's fill queue is
+    // already at MAX_FILLS_PER_FRAME, in which case this sub-page request
+    // is a silent no-op (reject-on-full; caller just calls RequestPage
+    // again next frame for any patch still wanted -- a tier-0 patch whose
+    // 16 sub-pages can't all fit this frame's budget just converges over
+    // a few frames, falling back to the full live blend meanwhile, same
+    // self-healing behavior the original single-page design already had).
+    //
+    // A tier transition (e.g. camera recedes from tier 0 to tier 2 over
+    // this same patch) leaves the OLD, now-unreferenced fine sub-page
+    // slots marked used/resident but unreachable via indirection (the new,
+    // coarser request only rewrites the fine cells it actually spans) --
+    // not a correctness bug, just delayed slot reclamation: AllocSlot's
+    // LRU eviction reclaims them once the pool actually needs the space,
+    // same tolerance this cache already has for any other stale-but-valid
+    // resident content.
+    void RequestPage(int patch_ix, int patch_iz, int tier);
 
     // Issues this frame's queued page-fill compute dispatches (raw
     // SDL_BeginGPUComputePass, not GpuComputePass -- see
     // terrain_page_fill.comp's doc comment on why: GpuComputePass::Begin
-    // hardcodes storage-texture bindings to nullptr,0) and uploads each
-    // new page's indirection texel via a copy pass on the SAME command
-    // buffer. Must run OUTSIDE any render/compute pass already open this
-    // frame, BEFORE any pass that reads the atlas/indirection textures.
-    // Clears the fill queue on return regardless of success. `ground`
-    // supplies the same 4 shared ground samplers + zoneGroundLayers SSBO
-    // TerrainShadingProjected::DrawShadingResolve already binds
-    // (TerrainRenderer::GetSharedGroundSamplers/ZoneGroundLayersSSBO) --
-    // page-fill reuses them rather than owning a second copy.
+    // hardcodes storage-texture bindings to nullptr,0), uploads each new
+    // page's indirection region + PageMetaSSBO entry via a copy pass on
+    // the SAME command buffer. Must run OUTSIDE any render/compute pass
+    // already open this frame, BEFORE any pass that reads the atlas/
+    // indirection/page-meta resources. Clears the fill queue on return
+    // regardless of success. `ground` supplies the same 4 shared ground
+    // samplers + zoneGroundLayers SSBO TerrainShadingProjected::
+    // DrawShadingResolve already binds (TerrainRenderer::
+    // GetSharedGroundSamplers/ZoneGroundLayersSSBO) -- page-fill reuses
+    // them rather than owning a second copy.
     void FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd,
                          const TerrainWorldHeightmap& hmap, const TerrainRenderer& ground);
 
@@ -146,6 +167,19 @@ public:
     // -- NOT a per-frame path.
     bool DebugDumpAtlas(SDL_GPUDevice* dev, const char* out_png_path);
 
+    // terrain-vt clipmap fix: per-slot (origin_x, origin_z, world_size, 0)
+    // metadata, indexed by slot -- VT_SampleAlbedo (terrain_shading_
+    // screenspace.frag) reads this AFTER resolving a slot from the
+    // indirection texture to compute the correct in-page UV, since a
+    // resident page's real-world footprint is no longer always
+    // patch_size_ (300m). Deliberately a raw, single-buffered SDL_GPUBuffer
+    // (NOT the triple-buffered SSBO wrapper class) -- same reasoning as
+    // indir_tex_ itself: this must stay byte-for-byte in sync with
+    // whatever the indirection texture points at THIS frame, and a
+    // triple-buffered ring would serve a stale (2-frames-old) slot's
+    // metadata for 2 out of every 3 frames whenever a page is (re)filled.
+    SDL_GPUBuffer* PageMetaSSBO() const { return page_meta_buf_; }
+
     int ResidentCount() const { return resident_count_; }
     // terrain-vt Phase 3: total evictions since Init() -- 0 for the whole
     // lifetime of a session means NUM_SLOTS never needed to reclaim a slot
@@ -154,7 +188,12 @@ public:
 
 private:
     struct SlotInfo {
-        int      ix = 0, iz = 0, tier = 0;
+        // Fine-grid (FINE_SUBDIV-per-patch-edge) corner coordinate this
+        // slot's page occupies, and how many fine cells per edge it spans
+        // (1 for tier>=2's 300m footprint, 2 for tier 1's 150m, 4 for tier
+        // 0's 75m) -- together these fully describe the page's real-world
+        // origin/size (origin = fine_ix*FineCell(), size = span*FineCell()).
+        int      fine_ix = 0, fine_iz = 0, span = 4, tier = 0;
         bool     used = false;
         // terrain-vt Phase 3: monotonic per-touch counter, NOT a
         // frame-granularity timestamp -- the documented LRU bug in the
@@ -166,27 +205,35 @@ private:
         uint64_t last_touch = 0;
     };
     struct FillRequest {
-        int ix = 0, iz = 0, tier = 0, slot = 0;
+        int fine_ix = 0, fine_iz = 0, span = 4, tier = 0, slot = 0;
     };
     // terrain-vt Phase 3: when AllocSlot() evicts an in-use slot for a new
-    // page, the OLD page's indirection texel must be invalidated back to
+    // page, the OLD page's indirection region must be invalidated back to
     // kNotResident in the SAME flush -- otherwise the indirection texture
-    // keeps claiming the old (ix,iz,tier) key still lives in a slot that
+    // keeps claiming the old fine-grid region still lives in a slot that
     // now holds a completely different page's content.
     struct InvalidateRequest {
-        int ix = 0, iz = 0;
+        int fine_ix = 0, fine_iz = 0, span = 4;
     };
 
-    // Residency key is (ix,iz) only -- see RequestPage's doc comment for
-    // why tier is deliberately NOT part of this lookup.
-    int FindSlot(int ix, int iz) const;
+    float FineCell() const { return patch_size_ / (float)FINE_SUBDIV; }
+    // Expands one visible-patch RequestPage call into SubdivFactor(tier)^2
+    // sub-page requests -- see RequestPage's own doc comment.
+    void RequestSubtile(int fine_ix, int fine_iz, int span, int tier);
+    // Residency key is (fine_ix,fine_iz) only -- see RequestPage's doc
+    // comment for why tier/span are deliberately NOT part of this lookup.
+    int FindSlot(int fine_ix, int fine_iz) const;
     int AllocSlot();
-    void UploadIndirectionTexel(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp, int ix, int iz, uint32_t value);
+    void UploadIndirectionRegion(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
+                                  int fine_ix, int fine_iz, int span, uint32_t value);
+    void UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp, int slot,
+                         float origin_x, float origin_z, float world_size);
 
     SDL_GPUTexture*    atlas_tex_     = nullptr;
     SDL_GPUSampler*    atlas_sampler_ = nullptr;
     SDL_GPUTexture*    indir_tex_     = nullptr;
     SDL_GPUSampler*    indir_sampler_ = nullptr;
+    SDL_GPUBuffer*     page_meta_buf_ = nullptr;
     GpuComputePipeline fill_pipeline_;
 
     SlotInfo slots_[NUM_SLOTS];

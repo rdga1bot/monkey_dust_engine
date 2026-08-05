@@ -80,10 +80,10 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
         }
     }
 
-    // Indirection texture: R32_UINT, one texel per (ix,iz) page-grid
-    // coordinate -- CPU-written via a copy pass (SDL_UploadToGPUTexture),
-    // never a compute imageStore target, so no COMPUTE_STORAGE_WRITE usage
-    // needed here.
+    // Indirection texture: R32_UINT, one texel per FINE-grid (FINE_SUBDIV
+    // per patch edge) coordinate -- CPU-written via a copy pass
+    // (SDL_UploadToGPUTexture), never a compute imageStore target, so no
+    // COMPUTE_STORAGE_WRITE usage needed here.
     {
         SDL_GPUTextureCreateInfo ti{};
         ti.type                 = SDL_GPU_TEXTURETYPE_2D;
@@ -149,6 +149,62 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
         free(init_data);
     }
 
+    // terrain-vt clipmap fix: per-slot page metadata (origin_x, origin_z,
+    // world_size, 0), read by VT_SampleAlbedo after resolving a slot from
+    // the indirection texture. Raw, single-buffered SDL_GPUBuffer -- see
+    // PageMetaSSBO's doc comment for why the triple-buffered SSBO wrapper
+    // class would serve stale metadata 2 out of 3 frames. Same usage flags
+    // TerrainRenderer's zone_layers_ssbo_ (SSBO class) already proves work
+    // fine for BOTH a compute-storage-buffer read (terrain_page_fill.comp
+    // doesn't actually need this one, but mirrors the flag set) and a
+    // fragment-storage-buffer bind (terrain_shading_screenspace.frag).
+    {
+        SDL_GPUBufferCreateInfo bi{};
+        bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
+        bi.size  = (Uint32)(NUM_SLOTS * 4 * sizeof(float));
+        page_meta_buf_ = SDL_CreateGPUBuffer(dev, &bi);
+        if (!page_meta_buf_) {
+            MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] page-meta buffer create failed: %s", SDL_GetError());
+            return false;
+        }
+        // Zero-init every slot's metadata (world_size defaults to
+        // patch_size_ -- harmless, since a slot's meta is only ever read
+        // when the indirection texture actually points a resident fine
+        // cell at it, which always happens together with a real
+        // UploadPageMeta call for that same slot).
+        float* init_meta = (float*)malloc((size_t)NUM_SLOTS * 4 * sizeof(float));
+        if (init_meta) {
+            for (int i = 0; i < NUM_SLOTS; ++i) {
+                init_meta[i * 4 + 0] = 0.f;
+                init_meta[i * 4 + 1] = 0.f;
+                init_meta[i * 4 + 2] = patch_size_;
+                init_meta[i * 4 + 3] = 0.f;
+            }
+            SDL_GPUTransferBufferCreateInfo tbi{};
+            tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+            tbi.size  = (Uint32)(NUM_SLOTS * 4 * sizeof(float));
+            SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+            if (tb) {
+                void* map = SDL_MapGPUTransferBuffer(dev, tb, false);
+                if (map) memcpy(map, init_meta, tbi.size);
+                SDL_UnmapGPUTransferBuffer(dev, tb);
+
+                SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+                SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+                SDL_GPUTransferBufferLocation src{};
+                src.transfer_buffer = tb;
+                SDL_GPUBufferRegion dst{};
+                dst.buffer = page_meta_buf_;
+                dst.size   = tbi.size;
+                SDL_UploadToGPUBuffer(cp, &src, &dst, false);
+                SDL_EndGPUCopyPass(cp);
+                SDL_SubmitGPUCommandBuffer(cmd);
+                SDL_ReleaseGPUTransferBuffer(dev, tb);
+            }
+            free(init_meta);
+        }
+    }
+
     {
         GpuComputePipeline::Desc cd;
         cd.glsl_path                     = "shaders/terrain_page_fill.comp";
@@ -181,13 +237,14 @@ void TerrainVtPageCache::Shutdown(SDL_GPUDevice* dev) {
     if (atlas_sampler_) { SDL_ReleaseGPUSampler(dev, atlas_sampler_); atlas_sampler_ = nullptr; }
     if (indir_tex_)     { SDL_ReleaseGPUTexture(dev, indir_tex_);     indir_tex_     = nullptr; }
     if (indir_sampler_) { SDL_ReleaseGPUSampler(dev, indir_sampler_); indir_sampler_ = nullptr; }
+    if (page_meta_buf_) { SDL_ReleaseGPUBuffer(dev, page_meta_buf_);  page_meta_buf_ = nullptr; }
     ready_ = false;
 }
 
-int TerrainVtPageCache::FindSlot(int ix, int iz) const {
+int TerrainVtPageCache::FindSlot(int fine_ix, int fine_iz) const {
     for (int i = 0; i < NUM_SLOTS; ++i) {
         const SlotInfo& s = slots_[i];
-        if (s.used && s.ix == ix && s.iz == iz) return i;
+        if (s.used && s.fine_ix == fine_ix && s.fine_iz == fine_iz) return i;
     }
     return -1;
 }
@@ -212,22 +269,35 @@ int TerrainVtPageCache::AllocSlot() {
     return lru;
 }
 
-void TerrainVtPageCache::RequestPage(int ix, int iz, int tier) {
+void TerrainVtPageCache::RequestPage(int patch_ix, int patch_iz, int tier) {
     if (!ready_) return;
-    if (ix < 0 || iz < 0 || ix >= INDIR_SIZE || iz >= INDIR_SIZE) return;
+    int subdiv = SubdivFactor(tier);
+    int span   = FINE_SUBDIV / subdiv;  // fine cells per sub-page edge
+    int base_fine_ix = patch_ix * FINE_SUBDIV;
+    int base_fine_iz = patch_iz * FINE_SUBDIV;
+    for (int sy = 0; sy < subdiv; ++sy) {
+        for (int sx = 0; sx < subdiv; ++sx) {
+            RequestSubtile(base_fine_ix + sx * span, base_fine_iz + sy * span, span, tier);
+        }
+    }
+}
 
-    int existing = FindSlot(ix, iz);
+void TerrainVtPageCache::RequestSubtile(int fine_ix, int fine_iz, int span, int tier) {
+    if (fine_ix < 0 || fine_iz < 0 || fine_ix >= INDIR_SIZE || fine_iz >= INDIR_SIZE) return;
+
+    int existing = FindSlot(fine_ix, fine_iz);
     if (existing >= 0) {
         slots_[existing].last_touch = ++touch_counter_;  // resident -- bump LRU recency regardless of tier match
-        if (slots_[existing].tier == tier) return;  // same tier, content still valid -- nothing else to do
-        // Different tier requested for an already-resident location: reuse
-        // the SAME slot (indirection already points here, no re-upload
-        // needed) and queue a re-fill with the new tier's content -- see
-        // RequestPage's own doc comment for why this must NOT allocate a
-        // second slot for the same (ix,iz).
+        if (slots_[existing].tier == tier && slots_[existing].span == span) return;  // same content -- nothing else to do
+        // Different tier/span requested for an already-resident fine
+        // corner: reuse the SAME slot (indirection already points here,
+        // no re-upload needed) and queue a re-fill -- see RequestPage's
+        // own doc comment for why this must NOT allocate a second slot
+        // for the same (fine_ix,fine_iz).
         if (fill_queue_count_ >= MAX_FILLS_PER_FRAME) return;
         slots_[existing].tier = tier;
-        fill_queue_[fill_queue_count_++] = FillRequest{ix, iz, tier, existing};
+        slots_[existing].span = span;
+        fill_queue_[fill_queue_count_++] = FillRequest{fine_ix, fine_iz, span, tier, existing};
         return;
     }
 
@@ -237,39 +307,45 @@ void TerrainVtPageCache::RequestPage(int ix, int iz, int tier) {
     int slot = AllocSlot();
     bool was_used = slots_[slot].used;
     if (was_used) {
-        // Evicting a DIFFERENT location's slot -- its indirection texel
+        // Evicting a DIFFERENT location's slot -- its indirection region
         // must be invalidated in the SAME flush, or the indirection
-        // texture keeps pointing a stale (ix,iz) key at a slot that no
-        // longer holds that location's content.
+        // texture keeps pointing a stale fine-grid region at a slot that
+        // no longer holds that location's content.
         invalidate_queue_[invalidate_queue_count_++] =
-            InvalidateRequest{slots_[slot].ix, slots_[slot].iz};
+            InvalidateRequest{slots_[slot].fine_ix, slots_[slot].fine_iz, slots_[slot].span};
     } else {
         ++resident_count_;
     }
 
-    slots_[slot] = SlotInfo{ix, iz, tier, true, ++touch_counter_};
-    fill_queue_[fill_queue_count_++] = FillRequest{ix, iz, tier, slot};
+    SlotInfo si; si.fine_ix = fine_ix; si.fine_iz = fine_iz; si.span = span;
+    si.tier = tier; si.used = true; si.last_touch = ++touch_counter_;
+    slots_[slot] = si;
+    fill_queue_[fill_queue_count_++] = FillRequest{fine_ix, fine_iz, span, tier, slot};
 }
 
-void TerrainVtPageCache::UploadIndirectionTexel(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
-                                                 int ix, int iz, uint32_t value) {
+void TerrainVtPageCache::UploadIndirectionRegion(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
+                                                  int fine_ix, int fine_iz, int span, uint32_t value) {
+    uint32_t vals[FINE_SUBDIV * FINE_SUBDIV];
+    int count = span * span;
+    for (int i = 0; i < count; ++i) vals[i] = value;
+
     SDL_GPUTransferBufferCreateInfo tbi{};
     tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    tbi.size  = sizeof(uint32_t);
+    tbi.size  = (Uint32)(count * (int)sizeof(uint32_t));
     SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
     if (!tb) return;
     void* map = SDL_MapGPUTransferBuffer(dev, tb, false);
-    if (map) memcpy(map, &value, sizeof(uint32_t));
+    if (map) memcpy(map, vals, tbi.size);
     SDL_UnmapGPUTransferBuffer(dev, tb);
 
     SDL_GPUTextureTransferInfo src{};
     src.transfer_buffer = tb;
-    src.pixels_per_row  = 1;
-    src.rows_per_layer  = 1;
+    src.pixels_per_row  = (Uint32)span;
+    src.rows_per_layer  = (Uint32)span;
     SDL_GPUTextureRegion dst{};
     dst.texture = indir_tex_;
-    dst.x = (Uint32)ix; dst.y = (Uint32)iz;
-    dst.w = 1; dst.h = 1; dst.d = 1;
+    dst.x = (Uint32)fine_ix; dst.y = (Uint32)fine_iz;
+    dst.w = (Uint32)span; dst.h = (Uint32)span; dst.d = 1;
     SDL_UploadToGPUTexture(cp, &src, &dst, false);
     // Transfer buffer is small and one-shot -- release immediately, same
     // as rd_texture.cpp's pattern (SDL_GPU tracks the copy internally,
@@ -277,26 +353,53 @@ void TerrainVtPageCache::UploadIndirectionTexel(SDL_GPUDevice* dev, SDL_GPUCopyP
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 }
 
+void TerrainVtPageCache::UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp, int slot,
+                                         float origin_x, float origin_z, float world_size) {
+    float meta[4] = { origin_x, origin_z, world_size, 0.f };
+
+    SDL_GPUTransferBufferCreateInfo tbi{};
+    tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbi.size  = sizeof(meta);
+    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+    if (!tb) return;
+    void* map = SDL_MapGPUTransferBuffer(dev, tb, false);
+    if (map) memcpy(map, meta, sizeof(meta));
+    SDL_UnmapGPUTransferBuffer(dev, tb);
+
+    SDL_GPUTransferBufferLocation src{};
+    src.transfer_buffer = tb;
+    SDL_GPUBufferRegion dst{};
+    dst.buffer = page_meta_buf_;
+    dst.offset = (Uint32)(slot * (int)sizeof(meta));
+    dst.size   = (Uint32)sizeof(meta);
+    SDL_UploadToGPUBuffer(cp, &src, &dst, false);
+    SDL_ReleaseGPUTransferBuffer(dev, tb);
+}
+
 void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd,
                                          const TerrainWorldHeightmap& hmap, const TerrainRenderer& ground) {
     if (!ready_ || fill_queue_count_ == 0) { fill_queue_count_ = 0; return; }
 
-    // 1) Upload this frame's new indirection texels, AND invalidate any
-    // evicted location's OLD texel back to kNotResident first (order
-    // matters only in the pathological case both queues reference the
-    // exact same (ix,iz) in the same frame, which can't happen here: an
-    // invalidate is only ever queued for a DIFFERENT location than the
-    // one being newly written, see RequestPage's eviction branch).
+    // 1) Upload this frame's new indirection regions + page-meta entries,
+    // AND invalidate any evicted location's OLD region back to
+    // kNotResident first (order matters only in the pathological case both
+    // queues reference the exact same fine cell in the same frame, which
+    // can't happen here: an invalidate is only ever queued for a DIFFERENT
+    // location than the one being newly written, see RequestPage's
+    // eviction branch).
     {
         SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
         if (cp) {
             for (int i = 0; i < invalidate_queue_count_; ++i) {
                 const InvalidateRequest& r = invalidate_queue_[i];
-                UploadIndirectionTexel(dev, cp, r.ix, r.iz, kNotResident);
+                UploadIndirectionRegion(dev, cp, r.fine_ix, r.fine_iz, r.span, kNotResident);
             }
             for (int i = 0; i < fill_queue_count_; ++i) {
                 const FillRequest& r = fill_queue_[i];
-                UploadIndirectionTexel(dev, cp, r.ix, r.iz, (uint32_t)r.slot);
+                UploadIndirectionRegion(dev, cp, r.fine_ix, r.fine_iz, r.span, (uint32_t)r.slot);
+                UploadPageMeta(dev, cp, r.slot,
+                               (float)r.fine_ix * FineCell(), (float)r.fine_iz * FineCell(),
+                               (float)r.span * FineCell());
             }
             SDL_EndGPUCopyPass(cp);
         }
@@ -357,14 +460,22 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer
 
         PageFillUBO ubo{};
         ubo.world_params[0] = world_origin; ubo.world_params[1] = world_origin;
-        ubo.world_params[2] = overlay_to_uv; ubo.world_params[3] = 0.f;
+        ubo.world_params[2] = overlay_to_uv;
+        // terrain-vt clipmap fix: world_params.w carries the ORIGINAL
+        // TerrainPatchGrid patch_size_ (300m), NOT this sub-page's (possibly
+        // smaller) world_size below -- terrain_page_fill.comp's distForLod
+        // represents a REAL camera distance for this tier (patch_size_ *
+        // 2^tier, matching TerrainPatchGrid::UpdateLOD's own formula) and
+        // must stay tied to the geometry grid's patch size regardless of how
+        // finely this cache chooses to subdivide its OWN texture footprint.
+        ubo.world_params[3] = patch_size_;
         ubo.hmap_world[0] = hmap.WorldExtent();
         ubo.hmap_world[1] = hmap.HeightMin();
         ubo.hmap_world[2] = hmap.HeightMax();
         ubo.hmap_world[3] = (float)hmap.Resolution();
-        ubo.page_world[0] = (float)r.ix * patch_size_;
-        ubo.page_world[1] = (float)r.iz * patch_size_;
-        ubo.page_world[2] = patch_size_;
+        ubo.page_world[0] = (float)r.fine_ix * FineCell();
+        ubo.page_world[1] = (float)r.fine_iz * FineCell();
+        ubo.page_world[2] = (float)r.span * FineCell();
         ubo.page_world[3] = (float)r.tier;
         int slot_x = (r.slot % SLOTS_X) * PAGE_TEXELS;
         int slot_y = (r.slot / SLOTS_X) * PAGE_TEXELS;

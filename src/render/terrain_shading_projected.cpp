@@ -60,7 +60,7 @@ bool TerrainShadingProjected::Init(SDL_GPUDevice* dev, int w, int h) {
     rd.vert_samplers      = 0;
     rd.frag_uniform_bufs  = 2;  // set=3 binding=0 ProjFragUBO, binding=1 ProjCamUBO
     rd.frag_samplers      = 8;  // set=2: tex_colour,tex_ground,tex_ground_baked,tex_overlay_mask; set=1: gbufPacked,gbufDepth; terrain-vt Phase 4: vtIndirection,vtAtlas
-    rd.frag_storage_bufs  = 1;  // set=2 binding=8: zoneGroundLayers
+    rd.frag_storage_bufs  = 2;  // set=2 binding=8: zoneGroundLayers, binding=9: vtPageMeta (terrain-vt clipmap fix)
     if (!resolve_pipeline_.Create(rd)) {
         MD_LOG(MD_LOG_WARNING, "[TerrainShadingProjected] resolve pipeline create failed");
         return false;
@@ -169,8 +169,11 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
     ground.GetSharedGroundSamplers(ground_bindings);
     if (!ground_bindings[0].texture || !ground_bindings[0].sampler) return;
     SDL_BindGPUFragmentSamplers(rp, 0, ground_bindings, 4);
-    SDL_GPUBuffer* sbuf = ground.ZoneGroundLayersSSBO();
-    SDL_BindGPUFragmentStorageBuffers(rp, 0, &sbuf, 1);
+    // terrain-vt clipmap fix: vtPageMeta (binding=9) must follow
+    // zoneGroundLayers (binding=8) in this SAME order -- SDL_GPU binds
+    // storage buffers sequentially from the given base index.
+    SDL_GPUBuffer* storage_bufs[2] = { ground.ZoneGroundLayersSSBO(), vt.PageMetaSSBO() };
+    SDL_BindGPUFragmentStorageBuffers(rp, 0, storage_bufs, 2);
 
     // set=1: this class's own G-buffer (packed world-pos/normal + dedicated depth).
     SDL_GPUTextureSamplerBinding gbuf_bindings[2] = {

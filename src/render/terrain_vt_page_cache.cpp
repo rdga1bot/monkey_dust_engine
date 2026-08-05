@@ -286,23 +286,45 @@ void TerrainVtPageCache::RequestSubtile(int fine_ix, int fine_iz, int span, int 
     if (fine_ix < 0 || fine_iz < 0 || fine_ix >= INDIR_SIZE || fine_iz >= INDIR_SIZE) return;
 
     int existing = FindSlot(fine_ix, fine_iz);
-    if (existing >= 0) {
+    if (existing >= 0 && slots_[existing].span == span) {
         slots_[existing].last_touch = ++touch_counter_;  // resident -- bump LRU recency regardless of tier match
-        if (slots_[existing].tier == tier && slots_[existing].span == span) return;  // same content -- nothing else to do
-        // Different tier/span requested for an already-resident fine
-        // corner: reuse the SAME slot (indirection already points here,
-        // no re-upload needed) and queue a re-fill -- see RequestPage's
-        // own doc comment for why this must NOT allocate a second slot
-        // for the same (fine_ix,fine_iz).
+        if (slots_[existing].tier == tier) return;  // same content -- nothing else to do
+        // Different tier, SAME span, for an already-resident fine corner:
+        // reuse the SAME slot (indirection already points here, exactly
+        // and only here, no re-upload needed) and queue a re-fill.
         if (fill_queue_count_ >= MAX_FILLS_PER_FRAME) return;
         slots_[existing].tier = tier;
-        slots_[existing].span = span;
         fill_queue_[fill_queue_count_++] = FillRequest{fine_ix, fine_iz, span, tier, existing};
         return;
     }
 
     if (fill_queue_count_ >= MAX_FILLS_PER_FRAME) return;  // this frame's fill budget exhausted
     if (invalidate_queue_count_ >= MAX_FILLS_PER_FRAME) return;  // matching cap -- an eviction always needs room in both queues
+
+    if (existing >= 0) {
+        // Live, reproduced regression (this session): a SPAN change at the
+        // SAME fine corner (this patch's assigned tier crossed a distance
+        // threshold -- happens even for a stationary camera, ordinary
+        // float noise in TerrainPatchGrid::UpdateLOD's distance math flips
+        // (int)p.lod across an integer boundary practically every frame
+        // for any patch sitting near one) can NOT reuse the slot in place
+        // the way a same-span tier change can: the OLD span's footprint
+        // may cover MORE (or fewer) fine cells than the new one. Reusing
+        // the slot in place while only re-uploading the NEW, narrower/
+        // wider region left the fine cells the OLD span ALSO covered
+        // silently pointing at a slot whose content now belongs to a
+        // completely different, unrelated request -- neighbouring screen
+        // pixels showing scrambled, uncorrelated colours (a checkerboard/
+        // noise pattern, confirmed live via a RenderDoc capture at the
+        // game's real spawn point). Fix: invalidate the OLD span's full
+        // footprint first and fall through to the normal alloc-a-fresh-
+        // slot path below, exactly as if this fine corner had never been
+        // resident at all.
+        invalidate_queue_[invalidate_queue_count_++] =
+            InvalidateRequest{slots_[existing].fine_ix, slots_[existing].fine_iz, slots_[existing].span};
+        slots_[existing].used = false;
+        --resident_count_;
+    }
 
     int slot = AllocSlot();
     bool was_used = slots_[slot].used;

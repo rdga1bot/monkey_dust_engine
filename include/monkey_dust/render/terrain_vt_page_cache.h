@@ -75,6 +75,33 @@ public:
         return 1;                                 // 300m footprint (tier >= 2, unchanged)
     }
 
+    // terrain-vt checkerboard follow-up (this session): even with detail-
+    // texture aliasing genuinely fixed (page-fill now supersamples, see
+    // terrain_page_fill.comp), a live-reported "still checkerboard" report
+    // led to isolating a SEPARATE, more fundamental effect via RenderDoc:
+    // individual VT pages ARE internally smooth now, but ADJACENT pages
+    // (each baked independently, no border/overlap) can legitimately land
+    // on quite different average colours -- the detail texture's own
+    // repeat period (~55.6m, DETAIL_TILING=90 over TS_CLIFF_UV_SCALE's
+    // 5000m) is comparable to tier 0's 75m page footprint, so neighbouring
+    // pages sample largely uncorrelated points of it. This is a real,
+    // inherent property of caching a repeating high-frequency texture at
+    // page granularity (the proper general fix is cross-page bilinear
+    // blending with border-padded pages, a real virtual-texturing
+    // technique -- deliberately NOT attempted here, see this constant's
+    // own history: a rushed architecture change already backfired twice
+    // today, FINE_SUBDIV's own doc comment). The pragmatic fix: don't
+    // cache the ring where this is most visually sensitive at all. Tier 0
+    // (dist<300m, right around the camera, exactly where a player's eye
+    // resolves page boundaries most easily) falls back to the live
+    // per-pixel blend -- smooth by construction, no page grid to show
+    // seams from. Tiers 1-3 (300m-2400m+, the VAST majority of any wide
+    // view's pixel coverage, confirmed reachable on the primary HD520/
+    // Forward-tier target unlike the original MIN_CACHEABLE_TIER=4 which
+    // never fired at all) keep the full measured FPS benefit -- and their
+    // page boundaries are far less noticeable at that distance/under fog.
+    static constexpr int MIN_CACHEABLE_TIER = 1;
+
     // Indirection texture side length in texels, now at the FINEST
     // granularity (patch_size_/FINE_SUBDIV = 75m per texel) since that's
     // the smallest page footprint any tier can use -- coarser tiers just

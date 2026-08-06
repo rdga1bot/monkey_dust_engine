@@ -271,6 +271,12 @@ int TerrainVtPageCache::AllocSlot() {
 
 void TerrainVtPageCache::RequestPage(int patch_ix, int patch_iz, int tier) {
     if (!ready_) return;
+    // See MIN_CACHEABLE_TIER's own doc comment: tier 0 (dist<300m, right
+    // around the camera) deliberately falls back to the live per-pixel
+    // blend -- caching it exposed a real, inherent page-boundary artifact
+    // (independently-baked neighbouring pages landing on uncorrelated
+    // colours) exactly where a player's eye is most sensitive to it.
+    if (tier < MIN_CACHEABLE_TIER) return;
     int subdiv = SubdivFactor(tier);
     int span   = FINE_SUBDIV / subdiv;  // fine cells per sub-page edge
     int base_fine_ix = patch_ix * FINE_SUBDIV;

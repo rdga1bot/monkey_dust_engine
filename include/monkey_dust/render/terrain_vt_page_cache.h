@@ -75,31 +75,65 @@ public:
         return 1;                                 // 300m footprint (tier >= 2, unchanged)
     }
 
-    // terrain-vt checkerboard follow-up (this session): even with detail-
-    // texture aliasing genuinely fixed (page-fill now supersamples, see
-    // terrain_page_fill.comp), a live-reported "still checkerboard" report
-    // led to isolating a SEPARATE, more fundamental effect via RenderDoc:
-    // individual VT pages ARE internally smooth now, but ADJACENT pages
-    // (each baked independently, no border/overlap) can legitimately land
-    // on quite different average colours -- the detail texture's own
-    // repeat period (~55.6m, DETAIL_TILING=90 over TS_CLIFF_UV_SCALE's
-    // 5000m) is comparable to tier 0's 75m page footprint, so neighbouring
-    // pages sample largely uncorrelated points of it. This is a real,
-    // inherent property of caching a repeating high-frequency texture at
-    // page granularity (the proper general fix is cross-page bilinear
-    // blending with border-padded pages, a real virtual-texturing
-    // technique -- deliberately NOT attempted here, see this constant's
-    // own history: a rushed architecture change already backfired twice
-    // today, FINE_SUBDIV's own doc comment). The pragmatic fix: don't
-    // cache the ring where this is most visually sensitive at all. Tier 0
-    // (dist<300m, right around the camera, exactly where a player's eye
-    // resolves page boundaries most easily) falls back to the live
-    // per-pixel blend -- smooth by construction, no page grid to show
-    // seams from. Tiers 1-3 (300m-2400m+, the VAST majority of any wide
-    // view's pixel coverage, confirmed reachable on the primary HD520/
-    // Forward-tier target unlike the original MIN_CACHEABLE_TIER=4 which
-    // never fired at all) keep the full measured FPS benefit -- and their
-    // page boundaries are far less noticeable at that distance/under fog.
+    // terrain-vt checkerboard follow-up (earlier session): even with
+    // detail-texture aliasing genuinely fixed (page-fill now supersamples,
+    // see terrain_page_fill.comp), a live-reported "still checkerboard"
+    // report led to isolating a SEPARATE, more fundamental effect via
+    // RenderDoc: individual VT pages ARE internally smooth now, but
+    // ADJACENT pages (each baked independently, no border/overlap) can
+    // legitimately land on quite different average colours -- the detail
+    // texture's own repeat period (~55.6m, DETAIL_TILING=90 over
+    // TS_CLIFF_UV_SCALE's 5000m) is comparable to tier 0's 75m page
+    // footprint, so neighbouring pages sample largely uncorrelated points
+    // of it. That session's pragmatic fix was to exclude tier 0 (dist<300m,
+    // exactly where a player's eye resolves page boundaries most easily)
+    // from caching entirely, gated by this constant at 1.
+    //
+    // Follow-up (this session): a live FPS report ("40-45 FPS again" close
+    // to terrain) traced to exactly that tier-0 exclusion -- confirmed via
+    // the engine's own RenderTotal/FenceWait telemetry (RenderTotal jumped
+    // 6.8ms->16.8-24.0ms close to terrain, FenceWait ~90% of it, real GPU
+    // cost, not a measurement artifact). The cross-page SEAM itself was
+    // genuinely fixed (VT_SampleAlbedo in terrain_shading_screenspace.frag
+    // now does a manual cross-page bilinear blend across the 4 nearest
+    // fine-cell pages -- see its own doc comment) and tier 0 was
+    // re-enabled (MIN_CACHEABLE_TIER=0) on that basis -- but a live
+    // screenshot at tier 0 (close range) then showed a DIFFERENT, more
+    // visible defect the blend does nothing for: within a SINGLE page,
+    // VT_SampleCellHeld still does plain texelFetch (nearest-neighbour,
+    // no filtering) at tier 0's 0.586m/texel spacing -- at tiers 1-3 that
+    // texel size is sub-pixel from typical camera distance and invisible,
+    // but at tier 0's close range it reads as an obvious quilted/checker
+    // grid across any nearby slope (confirmed live, screenshot
+    // 2026-08-06). The cross-page blend's weight barely moves within a
+    // single page's interior (it only sweeps a full 0-1 range across one
+    // whole 75m fine cell), so it does not hide this. Reverted to 1 as a
+    // stopgap while a real fix was worked out.
+    //
+    // Second pass (this session): added real hardware bilinear WITHIN a
+    // page too (VT_SampleCellHeld now samples via textureLod with a
+    // hand-clamped half-texel-inset UV instead of texelFetch -- see its
+    // own doc comment), which does genuinely turn the blocky grid smooth.
+    // Re-enabled tier 0 on that basis -- but a live screenshot comparison
+    // against the ORIGINAL live-shaded (uncached) rendering at the same
+    // spot showed the smoothing had traded blockiness for a DIFFERENT
+    // real loss: bilinear interpolation between adjacent 0.586m/texel VT
+    // samples cannot recover detail that was never baked at that
+    // resolution in the first place -- the live path samples the actual
+    // detail texture (DETAIL_TEX_RESOLUTION=2048 texels/layer,
+    // DETAIL_TILING=90 over a much larger world area) essentially per-
+    // pixel; tier 0's page bake is ~3-4 orders of magnitude coarser than
+    // that. No amount of filtering (cross-page OR within-page) can put
+    // back information the bake step already threw away -- "smooth" here
+    // just meant "smoothly blurry" instead of "blockily blurry", not
+    // "as detailed as live shading". A real fix would mean baking tier 0
+    // at a much finer PAGE_TEXELS or smaller sub-page footprint (real
+    // memory/compute cost increase), not attempted here. Reverted to 1 --
+    // tier 0 stays live (full detail, no caching benefit); the cross-page
+    // (VT_SampleAlbedo) and within-page (VT_SampleCellHeld) smoothing
+    // fixes both stay in place and are real correctness improvements
+    // whenever the camera is close enough to a tier 1-3 page boundary to
+    // notice it, they just don't get exercised at tier 0 while this is 1.
     static constexpr int MIN_CACHEABLE_TIER = 1;
 
     // Indirection texture side length in texels, now at the FINEST

@@ -277,6 +277,12 @@ void TerrainVtPageCache::RequestPage(int patch_ix, int patch_iz, int tier) {
     // (independently-baked neighbouring pages landing on uncorrelated
     // colours) exactly where a player's eye is most sensitive to it.
     if (tier < MIN_CACHEABLE_TIER) return;
+    // See MAX_CACHEABLE_TIER's own doc comment: only the editor's
+    // unbounded wide-overview viewport ever reaches this (the game's own
+    // visibility cull never asks for a tier this coarse) -- without this,
+    // a high-altitude editor camera thrashes the 512-slot budget across
+    // however many far tiles happen to be in frame.
+    if (tier > MAX_CACHEABLE_TIER) return;
     int subdiv = SubdivFactor(tier);
     int span   = FINE_SUBDIV / subdiv;  // fine cells per sub-page edge
     int base_fine_ix = patch_ix * FINE_SUBDIV;

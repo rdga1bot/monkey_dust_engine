@@ -136,6 +136,34 @@ public:
     // notice it, they just don't get exercised at tier 0 while this is 1.
     static constexpr int MIN_CACHEABLE_TIER = 1;
 
+    // Symmetric upper bound (this session, editor 3D World investigation):
+    // the game's own SceneRender::UpdateGraniteTerrain never asks for a
+    // tier above ~3 in the first place (RenderQualityConfig::terrain_cr_m
+    // ~3000m converts to max_lod_cull=log2(3000*1.3/300)~=3.7, so
+    // SelectVisible's frustum-plus-far-cull already discards anything
+    // coarser before RequestPage ever sees it -- this is WHY the doc
+    // comments above keep saying "tiers 1-3 are confirmed reachable,
+    // vast majority of any view" specifically for the primary in-game
+    // target). NUM_SLOTS=512 was sized against that same real-world
+    // envelope (~130-140 patches across those 4 tiers, see FINE_SUBDIV's
+    // own doc comment). The editor's World3D viewport (editor_world_3d_
+    // sdlgpu.cpp) is a deliberately unbounded wide-overview tool -- its
+    // own SelectVisible call passes no max_lod_cull, so at a few km of
+    // altitude it legitimately sees patches at tiers up to kNumTiers-1=7
+    // stretching to the world's edge. Requesting VT pages for ALL of
+    // those overwhelmed the 512-slot budget (confirmed live: rectangular
+    // stale/wrong-tier patches at altitude, screenshots 2026-08-07) --
+    // classic thrashing where the working set has no locality (a wide
+    // pan never revisits the same far tile soon enough for its cached
+    // page to still be useful). Gating RequestPage itself (not each call
+    // site) bounds worst-case resident pages to the same order of
+    // magnitude the cache was actually tuned for, in BOTH the game and
+    // the editor, regardless of how far out any given viewport's own
+    // visibility cull happens to reach. Tiers above this fall back to the
+    // live per-pixel blend -- same self-healing miss-fallback tier 0
+    // already relies on, not a new code path.
+    static constexpr int MAX_CACHEABLE_TIER = 3;
+
     // Indirection texture side length in texels, now at the FINEST
     // granularity (patch_size_/FINE_SUBDIV = 75m per texel) since that's
     // the smallest page footprint any tier can use -- coarser tiers just

@@ -50,6 +50,18 @@ public:
         return nullptr;
     }
 
+    // Lookup by zone grid coords — used to keep current_zone_ (and hence
+    // the world map's exact player-position marker, WorldMapUI::Draw's
+    // state==2 branch) in sync with real per-tick player movement, not
+    // just explicit fast-travel/portal transitions (see FindByGrid's
+    // call sites: main.cpp's HandleTerrainStreaming, the same real
+    // zone-boundary-crossing check the 9x9 streaming window already uses).
+    ZoneRecord* FindByGrid(int gx, int gz) {
+        for (int i = 0; i < zone_count_; ++i)
+            if (zones_[i].grid_x == gx && zones_[i].grid_z == gz) return &zones_[i];
+        return nullptr;
+    }
+
     ZoneRecord* GetAll(int& count) { count = zone_count_; return zones_; }
     int         Count() const      { return zone_count_; }
 

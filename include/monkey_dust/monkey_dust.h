@@ -11,6 +11,5 @@
 #include <monkey_dust/nav/nav_system.h>
 #include <monkey_dust/render/md_camera.h>
 #include <monkey_dust/world/transform_soa.h>
-#include <monkey_dust/world/chunk_manager.h>
 #include <monkey_dust/save/save_system.h>
 #include <monkey_dust/scripting/lua_system.h>

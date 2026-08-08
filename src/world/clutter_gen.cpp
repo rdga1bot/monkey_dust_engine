@@ -98,7 +98,9 @@ bool ClutterGen_GetGrassDensityRGBA(const uint8_t** out_pixels, int* out_w, int*
 // in npc_render.cpp/editor_world_3d_sdlgpu.cpp: 64 zones * CHUNK_SIZE).
 static constexpr float kOverlayWorldSizeM = 64.f * CHUNK_SIZE;
 
-// grass_w = max(R,G) -- same convention as terrain_pom.frag/terrain_forward.frag
+// grass_w = max(R,G) -- same convention as ShadeTerrainGround
+// (shaders/terrain_shading_common.glsl, formerly terrain_pom.frag/
+// terrain_forward.frag before the Slang removal)
 // ("secondary channel merges into grass, matches real shader"). Returns 1.0
 // (no suppression) if the mask failed to load, so clutter still places by
 // biome fill_prob alone rather than silently vanishing.

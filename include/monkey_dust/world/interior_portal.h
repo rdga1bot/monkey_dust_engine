@@ -10,7 +10,7 @@
 //   reg.emplace<InteriorPortal>(door_entity, portal);
 //
 // InteriorSystem::Tick() checks player proximity each logic tick.
-// On trigger: ChunkManager loads destination_zone; player teleport to spawn.
+// On trigger: destination_zone loads; player teleports to spawn.
 
 #include <cstdint>
 
@@ -59,7 +59,7 @@ static_assert(sizeof(SharedInteriorsComponent) == 24, "SharedInteriorsComponent 
 
 // W-3: InteriorLoadState — progressive interior chunk load depth tracker.
 // Kenshi RE: "interiors.level" depth counter; *(param_1+0x180) = done flag.
-// When load_depth increases, ChunkManager loads the next level of interior zones.
+// When load_depth increases, the next level of interior zones loads.
 struct InteriorLoadState {
     uint8_t  load_depth  = 0;   // current load depth (0=not loaded, 1=surface, 2+=deep)
     uint8_t  load_done   = 0;   // 1 = all levels at current depth loaded

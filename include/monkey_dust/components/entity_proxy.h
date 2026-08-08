@@ -6,7 +6,7 @@
 // Lightweight stand-in for a streamed-out entity.
 // Holds template GUID (FNV-1a) + desired spawn position.
 // SpawnState tracks the lazy-load lifecycle.
-// Game systems (ChunkManager) check state to decide when to materialise.
+// Consuming game systems check state to decide when to materialise.
 
 enum class ProxySpawnState : uint8_t {
     Dormant  = 0,  // not yet requested

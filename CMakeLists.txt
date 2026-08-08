@@ -126,6 +126,12 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
         "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/power_manager.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/hit_zones.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/combat/power_def.cpp"
+        # physics/ragdoll.cpp: its own JPH_DEBUG_RENDERER-guarded Jolt/Skeleton
+        # includes are sensitive to which files land in the same unity batch —
+        # observed a real "undefined symbol: JPH::SkeletonPose::SetSkeleton"
+        # link failure (libJolt.a DOES define it) purely from an unrelated
+        # engine/src/ file-count change shifting batch composition (2026-08-08).
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/physics/ragdoll.cpp"
         # hot/: multiple files define static s_mtime() — each must be its own TU.
         "${CMAKE_CURRENT_SOURCE_DIR}/src/hot/gameplay_module.cpp"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/hot/editor_module.cpp"

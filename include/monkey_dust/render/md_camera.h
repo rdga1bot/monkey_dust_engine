@@ -3,22 +3,12 @@
 // Rule M-C: use Vec3/Mat4 (math_types.h), not Vector3/Matrix directly.
 //
 // ViewMatrix()/ProjMatrix(): platform-neutral via mat4_lookat/mat4_perspective.
-// Raylib adapters (ToRaylib/FromRaylib/GetViewProjRaylib/FrustumPlanes):
-//   activated when RAYLIB_H is defined (non-USE_SDL3 legacy path only).
+// The Raylib adapters (ToRaylib/FromRaylib/GetViewProjRaylib) were removed
+// 2026-08-09 along with the rest of the Raylib fallback skeleton -- raylib.h
+// is never included anymore (USE_SDL3=ON is the only buildable path), so
+// RAYLIB_H was never defined and that code was provably dead.
 
 #include <monkey_dust/platform/math_types.h>
-
-// GlmToRaylibMat — only meaningful in USE_GLM builds (glm::mat4 → Raylib Matrix).
-#if defined(RAYLIB_H) && defined(USE_GLM)
-inline Matrix GlmToRaylibMat(const glm::mat4& m) {
-    Matrix r;
-    r.m0 =m[0][0]; r.m4 =m[1][0]; r.m8 =m[2][0]; r.m12=m[3][0];
-    r.m1 =m[0][1]; r.m5 =m[1][1]; r.m9 =m[2][1]; r.m13=m[3][1];
-    r.m2 =m[0][2]; r.m6 =m[1][2]; r.m10=m[2][2]; r.m14=m[3][2];
-    r.m3 =m[0][3]; r.m7 =m[1][3]; r.m11=m[2][3]; r.m15=m[3][3];
-    return r;
-}
-#endif
 
 struct MdCamera {
     Vec3  pos;
@@ -46,40 +36,6 @@ struct MdCamera {
     inline void CamPosToArr(float out[3]) const {
         out[0] = pos.x; out[1] = pos.y; out[2] = pos.z;
     }
-
-#ifdef RAYLIB_H
-    Camera3D ToRaylib() const {
-        Camera3D r   = {};
-        r.position   = { pos.x,    pos.y,    pos.z    };
-        r.target     = { target.x, target.y, target.z };
-        r.up         = { up.x,     up.y,     up.z     };
-        r.fovy       = fovy;
-        r.projection = CAMERA_PERSPECTIVE;
-        return r;
-    }
-
-    static MdCamera FromRaylib(const Camera3D& c) {
-        MdCamera m;
-        m.pos    = { c.position.x, c.position.y, c.position.z };
-        m.target = { c.target.x,   c.target.y,   c.target.z   };
-        m.up     = { c.up.x,       c.up.y,       c.up.z       };
-        m.fovy   = c.fovy;
-        return m;
-    }
-
-    inline Matrix GetViewProjRaylib(float aspect) const {
-        static constexpr float DEG2R = 0.01745329251f;
-#  ifdef USE_GLM
-        return GlmToRaylibMat(ViewMatrix() * ProjMatrix(aspect));
-#  else
-        return MatrixMultiply(
-            MatrixLookAt(pos, target, up),
-            MatrixPerspective(fovy * DEG2R, aspect, 0.5f, 4000.f)
-        );
-#  endif
-    }
-
-#endif // RAYLIB_H
 
     // Portable frustum plane extraction — works in any build.
     // Fills 4 planes (left, right, top, bottom) as vec4[4] for the cull shader.

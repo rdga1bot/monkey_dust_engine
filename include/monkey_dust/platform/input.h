@@ -1,26 +1,11 @@
 #pragma once
 
 // Platform input abstraction.
-// Default: Raylib (drop-in, no behaviour change).
-// M1 migration: compile with -DUSE_SDL3 to enable SDL3 input path.
-// M3 migration: Raylib built with PLATFORM=SDL — SDL3 window replaces GLFW.
-//               Raylib's EndDrawing() pumps SDL events; our EventWatcher intercepts
-//               them into a double-buffer so input_begin_frame() sees "just pressed".
+// M1 migration (compile with -DUSE_SDL3) made this the only path; the Raylib
+// fallback was removed 2026-08-09 (USE_SDL3=ON has been the only buildable
+// configuration, see engine/CMakeLists.txt's FATAL_ERROR gate).
 // Rule M-A: only Main.cpp and EditorMain.cpp may include this header.
 
-#ifndef USE_SDL3
-// ── Raylib path (default) ─────────────────────────────────────────────────────
-#  include "raylib.h"
-   inline void  input_init()                         {}  // no-op
-   inline bool  input_key_down    (int key) { return IsKeyDown(key); }
-   inline bool  input_key_pressed (int key) { return IsKeyPressed(key); }
-   inline bool  input_mouse_pressed(int btn){ return IsMouseButtonPressed(btn); }
-   inline float input_mouse_x()             { return GetMousePosition().x; }
-   inline float input_mouse_y()             { return GetMousePosition().y; }
-   inline void  input_begin_frame()         {}  // no-op: Raylib pumps events in EndDrawing
-   inline bool  input_should_quit()         { return WindowShouldClose(); }
-
-#else
 // ── SDL3 path (M1+M3) ────────────────────────────────────────────────────────
 // Raylib is built with PLATFORM=SDL so SDL3 owns the window.
 // Raylib's EndDrawing() calls SDL_PollEvent() internally.
@@ -159,5 +144,3 @@
    inline float input_mouse_y()       { float y=0; SDL_GetMouseState(nullptr, &y); return y; }
    inline float input_get_scroll_y()  { return _sdl3_input::s_scroll_y; }
    inline bool  input_should_quit()   { return _sdl3_input::s_quit; }
-
-#endif // USE_SDL3

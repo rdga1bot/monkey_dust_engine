@@ -208,8 +208,8 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
     {
         GpuComputePipeline::Desc cd;
         cd.glsl_path                     = "shaders/terrain_page_fill.comp";
-        cd.num_samplers                  = 5;  // heightTex, tex_colour, tex_ground, tex_ground_baked, tex_overlay_mask
-        cd.num_readonly_storage_buffers  = 1;  // zoneGroundLayers
+        cd.num_samplers                  = 6;  // heightTex, tex_colour, tex_ground, tex_ground_baked, tex_overlay_mask, zoneGroundLayersTex (texture not SSBO since 2026-08-09)
+        cd.num_readonly_storage_buffers  = 0;
         cd.num_readwrite_storage_textures = 1; // pageAtlas
         cd.num_uniform_buffers           = 1;  // PageFillUBO
         cd.threadcount_x = 8;
@@ -478,19 +478,17 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer
         }
         SDL_BindGPUComputePipeline(pass, fill_pipeline_.SDLComputePipeline());
 
-        // set=0: 5 samplers -- heightTex (0), then the 4 shared ground
-        // samplers (1..4), matching terrain_page_fill.comp's declared
-        // binding order exactly.
-        SDL_GPUTextureSamplerBinding samplers[5];
+        // set=0: 6 samplers -- heightTex (0), the 4 shared ground samplers
+        // (1..4), zoneGroundLayersTex (5, texture not SSBO since
+        // 2026-08-09) -- matching terrain_page_fill.comp's declared binding
+        // order exactly. No storage buffers left in this set.
+        SDL_GPUTextureSamplerBinding samplers[6];
         samplers[0] = { hmap.Texture(), hmap.Sampler() };
         SDL_GPUTextureSamplerBinding ground_bindings[4];
         ground.GetSharedGroundSamplers(ground_bindings);
         for (int gi = 0; gi < 4; ++gi) samplers[1 + gi] = ground_bindings[gi];
-        SDL_BindGPUComputeSamplers(pass, 0, samplers, 5);
-
-        // set=0 (after samplers): 1 readonly storage buffer -- zoneGroundLayers.
-        SDL_GPUBuffer* sbuf = ground.ZoneGroundLayersSSBO();
-        SDL_BindGPUComputeStorageBuffers(pass, 0, &sbuf, 1);
+        samplers[5] = { ground.ZoneGroundLayersTexture(), ground.ZoneGroundLayersSampler() };
+        SDL_BindGPUComputeSamplers(pass, 0, samplers, 6);
 
         PageFillUBO ubo{};
         ubo.world_params[0] = world_origin; ubo.world_params[1] = world_origin;

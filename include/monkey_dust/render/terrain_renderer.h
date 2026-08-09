@@ -1,6 +1,5 @@
 #pragma once
 #include <monkey_dust/render/gpu_hal.h>
-#include <monkey_dust/render/ssbo.h>
 #include <monkey_dust/world/terrain_chunk.h>
 
 // TerrainRenderer — shared ground-texturing RESOURCE MANAGER for
@@ -12,9 +11,9 @@
 // weight from before the Granite migration (Phase 8) replaced ALL visual
 // terrain rendering. What's still genuinely alive and used by Granite's
 // TerrainPatchRenderer::DrawBatch (via GetSharedGroundSamplers/
-// ZoneGroundLayersSSBO): loading + owning the shared ground textures
+// ZoneGroundLayersTexture): loading + owning the shared ground textures
 // (Kenshi colour overlay, per-biome ground DDS array, offline-baked
-// flat-ground colour) and the per-zone ground-layer lookup SSBO, so
+// flat-ground colour) and the per-zone ground-layer lookup texture, so
 // Granite doesn't need a second ~1GB+ copy of the same data. Kept the
 // class name as-is (renaming would touch every call site across game/
 // tools/editor -- out of scope for this dead-code removal pass).
@@ -93,19 +92,30 @@ public:
     // wasteful ~1GB+ reload of the same data. tex_biome_blend deliberately
     // excluded: no caller of this needs it.
     void GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[4]) const;
-    // Per-zone (64x64=4096) ground-layer lookup SSBO — same data
+    // Per-zone (64x64=4096) ground-layer lookup — same data
     // UploadZoneGroundLayers populates, exposed for the same reuse reason.
-    SDL_GPUBuffer* ZoneGroundLayersSSBO() const { return zone_layers_ssbo_.SDLBuffer(); }
+    // A texture (R32G32B32A32_UINT, 192x64 -- 3 texels per zone, 4 uint32
+    // channels each = 12 slots/zone, 9 used), NOT a storage buffer as of
+    // 2026-08-09 (user directive to shrink Filament-blocking compute/SSBO
+    // surface -- see docs/analysis/FILAMENT_MIGRATION_ANALYSIS.md). A plain
+    // sampler is the one thing every rendering API (including Filament
+    // materials) supports; a global read-only SSBO indexed per-pixel is not.
+    SDL_GPUTexture* ZoneGroundLayersTexture() const { return zone_layers_tex_; }
+    SDL_GPUSampler* ZoneGroundLayersSampler() const { return zone_layers_sampler_; }
 
-    // Upload the per-zone (64x64=4096) ground-layer lookup table: 8 uint32
+    // Upload the per-zone (64x64=4096) ground-layer lookup table: 9 uint32
     // per zone -- [0..5] base,slope,cliff,grass,dirt,road GroundTexLayer
     // indices, [6..7] real per-biome cliff UV tiling scale (bit-cast float,
-    // BiomeDef::cliff_tiling_x/y) -- flat layout index = zone_idx*8 + slot,
-    // zone_idx = zy*64+zx (matches the EDITOR_TNKN=64 bitmask convention
-    // used elsewhere). Built once by the caller (World3D editor's
-    // synthesis-mesh init) via TerrainGen_ResolveBiome() per zone — same
-    // biome resolution the correctly-working per-chunk LOD0/1 path already
-    // uses. count_uints must be exactly 64*64*8 = 32768.
+    // BiomeDef::cliff_tiling_x/y), [8] cross-zone blend weight (bit-cast
+    // float) -- flat layout index = zone_idx*9 + slot, zone_idx = zy*64+zx
+    // (matches the EDITOR_TNKN=64 bitmask convention used elsewhere). Built
+    // once by the caller (World3D editor's synthesis-mesh init, and
+    // SceneRender's game-side equivalent) via TerrainGen_ResolveBiome() per
+    // zone. count_uints must be exactly 64*64*9 = 36864 (doc'd as *8 before
+    // this pass -- stale, real code always used 9 slots, see slot 8's
+    // cross-zone blend weight read in terrain_shading_common.glsl). Repacks
+    // the flat zone_idx*9+slot layout into the texture's 3-texels/zone
+    // layout internally -- callers keep building the same flat array.
     void UploadZoneGroundLayers(const uint32_t* data, int count_uints);
 
 private:
@@ -122,8 +132,9 @@ private:
     GpuTexture  tex_overlay_mask_;      // R=grass, G=grass2, B=dirt, A=road (see InitOverlayMask)
     bool        overlay_mask_ready_ = false;
 
-    // Per-zone ground-layer lookup (see UploadZoneGroundLayers).
-    SSBO zone_layers_ssbo_;
+    // Per-zone ground-layer lookup texture (see UploadZoneGroundLayers).
+    SDL_GPUTexture* zone_layers_tex_     = nullptr;
+    SDL_GPUSampler* zone_layers_sampler_ = nullptr;
 
 #ifdef MD_SDL_GPU
     SDL_GPUTexture* fallback_tex_            = nullptr;

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cmath>
+#include <vector>
 
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
@@ -49,16 +50,38 @@ bool TerrainRenderer::Init() {
         fallback_blend_sampler_ = fbb.TakeSDLSampler();
     }
 
-    // Per-zone (64x64=4096) ground-layer lookup — see UploadZoneGroundLayers.
-    // 9 uint32 per zone (was 8): [0..5] base,slope,cliff,grass,dirt,road
-    // GroundTexLayer indices; [6..7] real per-biome cliff UV tiling scale
-    // (FCS "tiling X/Y 2", confirmed against terrainfp4.hlsl), bit-cast float
-    // (uintBitsToFloat in the shader); [8] real per-biome brightness_fix
-    // (FCS "brightness fix", terrainfp4.hlsl:212), also bit-cast float --
-    // reuses this SSBO/binding rather than a second one. Flat index =
-    // zone_idx*9 + slot. Allocated empty here; populated once by the caller
-    // (World3D editor's synthesis-mesh init).
-    zone_layers_ssbo_.Init(64 * 64 * 9 * (int)sizeof(uint32_t));
+    // Per-zone (64x64=4096) ground-layer lookup texture -- see
+    // UploadZoneGroundLayers. 9 uint32 per zone: [0..5] base,slope,cliff,
+    // grass,dirt,road GroundTexLayer indices; [6..7] real per-biome cliff UV
+    // tiling scale (FCS "tiling X/Y 2", confirmed against terrainfp4.hlsl),
+    // bit-cast float (uintBitsToFloat in the shader); [8] real per-biome
+    // brightness_fix (FCS "brightness fix", terrainfp4.hlsl:212), also
+    // bit-cast float. R32G32B32A32_UINT, 192x64 (3 texels/zone x 4 channels
+    // = 12 slots, 9 used) -- a texture, not an SSBO, as of 2026-08-09 (see
+    // ZoneGroundLayersTexture's header doc comment for why). Allocated
+    // empty here; populated once by the caller (World3D editor's
+    // synthesis-mesh init, and SceneRender's game-side equivalent).
+    {
+        SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+        SDL_GPUTextureCreateInfo ti{};
+        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+        ti.format               = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_UINT;
+        ti.width                = 64 * 3;
+        ti.height                = 64;
+        ti.layer_count_or_depth = 1;
+        ti.num_levels           = 1;
+        ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        zone_layers_tex_ = SDL_CreateGPUTexture(dev, &ti);
+
+        SDL_GPUSamplerCreateInfo si{};
+        si.min_filter     = SDL_GPU_FILTER_NEAREST;
+        si.mag_filter     = SDL_GPU_FILTER_NEAREST;
+        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        zone_layers_sampler_ = SDL_CreateGPUSampler(dev, &si);
+    }
 #endif
     return true;
 }
@@ -236,7 +259,6 @@ void TerrainRenderer::Shutdown() {
     overlay_mask_ready_ = false;
     tex_loaded_         = false;
     ground_array_ready_ = false;
-    zone_layers_ssbo_.Shutdown();
 
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
@@ -247,7 +269,11 @@ void TerrainRenderer::Shutdown() {
         if (fallback_mask_tex_)      SDL_ReleaseGPUTexture(dev, fallback_mask_tex_);
         if (fallback_blend_sampler_) SDL_ReleaseGPUSampler(dev, fallback_blend_sampler_);
         if (fallback_blend_tex_)     SDL_ReleaseGPUTexture(dev, fallback_blend_tex_);
+        if (zone_layers_sampler_)    SDL_ReleaseGPUSampler(dev, zone_layers_sampler_);
+        if (zone_layers_tex_)        SDL_ReleaseGPUTexture(dev, zone_layers_tex_);
     }
+    zone_layers_tex_     = nullptr;
+    zone_layers_sampler_ = nullptr;
     fallback_tex_            = nullptr;
     fallback_sampler_        = nullptr;
     fallback_mask_tex_       = nullptr;
@@ -339,7 +365,48 @@ void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uin
                 64 * 64 * 9, count_uints);
         return;
     }
-    zone_layers_ssbo_.Upload(data, count_uints * (int)sizeof(uint32_t));
+    if (!zone_layers_tex_) return;
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (!dev) return;
+
+    // Repack the caller's flat zone_idx*9+slot layout into the texture's
+    // 3-texels-per-zone x 4-channels layout (12 slots available, 9 used --
+    // see ZoneGroundLayersTexture's header doc comment).
+    const int W = 64 * 3, H = 64;
+    std::vector<uint32_t> packed((size_t)W * H * 4, 0u);
+    for (int zy = 0; zy < 64; ++zy) {
+        for (int zx = 0; zx < 64; ++zx) {
+            int zone_idx = zy * 64 + zx;
+            for (int slot = 0; slot < 9; ++slot) {
+                int t = slot / 4, c = slot % 4;
+                size_t texel_idx = (size_t)zy * W + (size_t)(zx * 3 + t);
+                packed[texel_idx * 4 + (size_t)c] = data[(size_t)zone_idx * 9 + (size_t)slot];
+            }
+        }
+    }
+
+    SDL_GPUTransferBufferCreateInfo tbi{};
+    tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbi.size  = (Uint32)(packed.size() * sizeof(uint32_t));
+    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+    if (!tb) return;
+    void* map = SDL_MapGPUTransferBuffer(dev, tb, false);
+    if (map) memcpy(map, packed.data(), tbi.size);
+    SDL_UnmapGPUTransferBuffer(dev, tb);
+
+    SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTextureTransferInfo src{};
+    src.transfer_buffer = tb;
+    src.pixels_per_row  = (Uint32)W;
+    src.rows_per_layer  = (Uint32)H;
+    SDL_GPUTextureRegion dst{};
+    dst.texture = zone_layers_tex_;
+    dst.w = (Uint32)W; dst.h = (Uint32)H; dst.d = 1;
+    SDL_UploadToGPUTexture(cp, &src, &dst, false);
+    SDL_EndGPUCopyPass(cp);
+    md::GpuDevice::Get().Submit(cmd);
+    SDL_ReleaseGPUTransferBuffer(dev, tb);
 #else
     (void)data; (void)count_uints;
 #endif

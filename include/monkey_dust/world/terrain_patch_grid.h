@@ -92,6 +92,15 @@ public:
     int SelectVisible(const float frustum_planes[16], VisiblePatch* out, int max_out,
                        float max_lod_cull = 1e9f) const;
 
+    // Hard upper bound on total patches this grid can ever hold (see
+    // kMaxPatches below) -- public so SelectVisible callers can size their
+    // own `out[]`/max_out buffer to this exactly and make truncation
+    // (silently dropping patches past a too-small max_out, in raster scan
+    // order with no distance sort -- real bug, 2026-08-09, editor World3D
+    // aerial view) provably impossible instead of picking an arbitrary
+    // smaller cap and hoping it's never exceeded.
+    static constexpr int kMaxPatchesPublic = 16384;
+
 private:
     float world_origin_x_ = 0.f, world_origin_z_ = 0.f;
     float patch_size_     = 1.f;
@@ -105,7 +114,10 @@ private:
 
     // lod_[iz*nx_+ix] -- flat, not a vector<> to avoid heap churn on
     // resize; sized once in Init() via a fixed cap (see .cpp for the cap
-    // and why it's generous for this world size).
-    static constexpr int kMaxPatches = 16384;
+    // and why it's generous for this world size). Must equal
+    // kMaxPatchesPublic above (single source of truth would need C++17
+    // inline variables across a constexpr boundary that isn't worth the
+    // churn here -- just keep these two literals in sync).
+    static constexpr int kMaxPatches = kMaxPatchesPublic;
     float lod_[kMaxPatches] = {};
 };

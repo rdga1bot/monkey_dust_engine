@@ -2,16 +2,16 @@
 // Platform window + frame lifecycle abstraction.
 // Rule M-A: include only from Main.cpp and EditorMain.cpp.
 //
-// USE_SDL3 path (M12.3+): pure SDL3 + OpenGL context, no Raylib.
+// Pure SDL3 + OpenGL context, no Raylib (M12.3+; the Raylib fallback path
+// was removed 2026-08-09 -- USE_SDL3=ON has been the only buildable
+// configuration since engine/CMakeLists.txt's own FATAL_ERROR gate, and
+// raylib itself is headers-only in the tree now, not linked).
 //   gladLoadGL loads GL function pointers from SDL_GL_GetProcAddress.
 //   DrawText/DrawRectangle replaced by MdDraw2D (M12.10).
-//
-// !USE_SDL3 path: thin Raylib wrappers.
 //
 // imgui_init / imgui_new_frame / imgui_render / imgui_shutdown:
 //   Available only under #ifdef DEBUG.
 
-#ifdef USE_SDL3
 #  include <SDL3/SDL.h>
 #  include "glad.h"
 #  include <monkey_dust/render/md_camera.h>
@@ -156,33 +156,3 @@
        // Draining here would silently consume events between imgui_new_frame and
        // window_end_frame, causing missed clicks in ImGui.
    }
-
-#else  // ── Raylib path (!USE_SDL3) ──────────────────────────────────────────
-#  include "raylib.h"
-#  include <monkey_dust/render/md_camera.h>
-
-   // w=0/h=0 → auto-detect from current monitor.
-   inline void window_init(int w, int h, const char* title) {
-       int init_w = (w > 0) ? w : 1280;
-       int init_h = (h > 0) ? h : 720;
-       InitWindow(init_w, init_h, title);
-       SetWindowState(FLAG_WINDOW_RESIZABLE);
-       if (w <= 0 || h <= 0) {
-           int mon = GetCurrentMonitor();
-           int mw  = GetMonitorWidth(mon);
-           int mh  = GetMonitorHeight(mon);
-           if (mw > 0 && mh > 0) SetWindowSize(mw, mh);
-       }
-       SetExitKey(KEY_NULL);
-   }
-   inline void window_shutdown()              { CloseWindow(); }
-   inline void window_set_vsync(int fps)      { SetTargetFPS(fps); }
-   inline int  window_get_width()             { return GetScreenWidth(); }
-   inline int  window_get_height()            { return GetScreenHeight(); }
-   inline float window_get_time_s()           { return (float)GetTime(); }
-   inline void window_begin_frame()           { BeginDrawing(); ClearBackground({46, 51, 64, 255}); }
-   inline void window_end_frame()             { EndDrawing(); }
-   inline void window_begin_3d(const MdCamera& cam) { BeginMode3D(cam.ToRaylib()); }
-   inline void window_end_3d()                { EndMode3D(); }
-
-#endif // USE_SDL3

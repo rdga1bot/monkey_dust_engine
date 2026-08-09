@@ -1,19 +1,13 @@
 #include <monkey_dust/render/gpu_profiler.h>
 #include <cstring>
-#ifdef USE_SDL3
 #include <SDL3/SDL.h>
-#endif
 
 namespace md {
 
 uint64_t GpuProfiler::NowUs() const {
-#ifdef USE_SDL3
     uint64_t cnt  = SDL_GetPerformanceCounter();
     uint64_t freq = SDL_GetPerformanceFrequency();
     return freq > 0 ? (cnt * 1000000u / freq) : 0u;
-#else
-    return 0u;
-#endif
 }
 
 void GpuProfiler::BeginFrame() {

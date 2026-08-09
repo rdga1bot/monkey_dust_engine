@@ -55,7 +55,9 @@ public:
     SDL_GPUGraphicsPipeline* MomentPipeline() const { return moment_pipeline_; }
 
     // ── VBfA R-3: Gaussian blur on moment maps ────────────────────────────────
-    // 2-pass separable 5×5 Gaussian (shadow_blur_h/v.comp) run after all moment passes.
+    // 2-pass separable 5×5 Gaussian (shaders/shadow_blur.frag, fragment-shader
+    // fullscreen-triangle pass since 2026-08-09 -- replaced shadow_blur_h/v.comp,
+    // see ApplyBlur's own doc comment) run after all moment passes.
     // Ping-pong: moment_tex_[k] → blur_tmp_[k] → moment_tex_[k].
     // Call once per frame AFTER all EndMomentPass() calls, before sampling.
     void ApplyBlur(SDL_GPUCommandBuffer* cmd);
@@ -90,8 +92,7 @@ private:
     // Neither moment_tex_ nor its format needs COMPUTE_STORAGE_WRITE.
     SDL_GPUTexture*   blur_tmp_[NUM_CASCADES] = {};  // H-pass ping-pong intermediate
     SDL_GPUTexture*   blur_out_[NUM_CASCADES] = {};  // V-pass final output (sampled)
-    GpuComputePipeline blur_h_cs_;  // shadow_blur_h.comp
-    GpuComputePipeline blur_v_cs_;  // shadow_blur_v.comp
+    GpuPipeline       blur_pipeline_;  // shaders/shadow_blur.frag, both H+V passes
     bool blur_ready_ = false;
 
     int   num_cascades_ = NUM_CASCADES;

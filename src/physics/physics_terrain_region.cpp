@@ -39,9 +39,20 @@ void PhysicsTerrainRegion::RebuildCell(Cell& c, int new_cell_x, int new_cell_z) 
         JoltWorld::Get().RemoveBody(c.body);
         c.body = JPH::BodyID();
     }
+    // Bug fix (2026-08-08): cell_x/cell_z used to be set BEFORE this check,
+    // so if the atlas wasn't loaded yet (very plausible right at spawn --
+    // this runs every physics tick from the first tick), the cell would be
+    // marked "built" at this position with body left invalid, and Update()
+    // (which only calls RebuildCell when cell_x/cell_z DON'T match) would
+    // never retry it again -- a permanent hole in terrain collision with
+    // real rendered terrain visible above it (character falls straight
+    // through, "провалюється під термейн" bug report). Leaving cell_x/
+    // cell_z at their INT32_MIN "not built yet" sentinel (header's own
+    // documented meaning) here means Update() keeps calling RebuildCell
+    // every tick until the atlas loads and the body is actually created.
+    if (!TerrainAtlas_Loaded()) return;
     c.cell_x = new_cell_x;
     c.cell_z = new_cell_z;
-    if (!TerrainAtlas_Loaded()) return;
 
     static float s_heights[(kGrid + 1) * (kGrid + 1)];
     const float step = kCellSize / (float)kGrid;

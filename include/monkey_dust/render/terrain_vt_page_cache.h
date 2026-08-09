@@ -134,7 +134,17 @@ public:
     // fixes both stay in place and are real correctness improvements
     // whenever the camera is close enough to a tier 1-3 page boundary to
     // notice it, they just don't get exercised at tier 0 while this is 1.
-    static constexpr int MIN_CACHEABLE_TIER = 1;
+    // VT caching disabled entirely (2026-08-09, user directive) -- tier-
+    // boundary seam artifacts (hard sharpness discontinuities between
+    // adjacent cached pages, visible live in the editor 3D World view and
+    // in-game) were never fully resolved despite Phases 0-4 + 4 tier-0
+    // attempts. No tier ever qualifies as cacheable now (max tier is 7,
+    // see terrain_patch_renderer.h's tier_n_ comment) -- every pixel goes
+    // through the live per-pixel shading path unconditionally, same as
+    // before the VT system existed. Not reverting/deleting the VT code
+    // itself (page table, page-fill compute, cache eviction) -- just
+    // gating it fully off so it costs nothing and touches nothing.
+    static constexpr int MIN_CACHEABLE_TIER = 99;
 
     // Symmetric upper bound (this session, editor 3D World investigation):
     // the game's own SceneRender::UpdateGraniteTerrain never asks for a

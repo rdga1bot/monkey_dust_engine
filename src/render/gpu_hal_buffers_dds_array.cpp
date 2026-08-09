@@ -198,7 +198,29 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
     }
 
     SDL_EndGPUCopyPass(cp);
-    SDL_SubmitGPUCommandBuffer(cmd);
+    // Bug fix (2026-08-09): was a fire-and-forget SDL_SubmitGPUCommandBuffer
+    // -- callers (TerrainRenderer::InitGroundTextureArray, off the main
+    // thread) treated this function returning as "the texture is ready to
+    // sample", but that only meant the upload was SUBMITTED, not that the
+    // GPU had actually finished writing all layers/mips of this often-
+    // hundreds-of-MB array. A consumer that starts sampling this texture
+    // very soon after (terrain-vt's page-fill compute pass, which begins
+    // dispatching the moment s_master_ready flips true) could read
+    // partially-written/undefined texture memory -- real user report:
+    // sharp-edged, plausible-but-wrong-colored rectangular blocks baked
+    // permanently into a VT atlas slot, non-deterministic (depends on GPU
+    // upload-vs-first-sample timing), self-healing once that slot is later
+    // refilled after the real upload has long since finished. This function
+    // is only ever called from a background loader thread (see this file's
+    // own doc comment on the parallel file-read step) as a one-time,
+    // blocking asset load -- waiting for a real fence here costs nothing a
+    // caller wasn't already implicitly assuming, and makes "this function
+    // returned" an honest guarantee instead of a race.
+    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    if (fence) {
+        SDL_WaitForGPUFences(dev, true, &fence, 1);
+        SDL_ReleaseGPUFence(dev, fence);
+    }
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 
     SDL_GPUSamplerCreateInfo si = {};

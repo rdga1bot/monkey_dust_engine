@@ -8,6 +8,7 @@ on:
       - 'monkey_dust_docs.html'
       - 'robots.txt'
       - 'sitemap.xml'
+      - 'google*.html'   # search-engine site-verification files (Search Console etc.)
   workflow_dispatch:
 
 permissions:
@@ -34,6 +35,7 @@ jobs:
             monkey_dust_docs.html
             robots.txt
             sitemap.xml
+            google*.html
           sparse-checkout-cone-mode: false
 
       - name: Setup Pages

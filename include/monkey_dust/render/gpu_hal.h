@@ -420,6 +420,9 @@ public:
         // Vulkan LOAD/STORE DONT_CARE pattern: set discard_after=true when depth is
         // not needed after this pass (e.g. shadow depth → resolved into EVSM moments).
         bool  discard_after = false;
+        // true = LOAD instead of CLEAR (e.g. NPC Early-Z prepass reusing terrain
+        // depth already copied into `target` by an earlier pass this frame).
+        bool  load_depth    = false;
     };
 
     // Shadow / depth-only pass.

@@ -4,11 +4,10 @@
 // AnimatorComponent — data contract between gameplay and rendering.
 //
 // AnimatorSystem (logic_tick, 10 TPS) writes: clip_*, tgt_blend, anim_speed.
-// NpcRender (render frame, 60 FPS) reads clip_* and writes: blend_t, phase.
-// cull.comp reads: lod_tier (written by NpcRender).
+// NpcRender (render frame, 60 FPS) reads clip_* and writes: blend_t, phase; lod_tier
+// drives CPU-side culling/LOD directly (no GPU cull/skin compute path — CPU-driven).
 //
 // Step 2: clip_overlay + overlay_weight for additive layers (clothing/combat).
-// Step 3: GPU skinning.comp replaces CPU LBS; reads this component directly.
 
 struct AnimatorComponent {
     // ── Gameplay → Render (set by AnimatorSystem @ 10 TPS) ──────────────────

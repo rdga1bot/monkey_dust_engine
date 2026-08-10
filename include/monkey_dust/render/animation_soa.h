@@ -1,41 +1,11 @@
 #pragma once
 #include <monkey_dust/platform/md_hints.h>
 #include <monkey_dust/render/ssbo.h>
-#include <monkey_dust/render/gpu_ring_buffer.h>
 #include <monkey_dust/render/gpu_hal.h>
-#include <monkey_dust/render/char_customization.h>  // KEN-MORPH-1: CharScales
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-
-// ── GPU skinning data structs (Step 3) ──────────────────────────────────────
-// Max keyframes packed into GpuClipBuf (compact layout, not MAX_SKIN_KF flat).
-static constexpr int MAX_GPU_KF = 16384;  // 16384 × 32 bytes = 512 KB
-
-// Per-keyframe data for skinning.comp (8 floats, 32 bytes).
-// alignas(16): VBfA pattern — animation float arrays 16-byte aligned for SIMD batch ops.
-struct alignas(16) GpuKeyframe { float t, tx, ty, tz, qx, qy, qz, qw; };
-
-// Per-track header: offset + count in flat GpuKeyframe array.
-struct GpuTrackHeader { int kf_start, kf_count; };
-
-// Per-clip header.
-struct GpuClipHeader { float duration; int bone_count, track_start, _pad; };
-
-// Per-NPC animation state uploaded each frame from AnimatorComponent.
-// Sized to 32 bytes (std430 aligned). alignas(16) ensures SIMD-safe batch memcpy.
-struct alignas(16) NpcGpuAnim {
-    int   clip_hi;      // upper/full walk clip (-1 = use idle)
-    int   clip_lo;      // lower body override clip (-1 = no override)
-    int   clip_idle;    // idle clip (0 = fallback)
-    int   lod_tier;     // 0-4
-    float blend_t;      // 0.0=idle … 1.0=walk
-    float phase;        // walk/jog phase (accumulated while moving)
-    float phase_idle;   // idle phase (absolute time-based)
-    float _pad;
-};
-static_assert(sizeof(NpcGpuAnim) == 32, "NpcGpuAnim must be 32 bytes");
 
 static constexpr int MAX_BONES        = 64;  // SSBO stride fixed at 64 for SDL_GPU transfer alignment; Kenshi uses 30 of 64
 static constexpr int MAX_ANIMATED_NPC = 500;
@@ -64,12 +34,12 @@ static constexpr float ANIM_LOCO_SPEED_MAX      = 1.0f;   // max playback speed 
 // Sync window for finisher/combo moves
 static constexpr float ANIM_SYNC_WINDOW         = 0.1f;   // accept sync if within 0.1s of sync_time
 
-// Per-NPC animation state — 16 bytes, matches std430 AnimState in skinning.comp
+// Per-NPC animation state — 16 bytes.
 struct AnimNpcState {
     uint32_t slot;
     uint32_t clip_id;   // 0=IDLE, 1=WALK, 2=ATTACK
     float    time_s;
-    uint32_t lod_tier;  // 0-2: skinning.comp runs; 3-4: skip (stale pose)
+    uint32_t lod_tier;  // 0-2: full-rate eval; 3-4: skip (stale pose)
 };
 static_assert(sizeof(AnimNpcState) == 16, "AnimNpcState size mismatch");
 
@@ -110,8 +80,7 @@ struct AnimationClip {
 // AnimationSoA — singleton: per-NPC anim state + GPU SSBOs.
 //
 // SSBO layout:
-//   binding 4: mat4[MAX_ANIMATED_NPC × MAX_BONES]  ← written by skinning.comp
-//   binding 5: AnimNpcState[MAX_ANIMATED_NPC]       ← read by skinning.comp
+//   binding 4: mat4[MAX_ANIMATED_NPC × MAX_BONES]  ← written by CPU LBS (OzzAnimator), read by animated.vert
 //
 // Usage:
 //   Init()               — once after window open
@@ -138,20 +107,6 @@ public:
         // Written by CPU LBS (OzzAnimator::Sample); read by animated.vert directly as mat4.
         bones_ssbo_.Init(MAX_ANIMATED_NPC * MAX_BONES * 64,
                          SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ);
-        // anim_state_ring_ is written by CPU each frame — ring-buffered.
-        anim_state_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(AnimNpcState)), 5);
-        // KEN-MORPH-1: morph scale SSBO (per-NPC per-bone vec4: xyz=scale, w=0; sentinel=0)
-        memset(morph_cpu_, 0, sizeof(morph_cpu_));
-        morph_dirty_ = true;  // force zero-fill on first UploadMorphSDLGPU
-        morph_buf_.Init(MAX_ANIMATED_NPC * MAX_BONES * 4 * (int)sizeof(float),
-                        SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ);
-        // Skinning compute pipeline — loaded once, dispatched each frame.
-        // SDL_GPU: rw[0]=FinalBones(write), ro[0..3]=AnimState+ClipBuf+SkelBuf+MorphBuf.
-        GpuComputePipeline::Desc skin_desc;
-        skin_desc.glsl_path                     = "shaders/skinning.comp";
-        skin_desc.num_readwrite_storage_buffers = 1;  // FinalBones
-        skin_desc.num_readonly_storage_buffers  = 4;  // NpcGpuAnim + ClipBuf + SkelBuf + MorphBuf
-        skin_pipeline_.Create(skin_desc);
         LoadDefaults();
     }
 
@@ -228,149 +183,24 @@ public:
         }
     }
 
-    void Upload() {
-        // Write anim states into ring buffer's current slot (zero-copy via persistent map).
-        void* dst = anim_state_ring_.MapWrite();
-        if (dst) {
-            memcpy(dst, states_, MAX_ANIMATED_NPC * sizeof(AnimNpcState));
-            anim_state_ring_.Unmap();
-        }
-        anim_state_ring_.BindStorage(5);
-        bones_ssbo_.Bind(4);
-    }
-
-    void BindSSBOs() {
-        anim_state_ring_.BindStorage(5);
-        bones_ssbo_.Bind(4);
-    }
-
-    // Dispatch skinning compute pass.
-    // OpenGL: SSBOs 4+5 must already be bound (Upload() does this).
-    // SDL_GPU: pass bindings with rw_buffers[0]=FinalBones, ro_buffers[0]=AnimState.
-    //          bindings.cmd=nullptr is a safe no-op (Step 9 wires the SDL_GPUBuffer*).
-    void DispatchSkinning(const GpuComputePass::StorageBindings& bindings = {}) {
-        // skinning.comp local_size_x=64: dispatch ceil(MAX_ANIMATED_NPC/64) groups.
-        static constexpr uint32_t SKIN_GROUPS = (MAX_ANIMATED_NPC + 63u) / 64u;
-#ifdef MD_SDL_GPU
-        if (bindings.cmd) {
-            GpuComputePass pass;
-            pass.Begin(&skin_pipeline_, bindings);
-            pass.Dispatch(SKIN_GROUPS, 1u, 1u);
-            pass.End();
-        }
-#endif
-    }
-
-    // Call once per frame AFTER all draw/compute that read anim_state_ring_.
-    void AdvanceFrame() { anim_state_ring_.Advance(); ++frame_counter_; }
+    // Call once per frame after all draw/compute that reads GPU anim data.
+    void AdvanceFrame() { ++frame_counter_; }
 
 #ifdef MD_SDL_GPU
-    // Upload anim state to SDL_GPU device buffer via a copy pass in cmd.
-    // Call before DispatchSkinning(bindings) in the SDL_GPU frame sequence.
-    void UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
-        void* dst = anim_state_ring_.MapWriteSDL();
-        if (dst) {
-            memcpy(dst, states_, MAX_ANIMATED_NPC * sizeof(AnimNpcState));
-            anim_state_ring_.UnmapSDL();
-        }
-        anim_state_ring_.Upload(cmd);
-    }
     SDL_GPUBuffer* SDLBonesBuffer()    const { return bones_ssbo_.SDLBuffer(); }
-    SDL_GPUBuffer* SDLAnimStateBuffer() const { return anim_state_ring_.SDLBuffer(); }
-    // CPU-side bone matrices upload (bypasses skinning.comp for real-mesh animation).
+    // CPU-side bone matrices upload (real-mesh animation path — OzzAnimator::Sample/Blend
+    // writes s_all_bones in npc_render_frame_prep.cpp, this uploads it each frame).
     // data: float[npc_count * MAX_BONES * 16], laid out at slot offsets 0..npc_count-1
     void UploadBonesInCmd(SDL_GPUCommandBuffer* cmd, const void* data, int bytes, int byte_offset = 0) {
         if (bones_ssbo_.SDLBuffer()) bones_ssbo_.UploadInCmd(cmd, data, bytes, byte_offset);
     }
-
-    // ── Step 3: GPU skinning data ─────────────────────────────────────────────
-    SDL_GPUBuffer* SDLClipBuf()     const { return clip_buf_.SDLBuffer(); }
-    SDL_GPUBuffer* SDLSkelBuf()     const { return skel_buf_.SDLBuffer(); }
-    SDL_GPUBuffer* SDLNpcAnimBuf()  const { return npc_anim_ring_.SDLBuffer(); }
-
-    // Upload clip + skeleton data once at startup (called from NpcRender after GLB loaded).
-    // Uses SkinMesh GPU accessors (GpuTrackKF, GpuInvBind, etc.).
-    bool UploadClipDataSDLGPU(SDL_GPUCommandBuffer* cmd,
-                              const void* clip_headers, int ch_bytes,
-                              const void* track_headers, int th_bytes,
-                              const void* keyframes,    int kf_bytes,
-                              const void* skel_data,    int sk_bytes) {
-        if (!clip_headers || !skel_data) return false;
-        const int total = ch_bytes + th_bytes + kf_bytes;
-        if (!clip_buf_.SDLBuffer())
-            clip_buf_.Init(total > 0 ? total : 4,
-                           SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ);
-        if (!skel_buf_.SDLBuffer())
-            skel_buf_.Init(sk_bytes > 0 ? sk_bytes : 4,
-                           SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ);
-        // Upload as a single blob with headers at the front.
-        alignas(16) static uint8_t s_tmp[4 * 1024 * 1024]; // 4 MB staging scratch, 16-byte aligned
-        int offset = 0;
-        auto append = [&](const void* src, int n) {
-            if (src && n > 0 && (offset + n) <= (int)sizeof(s_tmp)) {
-                memcpy(s_tmp + offset, src, n);
-                offset += n;
-            }
-        };
-        append(clip_headers, ch_bytes);
-        append(track_headers, th_bytes);
-        append(keyframes, kf_bytes);
-        if (offset > 0) clip_buf_.UploadInCmd(cmd, s_tmp, offset);
-        if (skel_data && sk_bytes > 0) skel_buf_.UploadInCmd(cmd, skel_data, sk_bytes);
-        clip_data_ready_ = true;
-        return true;
-    }
-
-    // Upload per-NPC anim state from AnimatorComponent data (replaces UploadBonesInCmd).
-    void UploadNpcAnimSDLGPU(SDL_GPUCommandBuffer* cmd,
-                             const NpcGpuAnim* data, int count) {
-        if (!npc_anim_ring_.SDLBuffer())
-            npc_anim_ring_.Init((uint32_t)(MAX_ANIMATED_NPC * (int)sizeof(NpcGpuAnim)), 5);
-        void* dst = npc_anim_ring_.MapWriteSDL();
-        if (dst) {
-            memcpy(dst, data, count * (int)sizeof(NpcGpuAnim));
-            npc_anim_ring_.UnmapSDL();
-        }
-        npc_anim_ring_.Upload(cmd);
-    }
-
-    bool ClipDataReady() const { return clip_data_ready_; }
 #endif
 
-    // KEN-MORPH-1: set per-bone morph scales for a given NPC slot.
-    // Copies CharScales::bone[] into morph_cpu_[slot] as vec4 (xyz=scale, w=0).
-    // Call once after character creation or body slider change.
-    void SetBoneMorphScales(int slot, const CharScales& cs, int bone_count) {
-        if (slot < 0 || slot >= MAX_ANIMATED_NPC) return;
-        float* dst = morph_cpu_[slot];
-        int n = bone_count < MAX_BONES ? bone_count : MAX_BONES;
-        for (int i = 0; i < n; ++i) {
-            dst[i*4+0] = cs.bone[i][0];
-            dst[i*4+1] = cs.bone[i][1];
-            dst[i*4+2] = cs.bone[i][2];
-            dst[i*4+3] = 0.f;
-        }
-        morph_dirty_ = true;
-    }
-
-#ifdef MD_SDL_GPU
-    // Upload morph scale buffer to GPU if dirty (call before DispatchSkinning each frame).
-    void UploadMorphSDLGPU(SDL_GPUCommandBuffer* cmd) {
-        if (morph_dirty_ && morph_buf_.SDLBuffer())
-            morph_buf_.UploadInCmd(cmd, morph_cpu_, (int)sizeof(morph_cpu_));
-        morph_dirty_ = false;
-    }
-    SDL_GPUBuffer* SDLMorphBuffer() const { return morph_buf_.SDLBuffer(); }
-#endif
+    // KEN-MORPH-1 (setBoneSize equivalent) is live via the CPU path:
+    // CharBodyState::bone_scales/pos_scales, consumed directly by OzzAnimator::Sample/Blend.
 
     void Shutdown() {
-        skin_pipeline_.Destroy();
         bones_ssbo_.Shutdown();
-        anim_state_ring_.Shutdown();
-        clip_buf_.Shutdown();
-        skel_buf_.Shutdown();
-        npc_anim_ring_.Shutdown();
-        morph_buf_.Shutdown();
     }
 
     // Accessors for editor panels (replaces direct field access — БОРГ-7/8).
@@ -386,23 +216,8 @@ private:
     AnimationClip clips_[MAX_ANIM_CLIPS];
     int           clips_count_ = 0;
 
-    SSBO               bones_ssbo_;      // compute output — regular SSBO
-    GpuRingBuffer      anim_state_ring_; // CPU per-frame — ring-buffered
-    GpuComputePipeline skin_pipeline_;   // skinning compute shader
+    SSBO               bones_ssbo_;      // CPU LBS output (OzzAnimator) — regular SSBO
     uint32_t           frame_counter_ = 0; // PERF-16: stagger index
-
-    // Step 3: GPU skinning data buffers (static clip/skel + per-frame NPC state).
-    SSBO          clip_buf_;           // clip headers + track headers + keyframes
-    SSBO          skel_buf_;           // inv_bind + bind_pose + parent + process_order
-    GpuRingBuffer npc_anim_ring_;      // per-NPC NpcGpuAnim (ring-buffered, per frame)
-    bool          clip_data_ready_ = false;
-
-    // KEN-MORPH-1: per-NPC per-bone vertex scale (setBoneSize equivalent for GPU path).
-    // Layout: morph_cpu_[slot][bone*4 + 0..2] = scale xyz; [bone*4+3] = 0 (reserved).
-    // Sentinel: (0,0,0,0) = no morph (identity). Init to zeros → shader skips.
-    SSBO  morph_buf_;                                      // GPU vec4[MAX_ANIMATED_NPC * MAX_BONES]
-    alignas(16) float morph_cpu_[MAX_ANIMATED_NPC][MAX_BONES * 4];  // CPU staging (512 KB, BSS)
-    bool  morph_dirty_ = false;
 
     void LoadDefaults() {
         clips_count_ = 3;

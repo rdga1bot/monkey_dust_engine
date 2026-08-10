@@ -121,8 +121,7 @@ public:
     void PatchBoneIK(int bone_idx, const float* new_world_16,
                      float* out_bones) const;
 
-    // ── GPU data accessors — used by AnimationSoA to upload clip+skel data ────
-    // Keyframe data for GPU skinning.comp.
+    // ── Bind-pose/track accessors — used by OzzAnimator to build its runtime skeleton ────
     // Returns pointer to track keyframes; *out_count = number of keyframes (0 if no track).
     const SkinKeyframe* GpuTrackKF(int clip_idx, int bone_idx, int* out_count) const {
         if (clip_idx<0||clip_idx>=clip_count_||bone_idx<0||bone_idx>=bone_count) { *out_count=0; return nullptr; }

@@ -41,8 +41,13 @@
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; }
-  body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; font-size: 15px; line-height: 1.7; display: flex; min-height: 100vh; }
+  html { scroll-behavior: smooth; overflow-x: hidden; }
+  /* overflow-x:hidden is a safety net; min-width:0 on #content below is the
+     real fix -- flex items default to min-width:auto (their intrinsic
+     content width), so without it #content can't shrink below its content's
+     natural width and drags the whole page wider than the viewport on
+     mobile, cutting text off mid-line instead of wrapping it. */
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; font-size: 15px; line-height: 1.7; display: flex; min-height: 100vh; overflow-x: hidden; }
 
   #sidebar { width: var(--sidebar-w); min-width: var(--sidebar-w); background: var(--bg2); border-right: 1px solid var(--border); position: fixed; top: 0; left: 0; height: 100vh; overflow-y: auto; z-index: 100; display: flex; flex-direction: column; }
   #sidebar::-webkit-scrollbar { width: 4px; }
@@ -62,7 +67,7 @@
   nav a.active { border-left: 2px solid var(--accent); padding-left: 18px; }
   .nav-icon { font-size: 14px; width: 18px; }
 
-  #content { margin-left: var(--sidebar-w); flex: 1; padding: 48px 56px 80px; max-width: 960px; }
+  #content { margin-left: var(--sidebar-w); flex: 1; min-width: 0; padding: 48px 56px 80px; max-width: 960px; }
   .doc-section { margin-bottom: 72px; }
   h1 { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 36px; color: var(--text-head); line-height: 1.2; margin-bottom: 16px; }
   h2 { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 24px; color: var(--text-head); margin: 40px 0 16px; }
@@ -173,7 +178,10 @@
     #sidebar { transform: translateX(-100%); transition: transform .25s cubic-bezier(.4,0,.2,1); z-index: 99; }
     #sidebar.open { transform: translateX(0); }
     #sidebar-overlay.open { display: block; }
-    #content { margin-left: 0; padding: 24px 16px 80px; }
+    /* top padding clears the fixed #menu-toggle button (top:14px + 42px tall)
+       -- without it, the breadcrumb (#content's first child) sits directly
+       under the hamburger icon and gets visually obscured by it. */
+    #content { margin-left: 0; padding: 68px 16px 80px; }
     #content h1 { font-size: 26px; }
     #content h2 { font-size: 20px; }
     .hero { padding: 20px 16px; }
@@ -185,7 +193,7 @@
   @media (max-width: 480px) {
     .card-grid { grid-template-columns: 1fr; }
     .hero-meta { gap: 8px; }
-    #content { padding: 20px 12px 80px; }
+    #content { padding: 68px 12px 80px; } /* top clears #menu-toggle, see 768px breakpoint's comment */
   }
 </style>
 </head>

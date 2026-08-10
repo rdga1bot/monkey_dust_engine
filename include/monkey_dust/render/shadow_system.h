@@ -31,20 +31,25 @@ static inline Vec4 ShadowVec4Transform(Vec4 v, Mat4 m) {
 
 
 // ─────────────────────────────────────────────────────────
-// ShadowSystem — 4-cascade CSM for the directional sun.
+// ShadowSystem — light-space matrix calculator for the directional sun's
+// 4-cascade CSM split scheme (near 0-20 m, mid 20-60 m, far 60-150 m,
+// ultra 150-350 m).
 //
-// Cascades (dist from camera): near 0-20 m, mid 20-60 m, far 60-150 m, ultra 150-350 m.
-// Per cascade: 1024×1024 depth texture.
+// Historically also owned the CSM depth-texture rendering path itself
+// (shadow_cull.comp GPU cull -> shadow_csm.vert/frag depth-only draw,
+// RenderShadowPassSDL) -- removed 2026-08-09 after discovering it was
+// dead code: EvsmShadow (moment-map shadows, evsm_shadow.h) superseded
+// it at some earlier point in the project's history and is the only
+// shadow-casting path actually wired into NpcRender::DrawShadowMaps
+// (npc_render_init.cpp), but nothing had ever deleted the superseded CSM
+// machinery. Confirmed via direct grep (RenderShadowPassSDL had zero
+// call sites anywhere in engine/game/tools) before removing it -- a CPU
+// port of shadow_cull.comp was attempted first, then reverted once this
+// came to light, since porting dead code adds no real de-risking value.
 //
-// Per-frame flow (caller side):
-//   1. Update(camera, sun_dir)               — recompute lightViewProj[4]
-//   2. transform_ssbo.Bind(0); bones.Bind(4) — caller pre-binds SSBOs
-//   3. RenderShadowPass(active_count)        — shadow cull + depth pass
-//   4. (inside DrawNPCs, shader enabled):
-//      BindShadowMaps(shader)                — tex units 5/6/7/8 + uniforms
-//
-// SSBOs used internally: binding 6 = shadow visible, 7 = shadow indirect
-// Texture units assigned: 5/6/7/8 = cascade 0/1/2/3
+// What's still live and used by EvsmShadow: Update() (recomputes
+// lightViewProj[4] every frame) and the lightViewProj[]/cascade_splits[]
+// fields themselves.
 // ─────────────────────────────────────────────────────────
 
 class ShadowSystem {
@@ -61,106 +66,13 @@ public:
     Mat4  lightViewProj[NUM_CASCADES]  = {};
     float cascade_splits[NUM_CASCADES] = { SPLITS[1], SPLITS[2], SPLITS[3], SPLITS[4] };
 
-    // Read-only access to cascade depth textures (SDL_GPU sampler binding, Step 11).
-    const GpuDepthTexture& GetCascadeDepth(int k) const { return shadow_depth_[k]; }
-
 #ifdef MD_SDL_GPU
-    // Creates depth textures + shadow cull compute + graphics pipeline.
-    // Called from InitNpcSDL() in pure SDL_GPU builds.
-    void InitSDLGPU(uint32_t npc_idx_count) {
-        for (int k = 0; k < NUM_CASCADES; ++k)
-            if (!shadow_depth_[k].SDLTexture())
-                shadow_depth_[k].Init(MAP_SIZE, MAP_SIZE, /*shadow_border=*/true);
-        if (sdl_init_) return;
-        npc_idx_count_ = npc_idx_count;
-
-        GpuComputePipeline::Desc sc;
-        sc.glsl_path                    = "shaders/shadow_cull.comp";
-        sc.num_uniform_buffers          = 1;
-        sc.num_readonly_storage_buffers = 1;
-        sc.num_readwrite_storage_buffers= 2;
-        shadow_cull_cs_.Create(sc);
-
-        shadow_vis_buf_.Init(8192 * (int)sizeof(uint32_t));
-        shadow_ind_buf_.Init(20, SSBO_INDIRECT);
-
-        // shadow_csm.vert: a_pos(loc=0,F3,stride=24 pos+norm) +
-        //   storage 0=Transform 1=ShadowVis 2=FinalBones; UBO 0=lightViewProj.
-        // shadow_csm.frag: no outputs, no uniforms.
-        GpuPipeline::Desc pd;
-        pd.vert_path         = "shaders/shadow_csm.vert";
-        pd.frag_path         = "shaders/shadow_csm.frag";
-        pd.vert_uniform_bufs = 1;
-        pd.vert_storage_bufs = 3;
-        pd.depth_only        = true;
-        pd.raster.cull_back  = false; // cull_front for Peter-Panning; not pipeline-configurable in SDL_GPU
-        pd.layout.attribs[0] = { 0, 0, GpuAttribFmt::F3 };
-        pd.layout.count      = 1;
-        pd.layout.stride     = 24; // pos+norm, same sphere as NPC
-        shadow_pipeline_.Create(pd);
-
+    // Sets sdl_init_ so Update() below actually runs. Called from
+    // InitNpcSDL() in pure SDL_GPU builds. Real depth-texture/pipeline
+    // creation removed 2026-08-09 along with the rest of the dead CSM
+    // path -- see this class's own doc comment.
+    void InitSDLGPU() {
         sdl_init_ = true;
-    }
-
-    // VBfA shadow LOD pattern: anim_state_buf added — shader skips lod_tier >= 3 NPCs,
-    // eliminating distance math for far/hidden NPCs (saves ~(r_ac - r_close)*1 ALU op each).
-    void RenderShadowPassSDL(SDL_GPUCommandBuffer* cmd, int active_npc_count,
-                              SDL_GPUBuffer* transform_buf, SDL_GPUBuffer* bones_buf,
-                              SDL_GPUBuffer* npc_vbuf, SDL_GPUBuffer* npc_ibuf,
-                              SDL_GPUBuffer* anim_state_buf = nullptr,
-                              bool npc_idx_u16 = true) {
-        if (!sdl_init_ || active_npc_count <= 0 || !cmd) return;
-        if (!shadow_pipeline_.SDLPipeline()) return;
-
-        // Reset shadow indirect command (indexCount = npc_idx_count_, instanceCount = 0).
-        uint32_t reset[5] = { npc_idx_count_, 0u, 0u, 0u, 0u };
-        shadow_ind_buf_.UploadInCmd(cmd, reset, 20);
-
-        // Shadow cull compute — select NPCs within 60 m + lod_tier < 3.
-        struct alignas(16) SCullUBO {
-            float camPos[3]; float _p;
-            float maxDistSq; float _p2[3];
-            int   totalCount; int _p3[3];
-        } ubo = { {cam_pos_.x, cam_pos_.y, cam_pos_.z}, 0.f,
-                   150.f*150.f, {}, active_npc_count, {} }; // VBfA-OPT-2: extend to cascade 2 far
-        GpuComputePass::StorageBindings b;
-        b.cmd = cmd;
-        b.rw_buffers[0] = { shadow_vis_buf_.SDLBuffer(), false };
-        b.rw_buffers[1] = { shadow_ind_buf_.SDLBuffer(), false };
-        b.num_rw_buffers = 2;
-        b.ro_buffers[0]  = transform_buf;
-        b.ro_buffers[1]  = anim_state_buf ? anim_state_buf : transform_buf; // fallback to transform if no anim state
-        b.num_ro_buffers = 2;
-        GpuComputePass cull;
-        cull.Begin(&shadow_cull_cs_, b);
-        cull.PushUniforms(0, &ubo, sizeof(ubo));
-        cull.Dispatch(((uint32_t)active_npc_count + 63u) / 64u, 1u, 1u);
-        cull.End();
-
-        // 3 depth-only cascade passes with draw calls.
-        for (int k = 0; k < NUM_CASCADES; ++k) {
-            GpuRenderPass pass;
-            pass.BeginDepthOnly(cmd, { &shadow_depth_[k], 1.0f, /*cull_front=*/true });
-            SDL_GPURenderPass* rp = pass.SDLPass();
-            if (rp) {
-                SDL_BindGPUGraphicsPipeline(rp, shadow_pipeline_.SDLPipeline());
-                SDL_GPUBufferBinding vb = { npc_vbuf, 0 };
-                SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
-                SDL_GPUBufferBinding ib = { npc_ibuf, 0 };
-                SDL_BindGPUIndexBuffer(rp, &ib,
-                    npc_idx_u16 ? SDL_GPU_INDEXELEMENTSIZE_16BIT
-                                : SDL_GPU_INDEXELEMENTSIZE_32BIT);
-                SDL_GPUBuffer* sv[3] = {
-                    transform_buf,
-                    shadow_vis_buf_.SDLBuffer(),
-                    bones_buf
-                };
-                SDL_BindGPUVertexStorageBuffers(rp, 0, sv, 3);
-                SDL_PushGPUVertexUniformData(cmd, 0, mat4_ptr(lightViewProj[k]), 64);
-                SDL_DrawGPUIndexedPrimitivesIndirect(rp, shadow_ind_buf_.SDLBuffer(), 0, 1);
-            }
-            pass.End();
-        }
     }
 #endif
 
@@ -272,14 +184,8 @@ private:
     bool               init_         = false;
 #ifdef MD_SDL_GPU
     bool               sdl_init_     = false;
-    GpuPipeline        shadow_pipeline_;        // shadow_csm.vert/frag (depth_only)
-    uint32_t           npc_idx_count_ = 0;
 #endif
-    GpuDepthTexture    shadow_depth_[NUM_CASCADES]; // tex + FBO per cascade
     MdShader           shadow_shader_;
-    GpuComputePipeline shadow_cull_cs_;             // shadow_cull.comp
-    SSBO               shadow_vis_buf_;
-    SSBO               shadow_ind_buf_;
     MdMesh        mesh_;
     int           mesh_idx_ = 0;
     Vec3          cam_pos_ = {};

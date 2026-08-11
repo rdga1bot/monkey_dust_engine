@@ -75,6 +75,17 @@ public:
     // if the patch is genuinely flat) -- see HeightSampleFn's doc comment.
     float HeightRange(int ix, int iz) const { return height_range_[(size_t)iz * nx_ + ix]; }
 
+    // World-space minimum height sampled inside this patch's footprint at
+    // Init() time (0 if Init() was called with height_sampler=nullptr).
+    // HeightMin(ix,iz) + HeightRange(ix,iz) gives the sampled maximum --
+    // together these are what SelectVisible uses for a tight per-patch
+    // AABB Y-range instead of the old whole-grid kAabbMinY/kAabbMaxY
+    // constants (borrowed from Zylann/godot_heightmap_plugin's
+    // HTerrainDataRangeMap, which does the same per-chunk min/max-for-
+    // culling trick, 2026-08-12 -- see CLAUDE_STATE.md for the source
+    // comparison this came from).
+    float HeightMin(int ix, int iz) const { return height_min_[(size_t)iz * nx_ + ix]; }
+
     // History (why a cascade lives here again after being removed once):
     // task terrain-lod-seam-cascade-gap (2026-07-31) had a neighbor-tier
     // cascade-snap here; task terrain-cdlod-geomorph (same day) removed
@@ -141,11 +152,32 @@ private:
     float patch_size_     = 1.f;
     int   nx_ = 0, nz_ = 0;
     int   max_lod_ = 0;
-    // Generous fixed Y range for the frustum AABB test, same rationale
-    // TerrainQuadtree::AabbInFrustum used: no per-patch height bound
-    // dependency needed for a conservative box-vs-4-planes cull.
+    // Fallback Y range for the frustum AABB test when Init() was called
+    // with no height_sampler (test/tool callers that never loaded real
+    // height data, see HeightSampleFn's doc comment) -- same rationale
+    // TerrainQuadtree::AabbInFrustum originally used: a conservative
+    // whole-world box-vs-4-planes cull with no per-patch dependency.
+    // When a height_sampler WAS provided, SelectVisible uses the tighter
+    // per-patch [HeightMin, HeightMin+HeightRange] bounds instead (plus
+    // kAabbSafetyMarginM below) -- these constants stay only as that
+    // fallback.
     static constexpr float kAabbMinY = -500.f;
     static constexpr float kAabbMaxY = 4000.f;
+    // Padding added to the sampled per-patch [min,max] before using it
+    // for culling -- the 5x5 relief sample grid (Init(), kReliefSampleGrid
+    // in the .cpp) is NOT exhaustive, so a peak/trough between two
+    // adjacent 75m-spaced samples could go undetected. This margin is a
+    // heuristic, not a proven bound: no formal Lipschitz/smoothness
+    // guarantee exists for arbitrary height data. Chosen generously
+    // relative to real measured Kenshi relief (~500m over a 300m patch
+    // is the most extreme case this codebase has recorded, see task
+    // #387's own comments) -- an undetected excursion bigger than this
+    // between two 75m-apart samples would be a genuinely pathological
+    // (near-vertical, sub-75m-wide) spike, not realistic DEM-derived
+    // terrain. If real terrain data is ever found to violate this,
+    // widen the margin or shrink kReliefSampleGrid's spacing -- do not
+    // just delete the margin.
+    static constexpr float kAabbSafetyMarginM = 100.f;
 
     // lod_[iz*nx_+ix] -- flat, not a vector<> to avoid heap churn on
     // resize; sized once in Init() via a fixed cap (see .cpp for the cap
@@ -163,4 +195,12 @@ private:
     // inside patch (ix,iz)'s footprint at Init() time; 0 if Init() was
     // called with height_sampler=nullptr. See HeightSampleFn's doc comment.
     float height_range_[kMaxPatches] = {};
+    // height_min_[iz*nx_+ix] -- sampled minimum, paired with height_range_
+    // above (max = min+range). See HeightMin()'s doc comment.
+    float height_min_[kMaxPatches] = {};
+    // Set at Init() time: true iff a non-null height_sampler was passed,
+    // i.e. height_min_/height_range_ hold real sampled data and
+    // SelectVisible should use them for a tight per-patch AABB instead of
+    // the whole-world kAabbMinY/kAabbMaxY fallback.
+    bool  has_height_data_ = false;
 };

@@ -42,7 +42,8 @@ void TerrainPatchGrid::Init(float world_origin_x, float world_origin_z, float wo
     // mountains (docs/research/TERRAIN_GEOMETRY_DEEPSEEK_RESEARCH.md,
     // topics 1/5/7 -- CDLOD/Cesium-quantized-mesh both keep a per-node
     // min/max height specifically for this).
-    for (int i = 0; i < nx_ * nz_; ++i) height_range_[i] = 0.f;
+    for (int i = 0; i < nx_ * nz_; ++i) { height_range_[i] = 0.f; height_min_[i] = 0.f; }
+    has_height_data_ = (height_sampler != nullptr);
     if (height_sampler != nullptr) {
         for (int iz = 0; iz < nz_; ++iz) {
             float oz = world_origin_z_ + (float)iz * patch_size_;
@@ -59,6 +60,7 @@ void TerrainPatchGrid::Init(float world_origin_x, float world_origin_z, float wo
                     }
                 }
                 height_range_[(size_t)iz * nx_ + ix] = hmax - hmin;
+                height_min_[(size_t)iz * nx_ + ix]   = hmin;
             }
         }
     }
@@ -171,7 +173,22 @@ int TerrainPatchGrid::SelectVisible(const float frustum_planes[16], VisiblePatch
             float lod = lod_[(size_t)iz * nx_ + ix];
             if (lod > max_lod_cull) continue;
             float ox = world_origin_x_ + (float)ix * patch_size_;
-            if (!AabbInFrustum(ox, oz, patch_size_, kAabbMinY, kAabbMaxY, frustum_planes)) continue;
+            // Per-patch AABB Y-range when real height data is available
+            // (borrowed from Zylann/godot_heightmap_plugin's
+            // HTerrainDataRangeMap -- see HeightMin()'s doc comment) --
+            // tighter than the old whole-world kAabbMinY/kAabbMaxY
+            // fallback, so more genuinely-offscreen patches get culled
+            // before any instance-building work. kAabbSafetyMarginM pads
+            // the sampled bounds since the Init()-time relief sampling
+            // isn't exhaustive (see that constant's own doc comment).
+            float ymin = kAabbMinY, ymax = kAabbMaxY;
+            if (has_height_data_) {
+                float hmin = height_min_[(size_t)iz * nx_ + ix];
+                float hmax = hmin + height_range_[(size_t)iz * nx_ + ix];
+                ymin = hmin - kAabbSafetyMarginM;
+                ymax = hmax + kAabbSafetyMarginM;
+            }
+            if (!AabbInFrustum(ox, oz, patch_size_, ymin, ymax, frustum_planes)) continue;
             out[count].ix = ix; out[count].iz = iz;
             out[count].origin_x = ox; out[count].origin_z = oz;
             out[count].lod = lod;

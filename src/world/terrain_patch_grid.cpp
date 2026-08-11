@@ -1,8 +1,21 @@
 #include <monkey_dust/world/terrain_patch_grid.h>
 #include <cstdio>
 
+namespace {
+// Number of samples per axis used to estimate each patch's local height
+// range at Init() time (kReliefSampleGrid^2 total, e.g. 5x5=25) -- cheap
+// enough to run for every patch in the grid once at startup (worst case
+// kMaxPatchesPublic=16384 patches * 25 samples = 409600 height-field
+// lookups, a few ms one-time cost), and dense enough to catch a real
+// ridge/cliff crossing a 300m patch without needing the FULL heightfield
+// resolution (that level of precision doesn't matter here -- this value
+// only biases WHICH LOD tier gets picked, not the rendered geometry
+// itself).
+constexpr int kReliefSampleGrid = 5;
+}  // namespace
+
 void TerrainPatchGrid::Init(float world_origin_x, float world_origin_z, float world_extent,
-                             float patch_size, int max_lod) {
+                             float patch_size, int max_lod, HeightSampleFn height_sampler) {
     world_origin_x_ = world_origin_x;
     world_origin_z_ = world_origin_z;
     patch_size_     = patch_size;
@@ -19,6 +32,36 @@ void TerrainPatchGrid::Init(float world_origin_x, float world_origin_z, float wo
         nx_ = nz_ = side;
     }
     for (int i = 0; i < nx_ * nz_; ++i) lod_[i] = 0.f;
+
+    // Precompute each patch's local height range -- see HeightSampleFn's
+    // doc comment (terrain_patch_grid.h) for why this is optional/nullable
+    // and UpdateLOD's own doc comment for why it matters: distance-only LOD
+    // selection coarsens a high-relief patch (e.g. a 500m cliff inside a
+    // 460m real Kenshi zone) at the exact same distance as a flat one,
+    // which is the confirmed primary cause of "melted"/rounded-looking
+    // mountains (docs/research/TERRAIN_GEOMETRY_DEEPSEEK_RESEARCH.md,
+    // topics 1/5/7 -- CDLOD/Cesium-quantized-mesh both keep a per-node
+    // min/max height specifically for this).
+    for (int i = 0; i < nx_ * nz_; ++i) height_range_[i] = 0.f;
+    if (height_sampler != nullptr) {
+        for (int iz = 0; iz < nz_; ++iz) {
+            float oz = world_origin_z_ + (float)iz * patch_size_;
+            for (int ix = 0; ix < nx_; ++ix) {
+                float ox = world_origin_x_ + (float)ix * patch_size_;
+                float hmin = 1e30f, hmax = -1e30f;
+                for (int sz = 0; sz < kReliefSampleGrid; ++sz) {
+                    float wz = oz + (float)sz / (float)(kReliefSampleGrid - 1) * patch_size_;
+                    for (int sx = 0; sx < kReliefSampleGrid; ++sx) {
+                        float wx = ox + (float)sx / (float)(kReliefSampleGrid - 1) * patch_size_;
+                        float h = height_sampler(wx, wz);
+                        if (h < hmin) hmin = h;
+                        if (h > hmax) hmax = h;
+                    }
+                }
+                height_range_[(size_t)iz * nx_ + ix] = hmax - hmin;
+            }
+        }
+    }
 }
 
 void TerrainPatchGrid::UpdateLOD(const float cam_pos[3]) {
@@ -37,6 +80,31 @@ void TerrainPatchGrid::UpdateLOD(const float cam_pos[3]) {
             // to 0.5*log2(dist_sq / patch_size^2).
             float norm_dist_sq = dist_sq / (patch_size_ * patch_size_);
             float lod = (norm_dist_sq > 1e-3f) ? 0.5f * log2f(norm_dist_sq) : 0.f;
+
+            // Relief bias (docs/research/TERRAIN_GEOMETRY_DEEPSEEK_RESEARCH.md,
+            // topic 7's "Concrete change to your current system"): a patch
+            // whose height range is large relative to its own footprint
+            // (a cliff/ridge, not a rolling hill) needs to stay at a finer
+            // LOD than pure distance would give it, because the geometric
+            // error of collapsing that relief to a coarser tier is much
+            // bigger than for a flat patch at the same distance. Zero when
+            // height_range_ is 0 (flat patch, or Init() was called with no
+            // height_sampler) -- exactly reproduces the old distance-only
+            // formula in both cases, so this cannot regress a patch that
+            // was already correctly handled.
+            float hr = height_range_[(size_t)iz * nx_ + ix];
+            if (hr > 0.f) {
+                // log2(1 + range/patch_size) keeps the bias bounded and
+                // slowly-growing even for extreme real Kenshi relief
+                // (~500m inside a 460m chunk gives log2(1+1.09)=1.06,
+                // i.e. a bit over one full LOD tier finer) -- same
+                // log2-of-ratio shape the distance term above already
+                // uses, so the two compose predictably instead of one
+                // dominating unboundedly.
+                constexpr float kReliefLodBias = 1.0f;
+                lod -= kReliefLodBias * log2f(1.f + hr / patch_size_);
+            }
+
             if (lod < 0.f) lod = 0.f;
             if (lod > (float)max_lod_) lod = (float)max_lod_;
             lod_[(size_t)iz * nx_ + ix] = lod;

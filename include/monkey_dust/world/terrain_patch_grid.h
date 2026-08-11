@@ -20,6 +20,19 @@
 // implementation.
 class TerrainPatchGrid {
 public:
+    // Optional world-space height sampler (matches TerrainAtlas_SampleWorld's
+    // own signature exactly, so real call sites can pass that function
+    // pointer directly) -- used ONCE per patch at Init() time to precompute
+    // each patch's local height RANGE, which UpdateLOD then uses to keep
+    // high-relief patches at finer LOD for longer (see UpdateLOD's own doc
+    // comment for why distance alone is not enough). Pass nullptr to skip
+    // entirely (every patch's height_range_ stays 0, i.e. the exact old
+    // distance-only behaviour) -- this keeps TerrainPatchGrid decoupled
+    // from the TerrainAtlas global singleton for callers/tests that don't
+    // have one loaded (see test_terrain_patch_grid.cpp, which never loads
+    // an atlas and must keep working unmodified).
+    using HeightSampleFn = float (*)(float world_x, float world_z);
+
     // world_origin_x/z: world-space min corner the grid covers (match
     // TerrainWorldHeightmap's own convention — this project's world is
     // 0-based, [0, 64*CHUNK_SIZE), not centred on origin).
@@ -29,8 +42,9 @@ public:
     // zone boundary; patches don't need zone alignment).
     // max_lod: highest LOD tier index (Phase 3 builds max_lod+1 static
     // mesh tiers, halving resolution each level).
+    // height_sampler: see HeightSampleFn above.
     void Init(float world_origin_x, float world_origin_z, float world_extent,
-              float patch_size, int max_lod);
+              float patch_size, int max_lod, HeightSampleFn height_sampler = nullptr);
 
     int   NumPatchesX() const { return nx_; }
     int   NumPatchesZ() const { return nz_; }
@@ -46,6 +60,11 @@ public:
     void UpdateLOD(const float cam_pos[3]);
 
     float LOD(int ix, int iz) const { return lod_[(size_t)iz * nx_ + ix]; }
+
+    // World-space (max-min) height sampled inside this patch's footprint at
+    // Init() time (0 if Init() was called with height_sampler=nullptr, or
+    // if the patch is genuinely flat) -- see HeightSampleFn's doc comment.
+    float HeightRange(int ix, int iz) const { return height_range_[(size_t)iz * nx_ + ix]; }
 
     // task terrain-lod-seam-cascade-gap (2026-07-31) then task
     // terrain-cdlod-geomorph (same day): a neighbor-tier cascade-snap
@@ -120,4 +139,8 @@ private:
     // churn here -- just keep these two literals in sync).
     static constexpr int kMaxPatches = kMaxPatchesPublic;
     float lod_[kMaxPatches] = {};
+    // height_range_[iz*nx_+ix] -- (max-min) world-space height sampled
+    // inside patch (ix,iz)'s footprint at Init() time; 0 if Init() was
+    // called with height_sampler=nullptr. See HeightSampleFn's doc comment.
+    float height_range_[kMaxPatches] = {};
 };

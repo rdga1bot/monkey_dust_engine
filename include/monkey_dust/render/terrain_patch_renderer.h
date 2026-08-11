@@ -2,6 +2,7 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/render/terrain_world_heightmap.h>
+#include <monkey_dust/world/terrain_patch_grid.h>
 #include <SDL3/SDL_gpu.h>
 
 // Granite-style terrain migration, Phase 3 (plan at /home/rdga1/.claude/
@@ -67,13 +68,79 @@ public:
     static int TierN(int tier) { return tier >= 0 && tier < kNumTiers ? (kPatchN >> tier) : 0; }
 
     // One patch's per-instance data (12 bytes: matches inst_stride).
-    // `lod` here is the FINAL, already-neighbor-clamped tier this patch
-    // was bucketed into (see the header's Granite-reference comment
-    // above) -- callers must apply the max(own, neighbors) clamp
-    // themselves before choosing which tier's instance array to append to.
+    // `lod` here is a RAW continuous value whose floor() MUST equal the
+    // tier bucket this instance is stored under -- see
+    // BuildInstanceBatches below, the only supported way to construct
+    // these (task #389, 2026-08-11: a hand-duplicated version of this
+    // logic in two call sites diverged, and even after fixing one copy,
+    // a second bug survived where `lod`'s floor() didn't match the tier
+    // bucket -- both classes of bug are why this is now centralized
+    // instead of "callers must apply X themselves").
     struct Instance {
         float origin_x, origin_z, lod;
     };
+
+    // Grid coordinates + final tier of one patch BuildInstanceBatches
+    // actually placed into an instance batch this frame -- callers use
+    // this to drive TerrainVtPageCache::RequestPage(ix, iz, tier) without
+    // BuildInstanceBatches needing to know TerrainVtPageCache exists.
+    struct PlacedPatch {
+        int ix, iz, tier;
+    };
+
+    // Pure CPU logic (no GPU calls, no VT dependency) -- given this
+    // frame's already frustum-culled + LOD-scored visible patches
+    // (TerrainPatchGrid::SelectVisible's output), assigns each to a
+    // per-tier instance batch:
+    //  1. starts from floor(own raw lod), clamped to [0, kNumTiers-1].
+    //  2. neighbor-tier clamp: forces tier <= (coarsest of the 4
+    //     immediate grid neighbors' own raw tier) + 1. The CDLOD geomorph
+    //     (terrain_patch_gbuffer.vert) only hides a 1-tier gap between
+    //     neighboring patches; without this clamp, TerrainPatchGrid's
+    //     height-range relief bias (a per-patch, data-dependent term) can
+    //     push a patch straddling a cliff 2+ tiers finer than its flat
+    //     neighbor at the same distance -- a gap the fixed 25m skirt
+    //     can't cover, leaving a real hole in the mesh (confirmed live,
+    //     task #389, 2026-08-11: reported as "flickering vertical
+    //     stripes"/a diagonal-line crack, reproduced in both game and
+    //     the editor's World3D viewport, independent of camera position).
+    //  3. if step 2 lowered the tier below floor(own raw lod), the lod
+    //     value written into the instance is forced to exactly
+    //     (float)tier (no fractional part). Also found live during task
+    //     #389, as a SECOND independent bug: the shader uses
+    //     floor(aInstLod) for heightmap mip selection and fract(aInstLod)
+    //     for the geomorph morph fraction, both of which must agree with
+    //     the tier bucket's ACTUAL mesh resolution (u.tier_n) -- sending
+    //     the original raw (coarser) lod after clamping the bucket to a
+    //     finer tier fed the shader a mip/morph fraction computed for the
+    //     wrong tier.
+    // This is the ONLY supported way to construct terrain Instances --
+    // game (SceneRender) and the editor (World3D viewport) both call this
+    // instead of hand-duplicating the clamp logic, which is exactly how
+    // the task #389 bug happened in the first place (one copy got fixed,
+    // the other didn't, twice).
+    //
+    // out_insts[t]: caller-owned array of at least max_insts_per_tier
+    // Instances, or nullptr to skip tier t entirely. max_insts_per_tier
+    // is a caller-supplied capacity, NOT assumed to be kMaxInstancesPerTier
+    // -- callers own arrays of DIFFERENT sizes (e.g. game's SceneRender
+    // uses 2048/tier, the editor uses 4096/tier), and hardcoding
+    // kMaxInstancesPerTier here would silently write past the end of the
+    // smaller one.
+    // out_counts[kNumTiers]: receives per-tier instance count, capped at
+    // max_insts_per_tier (excess patches silently dropped -- same
+    // truncation behaviour as before this refactor; callers should size
+    // their visible[]/max_out large enough that this never triggers, see
+    // TerrainPatchGrid::kMaxPatchesPublic).
+    // out_placed/max_placed/out_placed_count (all optional -- pass
+    // nullptr/0/nullptr to skip): receives one PlacedPatch per instance
+    // actually written (same order as out_insts), up to max_placed.
+    static void BuildInstanceBatches(const TerrainPatchGrid& grid,
+                                      const TerrainPatchGrid::VisiblePatch* visible, int nvis,
+                                      Instance* out_insts[kNumTiers], int out_counts[kNumTiers],
+                                      int max_insts_per_tier,
+                                      PlacedPatch* out_placed = nullptr, int max_placed = 0,
+                                      int* out_placed_count = nullptr);
 
     // Uploads this frame's per-tier instance batches. MUST be called
     // OUTSIDE any active render pass (issues one SDL_GPU copy pass per

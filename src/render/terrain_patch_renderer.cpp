@@ -227,8 +227,7 @@ void TerrainPatchRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
     ready_ = false;
 }
 
-void TerrainPatchRenderer::BuildInstanceBatches(const TerrainPatchGrid& grid,
-                                                 const TerrainPatchGrid::VisiblePatch* visible, int nvis,
+void TerrainPatchRenderer::BuildInstanceBatches(const TerrainPatchGrid::VisiblePatch* visible, int nvis,
                                                  Instance* out_insts[kNumTiers], int out_counts[kNumTiers],
                                                  int max_insts_per_tier,
                                                  PlacedPatch* out_placed, int max_placed,
@@ -236,26 +235,17 @@ void TerrainPatchRenderer::BuildInstanceBatches(const TerrainPatchGrid& grid,
     for (int t = 0; t < kNumTiers; ++t) out_counts[t] = 0;
     int placed_n = 0;
 
-    static constexpr int kDix[4] = { -1, 1, 0, 0 };
-    static constexpr int kDiz[4] = { 0, 0, -1, 1 };
-
     for (int i = 0; i < nvis; ++i) {
         const auto& p = visible[i];
-        int tier = (int)p.lod;
+        // p.tier is TerrainPatchGrid's own already-neighbor-cascaded tier
+        // (see TerrainPatchGrid::Tier's doc comment for the cascade
+        // algorithm) -- no neighbor lookup needed here anymore. Clamp to
+        // this renderer's own valid range defensively (a mismatched
+        // max_lod between the grid and this renderer's kNumTiers would
+        // otherwise index out of bounds below).
+        int tier = p.tier;
         if (tier < 0) tier = 0;
         if (tier > kNumTiers - 1) tier = kNumTiers - 1;
-
-        // Neighbor-tier clamp -- see this function's own doc comment
-        // (terrain_patch_renderer.h) for the full task #389 reasoning.
-        int min_neighbor_tier = kNumTiers - 1;
-        for (int k = 0; k < 4; ++k) {
-            int nix = p.ix + kDix[k], niz = p.iz + kDiz[k];
-            if (nix < 0 || nix >= grid.NumPatchesX()) continue;
-            if (niz < 0 || niz >= grid.NumPatchesZ()) continue;
-            int ntier = (int)grid.LOD(nix, niz);
-            if (ntier < min_neighbor_tier) min_neighbor_tier = ntier;
-        }
-        if (tier > min_neighbor_tier + 1) tier = min_neighbor_tier + 1;
 
         if (out_insts[tier] == nullptr) continue;
         int& n = out_counts[tier];
@@ -263,7 +253,8 @@ void TerrainPatchRenderer::BuildInstanceBatches(const TerrainPatchGrid& grid,
         Instance& inst = out_insts[tier][n];
         inst.origin_x = p.origin_x;
         inst.origin_z = p.origin_z;
-        // floor(lod)/tier mismatch fixup -- see doc comment, step 3.
+        // floor(lod)/tier mismatch fixup -- see this function's own doc
+        // comment (terrain_patch_renderer.h), step 3.
         inst.lod = (tier < (int)p.lod) ? (float)tier : p.lod;
         ++n;
 

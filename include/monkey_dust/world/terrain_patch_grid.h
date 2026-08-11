@@ -61,35 +61,51 @@ public:
 
     float LOD(int ix, int iz) const { return lod_[(size_t)iz * nx_ + ix]; }
 
+    // Final, already-neighbor-cascaded tier this patch should draw at --
+    // see UpdateLOD's own doc comment for the cascade algorithm and why
+    // it replaced BOTH the single-hop clamp task #389's first fix used
+    // AND the even older whole-grid cascade-snap this same class removed
+    // back on 2026-07-31 (see the historical note further down). Callers
+    // (TerrainPatchRenderer::BuildInstanceBatches) should use THIS, not
+    // floor(LOD(ix,iz)), to pick which mesh tier a patch draws with.
+    int Tier(int ix, int iz) const { return tier_[(size_t)iz * nx_ + ix]; }
+
     // World-space (max-min) height sampled inside this patch's footprint at
     // Init() time (0 if Init() was called with height_sampler=nullptr, or
     // if the patch is genuinely flat) -- see HeightSampleFn's doc comment.
     float HeightRange(int ix, int iz) const { return height_range_[(size_t)iz * nx_ + ix]; }
 
-    // task terrain-lod-seam-cascade-gap (2026-07-31) then task
-    // terrain-cdlod-geomorph (same day): a neighbor-tier cascade-snap
-    // (ComputeSnappedTiers/SnappedTier) used to live here, replacing an
-    // even earlier single-hop neighbor-max snap that left real cracks at
-    // 2+-tier cliffs (three patches with natural tiers 1,1,3 -- the
-    // middle snaps up to 3 to match its right neighbor, but the left
-    // patch's single-hop snap only ever saw the middle's pre-snap tier of
-    // 1). The cascade-snap fixed that specific class correctly, but a
-    // direct A/B test (bypass frustum culling entirely, compare
-    // screenshots at the exact reported crack location) found the actual
-    // reported crack was completely UNCHANGED with the cascade-snap
-    // applied -- meaning the crack was never a 2+-tier-jump problem this
-    // machinery targeted in the first place. Removed in favour of a
-    // per-patch CDLOD-style geomorph (terrain_patch.vert's main(), see its
-    // own doc comment) -- callers now just take floor(own raw LOD) as the
-    // tier with no neighbor lookup at all, and the vertex shader morphs
-    // each patch's own vertices toward its next-coarser tier's grid
-    // before the draw-side tier switch happens, so no discontinuity to
-    // hide via tier-matching in the first place.
+    // History (why a cascade lives here again after being removed once):
+    // task terrain-lod-seam-cascade-gap (2026-07-31) had a neighbor-tier
+    // cascade-snap here; task terrain-cdlod-geomorph (same day) removed
+    // it in favour of the per-patch CDLOD-style geomorph alone (each
+    // patch morphs its own vertices toward its next-coarser tier's grid,
+    // terrain_patch_gbuffer.vert's main()) -- an A/B test at the time
+    // found the one specific reported crack was completely UNCHANGED by
+    // the cascade-snap, so it looked unnecessary. That test predates the
+    // height-range relief bias (task #387): a per-patch, DATA-dependent
+    // LOD term (see UpdateLOD below) that makes a real >1-tier neighbor
+    // gap common wherever a patch straddles a cliff, not the rare edge
+    // case the old test happened to check. Task #389 (2026-08-11) first
+    // patched this with a SINGLE-HOP clamp in the caller (compare each
+    // patch's tier against each neighbor's RAW, pre-clamp tier) -- fixed
+    // the reported live repro, but a follow-up fuzz test (2026-08-12,
+    // TerrainPatchRendererBatching.FuzzRandomCliffsPreserveInvariants)
+    // found real counterexamples within ~10 random iterations: a 3-patch
+    // chain (cliff A -- flat B -- cliff C) where B's single-hop clamp
+    // uses C's raw tier and lands B two tiers below A, but A's own
+    // single-hop clamp never learns B's FINAL (already-clamped) tier, so
+    // A and B end up 2 tiers apart despite each individually "respecting"
+    // its neighbors. The cascade below closes that gap: it repeatedly
+    // relaxes tier_[] against already-updated neighbor values (values can
+    // only decrease, floored at 0, so this provably terminates in at
+    // most max_lod_ passes) instead of a single pass against stale data.
 
     struct VisiblePatch {
         int   ix, iz;   // grid indices
         float origin_x, origin_z;
-        float lod;
+        float lod;   // raw continuous LOD -- geomorph fract() source
+        int   tier;  // final, already-cascaded tier -- see Tier() above
     };
     // Frustum-culls (4-plane AABB test, same convention MdCamera::
     // FrustumPlanes/TerrainQuadtree::SelectVisible's own AabbInFrustum
@@ -139,6 +155,10 @@ private:
     // churn here -- just keep these two literals in sync).
     static constexpr int kMaxPatches = kMaxPatchesPublic;
     float lod_[kMaxPatches] = {};
+    // tier_[iz*nx_+ix] -- final, already-cascaded tier (see Tier()'s doc
+    // comment and UpdateLOD's cascade algorithm). Recomputed every
+    // UpdateLOD() call, same cadence as lod_[].
+    int   tier_[kMaxPatches] = {};
     // height_range_[iz*nx_+ix] -- (max-min) world-space height sampled
     // inside patch (ix,iz)'s footprint at Init() time; 0 if Init() was
     // called with height_sampler=nullptr. See HeightSampleFn's doc comment.

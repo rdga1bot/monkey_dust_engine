@@ -90,35 +90,29 @@ public:
 
     // Pure CPU logic (no GPU calls, no VT dependency) -- given this
     // frame's already frustum-culled + LOD-scored visible patches
-    // (TerrainPatchGrid::SelectVisible's output), assigns each to a
-    // per-tier instance batch:
-    //  1. starts from floor(own raw lod), clamped to [0, kNumTiers-1].
-    //  2. neighbor-tier clamp: forces tier <= (coarsest of the 4
-    //     immediate grid neighbors' own raw tier) + 1. The CDLOD geomorph
-    //     (terrain_patch_gbuffer.vert) only hides a 1-tier gap between
-    //     neighboring patches; without this clamp, TerrainPatchGrid's
-    //     height-range relief bias (a per-patch, data-dependent term) can
-    //     push a patch straddling a cliff 2+ tiers finer than its flat
-    //     neighbor at the same distance -- a gap the fixed 25m skirt
-    //     can't cover, leaving a real hole in the mesh (confirmed live,
-    //     task #389, 2026-08-11: reported as "flickering vertical
-    //     stripes"/a diagonal-line crack, reproduced in both game and
-    //     the editor's World3D viewport, independent of camera position).
-    //  3. if step 2 lowered the tier below floor(own raw lod), the lod
-    //     value written into the instance is forced to exactly
-    //     (float)tier (no fractional part). Also found live during task
-    //     #389, as a SECOND independent bug: the shader uses
-    //     floor(aInstLod) for heightmap mip selection and fract(aInstLod)
-    //     for the geomorph morph fraction, both of which must agree with
-    //     the tier bucket's ACTUAL mesh resolution (u.tier_n) -- sending
-    //     the original raw (coarser) lod after clamping the bucket to a
-    //     finer tier fed the shader a mip/morph fraction computed for the
-    //     wrong tier.
+    // (TerrainPatchGrid::SelectVisible's output, which already carries
+    // each patch's final, neighbor-cascaded tier -- see
+    // TerrainPatchGrid::Tier's doc comment for that algorithm and its
+    // own task #389 history), assigns each to a per-tier instance batch:
+    //  1. tier = p.tier, clamped to [0, kNumTiers-1] defensively (in case
+    //     of a max_lod/kNumTiers mismatch between grid and renderer).
+    //  2. if p.tier is FINER than floor(p.lod) -- i.e. the grid's cascade
+    //     lowered this patch's tier below what raw distance/relief alone
+    //     would give it -- the lod value written into the instance is
+    //     forced to exactly (float)tier (no fractional part) instead of
+    //     the raw p.lod. Found live during task #389 (2026-08-11) as a
+    //     SECOND independent bug on top of the missing cascade itself:
+    //     the shader uses floor(aInstLod) for heightmap mip selection and
+    //     fract(aInstLod) for the geomorph morph fraction, both of which
+    //     must agree with the tier bucket's ACTUAL mesh resolution
+    //     (u.tier_n) -- sending the original raw (coarser) lod after the
+    //     tier got clamped finer fed the shader a mip/morph fraction
+    //     computed for the wrong tier.
     // This is the ONLY supported way to construct terrain Instances --
     // game (SceneRender) and the editor (World3D viewport) both call this
-    // instead of hand-duplicating the clamp logic, which is exactly how
-    // the task #389 bug happened in the first place (one copy got fixed,
-    // the other didn't, twice).
+    // instead of hand-duplicating this logic, which is exactly how the
+    // task #389 bug happened in the first place (one copy got fixed, the
+    // other didn't, twice).
     //
     // out_insts[t]: caller-owned array of at least max_insts_per_tier
     // Instances, or nullptr to skip tier t entirely. max_insts_per_tier
@@ -135,8 +129,7 @@ public:
     // out_placed/max_placed/out_placed_count (all optional -- pass
     // nullptr/0/nullptr to skip): receives one PlacedPatch per instance
     // actually written (same order as out_insts), up to max_placed.
-    static void BuildInstanceBatches(const TerrainPatchGrid& grid,
-                                      const TerrainPatchGrid::VisiblePatch* visible, int nvis,
+    static void BuildInstanceBatches(const TerrainPatchGrid::VisiblePatch* visible, int nvis,
                                       Instance* out_insts[kNumTiers], int out_counts[kNumTiers],
                                       int max_insts_per_tier,
                                       PlacedPatch* out_placed = nullptr, int max_placed = 0,

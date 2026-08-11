@@ -108,7 +108,44 @@ void TerrainPatchGrid::UpdateLOD(const float cam_pos[3]) {
             if (lod < 0.f) lod = 0.f;
             if (lod > (float)max_lod_) lod = (float)max_lod_;
             lod_[(size_t)iz * nx_ + ix] = lod;
+            int t = (int)lod;
+            if (t < 0) t = 0;
+            if (t > max_lod_) t = max_lod_;
+            tier_[(size_t)iz * nx_ + ix] = t;
         }
+    }
+
+    // Neighbor-tier cascade -- see Tier()'s own doc comment (header) for
+    // the full history/why (task #389 fuzz-test-found counterexample,
+    // 2026-08-12). Relaxes tier_[] against its own 4-neighbor grid:
+    // Gauss-Seidel style (reads already-updated neighbor values within
+    // the SAME pass, not the previous pass's stale values) -- safe here
+    // because a value can only ever DECREASE, so using a fresher
+    // (smaller) neighbor value only makes this patch's own clamp more
+    // (correctly) aggressive, never wrong. Provably terminates: each
+    // pass either makes zero changes (done) or strictly decreases at
+    // least one tier_[] entry, which is bounded below by 0 -- so at most
+    // max_lod_ passes are ever needed. In practice this converges in 1-2
+    // passes for realistic terrain (the height-range bias only produces
+    // sharp jumps at real cliff edges, not map-spanning chains), but the
+    // bound holds even for an adversarial worst case.
+    for (int pass = 0; pass <= max_lod_; ++pass) {
+        bool changed = false;
+        for (int iz = 0; iz < nz_; ++iz) {
+            for (int ix = 0; ix < nx_; ++ix) {
+                size_t idx = (size_t)iz * nx_ + ix;
+                int min_neighbor = max_lod_;
+                if (ix > 0)      { int n = tier_[idx - 1];       if (n < min_neighbor) min_neighbor = n; }
+                if (ix < nx_-1)  { int n = tier_[idx + 1];       if (n < min_neighbor) min_neighbor = n; }
+                if (iz > 0)      { int n = tier_[idx - (size_t)nx_]; if (n < min_neighbor) min_neighbor = n; }
+                if (iz < nz_-1)  { int n = tier_[idx + (size_t)nx_]; if (n < min_neighbor) min_neighbor = n; }
+                if (tier_[idx] > min_neighbor + 1) {
+                    tier_[idx] = min_neighbor + 1;
+                    changed = true;
+                }
+            }
+        }
+        if (!changed) break;
     }
 }
 
@@ -138,6 +175,7 @@ int TerrainPatchGrid::SelectVisible(const float frustum_planes[16], VisiblePatch
             out[count].ix = ix; out[count].iz = iz;
             out[count].origin_x = ox; out[count].origin_z = oz;
             out[count].lod = lod;
+            out[count].tier = tier_[(size_t)iz * nx_ + ix];
             ++count;
         }
     }

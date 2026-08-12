@@ -6,17 +6,36 @@
 
 // Custom allocator: enforce LUA_MEM_LIMIT_BYTES.
 // Returns nullptr when limit exceeded — Lua handles OOM gracefully.
+//
+// terrain-perf-measure (2026-08-12, task #406): the old `*used - osize +
+// nsize` arithmetic is unsigned (size_t) and has no protection against
+// `osize > *used` — proven live via a temp diagnostic (lua_gc(LUA_GCCOUNT)
+// stayed flat at 28KB, real Lua heap usage, while *used spiraled DOWN
+// ~42 bytes/call and underflowed to ~2^64 around call #640, after which
+// every allocation permanently failed with a real but misleading "not
+// enough memory"). Root cause of the per-call mismatch not fully isolated
+// (likely: for a brand-new object Lua's alloc convention passes a small
+// type-tag as `osize`, not a real previous size, which this counter
+// treated as a real size to subtract — see Lua 5.4 manual §lua_Alloc), but
+// regardless of the exact mismatch source, unsigned subtraction should
+// never be allowed to wrap. Clamped arithmetic below makes that
+// structurally impossible: worst case the tracked count drifts slightly
+// inaccurate, never catastrophically wraps into a permanent-failure state.
 void* LuaSystem::lua_alloc(void* ud, void* ptr, size_t osize, size_t nsize) {
     auto* used = static_cast<size_t*>(ud);
     if (nsize == 0) {
-        *used -= osize;
+        *used = (osize <= *used) ? (*used - osize) : 0;
         free(ptr);
         return nullptr;
     }
-    if (*used - osize + nsize > LUA_MEM_LIMIT_BYTES)
+    size_t grow = (nsize > osize) ? (nsize - osize) : 0;
+    if (*used + grow > LUA_MEM_LIMIT_BYTES)
         return nullptr; // allocation refused → Lua raises MemError
     void* p = realloc(ptr, nsize);
-    if (p) *used = *used - osize + nsize;
+    if (p) {
+        if (nsize >= osize) *used += (nsize - osize);
+        else                *used = (osize - nsize <= *used) ? (*used - (osize - nsize)) : 0;
+    }
     return p;
 }
 
@@ -211,15 +230,42 @@ bool LuaSystem::Exec(const char* lua_code, char* error_out, size_t error_out_siz
     // parse as JSON/text downstream). The reported error TEXT itself
     // (from luaL_error) is unaffected — only the chunkname-echo prefix was
     // ever corrupted.
+    //
+    // terrain-perf-measure (2026-08-12): base = stack depth before this
+    // call. LUA_MULTRET in the pcall below pushes however many values the
+    // executed chunk returns (0 for a bare statement, but callers here are
+    // arbitrary caller-supplied Lua, so never assume 0) — the old code only
+    // popped on the error path (exactly 1 error object) and never touched
+    // the success path, leaking one chunk's worth of return values onto L_
+    // every call. lua_settop(L_, base) after either outcome restores the
+    // pre-call depth unconditionally.
+    //
+    // That stack fix alone was NOT sufficient, confirmed live: a 3000-call
+    // stress test (game_cmd_file.h's tmp_/game_cmd/ channel, a live perf-
+    // measurement driver polling md.get_gpu_ms() in a loop) still hit
+    // lua_alloc's LUA_MEM_LIMIT_BYTES (8MB, lua_system.h) after ~740 calls
+    // and never recovered. Root cause: every luaL_loadbuffer call here
+    // compiles a brand-new throwaway Lua closure/Proto -- garbage the
+    // instant this function returns, but Lua's GC is otherwise only
+    // stepped implicitly by normal allocation pressure elsewhere in the
+    // game; this channel's call rate (driven externally, not by game
+    // ticks) outpaced that. An explicit full collection here is cheap
+    // (payloads are tiny one-off commands, not a hot per-frame path) and
+    // guarantees this channel can never accumulate uncollected garbage
+    // across calls regardless of what else is or isn't ticking Lua's GC.
+    int base = lua_gettop(L_);
     bool failed = luaL_loadbuffer(L_, lua_code, strlen(lua_code), "cmd") != LUA_OK
                || lua_pcall(L_, 0, LUA_MULTRET, 0) != LUA_OK;
     if (failed) {
         const char* err = lua_tostring(L_, -1);
         MD_LOG(MD_LOG_WARNING, "[LuaSystem] Exec error: %s", err ? err : "?");
         if (error_out && error_out_size) snprintf(error_out, error_out_size, "%s", err ? err : "?");
-        lua_pop(L_, 1);
+        lua_settop(L_, base);
+        lua_gc(L_, LUA_GCCOLLECT, 0);
         return false;
     }
+    lua_settop(L_, base);
+    lua_gc(L_, LUA_GCCOLLECT, 0);
     return true;
 }
 

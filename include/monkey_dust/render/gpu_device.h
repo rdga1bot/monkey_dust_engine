@@ -53,12 +53,29 @@ public:
     // Submit the command buffer and acquire a fence for next-frame sync.
     void Submit(SDL_GPUCommandBuffer* cmd);
 
+    // terrain-perf-measure (2026-08-12): opt-in synchronous GPU timing.
+    // Normal Submit() is deliberately async (fence released a whole frame
+    // late, in BeginFrame() -- lets CPU and GPU overlap). That's exactly
+    // why frame_dt()-based measurement is blind to real GPU cost here: at
+    // TARGET_FPS=60 the GPU has slack, so the software frame-cap
+    // (main.cpp) eats the difference and frame_dt() never moves. When
+    // SetSyncTiming(true), Submit() instead waits on THIS frame's fence
+    // immediately and times the wait -- LastGpuMs() is real serialized GPU
+    // execution time (submit-to-fence-signal), at the cost of killing
+    // CPU/GPU pipelining for as long as the flag is on. NOT a shippable
+    // mode -- test-only, default off, md.set_gpu_sync_timing(bool).
+    void  SetSyncTiming(bool on) { sync_timing_ = on; }
+    bool  SyncTiming() const     { return sync_timing_; }
+    float LastGpuMs() const      { return last_gpu_ms_; }
+
 private:
     GpuDevice() = default;
-    SDL_GPUDevice* device_     = nullptr;
-    SDL_Window*    window_     = nullptr;
-    int            frame_slot_ = 0;
-    SDL_GPUFence*  prev_fence_ = nullptr;
+    SDL_GPUDevice* device_       = nullptr;
+    SDL_Window*    window_       = nullptr;
+    int            frame_slot_   = 0;
+    SDL_GPUFence*  prev_fence_   = nullptr;
+    bool           sync_timing_  = false;
+    float          last_gpu_ms_  = 0.f;
 };
 
 } // namespace md

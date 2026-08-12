@@ -120,6 +120,26 @@
    inline int  window_get_height() { return _wnd::height(); }
    inline float window_get_time_s() { return (float)(SDL_GetTicks() * 0.001); }
 
+   // terrain-perf-measure (2026-08-12): live resize for the resolution-
+   // scaling frame-time test (md.set_window_size). window_begin_frame()
+   // re-reads the real size from SDL every frame (SDL_GetWindowSize), and
+   // TerrainShadingProjected::EnsureSize already tracks window resizes
+   // correctly (diagnosed/fixed 2026-08-02) -- so no extra plumbing needed
+   // beyond the resize call itself, EXCEPT: window_init() creates the
+   // window with SDL_WINDOW_MAXIMIZED (line ~44), and SDL_SetWindowSize()
+   // is a documented no-op on a maximized window on most platforms/WMs --
+   // confirmed empirically (2026-08-12): every resize call in a 4-point
+   // resolution-scaling test silently did nothing, gbuf_w/gbuf_h stayed
+   // at the maximized 1920x1056 the whole time, and the resulting "flat
+   // GPU cost vs resolution" data was measuring one single resolution
+   // four times, not four different ones. SDL_RestoreWindow() un-maximizes
+   // first so the resize actually takes effect.
+   inline void window_set_size(int w, int h) {
+       if (w <= 0 || h <= 0) return;
+       SDL_RestoreWindow(_wnd::ptr());
+       SDL_SetWindowSize(_wnd::ptr(), w, h);
+   }
+
    // Sync window size. SDL_GPU: frame clear handled by render pass; no GL calls.
    inline void window_begin_frame() {
        int w = 0, h = 0;

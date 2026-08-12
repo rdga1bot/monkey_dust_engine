@@ -3,6 +3,7 @@
 #include <monkey_dust/render/gpu_frame_timeline.h>
 #include <monkey_dust/platform/md_log.h>
 #include <SDL3/SDL_gpu.h>
+#include <SDL3/SDL_timer.h>  // SDL_GetPerformanceCounter/Frequency -- sync-timing path
 
 namespace md {
 
@@ -94,6 +95,23 @@ void GpuDevice::BeginFrame() {
 
 void GpuDevice::Submit(SDL_GPUCommandBuffer* cmd) {
     if (prev_fence_) { SDL_ReleaseGPUFence(device_, prev_fence_); prev_fence_ = nullptr; }
+
+    if (sync_timing_) {
+        // terrain-perf-measure (2026-08-12): serialize on THIS frame's fence
+        // instead of deferring to next frame's BeginFrame() -- see header
+        // doc comment for why the normal async path is blind to real GPU
+        // cost under the TARGET_FPS software cap.
+        SDL_GPUFence* f = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+        uint64_t t0 = SDL_GetPerformanceCounter();
+        if (f) SDL_WaitForGPUFences(device_, true, &f, 1);
+        uint64_t t1 = SDL_GetPerformanceCounter();
+        uint64_t freq = SDL_GetPerformanceFrequency();
+        last_gpu_ms_ = freq ? (float)((double)(t1 - t0) * 1000.0 / (double)freq) : 0.f;
+        if (f) SDL_ReleaseGPUFence(device_, f);
+        GpuFrameTimeline::Get().OnSubmit();
+        return;
+    }
+
     prev_fence_ = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
     // Timeline: record submit timestamp for latency measurement.
     GpuFrameTimeline::Get().OnSubmit();

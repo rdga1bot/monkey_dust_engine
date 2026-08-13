@@ -240,19 +240,22 @@ bool LuaSystem::Exec(const char* lua_code, char* error_out, size_t error_out_siz
     // every call. lua_settop(L_, base) after either outcome restores the
     // pre-call depth unconditionally.
     //
-    // That stack fix alone was NOT sufficient, confirmed live: a 3000-call
-    // stress test (game_cmd_file.h's tmp_/game_cmd/ channel, a live perf-
-    // measurement driver polling md.get_gpu_ms() in a loop) still hit
-    // lua_alloc's LUA_MEM_LIMIT_BYTES (8MB, lua_system.h) after ~740 calls
-    // and never recovered. Root cause: every luaL_loadbuffer call here
-    // compiles a brand-new throwaway Lua closure/Proto -- garbage the
-    // instant this function returns, but Lua's GC is otherwise only
-    // stepped implicitly by normal allocation pressure elsewhere in the
-    // game; this channel's call rate (driven externally, not by game
-    // ticks) outpaced that. An explicit full collection here is cheap
-    // (payloads are tiny one-off commands, not a hot per-frame path) and
-    // guarantees this channel can never accumulate uncollected garbage
-    // across calls regardless of what else is or isn't ticking Lua's GC.
+    // That stack fix alone was NOT sufficient at first, but the extra
+    // failures traced to an unrelated bug: an unsigned size_t underflow in
+    // lua_alloc's own byte-accounting (see that function's doc comment) —
+    // NOT actual GC pressure. Live diagnostic during that investigation
+    // (lua_gc(L_, LUA_GCCOUNT, 0), the real Lua heap size) stayed flat at
+    // ~28KB through a 3000-call stress test the whole time, confirming
+    // Lua's normal incremental GC (auto-stepped by allocation pressure, no
+    // manual stepping needed) already reclaims these throwaway per-Exec
+    // closures on its own. An explicit lua_gc(LUA_GCCOLLECT) full sweep was
+    // added here as a hypothesis while chasing that bug and is NOT needed
+    // for correctness now that lua_alloc itself is fixed — removed, since
+    // L_ is shared with the BT/dialogue Lua paths and a full mark-sweep on
+    // every Exec() call (this channel is externally-driven, can run in a
+    // tight loop during perf-measurement) would be unjustified cost on
+    // that shared heap. lua_settop(L_, base) is the real, load-bearing fix
+    // and stays on both paths unconditionally.
     int base = lua_gettop(L_);
     bool failed = luaL_loadbuffer(L_, lua_code, strlen(lua_code), "cmd") != LUA_OK
                || lua_pcall(L_, 0, LUA_MULTRET, 0) != LUA_OK;
@@ -261,11 +264,9 @@ bool LuaSystem::Exec(const char* lua_code, char* error_out, size_t error_out_siz
         MD_LOG(MD_LOG_WARNING, "[LuaSystem] Exec error: %s", err ? err : "?");
         if (error_out && error_out_size) snprintf(error_out, error_out_size, "%s", err ? err : "?");
         lua_settop(L_, base);
-        lua_gc(L_, LUA_GCCOLLECT, 0);
         return false;
     }
     lua_settop(L_, base);
-    lua_gc(L_, LUA_GCCOLLECT, 0);
     return true;
 }
 

@@ -40,8 +40,12 @@
 #ifdef MD_SDL_GPU
        // Pure SDL_GPU (Vulkan/Metal): no OpenGL context.
        // SDL_ClaimWindowForGPUDevice requires the window NOT have an active GL context.
+       // SDL_WINDOW_HIDDEN: without it the compositor shows this window's
+       // (uninitialized) buffer immediately -- game_init.cpp calls
+       // SDL_ShowWindow() itself right after the first real SplashScreen
+       // present, so nothing is ever shown before something is drawn.
        _wnd::ptr() = SDL_CreateWindow(title, init_w, init_h,
-           SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+           SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_HIDDEN);
 #else
        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);

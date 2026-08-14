@@ -83,15 +83,64 @@ public:
         return false;  // queue full — caller falls back to synchronous Build
     }
 
-    // Main thread: poll completed slots, call GPU upload + caller-provided callback.
-    // Returns number of slots uploaded.
+    // Main thread: poll completed slots, call GPU upload + caller-provided
+    // callback. Returns number of slots uploaded.
+    //
+    // terrain-perf-master fix (2): draining every ready slot unconditionally
+    // in one call is what produced a single-frame 9-14-chunk synchronous
+    // burst (measured 22-35ms of JoltWorld::AddTerrainMesh + PropGen_Build,
+    // see game_render_frame.cpp's temporary [POLL-HITCH] instrumentation)
+    // whenever a whole shifted column/row completed together. `budget_ms`
+    // caps wall time spent per call -- but always processes at least one
+    // ready slot first, so a full queue can't stall forever. Slots not
+    // consumed this call stay ready for the next poll(): they are chunks
+    // the 9x9 window already prefetched AHEAD of the player (look-ahead
+    // margin), not chunks already needed under the player, as long as the
+    // consumption rate stays ahead of how fast the player can close that
+    // margin -- see px/pz below.
+    //
+    // budget_ms < 0 (default) means "no budget, drain everything" -- the
+    // ORIGINAL unconditional behaviour, preserved by default so the only
+    // other call site (game/src/autonomy/scenario_driver.cpp's headless
+    // --exec tick loop, which needs every enqueued chunk fully consumed
+    // within its own fixed tick budget, not smoothed across extra ticks)
+    // is unaffected unless it explicitly opts in.
+    //
+    // px/pz: when more than one slot is ready, the nearest to (px,pz) is
+    // consumed first (insertion sort -- CAPACITY is tiny, no need for
+    // anything fancier), so if the budget cuts a batch short, the chunk
+    // actually closest to the player is never the one left waiting.
     template<typename UploadFn>
-    int poll(UploadFn&& fn) {
-        int n = 0;
+    int poll(UploadFn&& fn, float px = 0.f, float pz = 0.f, double budget_ms = -1.0) {
+        int order[CAPACITY];
+        int ready_n = 0;
         for (int i = 0; i < CAPACITY; ++i) {
             auto& s = slots_[i];
             if (s.consumed.load(std::memory_order_relaxed)) continue;
             if (!s.ready.load(std::memory_order_acquire))   continue;
+            order[ready_n++] = i;
+        }
+        auto dist_sq = [&](int idx) {
+            const auto& s = slots_[idx];
+            if (!s.chunk) return 0.f;
+            float ddx = s.chunk->center_x - px, ddz = s.chunk->center_z - pz;
+            return ddx * ddx + ddz * ddz;
+        };
+        for (int a = 1; a < ready_n; ++a) {
+            int idx = order[a];
+            float ad = dist_sq(idx);
+            int b = a - 1;
+            while (b >= 0 && dist_sq(order[b]) > ad) {
+                order[b + 1] = order[b];
+                --b;
+            }
+            order[b + 1] = idx;
+        }
+
+        auto t0 = std::chrono::steady_clock::now();
+        int n = 0;
+        for (int k = 0; k < ready_n; ++k) {
+            auto& s = slots_[order[k]];
             if (s.chunk) {
                 TerrainGen_Upload(*s.chunk);
                 ClutterGen_UploadFrom(*s.chunk, s.clutter_v, s.clutter_vc,
@@ -100,14 +149,39 @@ public:
             }
             s.consumed.store(true, std::memory_order_release);
             ++n;
+            if (budget_ms >= 0.0) {
+                double elapsed_ms = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t0).count();
+                if (elapsed_ms >= budget_ms) break;
+            }
         }
         return n;
     }
 
     static TerrainStreamQueue& Get() { static TerrainStreamQueue inst; return inst; }
 
-    // Autonomy system (md.chunk_stats()) — in-flight terrain build requests.
+    // Autonomy system (md.chunk_stats()) — in-flight terrain build requests
+    // (worker hasn't finished building yet). Distinct from BacklogCount()
+    // below: a chunk stops counting here the moment the WORKER finishes it
+    // (ready=true), even if poll() hasn't consumed it yet.
     int PendingCount() const { return pending_.load(std::memory_order_acquire); }
+
+    // Chunks the worker has already built (ready=true) but poll() has not
+    // yet consumed (consumed=false) -- the real backlog on the MAIN-thread
+    // consumer side, e.g. when budget_ms truncates a poll() call. This is
+    // the number that actually answers "is fix (2)'s budget keeping up",
+    // not PendingCount() (which only reflects the worker thread's queue).
+    int BacklogCount() const {
+        int n = 0;
+        for (int i = 0; i < CAPACITY; ++i) {
+            const auto& s = slots_[i];
+            if (!s.consumed.load(std::memory_order_relaxed) &&
+                s.ready.load(std::memory_order_relaxed)) {
+                ++n;
+            }
+        }
+        return n;
+    }
 
 private:
     void worker_loop() {

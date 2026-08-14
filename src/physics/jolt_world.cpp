@@ -220,6 +220,12 @@ JPH::BodyID JoltWorld::AddTerrainMesh(const float* heights, int grid,
     // ReplaceTerrainBody below). Requires (grid % block_size(=2)) == 0;
     // TERRAIN_GRID=128 satisfies this with no downsampling needed, unlike
     // ReplaceTerrainBody's arbitrary-resolution input.
+    // terrain-perf-master (2026-08-14): measured split of this function's
+    // two phases confirms build_ms (~1.8-2.7ms/chunk) dominates, insert_ms
+    // (~0.00-0.01ms) is negligible -- moving hfs.Create() to a worker
+    // thread is the real next-cycle lever; CreateAndAddBody stays cheap on
+    // the main thread, no BodyInterface batch API needed. See CLAUDE_STATE.md
+    // "продовження 7". Timers removed after answering the question.
     JPH::HeightFieldShapeSettings hfs(
         heights,
         JPH::Vec3(origin_x, 0.f, origin_z),

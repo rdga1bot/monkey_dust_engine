@@ -167,7 +167,14 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
     // binds (TerrainPatchRenderer::DrawBatch).
     SDL_GPUTextureSamplerBinding ground_bindings[4];
     ground.GetSharedGroundSamplers(ground_bindings);
-    if (!ground_bindings[0].texture || !ground_bindings[0].sampler) return;
+    // All 4 must be checked, not just index 0 -- unlike slots 0/2/3 (plain
+    // sampler2D, always backed by a same-typed 1x1 fallback texture even
+    // when their real asset fails to load), slot 1 (tex_ground_array,
+    // sampler2DArray in the shader) has no fallback of a matching image
+    // type in FillSamplerBindings and falls back to nullptr/nullptr.
+    for (int i = 0; i < 4; ++i) {
+        if (!ground_bindings[i].texture || !ground_bindings[i].sampler) return;
+    }
     SDL_BindGPUFragmentSamplers(rp, 0, ground_bindings, 4);
     // Single remaining SSBO (vtPageMeta) -- zoneGroundLayers moved to a
     // texture (binding=8, bound below with the other samplers) since

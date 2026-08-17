@@ -43,6 +43,17 @@ public:
     SDL_GPUTexture* Texture() const { return tex_; }
     SDL_GPUSampler* Sampler() const { return sampler_; }
 
+    // Full-variant Phase 3 (serene-pondering-teapot.md): world-wide baked
+    // normal texture, RG8_SNORM (normal.xz; y = sqrt(1-x^2-z^2) downstream),
+    // same resolution as Texture(). Baked once inside Init() via
+    // shaders/terrain_worldmap_normal_bake.comp using a FIXED native-texel
+    // forward-difference step -- same fix Part A proved at clip-level
+    // scale (RenderDoc: normal delta 0.0000 at every boundary), applied
+    // here so any two patches sampling this texture at a shared world
+    // position agree exactly, regardless of each patch's own tier.
+    SDL_GPUTexture* NormalTexture() const { return normal_tex_; }
+    SDL_GPUSampler* NormalSampler() const { return normal_sampler_; }
+
     // Height decode: worldY = HeightMin() + SampledFrac * (HeightMax()-HeightMin())
     float HeightMin() const { return height_min_; }
     float HeightMax() const { return height_max_; }
@@ -58,6 +69,8 @@ public:
 private:
     SDL_GPUTexture* tex_     = nullptr;
     SDL_GPUSampler* sampler_ = nullptr;
+    SDL_GPUTexture* normal_tex_     = nullptr;
+    SDL_GPUSampler* normal_sampler_ = nullptr;
     float height_min_   = 0.f;
     float height_max_   = 0.f;
     float world_extent_ = 0.f;

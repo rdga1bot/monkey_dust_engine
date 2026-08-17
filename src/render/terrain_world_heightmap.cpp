@@ -1,5 +1,6 @@
 #include <monkey_dust/render/terrain_world_heightmap.h>
 #ifdef MD_SDL_GPU
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/world/terrain_gen.h>
 #include <monkey_dust/world/chunk_def.h>
 #include <monkey_dust/world/terrain_chunk.h>  // TERRAIN_GRID
@@ -8,6 +9,11 @@
 #include <cmath>
 
 namespace {
+// Field order matches shaders/terrain_worldmap_normal_bake.comp's
+// NormalBakeUBO exactly (std140).
+struct NormalBakeUBO {
+    float world_params[4]; // x=worldExtent_m, y=resTexels, z=heightRange_m, w=heightMin_m
+};
 // Kenshi's real world is a fixed 64x64 zone grid (documented in
 // terrain_gen.h's own "Terrain Atlas API" comment) -- not derived from
 // any runtime state, safe to hardcode same as that header already does.
@@ -155,10 +161,99 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
 
     fprintf(stderr, "[TerrainWorldHeightmap] ready: %dx%d R16_UNORM, %u mips, height=[%.2f,%.2f]m, extent=%.1fm\n",
             N, N, ti.num_levels, height_min_, height_max_, world_extent_);
+
+    // Full-variant Phase 3 (serene-pondering-teapot.md): bake the
+    // world-wide normal texture now, once, right after the height texture
+    // is ready -- same "one-time startup cost" class as everything above,
+    // not a per-frame or per-window operation.
+    {
+        SDL_GPUTextureCreateInfo nti = {};
+        nti.type                 = SDL_GPU_TEXTURETYPE_2D;
+        nti.width                = (Uint32)N;
+        nti.height               = (Uint32)N;
+        nti.layer_count_or_depth = 1;
+        nti.num_levels           = 1;
+        nti.format               = SDL_GPU_TEXTUREFORMAT_R8G8_SNORM;
+        nti.usage                = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE
+                                  | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        normal_tex_ = SDL_CreateGPUTexture(dev, &nti);
+        if (!normal_tex_) {
+            fprintf(stderr, "[TerrainWorldHeightmap] normal texture create failed: %s\n", SDL_GetError());
+            SDL_ReleaseGPUSampler(dev, sampler_); sampler_ = nullptr;
+            SDL_ReleaseGPUTexture(dev, tex_); tex_ = nullptr;
+            return false;
+        }
+
+        SDL_GPUSamplerCreateInfo nsi{};
+        nsi.min_filter     = SDL_GPU_FILTER_LINEAR;
+        nsi.mag_filter     = SDL_GPU_FILTER_LINEAR;
+        nsi.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        nsi.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        nsi.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        nsi.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        normal_sampler_ = SDL_CreateGPUSampler(dev, &nsi);
+        if (!normal_sampler_) {
+            fprintf(stderr, "[TerrainWorldHeightmap] normal sampler create failed: %s\n", SDL_GetError());
+            SDL_ReleaseGPUTexture(dev, normal_tex_); normal_tex_ = nullptr;
+            SDL_ReleaseGPUSampler(dev, sampler_); sampler_ = nullptr;
+            SDL_ReleaseGPUTexture(dev, tex_); tex_ = nullptr;
+            return false;
+        }
+
+        GpuComputePipeline bake_pipeline;
+        GpuComputePipeline::Desc pd{};
+        pd.glsl_path           = "shaders/terrain_worldmap_normal_bake.comp";
+        pd.num_uniform_buffers = 1;
+        pd.num_samplers        = 1;
+        pd.num_readwrite_storage_textures = 1;
+        pd.threadcount_x = 8; pd.threadcount_y = 8; pd.threadcount_z = 1;
+        if (!bake_pipeline.Create(pd)) {
+            fprintf(stderr, "[TerrainWorldHeightmap] normal bake compute pipeline create failed\n");
+            SDL_ReleaseGPUSampler(dev, normal_sampler_); normal_sampler_ = nullptr;
+            SDL_ReleaseGPUTexture(dev, normal_tex_); normal_tex_ = nullptr;
+            SDL_ReleaseGPUSampler(dev, sampler_); sampler_ = nullptr;
+            SDL_ReleaseGPUTexture(dev, tex_); tex_ = nullptr;
+            return false;
+        }
+
+        SDL_GPUCommandBuffer* bcmd = SDL_AcquireGPUCommandBuffer(dev);
+        SDL_GPUStorageTextureReadWriteBinding rw{};
+        rw.texture = normal_tex_;
+        rw.cycle   = false;
+        SDL_GPUComputePass* pass = SDL_BeginGPUComputePass(bcmd, &rw, 1, nullptr, 0);
+        if (pass) {
+            SDL_BindGPUComputePipeline(pass, bake_pipeline.SDLComputePipeline());
+            SDL_GPUTextureSamplerBinding samp{};
+            samp.texture = tex_;
+            samp.sampler = sampler_;
+            SDL_BindGPUComputeSamplers(pass, 0, &samp, 1);
+
+            NormalBakeUBO nubo{};
+            nubo.world_params[0] = world_extent_;
+            nubo.world_params[1] = (float)N;
+            nubo.world_params[2] = height_max_ - height_min_;
+            nubo.world_params[3] = height_min_;
+            SDL_PushGPUComputeUniformData(bcmd, 0, &nubo, sizeof(nubo));
+
+            uint32_t g = (uint32_t)((N + 7) / 8);
+            SDL_DispatchGPUCompute(pass, g, g, 1);
+            SDL_EndGPUComputePass(pass);
+        } else {
+            fprintf(stderr, "[TerrainWorldHeightmap] normal bake SDL_BeginGPUComputePass failed: %s\n", SDL_GetError());
+        }
+        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(bcmd);
+        if (fence) { SDL_WaitForGPUFences(dev, true, &fence, 1); SDL_ReleaseGPUFence(dev, fence); }
+        bake_pipeline.Destroy();
+
+        fprintf(stderr, "[TerrainWorldHeightmap] normal bake done: %dx%d RG8_SNORM\n", N, N);
+    }
+
     return true;
 }
 
 void TerrainWorldHeightmap::Shutdown(SDL_GPUDevice* dev) {
+    if (normal_sampler_) { SDL_ReleaseGPUSampler(dev, normal_sampler_); normal_sampler_ = nullptr; }
+    if (normal_tex_)     { SDL_ReleaseGPUTexture(dev, normal_tex_);     normal_tex_     = nullptr; }
     if (sampler_) { SDL_ReleaseGPUSampler(dev, sampler_); sampler_ = nullptr; }
     if (tex_)     { SDL_ReleaseGPUTexture(dev, tex_);     tex_     = nullptr; }
 }

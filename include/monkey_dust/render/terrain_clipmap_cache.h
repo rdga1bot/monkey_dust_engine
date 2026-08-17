@@ -34,15 +34,28 @@ class TerrainWorldHeightmap;
 // N+1 texels makes vertex idx range [origin_index, origin_index+N]
 // (N+1 distinct values) map to N+1 distinct texels with zero collision.
 //
-// Each level's cache is a small (129x129) R32_FLOAT storage-writable
-// texture holding the raw [0,1] height FRACTION (same encoding
-// TerrainWorldHeightmap itself uses) -- height_min/max decode into an
-// absolute world-Y happens once in the consuming vertex shader (Phase 4),
-// not per-fill here. Reads use hardware SDL_GPU_SAMPLERADDRESSMODE_REPEAT
-// (the toroidal wrap is free on the GPU's own wrap-mode hardware) --
-// deliberately NOT an indirection-texture+slot-table design like
-// TerrainVtPageCache's, since clipmap addressing is deterministic
-// (idx mod cacheSize), not an LRU pool of independently-placed pages.
+// Each level's cache is a small (129x129) R32G32B32A32_FLOAT
+// storage-writable texture: r = raw [0,1] height FRACTION (same encoding
+// TerrainWorldHeightmap itself uses; height_min/max decode into an
+// absolute world-Y happens once in the consuming vertex shader), g/b =
+// baked normal.xz (normal.y reconstructed downstream via
+// sqrt(1-x^2-z^2), same convention as the old per-vertex computation).
+// The normal is baked ONCE at fill time (terrain_clipmap_fill.comp) using
+// a FIXED step equal to TerrainWorldHeightmap's own native texel size --
+// deliberately NOT this level's own TexelSize() -- so two adjacent
+// levels sampling the SAME shared boundary world position compute the
+// IDENTICAL normal (root cause + fix of the LOD-boundary normal seam,
+// RenderDoc-verified 2026-08-17: positions already matched exactly at
+// boundaries, but each level's independent forward-difference step gave
+// normal deltas up to 1.6 of a max-2.0 range there -- this "Terra-style"
+// baked-normal approach, OGRE-Next's Terra terrain system, eliminates
+// the disagreement by construction instead of trying to arbitrate the
+// rasterizer's pick between two genuinely different values).
+// Reads use hardware SDL_GPU_SAMPLERADDRESSMODE_REPEAT (the toroidal
+// wrap is free on the GPU's own wrap-mode hardware) -- deliberately NOT
+// an indirection-texture+slot-table design like TerrainVtPageCache's,
+// since clipmap addressing is deterministic (idx mod cacheSize), not an
+// LRU pool of independently-placed pages.
 class TerrainClipmapCache {
 public:
     static constexpr int kNumLevels     = 8;
@@ -98,6 +111,11 @@ private:
     SDL_GPUSampler* height_sampler_ = nullptr; // borrowed
     float world_extent_ = 0.f;
     float res_texels_   = 0.f;
+    // hmap.HeightMax()-HeightMin() -- fill shader needs this to convert
+    // the baked normal's forward-difference from height-FRACTION units
+    // to real world metres (see terrain_clipmap_fill.comp's doc comment,
+    // "Terra-style" baked normal).
+    float height_range_ = 0.f;
     bool  ready_         = false;
     bool  first_recenter_ = true;
 };

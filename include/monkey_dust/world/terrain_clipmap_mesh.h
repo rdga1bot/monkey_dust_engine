@@ -26,14 +26,35 @@ struct ClipmapMeshVertex {
     float u, v; // local UV in [0,1]^2, same convention as terrain_patch_gbuffer.vert's aUVSkirt.xy
 };
 
+// Per-tile index sub-range, for per-tile frustum culling (minimal-variant
+// Part B, /home/rdga1/.claude/plans/serene-pondering-teapot.md): both
+// index buffers are generated TILE-MAJOR (not row-major) so a spatial
+// tile's indices are one contiguous run -- the renderer can issue ONE
+// draw per visible tile using {first_index, index_count} as a sub-range
+// of the SAME shared IBO, skipping culled tiles entirely, without any
+// new mesh topology or per-tile vertex duplication. filled_* /ring_*
+// counts can differ (ring's hole quads contribute 0 ring indices for a
+// tile fully inside the hole -- that tile's ring_index_count is simply
+// 0, the renderer skips it like any other culled tile).
+struct ClipmapTileRange {
+    int tile_col = 0, tile_row = 0;
+    uint32_t filled_first_index = 0, filled_index_count = 0;
+    uint32_t ring_first_index   = 0, ring_index_count   = 0;
+};
+
 struct ClipmapMesh {
     std::vector<ClipmapMeshVertex> vertices;  // (N+1)*(N+1), shared by both index buffers
     std::vector<uint32_t> filled_indices;     // level 0 only: every quad, N*N*6 indices
     std::vector<uint32_t> ring_indices;       // levels 1..L-1: every quad EXCEPT the central (N/2)*(N/2) hole
+    std::vector<ClipmapTileRange> tiles;      // tile-major grouping metadata, tiles_per_edge*tiles_per_edge entries
+    int tile_quads     = 0;                   // quads per tile edge
+    int tiles_per_edge = 0;                   // N / tile_quads
 };
 
 // N must be even (so the central hole boundary [N/4, 3N/4) lands on exact
 // quad indices) and a multiple of 4 in practice (kPatchN=128 precedent).
-ClipmapMesh BuildClipmapMesh(int N);
+// tile_quads must evenly divide N (kMeshQuads=128 / 16 = 8x8 tiles,
+// the current production value -- see TerrainClipmapRenderer).
+ClipmapMesh BuildClipmapMesh(int N, int tile_quads);
 
 } // namespace md

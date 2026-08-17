@@ -7,12 +7,14 @@
 
 namespace {
 // Field order matches shaders/terrain_clipmap_fill.comp's ClipmapFillUBO
-// exactly (std140) -- all fields are read by that shader, no dead
-// trailing fields, so the terrain_page_fill.comp padding lesson (put
-// unused fields LAST) doesn't apply, but kept flat/ivec4-aligned anyway.
+// exactly (std140) -- every vec4-sized block here maps 1:1 to a vec4 in
+// the GLSL struct, INCLUDING the padding lanes in normal_params (std140
+// lesson from terrain_page_fill.comp: verify size/order by hand on both
+// sides, not just "add a field and hope").
 struct ClipmapFillUBO {
     int32_t fill_origin_index_and_strip_size[4];
     float   world_params[4];
+    float   normal_params[4]; // x = height_range_m (yzw unused/pad)
 };
 } // namespace
 
@@ -25,6 +27,7 @@ bool TerrainClipmapCache::Init(SDL_GPUDevice* dev, const TerrainWorldHeightmap& 
     height_sampler_ = hmap.Sampler();
     world_extent_   = hmap.WorldExtent();
     res_texels_     = (float)hmap.Resolution();
+    height_range_   = hmap.HeightMax() - hmap.HeightMin();
 
     for (int lvl = 0; lvl < kNumLevels; ++lvl) {
         SDL_GPUTextureCreateInfo ti{};
@@ -33,7 +36,7 @@ bool TerrainClipmapCache::Init(SDL_GPUDevice* dev, const TerrainWorldHeightmap& 
         ti.height               = kCacheTexels;
         ti.layer_count_or_depth = 1;
         ti.num_levels           = 1;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R32_FLOAT;
+        ti.format               = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
         ti.usage                = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE
                                  | SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ
                                  | SDL_GPU_TEXTUREUSAGE_SAMPLER;
@@ -127,6 +130,10 @@ void TerrainClipmapCache::DispatchFill(SDL_GPUCommandBuffer* cmd, int level, int
     ubo.world_params[1] = (float)kCacheTexels;
     ubo.world_params[2] = world_extent_;
     ubo.world_params[3] = res_texels_;
+    ubo.normal_params[0] = height_range_;
+    ubo.normal_params[1] = 0.f;
+    ubo.normal_params[2] = 0.f;
+    ubo.normal_params[3] = 0.f;
     SDL_PushGPUComputeUniformData(cmd, 0, &ubo, sizeof(ubo));
 
     uint32_t gx = (uint32_t)((sw + 7) / 8);

@@ -68,6 +68,19 @@ public:
     bool  SyncTiming() const     { return sync_timing_; }
     float LastGpuMs() const      { return last_gpu_ms_; }
 
+    // GEOCLIPMAP Phase 7 frame-time A/B (2026-08-16): a screenshot-pending
+    // frame submits via EditorScreenshot_CaptureAndSubmit (editor_screenshot.cpp),
+    // NOT this class's own Submit() -- that function must append its own
+    // copy-pass + readback to the SAME command buffer before submitting, so
+    // it owns the submit+fence-wait itself (SetSyncTiming's Submit() path
+    // can't be reused there). Lets that caller report its own
+    // already-synchronous fence-wait time here so LastGpuMs() stays
+    // meaningful even on frames rendered only because a screenshot was
+    // pending (RunScenarioMode/--exec never renders otherwise) -- found via
+    // md.get_gpu_ms() reading 0 for every sample despite real renders
+    // happening (confirmed via [EditorScreenshot] saved log lines).
+    void RecordExternalGpuMs(float ms) { last_gpu_ms_ = ms; }
+
 private:
     GpuDevice() = default;
     SDL_GPUDevice* device_       = nullptr;

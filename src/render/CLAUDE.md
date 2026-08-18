@@ -27,13 +27,17 @@ SSBO) послідовно від 0, без розривів між катего
 - Mesa shader cache corruption після crash під час компіляції шейдера:
   `rm -rf ~/.cache/mesa_shader_cache/`.
 
-## Термейн-рендер (GEOCLIPMAP, з 2026-08-16)
-`TerrainClipmapCache`/`TerrainClipmapRenderer` — єдиний геометричний шлях
-(гра й редактор). `TerrainWorldHeightmap` — незмінне джерело висот
-(окремо від clipmap-кешу). `TerrainShadingProjected` (Варіант A,
-screen-space G-buffer resolve) — незмінна незалежно від геометрії.
-Формула ground-layer шейдингу: `shaders/terrain_shading_common.glsl`.
-Деталі: `docs/CLAUDE_RENDER.md`, `docs/CLAUDE_TERRAIN_SEAM.md`.
+## Термейн-рендер (Ogre-quadtree geomorph+skirts, з 2026-08-19)
+`TerrainQuadtree`/`TerrainQuadtreeRenderer` — єдиний геометричний шлях
+(гра й редактор), замінив GEOCLIPMAP (`TerrainClipmapCache/Renderer`,
+видалено) і non-indexed patch-grid (`TerrainPatchGrid/Renderer`,
+видалено) після dual-run A/B. Indexed (спільний index buffer, PTC-reuse),
+без персистентного tree-стану — `SelectVisible` рахує видимі вузли з
+камери+frustum щокадру. `TerrainWorldHeightmap` — незмінне джерело висот
+(окремо від quadtree). `TerrainShadingProjected` (Варіант A, screen-space
+G-buffer resolve) — незмінна незалежно від геометрії. Формула ground-layer
+шейдингу: `shaders/terrain_shading_common.glsl`. Деталі: `CLAUDE_STATE.md`
+(корінь репо), `docs/CLAUDE_RENDER.md`, `docs/CLAUDE_TERRAIN_SEAM.md`.
 
 ## GPU Debug — обов'язковий порядок перед фіксом шейдера
 ```

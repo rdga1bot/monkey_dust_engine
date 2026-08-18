@@ -18,12 +18,15 @@
 Kenshi). `SimplexNoise2`/`FBM2` лишились лише як noise-примітиви поза
 реальним Kenshi-терейном (тестові фікстури).
 
-## GEOCLIPMAP mesh-топологія (з 2026-08-16)
-`terrain_clipmap_mesh.cpp`'s `BuildClipmapMesh` — спільний VBO для всіх
-8 рівнів; ring-дірка асиметрично звужена (`hole_lo=N/4+1`, `hole_hi=3N/4`
-незмінний) — гарантує дірка ⊆ реальне покриття сусіднього рівня
-(перевірено 2M-семпловим числовим прогоном). Не звужувати симетрично —
-математично неправильно, дає або дірку, або невиправданий overlap.
+## Ogre-quadtree mesh-топологія (з 2026-08-19)
+`terrain_quadtree_mesh.cpp`'s `BuildTerrainQuadtreeMesh` — ОДИН спільний
+index buffer (17×17 regular grid + 4 skirt-смуги) для КОЖНОГО вузла на
+КОЖНІЙ глибині всюди у світі; `terrain_quadtree.cpp`'s
+`TerrainQuadtree::SelectVisible` — без персистентного дерева, рахує
+видимі вузли з камери+frustum щокадру. Geomorph-формула (морф має
+досягати 1.0 рівно там, де вузол перестав би малюватись — на межі
+БАТЬКІВСЬКОГО range, не власного) — див. doc-коментар у
+`RecurseNode` (`terrain_quadtree.cpp`).
 
 ## Kenshi colour overlay: BC3/DXT5, нативна роздільність
 `game/data/textures/md_terrain.dds` (gitignored) — 16384², BC3, власний

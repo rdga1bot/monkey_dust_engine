@@ -64,6 +64,23 @@ void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
     float dx = cam_pos[0] - cx, dz = cam_pos[2] - cz;
     float dist = std::sqrt(dx * dx + dz * dz);
 
+    // Real bug fix (30-40 FPS regression investigation): QuadtreeAabbInFrustum
+    // below only tests 4 planes (left/right/top/bottom -- see its own doc
+    // comment and MdCamera::FrustumPlanes, which explicitly never extracts
+    // near/far). With no far-plane and no distance reject, a coarse node far
+    // beyond the camera's actual far clip (MdCamera::ProjMatrix hardcodes
+    // 4000.f) could still pass the 4-plane test at grazing view angles and
+    // get drawn -- confirmed live: depth=0 leaf count spiked from ~10-45 to
+    // 2000+ during a 360-degree camera sweep. The GPU's own projection
+    // already clips anything past 4000m into nothing, so this reject changes
+    // zero pixels on screen -- it only stops wastefully submitting geometry
+    // the GPU would discard anyway. `+ size` margin covers this node's own
+    // footprint (conservative vs. exact corner distance, consistent with
+    // the existing center-distance approximation used for the subdivide
+    // decision below).
+    constexpr float kMaxRenderDistance = 4000.f; // matches MdCamera::ProjMatrix's far clip
+    if (dist > kMaxRenderDistance + size) return;
+
     // range(this node's own size) -- see header doc comment: subdivide if
     // camera is within range of THIS node; if not (or max depth reached),
     // draw this node with a morph blending toward its own parent shape as

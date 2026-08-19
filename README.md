@@ -25,7 +25,7 @@ and **[Jolt Physics](https://github.com/jrouwe/JoltPhysics)**.
 | GPU skinning | AnimationSoA; SSBO skeletal bones (MAX\_BONES=64, Kenshi uses 30 of 64); compute dispatch |
 | Particles | ParticleSoA CPU-sim; SMOKE/SPARK/BLOOD types |
 | Material system | O3DE-inspired: JSON → `GpuPipeline::Desc`; **parent inheritance** (`"parent": "base_pbr"`); `shader_features` bitmask; `MaterialTypeRegistry` (MAX=32) |
-| Terrain shading | Single unified shader (`terrain_forward.slang`) for every LOD tier — matches original Kenshi ("same material at all LOD levels", no POM/normal-mapping split); per-pixel dominant-weight ground selection (base/slope/cliff/grass/dirt/road, 6-layer `BlendGroundLayers` chain); `DrawRaw(int lod)` — lod=0 full-res, lod=1/2/3 use `chunk.ibo_lod[lod-1]` |
+| Terrain geometry + shading | Ogre-quadtree (`terrain_quadtree.vert/.frag`, plain GLSL — Slang removed 2026-07-26): one shared vertex-buffer-less indexed mesh (17×17 grid + 4 skirt strips) per quadtree node depth; continuous geomorph blend between fine/coarse VTF height samples (no discrete LOD popping); `TerrainQuadtree::SelectVisible` walks the tree per-frame (no persistent tree); ground shading matches original Kenshi (same material at all tiers, no POM/normal-mapping split), per-pixel dominant-weight selection (base/slope/cliff/grass/dirt/road) |
 
 ### AI — Behavior Tree VM
 - Stackless BT VM (`behavior_tree.h`, 373 lines core VM) + `bt_types.h` (987 lines — all enums/structs: BTNodeType, BTNode, BTState, etc.) + `bt_factories.cpp` (868 lines — Batch 2–35 factory methods) — 30+ node types, zero heap allocations
@@ -154,7 +154,7 @@ ninja -C build md_tests          # meta-target, depends on flare_ini_parser + fl
 ./build/tests/flare_tile_map
 ```
 
-> The large GTest suite (1633 tests across 223 suites — FNV · AgentBlackboard · FlowGraph ·
+> The large GTest suite (1809 tests: 1630 gtest + 179 behavior — FNV · AgentBlackboard · FlowGraph ·
 > DirectorSystem · BT VM · Batch 3–31 · M47–M59 · O3DE-1–4 · ZLD-1–2 · FL-3–4 · KEN-1–8 ·
 > VBfA-R1–9 · VBfA-AI1–6, etc.) lives in the private parent
 > [`monkey_dust`](https://github.com/rdga1bot/monkey_dust) game repo's `tests/` directory, not in

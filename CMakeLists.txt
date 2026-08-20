@@ -66,6 +66,23 @@ if(NOT TARGET Jolt)
     set(TARGET_SAMPLES          OFF CACHE BOOL "" FORCE)
     set(ENABLE_ALL_WARNINGS     OFF CACHE BOOL "" FORCE)
     set(CPP_EXCEPTIONS_ENABLED  OFF CACHE BOOL "" FORCE)
+    # monkey_dust uses Jolt's CPU-side physics only, never its built-in
+    # hair/cloth GPU compute-shader renderer -- these upstream Jolt
+    # defaults are all ON and, on Linux, JPH_USE_VK unconditionally emits
+    # an HLSL->SPIR-V compile command via a guessed `dxc` path
+    # (Jolt.cmake: "string(REPLACE glslc dxc ...)", no existence check,
+    # unlike the DX12 branch's graceful `if(NOT DXC_COMPILER)` fallback)
+    # that hard-fails the BUILD (not configure) step whenever the real
+    # DirectXShaderCompiler isn't installed -- true on every plain Linux
+    # dev machine without a manually-installed dxc. A stale manual
+    # -DJPH_USE_VK=OFF in the long-lived build/ dir's cache had been
+    # masking this on this exact machine; any fresh clone/worktree hits
+    # it. Disabling explicitly here so it can never regress silently.
+    # Only JPH_USE_VK is unsafe here: on Linux it's the sole compute-backend
+    # branch NOT gated behind a platform check (JPH_USE_DX12/MTL are
+    # WIN32/APPLE-only internally in Jolt.cmake and stay inert here
+    # regardless of value; JPH_USE_CPU_COMPUTE needs no shader compiler).
+    set(JPH_USE_VK OFF CACHE BOOL "" FORCE)
     add_subdirectory(${MD_THIRD_PARTY}/JoltPhysics/Build)
     set_target_properties(Jolt PROPERTIES PRECOMPILE_HEADERS "")
 endif()
@@ -208,6 +225,19 @@ target_include_directories(monkey_dust_engine
     # Vendor: glad, stb headers — PUBLIC so game/ and tools/ can find them too
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor
 )
+
+# ── LibGodot migration Фаза B.1 (engine/src/render/libgodot_bridge.cpp) ──────
+# LIBGODOT_ROOT/LIBGODOT_SO вирішені в root CMakeLists.txt ПЕРЕД цим
+# add_subdirectory(engine) виконанням. Файл сам по собі — порожня TU коли
+# MD_USE_LIBGODOT не визначено (Фаза A CONSTRAINT: engine/ компілюється й
+# лінкується для звичайного USE_SDL3-шляху без жодної залежності від
+# libgodot, коли USE_LIBGODOT=OFF).
+if(USE_LIBGODOT AND LIBGODOT_SO)
+    target_include_directories(monkey_dust_engine PRIVATE
+        "${LIBGODOT_ROOT}" "${LIBGODOT_ROOT}/platform/linuxbsd")
+    target_compile_definitions(monkey_dust_engine PUBLIC MD_USE_LIBGODOT)
+    target_link_libraries(monkey_dust_engine PUBLIC "${LIBGODOT_SO}")
+endif()
 
 if(NOT USE_SDL3)
     message(FATAL_ERROR

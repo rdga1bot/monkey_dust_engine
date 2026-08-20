@@ -27,16 +27,22 @@ void TransformSoA::Init() {
         rot_y[i]   = 0.0f;
         dist_sq[i] = 1e18f;
         faction[i] = 0;
+        // Neutral default (matches character_def.cpp's fill_default): a skin
+        // tint colour with strength=0 so unset slots render with zero tint.
+        skin_rgba[i][0] = 0.82f; skin_rgba[i][1] = 0.65f;
+        skin_rgba[i][2] = 0.52f; skin_rgba[i][3] = 0.0f;
     }
     active_count = 0;
     transform_ring_.Init(MAX_SLOTS * 4 * sizeof(float), 0);
     faction_ssbo_.Init(MAX_SLOTS * sizeof(uint32_t));
+    skin_ssbo_.Init(MAX_SLOTS * 4 * sizeof(float));
 
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     if (dev) {
         static constexpr uint32_t XZYR_SIZE = MAX_SLOTS * 4 * sizeof(float);
         static constexpr uint32_t FACI_SIZE = MAX_SLOTS * sizeof(uint32_t);
+        static constexpr uint32_t SKIN_SIZE = MAX_SLOTS * 4 * sizeof(float);
 
         SDL_GPUBufferCreateInfo bi = {};
         bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
@@ -61,6 +67,14 @@ void TransformSoA::Init() {
 
             ti.size = FACI_SIZE;
             sdl_faction_stg_[s] = SDL_CreateGPUTransferBuffer(dev, &ti);
+
+            bi.size = SKIN_SIZE;
+            sdl_skin_buf_[s] = SDL_CreateGPUBuffer(dev, &bi);
+            if (!sdl_skin_buf_[s])
+                MD_LOG(MD_LOG_WARNING, "[TransformSoA] SDL skin buf[%d] failed: %s", s, SDL_GetError());
+
+            ti.size = SKIN_SIZE;
+            sdl_skin_stg_[s] = SDL_CreateGPUTransferBuffer(dev, &ti);
         }
     }
 #endif
@@ -101,6 +115,11 @@ void TransformSoA::Free(MdEntity e) {
         dist_sq[slot] = dist_sq[last];
         faction[slot] = faction[last];
         MarkFactionDirty(slot);
+        skin_rgba[slot][0] = skin_rgba[last][0];
+        skin_rgba[slot][1] = skin_rgba[last][1];
+        skin_rgba[slot][2] = skin_rgba[last][2];
+        skin_rgba[slot][3] = skin_rgba[last][3];
+        MarkSkinDirty(slot);
         MdEntity moved = slot_to_entity[last];
         slot_to_entity[slot] = moved;
         if (reg.Valid(moved) && (reg.Handle(moved).has<WorldTransform>()))
@@ -161,6 +180,19 @@ void TransformSoA::UploadToGPU() {
         faction_dirty_ = false;
     }
     faction_ssbo_.Bind(3);
+
+    // Skin tint data rarely changes → upload only the dirty slot range.
+    if (skin_dirty_ && active_count > 0) {
+        uint32_t lo = skin_dirty_min_;
+        uint32_t hi = skin_dirty_max_;
+        if (hi >= (uint32_t)active_count) hi = (uint32_t)active_count - 1;
+        if (lo > hi) lo = hi;
+        uint32_t cnt = hi - lo + 1;
+        skin_ssbo_.Upload(&skin_rgba[lo][0], (int)(cnt * 4 * sizeof(float)),
+                          (int)(lo * 4 * sizeof(float)));
+        skin_dirty_ = false;
+    }
+    skin_ssbo_.Bind(4);
 }
 
 void TransformSoA::AdvanceFrame() {
@@ -271,6 +303,9 @@ SDL_GPUBuffer* TransformSoA::SDLTransformBuffer() const {
 SDL_GPUBuffer* TransformSoA::SDLFactionBuffer() const {
     return sdl_faction_buf_[md::GpuDevice::Get().FrameSlot()];
 }
+SDL_GPUBuffer* TransformSoA::SDLSkinBuffer() const {
+    return sdl_skin_buf_[md::GpuDevice::Get().FrameSlot()];
+}
 
 void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
     if (!cmd || active_count <= 0) return;
@@ -316,6 +351,24 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
         SDL_GPUBufferRegion dst_r = {};
         dst_r.buffer = sdl_faction_buf_[s];
         dst_r.size   = (Uint32)(active_count * sizeof(uint32_t));
+        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, false);
+        SDL_EndGPUCopyPass(cpass);
+    }
+
+    // Upload skin tint data to current slot (rarely changes; re-uploaded
+    // every frame like faction — cost scales with active_count, not MAX_SLOTS).
+    if (sdl_skin_stg_[s] && sdl_skin_buf_[s]) {
+        float* dst = (float*)SDL_MapGPUTransferBuffer(dev, sdl_skin_stg_[s], false);
+        if (dst) {
+            memcpy(dst, skin_rgba, (size_t)active_count * 4 * sizeof(float));
+            SDL_UnmapGPUTransferBuffer(dev, sdl_skin_stg_[s]);
+        }
+        SDL_GPUCopyPass* cpass = SDL_BeginGPUCopyPass(cmd);
+        SDL_GPUTransferBufferLocation src = {};
+        src.transfer_buffer = sdl_skin_stg_[s];
+        SDL_GPUBufferRegion dst_r = {};
+        dst_r.buffer = sdl_skin_buf_[s];
+        dst_r.size   = (Uint32)(active_count * 4 * sizeof(float));
         SDL_UploadToGPUBuffer(cpass, &src, &dst_r, false);
         SDL_EndGPUCopyPass(cpass);
     }

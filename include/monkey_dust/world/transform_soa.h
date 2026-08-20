@@ -16,6 +16,9 @@
 // GPU upload via:
 //   GpuRingBuffer transform_ring_ (binding 0: vec4 xzyr) — per-frame, ring-buffered
 //   SSBO          faction_ssbo_   (binding 3: uint faction) — infrequent, single buffer
+//   SSBO          skin_ssbo_      (animated.vert binding 4: vec4 skin_rgba) — set once
+//                 at spawn from CharDef::skin_rgb/color_strength, same update cadence
+//                 as faction.
 // Thread-safety: all methods must be called from main thread.
 class TransformSoA {
 public:
@@ -38,6 +41,8 @@ public:
     alignas(64) float rot_y   [MAX_SLOTS];
     alignas(64) float dist_sq [MAX_SLOTS]; // filled by BulkComputeDistSq
     uint8_t           faction [MAX_SLOTS];
+    // rgb=skin tint (linear), a=blend strength [0,1]. std430 vec4-compatible layout.
+    alignas(64) float skin_rgba[MAX_SLOTS][4];
 
     MdEntity slot_to_entity[MAX_SLOTS]; // reverse slot → entity
     int          active_count = 0;
@@ -45,6 +50,7 @@ public:
     // Ring-buffered transform upload (binding 0); faction stays single-buffer (binding 3).
     GpuRingBuffer transform_ring_;
     SSBO          faction_ssbo_;
+    SSBO          skin_ssbo_;
 
     void     Init();
     uint32_t Alloc(MdEntity e, float x, float z, uint8_t faction_id = 0);
@@ -61,6 +67,7 @@ public:
     void UploadSDLGPU(SDL_GPUCommandBuffer* cmd);
     SDL_GPUBuffer* SDLTransformBuffer() const;
     SDL_GPUBuffer* SDLFactionBuffer()   const;
+    SDL_GPUBuffer* SDLSkinBuffer()      const;
 #endif
     MD_HOT void BulkComputeDistSq(float cam_x, float cam_z);
     MD_HOT void BulkComputeLOD(float near_sq, float far_sq, uint8_t* out_lod) const;
@@ -72,6 +79,16 @@ public:
     int      SlotCount() const { return active_count; }
     uint32_t GetSlotForEntity(MdEntity e) const;
     void     AssignSlot(MdEntity e, uint32_t slot, float x, float z, uint8_t faction_id);
+
+    // Sets a slot's skin tint (rgb, linear) + blend strength [0,1] — called once
+    // at spawn from CharDef::skin_rgb/color_strength (world_init.cpp / game_init.cpp),
+    // same cadence as faction (infrequent, not per-frame).
+    void SetSkin(uint32_t slot, float r, float g, float b, float str) {
+        if (slot >= MAX_SLOTS) return;
+        skin_rgba[slot][0] = r; skin_rgba[slot][1] = g;
+        skin_rgba[slot][2] = b; skin_rgba[slot][3] = str;
+        MarkSkinDirty(slot);
+    }
 
     // Dirty-range tracking for faction SSBO.
     void MarkFactionDirty(uint32_t slot) noexcept {
@@ -98,12 +115,28 @@ public:
         if (slot > xzyr_dirty_max_) xzyr_dirty_max_ = slot;
     }
 
+    // Dirty-range tracking for skin SSBO.
+    void MarkSkinDirty(uint32_t slot) noexcept {
+        if (!skin_dirty_) {
+            skin_dirty_     = true;
+            skin_dirty_min_ = slot;
+            skin_dirty_max_ = slot;
+            return;
+        }
+        if (slot < skin_dirty_min_) skin_dirty_min_ = slot;
+        if (slot > skin_dirty_max_) skin_dirty_max_ = slot;
+    }
+
 private:
     TransformSoA() = default;
 
     bool     faction_dirty_     = true;
     uint32_t faction_dirty_min_ = 0;
     uint32_t faction_dirty_max_ = 0;
+
+    bool     skin_dirty_     = true;
+    uint32_t skin_dirty_min_ = 0;
+    uint32_t skin_dirty_max_ = 0;
 
     bool     xzyr_dirty_     = true;  // true on first frame → full upload
     uint32_t xzyr_dirty_min_ = 0;
@@ -113,5 +146,7 @@ private:
     SDL_GPUTransferBuffer* sdl_xzyr_stg_[3]    = {};
     SDL_GPUBuffer*         sdl_faction_buf_[3] = {};
     SDL_GPUTransferBuffer* sdl_faction_stg_[3] = {};
+    SDL_GPUBuffer*         sdl_skin_buf_[3]    = {};
+    SDL_GPUTransferBuffer* sdl_skin_stg_[3]    = {};
 #endif
 };

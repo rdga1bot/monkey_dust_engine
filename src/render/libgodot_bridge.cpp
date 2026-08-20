@@ -60,13 +60,15 @@ void LibGodotBridge::SetCameraTransform(float x, float y, float z,
     if (!initialized_ || !camera_rid_id_) return;
     RenderingServer* rs = RenderingServer::get_singleton();
     if (!rs) return;
+    Vector3 eye(x, y, z);
+    Vector3 target(look_x, look_y, look_z);
     Transform3D xf;
-    xf.origin = Vector3(x, y, z);
-    // Мінімальна орієнтація: дивитись напряму по -Z до цілі (той самий
-    // спрощений підхід, що R3-спайк -- реальна look-at матриця не є
-    // предметом цієї фази, лише RID-lifecycle+MultiMesh синк).
-    (void)look_x; (void)look_y; (void)look_z;
-    rs->camera_set_transform(camera_rid_id_ ? RID::from_uint64(camera_rid_id_) : RID(), xf);
+    if (eye.distance_squared_to(target) > 1e-8f) {
+        xf.set_look_at(eye, target);
+    } else {
+        xf.origin = eye; // degenerate eye==target: keep identity basis, just place origin
+    }
+    rs->camera_set_transform(RID::from_uint64(camera_rid_id_), xf);
 }
 
 int LibGodotBridge::RegisterGroup(uint64_t mesh_rid_id, uint64_t material_rid_id, int max_instances,

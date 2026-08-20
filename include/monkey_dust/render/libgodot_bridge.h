@@ -93,6 +93,13 @@ public:
 
     int GetGroupInstanceCapacity(int group_index) const;
 
+    // Потрібно для screenshot-верифікації (обов'язковий 3-кроковий
+    // shader-debug протокол, CLAUDE_CONSTITUTION §7.7) через
+    // rs->viewport_get_texture()->texture_2d_get()->save_png(). Той
+    // самий RID, що й Фаза F's "синтетична сцена в межах бюджету"
+    // потребуватиме для реального виміру.
+    uint64_t ViewportRid() const { return viewport_rid_id_; }
+
 private:
     struct Group {
         uint64_t mesh_rid_id     = 0;

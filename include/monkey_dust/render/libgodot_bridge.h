@@ -55,8 +55,13 @@ public:
     // Реєструє нову (mesh, material) групу. mesh_id/material_id -- вже
     // створені RID-и (тут лише зберігаються, lifecycle власника -- caller,
     // за винятком самого MultiMesh RID, який належить цьому класу).
+    // use_custom_data=true додає vec4/instance (Godot use_custom_data),
+    // потрібно для per-instance даних, що НЕ вкладаються в transform
+    // matrix (наприклад PropRenderer's anim_params: time/mode/mesh_height/
+    // phase, Фаза C.5 Група 3 -- див. SyncGroupTransformsAndCustomData).
     // Повертає індекс групи ( >=0 ) або -1 при помилці.
-    int RegisterGroup(uint64_t mesh_rid_id, uint64_t material_rid_id, int max_instances);
+    int RegisterGroup(uint64_t mesh_rid_id, uint64_t material_rid_id, int max_instances,
+                       bool use_custom_data = false);
     int GroupCount() const { return (int)groups_.size(); }
 
     // ОДИН rs->multimesh_set_buffer() виклик на групу. xform_data --
@@ -74,6 +79,18 @@ public:
     // бо не рендеряться, але буфер має бути повного розміру).
     bool SyncGroupTransforms(int group_index, const float* xform_data, int visible_count);
 
+    // Той самий контракт, що SyncGroupTransforms (xform_data ЗАВЖДИ
+    // capacity*12 floats, visible_count -- окремий
+    // multimesh_set_visible_instances() виклик), ПЛЮС custom_data --
+    // ЗАВЖДИ capacity*4 floats (vec4/instance). Група МАЄ бути
+    // зареєстрована з use_custom_data=true (RegisterGroup), інакше
+    // повертає false. ОДИН multimesh_set_buffer() виклик на групу --
+    // той самий CONSTRAINT, буфер лише ширший (16 floats/instance:
+    // 12 transform + 4 custom_data, Godot's власний layout, не
+    // окремий виклик на custom_data).
+    bool SyncGroupTransformsAndCustomData(int group_index, const float* xform_data,
+                                           const float* custom_data, int visible_count);
+
     int GetGroupInstanceCapacity(int group_index) const;
 
 private:
@@ -83,6 +100,7 @@ private:
         uint64_t multimesh_rid_id = 0; // власний RID, звільняється у Shutdown()
         uint64_t instance_rid_id  = 0; // instance_create(), base=multimesh
         int      capacity = 0;
+        bool     use_custom_data = false;
     };
 
     uint64_t scenario_rid_id_ = 0;

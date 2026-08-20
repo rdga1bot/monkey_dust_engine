@@ -15,6 +15,13 @@ struct MdTexture {
     int w = 0, h = 0;
     void* sdl_tex     = nullptr;   // SDL_GPUTexture*  (null when not using SDL_GPU)
     void* sdl_sampler = nullptr;   // SDL_GPUSampler*  (null when not using SDL_GPU)
+#ifdef MD_USE_LIBGODOT
+    // RenderingServer texture RID (RID::get_id()/RID::from_uint64()), a
+    // THIRD, orthogonal backend -- never built alongside MD_SDL_GPU/GL in
+    // the same binary (Фаза A CONSTRAINT: separate dual-run target), so
+    // this field doesn't affect the SDL_GPU vs GL ABI-parity concern above.
+    uint64_t libgodot_tex_rid = 0;
+#endif
 };
 
 

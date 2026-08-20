@@ -7,6 +7,17 @@
 #include <monkey_dust/render/gpu_device.h>
 #include <SDL3/SDL_gpu.h>
 #endif
+#ifdef MD_USE_LIBGODOT
+// Фаза C: RenderingServer-backed path, bypasses GpuTexture entirely --
+// decodes via stb_image directly (same stbi_load(path,&w,&h,&ch,4)
+// pattern as gpu_hal_buffers_texture_core.cpp/rd_texture.cpp), builds a
+// Ref<Image>, uploads via texture_2d_create(). stb_image.h is header-only
+// here (no STBI_IMPLEMENTATION -- the final binary's own
+// stb_image_impl.cpp supplies it, same convention as every other TU).
+#include "stb_image.h"
+#include "servers/rendering/rendering_server.h"
+#include "core/io/image.h"
+#endif
 
 // MdTexture functions delegate to GpuTexture so both GL and SDL_GPU
 // handles are captured.  Transfer methods (Release / TakeSDL*) zero
@@ -52,6 +63,14 @@ static void CacheInsert(TexCacheEntry* c, uint32_t hash, const MdTexture& t) {
 
 // Returns true if sdl_tex pointer matches any cached entry (cache owns it).
 static bool CacheOwns(const MdTexture& t) {
+#ifdef MD_USE_LIBGODOT
+    if (!t.libgodot_tex_rid) return false;
+    for (int i = 0; i < MAX_TEX_CACHE; ++i) {
+        if (s_cache_pa [i].used && s_cache_pa [i].tex.libgodot_tex_rid == t.libgodot_tex_rid) return true;
+        if (s_cache_lin[i].used && s_cache_lin[i].tex.libgodot_tex_rid == t.libgodot_tex_rid) return true;
+    }
+    return false;
+#else
     if (!t.sdl_tex && !t.id) return false;
     for (int i = 0; i < MAX_TEX_CACHE; ++i) {
         if (s_cache_pa[i].used &&
@@ -64,6 +83,7 @@ static bool CacheOwns(const MdTexture& t) {
             return true;
     }
     return false;
+#endif
 }
 
 static void ReleaseCacheArray(TexCacheEntry* c) {
@@ -75,6 +95,41 @@ static void ReleaseCacheArray(TexCacheEntry* c) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+#ifdef MD_USE_LIBGODOT
+// RGBA8 raw bytes -> RenderingServer texture RID. flip_v matches the
+// GL/SDL_GPU CONVENTION at the top of this file (v=0 bottom-of-file).
+static MdTexture LibGodotTextureFromRGBA8(const uint8_t* rgba8, int w, int h, bool flip_v) {
+    MdTexture t;
+    t.w = w; t.h = h;
+    RenderingServer* rs = RenderingServer::get_singleton();
+    if (!rs || w <= 0 || h <= 0) return t;
+
+    Vector<uint8_t> data;
+    data.resize(w * h * 4);
+    uint8_t* dst = data.ptrw();
+    if (flip_v) {
+        for (int row = 0; row < h; ++row)
+            memcpy(dst + (size_t)row * w * 4, rgba8 + (size_t)(h - 1 - row) * w * 4, (size_t)w * 4);
+    } else {
+        memcpy(dst, rgba8, (size_t)w * h * 4);
+    }
+    Ref<Image> img = Image::create_from_data(w, h, false, Image::FORMAT_RGBA8, data);
+    RID tex = rs->texture_2d_create(img);
+    t.libgodot_tex_rid = tex.get_id();
+    return t;
+}
+
+static MdTexture LibGodotLoadFile(const char* path, bool flip_v) {
+    int w, h, ch;
+    stbi_set_flip_vertically_on_load(0); // flip done manually above (matches GL/SDL_GPU byte order)
+    uint8_t* data = stbi_load(path, &w, &h, &ch, 4);
+    if (!data) { fprintf(stderr, "[MdTexture] LibGodot load failed: %s\n", path); return {}; }
+    MdTexture t = LibGodotTextureFromRGBA8(data, w, h, flip_v);
+    stbi_image_free(data);
+    return t;
+}
+#endif // MD_USE_LIBGODOT
 
 static MdTexture FromGpuTexture(GpuTexture& gt) {
     MdTexture t;
@@ -92,6 +147,11 @@ MdTexture MdLoadTexture(const char* path, float mip_lod_bias) {
     const uint32_t h = TexHash(path);
     if (const MdTexture* cached = CacheFind(s_cache_lin, h)) return *cached;
 
+#ifdef MD_USE_LIBGODOT
+    (void)mip_lod_bias; // RenderingServer generates its own mip chain -- no manual bias control here
+    MdTexture t = LibGodotLoadFile(path, /*flip_v=*/true);
+    if (!t.libgodot_tex_rid) return {};
+#else
     GpuTexture gt;
     auto s = GpuSamplerDesc::Default();
     s.flip_v      = true;
@@ -103,6 +163,7 @@ MdTexture MdLoadTexture(const char* path, float mip_lod_bias) {
     s.mip_lod_bias = mip_lod_bias;
     if (!gt.InitFromFile(path, s)) return {};
     MdTexture t = FromGpuTexture(gt);
+#endif
     CacheInsert(s_cache_lin, h, t);
     return t;
 }
@@ -115,17 +176,32 @@ MdTexture MdLoadTexturePixelArt(const char* path) {
     const uint32_t h = TexHash(path);
     if (const MdTexture* cached = CacheFind(s_cache_pa, h)) return *cached;
 
+#ifdef MD_USE_LIBGODOT
+    // NOTE: RenderingServer texture_2d_create() takes sampler state from
+    // the consuming material/shader, not the texture itself -- pixel-art
+    // NEAREST/CLAMP filtering is NOT applied here (matches this Phase's
+    // scope: MdTexture struct/signatures unchanged, caller code untouched;
+    // real per-material sampler-state wiring is Фаза C.5 caller-migration
+    // work, not this canonical-abstractions swap).
+    MdTexture t = LibGodotLoadFile(path, /*flip_v=*/true);
+    if (!t.libgodot_tex_rid) return {};
+#else
     GpuTexture gt;
     if (!gt.InitFromFile(path, GpuSamplerDesc::PixelArt())) return {};
     MdTexture t = FromGpuTexture(gt);
+#endif
     CacheInsert(s_cache_pa, h, t);
     return t;
 }
 
 MdTexture MdLoadTextureFromMemory(const uint8_t* data, int w, int h) {
+#ifdef MD_USE_LIBGODOT
+    return LibGodotTextureFromRGBA8(data, w, h, /*flip_v=*/false);
+#else
     GpuTexture gt;
     if (!gt.InitFromMemory(data, w, h, GpuSamplerDesc::Lut())) return {};
     return FromGpuTexture(gt);
+#endif
 }
 
 void MdUnloadTexture(MdTexture& t) {
@@ -133,6 +209,12 @@ void MdUnloadTexture(MdTexture& t) {
     // GPU resources stay alive until MdTextureCache_Shutdown().
     if (CacheOwns(t)) { t = {}; return; }
 
+#ifdef MD_USE_LIBGODOT
+    if (t.libgodot_tex_rid) {
+        RenderingServer* rs = RenderingServer::get_singleton();
+        if (rs) rs->free_rid(RID::from_uint64(t.libgodot_tex_rid));
+    }
+#else
     if (t.id) { glDeleteTextures(1, &t.id); }
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
@@ -141,6 +223,7 @@ void MdUnloadTexture(MdTexture& t) {
         if (t.sdl_sampler) SDL_ReleaseGPUSampler(dev, (SDL_GPUSampler*)t.sdl_sampler);
     }
 #endif
+#endif // MD_USE_LIBGODOT
     t = {};
 }
 

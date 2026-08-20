@@ -44,7 +44,13 @@ public:
 
     // Створює scenario/camera/viewport. false якщо RenderingServer
     // недоступний (виклик до libgodot_create_godot_instance()/start()).
-    bool Init(int viewport_w, int viewport_h);
+    // attach_to_screen=false -- ГОЛОВНИЙ режим для in-game коекзистенції
+    // (Фаза C.5 caller-wiring): пропускає viewport_attach_to_screen(),
+    // тобто НЕ претендує на DisplayServer::MAIN_WINDOW_ID, яке SDL3 вже
+    // володіє в реальному grі. viewport_get_texture() лишається робочим
+    // незалежно (той самий шлях, що вже верифікований у probes/
+    // скріншотах) -- лише on-screen presentation вимкнено, не рендеринг.
+    bool Init(int viewport_w, int viewport_h, bool attach_to_screen = true);
     // free_rid() у зворотньому порядку створення (groups -> viewport ->
     // camera -> scenario). Безпечно викликати повторно.
     void Shutdown();

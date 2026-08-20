@@ -13,7 +13,7 @@ LibGodotBridge::~LibGodotBridge() {
     Shutdown();
 }
 
-bool LibGodotBridge::Init(int viewport_w, int viewport_h) {
+bool LibGodotBridge::Init(int viewport_w, int viewport_h, bool attach_to_screen) {
     if (initialized_) return true;
     RenderingServer* rs = RenderingServer::get_singleton();
     if (!rs) return false;
@@ -28,7 +28,13 @@ bool LibGodotBridge::Init(int viewport_w, int viewport_h) {
     rs->viewport_set_size(viewport, viewport_w, viewport_h);
     rs->viewport_set_active(viewport, true);
     rs->viewport_set_update_mode(viewport, RenderingServer::VIEWPORT_UPDATE_ALWAYS);
-    rs->viewport_attach_to_screen(viewport, Rect2(), DisplayServer::MAIN_WINDOW_ID);
+    if (attach_to_screen) {
+        rs->viewport_attach_to_screen(viewport, Rect2(), DisplayServer::MAIN_WINDOW_ID);
+    }
+    // attach_to_screen=false: viewport renders off-screen only,
+    // viewport_get_texture() still returns the composed frame (same
+    // readback path probes/ already uses for screenshots) -- no claim on
+    // the OS window SDL3 owns in a real in-game coexistence scenario.
 
     scenario_rid_id_ = scenario.get_id();
     camera_rid_id_   = camera.get_id();

@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>monkey_dust Engine — C++17 SDL_GPU/Vulkan Game Engine · Developer Docs</title>
-<meta name="description" content="Developer documentation for monkey_dust: C++17 isometric RPG engine on SDL3 SDL_GPU (Vulkan), flecs ECS, Jolt Physics, ozz-animation. AI behavior trees, terrain atlas, GPU-driven rendering.">
+<title>monkey_dust Engine — C++17 Game Engine (SDL_GPU → LibGodot RenderingServer migration) · Developer Docs</title>
+<meta name="description" content="Developer documentation for monkey_dust: C++17 isometric RPG engine, currently on SDL3 SDL_GPU (Vulkan), migrating fully to an embedded LibGodot RenderingServer render path (libgodot as a static lib inside our own executable — not a Godot-project rewrite). flecs ECS, Jolt Physics, ozz-animation. AI behavior trees, terrain atlas, GPU-driven rendering.">
 <link rel="canonical" href="https://rdga1bot.github.io/monkey_dust_engine/">
 <meta property="og:title" content="monkey_dust Engine — Developer Docs">
-<meta property="og:description" content="C++17 isometric RPG engine: SDL_GPU/Vulkan, flecs ECS, Jolt Physics, ozz-animation.">
+<meta property="og:description" content="C++17 isometric RPG engine: SDL_GPU/Vulkan (current) migrating to embedded LibGodot RenderingServer, flecs ECS, Jolt Physics, ozz-animation.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://rdga1bot.github.io/monkey_dust_engine/">
 <script type="application/ld+json">
@@ -15,7 +15,7 @@
  "name":"monkey_dust Engine","programmingLanguage":"C++",
  "applicationCategory":"GameEngine",
  "codeRepository":"https://github.com/rdga1bot/monkey_dust",
- "runtimePlatform":"SDL3 / Vulkan (SDL_GPU)",
+ "runtimePlatform":"SDL3 / Vulkan (SDL_GPU) — migrating to embedded LibGodot RenderingServer",
  "operatingSystem":"Linux",
  "license":"https://opensource.org/licenses/MIT"}
 </script>
@@ -213,7 +213,8 @@
   <nav id="main-nav">
     <div class="nav-section">Огляд</div>
     <a href="#intro"        class="nav-link"><span class="nav-icon">🎯</span> Що таке monkey_dust</a>
-    <a href="#sdlgpu"       class="nav-link"><span class="nav-icon">🏆</span> SDL_GPU Exclusive</a>
+    <a href="#sdlgpu"       class="nav-link"><span class="nav-icon">🏆</span> SDL_GPU (поточний бекенд)</a>
+    <a href="#libgodot"     class="nav-link"><span class="nav-icon">🌐</span> LibGodot-міграція</a>
     <a href="#quickstart"   class="nav-link"><span class="nav-icon">🚀</span> Швидкий старт</a>
     <a href="#structure"    class="nav-link"><span class="nav-icon">📁</span> Monorepo структура</a>
     <a href="#build"        class="nav-link"><span class="nav-icon">⚙️</span> Збірка (CMake)</a>
@@ -277,22 +278,22 @@
 <section class="doc-section" id="intro">
   <div class="breadcrumb"><span>Документація</span> <span class="sep">›</span> Огляд</div>
   <div class="hero">
-    <div class="version-badge">v26.5 · C++17 · SDL3 + SDL_GPU (Vulkan) · flecs · Jolt · Recast · 1750 тестів · 2026-07-19</div>
+    <div class="version-badge">v26.5 · C++17 · SDL3 + SDL_GPU (Vulkan, поточний) → LibGodot RenderingServer (в міграції) · flecs · Jolt · Recast · 1750 тестів · 2026-08-21</div>
     <h1>monkey_dust</h1>
     <p style="font-size:17px;color:var(--text);margin-bottom:0;">
-      Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Бекенд: SDL3 + SDL_GPU (Vulkan), виключний — OpenGL/Raylib повністю видалено (FIX-8). AI архітектура натхненна механіками Alien: Isolation. Kenshi asset pipeline (KEN-1–8): cgltf GLB, ozz-animation, Jolt CharacterVirtual, DetourCrowd. Terrain atlas <code>world_hmap.r32</code> (67 MB, 4096 зон). Цільове залізо: Intel HD 520 (AVX2).
+      Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Поточний бекенд: SDL3 + SDL_GPU (Vulkan), OpenGL/Raylib повністю видалено (FIX-8). <strong>У процесі повної заміни</strong> на embedded LibGodot RenderingServer (libgodot як статична бібліотека всередині власного виконуваного файлу, через godot-cpp/GDExtension — не перехід на повноцінний Godot-проєкт) — див. <a href="#libgodot">LibGodot-міграція</a>. AI архітектура натхненна механіками Alien: Isolation. Kenshi asset pipeline (KEN-1–8): cgltf GLB, ozz-animation, Jolt CharacterVirtual, DetourCrowd. Terrain atlas <code>world_hmap.r32</code> (67 MB, 4096 зон). Цільове залізо: Intel HD 520 (AVX2).
     </p>
     <div class="hero-meta">
       <div class="hero-meta-item"><span class="dot">●</span> C++17, без C++20</div>
       <div class="hero-meta-item"><span class="dot">●</span> Linux · Intel HD 520 (AVX2)</div>
       <div class="hero-meta-item"><span class="dot">●</span> 1280×720 · 60 FPS</div>
-      <div class="hero-meta-item"><span class="dot">●</span> SDL3 + SDL_GPU (Vulkan)</div>
+      <div class="hero-meta-item"><span class="dot">●</span> SDL3 + SDL_GPU (Vulkan, поточний) → LibGodot RenderingServer (в міграції)</div>
       <div class="hero-meta-item"><span class="dot">●</span> 1557 GTests · Game: Proprietary · Engine: MIT · Tools: GPL-3.0</div>
     </div>
   </div>
 
   <div class="card-grid">
-    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="card-title">SDL_GPU Exclusive</div><div class="card-desc">Vulkan через SDL_GPU HAL. SPIR-V шейдери (#version 460). MD_OPENGL43_ENABLED видалено повністю (FIX-8: −1449 рядків).</div></div>
+    <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="card-title">SDL_GPU (поточний бекенд)</div><div class="card-desc">Vulkan через SDL_GPU HAL. SPIR-V шейдери (#version 460). MD_OPENGL43_ENABLED видалено повністю (FIX-8: −1449 рядків). У процесі повної заміни на LibGodot RenderingServer.</div></div>
     <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div><div class="card-title">Isometric Flare</div><div class="card-desc">Flare-сумісні мапи: TileMapRenderer (3D ізометрія) + TileMap2DRenderer (2D SDL_GPU). Multi-atlas, billboard, FRINGE.</div></div>
     <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><line x1="12" y1="7" x2="12" y2="12"/><line x1="12" y1="12" x2="6" y2="17"/><line x1="12" y1="12" x2="18" y2="17"/></svg></div><div class="card-title">ECS (flecs)</div><div class="card-desc">500+ NPC, всі компоненти — чистий POD. Collect→apply патерн. Split-ready engine/include/monkey_dust/.</div></div>
     <div class="card"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="7" r="2"/><circle cx="19" cy="7" r="2"/><circle cx="5" cy="17" r="2"/><circle cx="19" cy="17" r="2"/><circle cx="12" cy="12" r="2"/><line x1="7" y1="7" x2="10" y2="12"/><line x1="17" y1="7" x2="14" y2="12"/><line x1="7" y1="17" x2="10" y2="12"/><line x1="17" y1="17" x2="14" y2="12"/></svg></div><div class="card-title">AI Systems</div><div class="card-desc">Stackless BT VM + BTSystem + BTJsonLoader + DirectorSystem + FlowGraph + SenseSystem. Extended AI patterns (C1–C20).</div></div>
@@ -303,13 +304,18 @@
   </div>
 </section>
 
-<!-- ═══ SDL_GPU MIGRATION ═══ -->
+<!-- ═══ SDL_GPU (CURRENT BACKEND) ═══ -->
 <section class="doc-section" id="sdlgpu">
-  <h2>🏆 SDL_GPU Exclusive — стан після FIX-8</h2>
+  <h2>🏆 SDL_GPU — поточний бекенд (стан після FIX-8)</h2>
+
+  <div class="callout warn">
+    <div class="callout-title">Заплановано повну заміну — див. <a href="#libgodot">LibGodot-міграцію</a></div>
+    SDL_GPU лишається ЄДИНИМ активним рендер-бекендом СЬОГОДНІ (гра, редактор, усі HAL-класи нижче — реальний, живий код). Але це вже не довгостроковий шлях: рішення GO на повну заміну SDL3/SDL_GPU на embedded LibGodot RenderingServer прийнято 2026-08-19, Фази A–F міграційного плану завершені, godot-cpp/GDExtension шар підтверджено 3 живими спайками. SDL_GPU НЕ буде dual-run поруч з LibGodot — це повна заміна, коли термейн (Group 1) і решта груп рендер-коду будуть перенесені.
+  </div>
 
   <div class="callout ok">
-    <div class="callout-title">Поточний стан: SDL_GPU виключний (2026-05-16)</div>
-    Raylib повністю відв'язаний. <code>MD_OPENGL43_ENABLED</code> видалено з усіх 32 файлів (FIX-8: −1449 рядків мертвого коду). Єдиний активний бекенд — SDL_GPU (Vulkan). SPIR-V шейдери <code>#version 460</code>. Standalone editor компілюється з <code>-UMD_SDL_GPU</code> і використовує GL fallback через <code>if(dev==null)</code>.
+    <div class="callout-title">Поточний стан: SDL_GPU виключний серед SDL-бекендів (2026-05-16)</div>
+    Raylib повністю відв'язаний. <code>MD_OPENGL43_ENABLED</code> видалено з усіх 32 файлів (FIX-8: −1449 рядків мертвого коду). Єдиний активний SDL-бекенд — SDL_GPU (Vulkan). SPIR-V шейдери <code>#version 460</code>. Standalone editor компілюється з <code>-UMD_SDL_GPU</code> і використовує GL fallback через <code>if(dev==null)</code>.
   </div>
 
   <table>
@@ -324,6 +330,50 @@
     <tr><td>П.1–П.3</td><td>Raylib повністю видалено з SDL3 build path; MD_SDL_GPU авто з USE_SDL3</td><td>2026-05-07</td></tr>
     <tr><td><strong>FIX-8</strong></td><td><strong>MD_OPENGL43_ENABLED: видалено 1449 рядків з 32 файлів</strong> (scripts/remove_gl43_guards.py); CMakeLists.txt очищено; DrawBuildPreview/DrawDebugGrid — stub</td><td><span class="badge done">✓ 2026-05-13</span></td></tr>
   </table>
+</section>
+
+<!-- ═══ LIBGODOT MIGRATION ═══ -->
+<section class="doc-section" id="libgodot">
+  <h2>🌐 LibGodot-міграція — повна заміна SDL3/SDL_GPU</h2>
+
+  <div class="callout ok">
+    <div class="callout-title">Рішення GO прийнято 2026-08-19</div>
+    Після 3 валідаційних спайків (R1–R3) і повного 10-фазного аудиту (<code>docs/SDL3_TO_LIBGODOT_MIGRATION_AUDIT.md</code>) прийнято рішення: <strong>SDL3+SDL_GPU будуть повністю замінені</strong> на LibGodot RenderingServer як дефолтний рендер-шлях гри. Це НЕ додатковий/dual-run бекенд і НЕ перехід гри на повноцінний Godot-проєкт — <strong>libgodot вбудовується як статична бібліотека всередині нашого власного виконуваного файлу</strong> (через <code>libgodot_create_godot_instance()</code>), наша ECS/AI/скриптинг/ігрова логіка лишаються повністю нашими. Мета заміни — RenderingServer/SceneTree дає сумісність з інструментами й редактором Godot, чого SDL_GPU дати не може.
+  </div>
+
+  <h3>Архітектура: godot-cpp/GDExtension, не raw internal headers</h3>
+  <p>
+    Перша спроба інтеграції (прямі касти до внутрішніх структур <code>core/</code>) спричиняла ABI/layout-невідповідність і реальні SIGSEGV на <code>add_child()</code>. Виправлено переходом на офіційний <code>godot-cpp</code> ptrcall-based binding-шар — той самий протокол, яким користується будь-який сторонній <code>.gdextension</code>-аддон. Підтверджено 3 незалежними живими спайками (task #503/#504/#505), усі з чистим <code>EXIT=0</code>:
+  </p>
+  <ul style="color:var(--text-dim);line-height:1.8;">
+    <li><strong>#503</strong> — <code>add_child()</code> через godot-cpp у реальному SceneTree</li>
+    <li><strong>#504</strong> — NPC skeleton-анімація (Skeleton3D/AnimationPlayer, GLB через GLTFDocument, реальне членство в дереві)</li>
+    <li><strong>#505</strong> — <code>CompositorEffect::_render_callback()</code> реально викликається рендерером при прикріпленні через <code>Camera3D→Compositor</code> (обраний шлях для Group 1 термейну)</li>
+  </ul>
+
+  <h3>Термейн (Group 1) — обраний шлях</h3>
+  <p>
+    Власний SDL_GPU термейн-конвеєр (Ogre-quadtree geomorph+skirts) визнано таким, що не має цінності поза власним рендер-кодом — під час LibGodot-переходу він буде повністю замінений, а не портований. Обрано (а) <code>CompositorEffect</code>-based custom G-buffer+resolve пайплайн (керується Godot's Compositor resource на Camera3D) над (б) offscreen RenderingDevice-конвеєром — (б) прибрано з розгляду, бо тільки (а) дає шлях до майбутньої Godot-editor-based діагностики/тестування. Деталі: <code>docs/LIBGODOT_MIGRATION_GROUP1_TERRAIN_SCOPE.md</code>.
+  </p>
+
+  <table>
+    <tr><th>Фаза</th><th>Зміст</th><th>Стан</th></tr>
+    <tr><td>Аудит (0–10)</td><td>Precondition/inventory/RenderingServer capability/HD 520/EnTT-glue/game-loop/GUI/build-impact/FLARE/ризики</td><td><span class="badge done">✓</span></td></tr>
+    <tr><td>Спайки R1–R3</td><td>Real compile, minimal host, MultiMesh 65536-slot, windowed rendering, CPU/GPU розклад</td><td><span class="badge done">✓</span></td></tr>
+    <tr><td>Фаза A</td><td>Build system integration (CMake USE_LIBGODOT, LIBGODOT_ROOT)</td><td><span class="badge done">✓</span></td></tr>
+    <tr><td>Фаза B.0–B.1</td><td>Skeleton3D-масштаб спайк; core glue layer (LibGodotBridge)</td><td><span class="badge done">✓</span></td></tr>
+    <tr><td>Фаза C–C.5</td><td>Canonical abstractions swap (Групи 1–3)</td><td><span class="badge done">✓</span></td></tr>
+    <tr><td>Фаза D</td><td>Post-process passes built-in swaps</td><td><span class="badge done">✓</span></td></tr>
+    <tr><td>Фаза E</td><td>Editor GUI backend adapter (ImGui)</td><td><span class="badge done">✓</span></td></tr>
+    <tr><td>Фаза F</td><td>Паритет-перевірка + звіт</td><td><span class="badge done">✓</span></td></tr>
+    <tr><td>godot-cpp транзиція</td><td>add_child/NPC-skeleton/CompositorEffect spikes (#503–#505)</td><td><span class="badge done">✓</span></td></tr>
+    <tr><td>Group 1 (термейн)</td><td>CompositorEffect G-buffer+resolve пайплайн — повна імплементація</td><td><span class="badge next">відкрито</span></td></tr>
+    <tr><td>Повний cutover</td><td>Видалення SDL3/SDL_GPU шляху, LibGodot — дефолт</td><td><span class="badge next">відкрито</span></td></tr>
+  </table>
+
+  <p style="color:var(--text-dim);">
+    Довідник: <code>docs/SDL3_TO_LIBGODOT_MIGRATION_AUDIT.md</code>, <code>docs/LIBGODOT_SPIKE_RESULTS.md</code>/<code>R2</code>/<code>R3</code>, <code>docs/LIBGODOT_MIGRATION_PLAN_PHASE_A_F.md</code>, <code>docs/LIBGODOT_MIGRATION_GROUP1_TERRAIN_SCOPE.md</code>, <code>docs/LIBGODOT_MIGRATION_GDCPP_TRANSITION_SCOPE.md</code>.
+  </p>
 </section>
 
 <!-- ═══ QUICKSTART ═══ -->

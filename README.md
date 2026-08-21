@@ -1,10 +1,12 @@
-# monkey_dust Engine — C++17 SDL_GPU/Vulkan Game Engine
+# monkey_dust Engine — C++17 Game Engine (SDL_GPU → LibGodot RenderingServer migration)
 
 Open-source C++17 game engine library for a Flare-inspired isometric RPG sandbox.
 Built around **[SDL3](https://github.com/libsdl-org/SDL) + SDL\_GPU (Vulkan)**,
 **[flecs](https://github.com/SanderMertens/flecs) ECS**, a custom stackless
 **Behavior Tree VM**, **[ozz-animation](https://github.com/guillaumeblanc/ozz-animation)**,
 and **[Jolt Physics](https://github.com/jrouwe/JoltPhysics)**.
+
+> **Render backend migration (in progress):** SDL3/SDL_GPU is the current, live render path (below) but is being **fully replaced** — not run alongside — by an embedded LibGodot RenderingServer: libgodot linked as a static library inside the host executable via godot-cpp/GDExtension, not a rewrite onto the Godot editor/engine. GO decision 2026-08-19; migration Phases A–F and the godot-cpp/GDExtension integration layer are complete and live-verified (3 spikes: `add_child()`, NPC skeleton animation, `CompositorEffect`). Open: Group 1 (terrain) pipeline, then full cutover.
 
 > **Full documentation →** [rdga1bot.github.io/monkey\_dust\_engine/monkey\_dust\_docs.html](https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html)
 

@@ -2,6 +2,129 @@
 // Platform window + frame lifecycle abstraction.
 // Rule M-A: include only from Main.cpp and EditorMain.cpp.
 //
+// MD_USE_LIBGODOT (Фаза C.5 Platform-шар, 2026-08-20): full-cutover
+// backend, mutually exclusive with the SDL3 path below -- see
+// docs/LIBGODOT_MIGRATION_PLAN_PHASE_A_F.md's "Platform-шар" section
+// and engine/include/monkey_dust/platform/input.h's matching comment.
+// Same public API (window_init/window_get_width/window_begin_frame/
+// etc signatures) -- game/src call sites need ZERO changes.
+#ifdef MD_USE_LIBGODOT
+
+#  include "core/extension/libgodot.h"
+#  include "core/extension/godot_instance.h"
+#  include "core/os/os.h"
+#  include "servers/display/display_server.h"
+#  include <monkey_dust/render/md_camera.h>
+#  include <monkey_dust/platform/input.h> // _godot_input_set_quit()
+#  include <cstdio>
+#  include <string>
+#  include <vector>
+
+#  define SetTraceLogLevel(...)  ((void)0)
+
+   namespace _wnd_godot {
+       inline GodotInstance*& instance() { static GodotInstance* i = nullptr; return i; }
+       inline int& width()  { static int v = 1280; return v; }
+       inline int& height() { static int v = 720;  return v; }
+   }
+
+   static GDExtensionBool _wnd_godot_minimal_init(GDExtensionInterfaceGetProcAddress,
+                                                   GDExtensionClassLibraryPtr,
+                                                   GDExtensionInitialization *r_init) {
+       r_init->minimum_initialization_level = GDEXTENSION_INITIALIZATION_SCENE;
+       r_init->userdata = nullptr;
+       r_init->initialize = [](void *, GDExtensionInitializationLevel) {};
+       r_init->deinitialize = [](void *, GDExtensionInitializationLevel) {};
+       return true;
+   }
+
+   // window_init() eq. -- unlike SDL3's explicit SDL_CreateWindow(), the
+   // window appears IMPLICITLY inside libgodot_create_godot_instance()+
+   // start() (--resolution argv). Verified live:
+   // probes/libgodot_window_lifecycle_test.cpp (db8a3d6) -- create+start
+   // 947.8ms, window_get_size() == exact requested resolution, 300-
+   // iteration frame-loop stable (~2ms/iter, no hang).
+   inline void window_init(int w, int h, const char* title) {
+       int init_w = (w > 0) ? w : 1280;
+       int init_h = (h > 0) ? h : 720;
+       static std::string s_res = std::to_string(init_w) + "x" + std::to_string(init_h);
+       static std::vector<std::string> arg_strings = {
+           title ? title : "monkey_dust", "--rendering-method", "forward_plus", "--resolution", s_res
+       };
+       static std::vector<char*> arg_storage;
+       arg_storage.clear();
+       for (auto &s : arg_strings) arg_storage.push_back(&s[0]);
+       arg_storage.push_back(nullptr);
+
+       GDExtensionObjectPtr obj = libgodot_create_godot_instance(
+           (int)arg_strings.size(), arg_storage.data(), _wnd_godot_minimal_init);
+       if (!obj) { fprintf(stderr, "[window] libgodot_create_godot_instance failed\n"); return; }
+       GodotInstance* inst = (GodotInstance*)obj;
+       if (!inst->start()) { fprintf(stderr, "[window] GodotInstance::start() failed\n"); return; }
+       _wnd_godot::instance() = inst;
+       _wnd_godot::width()  = init_w;
+       _wnd_godot::height() = init_h;
+   }
+
+   inline void window_shutdown() {
+       if (_wnd_godot::instance()) {
+           libgodot_destroy_godot_instance(_wnd_godot::instance());
+           _wnd_godot::instance() = nullptr;
+       }
+   }
+
+   // NOT YET IMPLEMENTED: real vsync-mode switching unspiked this
+   // session (Godot controls this via --disable-vsync argv at instance
+   // creation, not a documented runtime toggle) -- no-op rather than a
+   // guessed API call.
+   inline void window_set_vsync(int /*fps*/) {}
+
+   // window_get_width/height() eq. -- always re-reads DisplayServer
+   // (live, not the SDL3 path's cached _wnd::width()/height()) since
+   // window_begin_frame() below already keeps _wnd_godot::width/height
+   // in sync every frame, matching the SDL3 path's own resize-tracking
+   // behavior (window.h's SDL_GetWindowSize() call in window_begin_frame()).
+   inline int  window_get_width()  { return _wnd_godot::width(); }
+   inline int  window_get_height() { return _wnd_godot::height(); }
+   inline float window_get_time_s() {
+       return _wnd_godot::instance() ? (float)(OS::get_singleton()->get_ticks_msec() * 0.001) : 0.f;
+   }
+
+   inline void window_set_size(int w, int h) {
+       if (w <= 0 || h <= 0) return;
+       DisplayServer* ds = DisplayServer::get_singleton();
+       if (!ds) return;
+       ds->window_set_size(Size2i(w, h));
+   }
+
+   inline void window_begin_frame() {
+       DisplayServer* ds = DisplayServer::get_singleton();
+       if (!ds) return;
+       Size2i sz = ds->window_get_size();
+       _wnd_godot::width()  = sz.x;
+       _wnd_godot::height() = sz.y;
+   }
+
+   // No-ops under LibGodot: RenderingServer handles depth-state
+   // internally per-material, no explicit glEnable(GL_DEPTH_TEST)
+   // equivalent needed at the call site (unlike the OpenGL path below).
+   inline void window_begin_3d(const MdCamera& /*cam*/) {}
+   inline void window_end_3d() {}
+
+   // window_end_frame() eq. -- instance->iteration() both renders AND
+   // pumps OS/input events (verified: probes/libgodot_window_lifecycle_
+   // test.cpp's 300-iteration loop, probes/libgodot_input_map_test.cpp's
+   // Input singleton state). Return value == true means Main::iteration()
+   // requested exit (verified from main/main.cpp source, the `exit` local
+   // var) -- forwarded to input.h's quit flag via _godot_input_set_quit().
+   inline void window_end_frame() {
+       if (!_wnd_godot::instance()) return;
+       bool want_quit = _wnd_godot::instance()->iteration();
+       if (want_quit) _godot_input_set_quit(true);
+   }
+
+#else // !MD_USE_LIBGODOT -- existing SDL3+OpenGL/SDL_GPU path, unchanged.
+
 // Pure SDL3 + OpenGL context, no Raylib (M12.3+; the Raylib fallback path
 // was removed 2026-08-09 -- USE_SDL3=ON has been the only buildable
 // configuration since engine/CMakeLists.txt's own FATAL_ERROR gate, and
@@ -176,3 +299,5 @@
        // Draining here would silently consume events between imgui_new_frame and
        // window_end_frame, causing missed clicks in ImGui.
    }
+
+#endif // MD_USE_LIBGODOT

@@ -44,7 +44,13 @@ public:
 
     // Створює scenario/camera/viewport. false якщо RenderingServer
     // недоступний (виклик до libgodot_create_godot_instance()/start()).
-    bool Init(int viewport_w, int viewport_h);
+    // attach_to_screen=false -- ГОЛОВНИЙ режим для in-game коекзистенції
+    // (Фаза C.5 caller-wiring): пропускає viewport_attach_to_screen(),
+    // тобто НЕ претендує на DisplayServer::MAIN_WINDOW_ID, яке SDL3 вже
+    // володіє в реальному grі. viewport_get_texture() лишається робочим
+    // незалежно (той самий шлях, що вже верифікований у probes/
+    // скріншотах) -- лише on-screen presentation вимкнено, не рендеринг.
+    bool Init(int viewport_w, int viewport_h, bool attach_to_screen = true);
     // free_rid() у зворотньому порядку створення (groups -> viewport ->
     // camera -> scenario). Безпечно викликати повторно.
     void Shutdown();
@@ -55,8 +61,13 @@ public:
     // Реєструє нову (mesh, material) групу. mesh_id/material_id -- вже
     // створені RID-и (тут лише зберігаються, lifecycle власника -- caller,
     // за винятком самого MultiMesh RID, який належить цьому класу).
+    // use_custom_data=true додає vec4/instance (Godot use_custom_data),
+    // потрібно для per-instance даних, що НЕ вкладаються в transform
+    // matrix (наприклад PropRenderer's anim_params: time/mode/mesh_height/
+    // phase, Фаза C.5 Група 3 -- див. SyncGroupTransformsAndCustomData).
     // Повертає індекс групи ( >=0 ) або -1 при помилці.
-    int RegisterGroup(uint64_t mesh_rid_id, uint64_t material_rid_id, int max_instances);
+    int RegisterGroup(uint64_t mesh_rid_id, uint64_t material_rid_id, int max_instances,
+                       bool use_custom_data = false);
     int GroupCount() const { return (int)groups_.size(); }
 
     // ОДИН rs->multimesh_set_buffer() виклик на групу. xform_data --
@@ -74,7 +85,31 @@ public:
     // бо не рендеряться, але буфер має бути повного розміру).
     bool SyncGroupTransforms(int group_index, const float* xform_data, int visible_count);
 
+    // Той самий контракт, що SyncGroupTransforms (xform_data ЗАВЖДИ
+    // capacity*12 floats, visible_count -- окремий
+    // multimesh_set_visible_instances() виклик), ПЛЮС custom_data --
+    // ЗАВЖДИ capacity*4 floats (vec4/instance). Група МАЄ бути
+    // зареєстрована з use_custom_data=true (RegisterGroup), інакше
+    // повертає false. ОДИН multimesh_set_buffer() виклик на групу --
+    // той самий CONSTRAINT, буфер лише ширший (16 floats/instance:
+    // 12 transform + 4 custom_data, Godot's власний layout, не
+    // окремий виклик на custom_data).
+    bool SyncGroupTransformsAndCustomData(int group_index, const float* xform_data,
+                                           const float* custom_data, int visible_count);
+
     int GetGroupInstanceCapacity(int group_index) const;
+
+    // Потрібно для screenshot-верифікації (обов'язковий 3-кроковий
+    // shader-debug протокол, CLAUDE_CONSTITUTION §7.7) через
+    // rs->viewport_get_texture()->texture_2d_get()->save_png(). Той
+    // самий RID, що й Фаза F's "синтетична сцена в межах бюджету"
+    // потребуватиме для реального виміру.
+    uint64_t ViewportRid() const { return viewport_rid_id_; }
+    // Фаза F паритет-перевірка: NPC-instance (register_skin()-шляхом,
+    // не MultiMesh-групування) реєструється в ТОМУ Ж scenario, що
+    // пропи, щоб з'являтись в тому самому кадрі -- instance_set_
+    // scenario() потребує явного RID, не прихованого всередині bridge.
+    uint64_t ScenarioRid() const { return scenario_rid_id_; }
 
 private:
     struct Group {
@@ -83,6 +118,7 @@ private:
         uint64_t multimesh_rid_id = 0; // власний RID, звільняється у Shutdown()
         uint64_t instance_rid_id  = 0; // instance_create(), base=multimesh
         int      capacity = 0;
+        bool     use_custom_data = false;
     };
 
     uint64_t scenario_rid_id_ = 0;

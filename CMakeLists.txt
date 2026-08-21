@@ -234,7 +234,11 @@ target_include_directories(monkey_dust_engine
 # libgodot, коли USE_LIBGODOT=OFF).
 if(USE_LIBGODOT AND LIBGODOT_SO)
     target_include_directories(monkey_dust_engine PRIVATE
-        "${LIBGODOT_ROOT}" "${LIBGODOT_ROOT}/platform/linuxbsd")
+        "${LIBGODOT_ROOT}" "${LIBGODOT_ROOT}/platform/linuxbsd"
+        # imgui_impl_renderingserver.cpp (Фаза E) is MD_USE_LIBGODOT-gated,
+        # not MONKEY_DUST_EDITOR-gated -- needs imgui.h whenever
+        # USE_LIBGODOT=ON, regardless of whether the editor is built.
+        "${CMAKE_SOURCE_DIR}/tools/third_party/imgui")
     target_compile_definitions(monkey_dust_engine PUBLIC MD_USE_LIBGODOT)
     target_link_libraries(monkey_dust_engine PUBLIC "${LIBGODOT_SO}")
 endif()

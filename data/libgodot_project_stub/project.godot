@@ -1,0 +1,10 @@
+config_version=5
+
+[application]
+
+config/name="monkey_dust"
+run/main_scene="res://main_scene.tscn"
+
+[rendering]
+
+renderer/rendering_method="forward_plus"

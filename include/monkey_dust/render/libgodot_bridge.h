@@ -105,6 +105,11 @@ public:
     // самий RID, що й Фаза F's "синтетична сцена в межах бюджету"
     // потребуватиме для реального виміру.
     uint64_t ViewportRid() const { return viewport_rid_id_; }
+    // Фаза F паритет-перевірка: NPC-instance (register_skin()-шляхом,
+    // не MultiMesh-групування) реєструється в ТОМУ Ж scenario, що
+    // пропи, щоб з'являтись в тому самому кадрі -- instance_set_
+    // scenario() потребує явного RID, не прихованого всередині bridge.
+    uint64_t ScenarioRid() const { return scenario_rid_id_; }
 
 private:
     struct Group {

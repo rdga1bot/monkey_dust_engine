@@ -38,13 +38,26 @@
        return true;
    }
 
+   // Optional extra GDExtension init callback (task #540): libgodot_
+   // create_godot_instance() accepts exactly ONE init callback for the
+   // whole process. Default (nullptr) preserves today's behavior
+   // exactly (_wnd_godot_minimal_init, a no-op). A caller that needs
+   // godot-cpp's own class registry live (e.g. main_libgodot.cpp's NPC
+   // live-animation path, БОРГ-LIBGODOT-G2ANIM) passes its own
+   // GDExtensionBinding::InitObject-based init function here instead --
+   // see probes/libgodot_npc_skeleton_test_gdcpp.cpp's gdcpp_npc_init
+   // for the pattern this is designed to accept.
+   using WindowGdExtensionInitFn = GDExtensionBool (*)(GDExtensionInterfaceGetProcAddress,
+                                                        GDExtensionClassLibraryPtr,
+                                                        GDExtensionInitialization*);
+
    // window_init() eq. -- unlike SDL3's explicit SDL_CreateWindow(), the
    // window appears IMPLICITLY inside libgodot_create_godot_instance()+
    // start() (--resolution argv). Verified live:
    // probes/libgodot_window_lifecycle_test.cpp (db8a3d6) -- create+start
    // 947.8ms, window_get_size() == exact requested resolution, 300-
    // iteration frame-loop stable (~2ms/iter, no hang).
-   inline void window_init(int w, int h, const char* title) {
+   inline void window_init(int w, int h, const char* title, WindowGdExtensionInitFn extra_init = nullptr) {
        int init_w = (w > 0) ? w : 1280;
        int init_h = (h > 0) ? h : 720;
        static std::string s_res = std::to_string(init_w) + "x" + std::to_string(init_h);
@@ -57,7 +70,7 @@
        arg_storage.push_back(nullptr);
 
        GDExtensionObjectPtr obj = libgodot_create_godot_instance(
-           (int)arg_strings.size(), arg_storage.data(), _wnd_godot_minimal_init);
+           (int)arg_strings.size(), arg_storage.data(), extra_init ? extra_init : _wnd_godot_minimal_init);
        if (!obj) { fprintf(stderr, "[window] libgodot_create_godot_instance failed\n"); return; }
        GodotInstance* inst = (GodotInstance*)obj;
        if (!inst->start()) { fprintf(stderr, "[window] GodotInstance::start() failed\n"); return; }

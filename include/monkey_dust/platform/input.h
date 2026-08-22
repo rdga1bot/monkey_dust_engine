@@ -66,6 +66,9 @@
 #  define KEY_RIGHT         SDL_SCANCODE_RIGHT
 #  define KEY_UP            SDL_SCANCODE_UP
 #  define KEY_DOWN          SDL_SCANCODE_DOWN
+#  define KEY_ENTER         SDL_SCANCODE_RETURN
+#  define KEY_SPACE         SDL_SCANCODE_SPACE
+#  define KEY_BACKSPACE     SDL_SCANCODE_BACKSPACE
    // Godot's MouseButton enum (core/input/input_enums.h): LEFT=1,
    // RIGHT=2, MIDDLE=3 -- DIFFERENT order than SDL3's SDL_BUTTON_LEFT=1/
    // MIDDLE=2/RIGHT=3. input_mouse_down/pressed cast this value directly
@@ -107,6 +110,8 @@
                table[SDL_SCANCODE_LSHIFT] = Key::SHIFT;    table[SDL_SCANCODE_RSHIFT] = Key::SHIFT;
                table[SDL_SCANCODE_LEFT]  = Key::LEFT;      table[SDL_SCANCODE_RIGHT] = Key::RIGHT;
                table[SDL_SCANCODE_UP]    = Key::UP;        table[SDL_SCANCODE_DOWN]  = Key::DOWN;
+               table[SDL_SCANCODE_RETURN] = Key::ENTER;    table[SDL_SCANCODE_SPACE] = Key::SPACE;
+               table[SDL_SCANCODE_BACKSPACE] = Key::BACKSPACE;
                init = true;
            }
            static Key* ptr = table;
@@ -235,6 +240,9 @@
 #  define KEY_RIGHT         SDL_SCANCODE_RIGHT
 #  define KEY_UP            SDL_SCANCODE_UP
 #  define KEY_DOWN          SDL_SCANCODE_DOWN
+#  define KEY_ENTER         SDL_SCANCODE_RETURN
+#  define KEY_SPACE         SDL_SCANCODE_SPACE
+#  define KEY_BACKSPACE     SDL_SCANCODE_BACKSPACE
    // Mouse buttons: Raylib 0-based → SDL3 1-based macros
 #  define MOUSE_BUTTON_LEFT   SDL_BUTTON_LEFT
 #  define MOUSE_BUTTON_RIGHT  SDL_BUTTON_RIGHT

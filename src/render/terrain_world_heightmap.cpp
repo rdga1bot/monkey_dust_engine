@@ -90,12 +90,22 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     ti.width                = (Uint32)N;
     ti.height               = (Uint32)N;
     ti.layer_count_or_depth = 1;
-    // Full mip chain -- floor(log2(N))+1. SDL_GenerateMipmapsForGPUTexture
-    // (below) fills levels 1.. from level 0 after upload; this is the
-    // exact same runtime-mip-generation call already shipping today for a
-    // much larger texture (TerrainRenderer::InitKenshiOverlay,
-    // terrain_renderer.cpp, 16384x16384 RGBA8 Kenshi colour overlay).
-    ti.num_levels = (Uint32)(std::floor(std::log2((double)N)) + 1.0);
+    // #398 mip-chain removal (2026-08-23): this texture is ALWAYS sampled
+    // at explicit textureLod(..., 0.0) in the live vertex shader path
+    // (terrain_quadtree.vert's SampleHeightFrac/SampleNormal) -- geomorph's
+    // "coarse" sample is a resample at a DIFFERENT WORLD POSITION on this
+    // same LOD 0, not a different mip level. The one reader that COULD use
+    // mip>0 (TerrainVtPageCache's page-fill compute, via TH_SampleHeightFrac's
+    // explicit lod param) is provably dead in every exercised path: the game
+    // never calls RequestPage/FlushFillQueue at all (VT cache disabled
+    // 2026-08-09, see scene_render.h's terrain_vt_cache doc comment), and
+    // the editor's only call site (tools/editor/editor_world_3d_sdlgpu.cpp's
+    // VtDebugFill(), reachable only via a manual Lua console command) hardcodes
+    // tier=0 (LOD 0) unconditionally. Full mip chain was previously
+    // floor(log2(N))+1 (14 levels for N=8193) -- ~44MB of never-sampled
+    // GPU memory. If VT paging is ever revived with tier>0, restore that
+    // formula here (this texture/sampler is the same one page-fill binds).
+    ti.num_levels = 1;
     ti.format     = SDL_GPU_TEXTUREFORMAT_R16_UNORM;
     ti.usage      = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
     // COLOR_TARGET usage is required by SDL_GenerateMipmapsForGPUTexture
@@ -138,14 +148,15 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     dst.w = (Uint32)N; dst.h = (Uint32)N; dst.d = 1;
     SDL_UploadToGPUTexture(cp, &src, &dst, false);
     SDL_EndGPUCopyPass(cp);
-    SDL_GenerateMipmapsForGPUTexture(cmd, tex_);
+    // #398: no SDL_GenerateMipmapsForGPUTexture call -- single level only,
+    // see ti.num_levels=1's doc comment above.
     SDL_SubmitGPUCommandBuffer(cmd);
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 
     SDL_GPUSamplerCreateInfo si{};
     si.min_filter        = SDL_GPU_FILTER_LINEAR;
     si.mag_filter        = SDL_GPU_FILTER_LINEAR;
-    si.mipmap_mode       = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+    si.mipmap_mode       = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;  // moot with 1 level, harmless
     si.address_mode_u    = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     si.address_mode_v    = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     si.address_mode_w    = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;

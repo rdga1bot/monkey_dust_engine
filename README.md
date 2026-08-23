@@ -1,4 +1,4 @@
-# monkey_dust Engine — C++17 Game Engine (SDL_GPU → LibGodot RenderingServer migration)
+# monkey_dust Engine — C++17 Game Engine (SDL_GPU/Vulkan)
 
 Open-source C++17 game engine library for a Flare-inspired isometric RPG sandbox.
 Built around **[SDL3](https://github.com/libsdl-org/SDL) + SDL\_GPU (Vulkan)**,
@@ -6,7 +6,7 @@ Built around **[SDL3](https://github.com/libsdl-org/SDL) + SDL\_GPU (Vulkan)**,
 **Behavior Tree VM**, **[ozz-animation](https://github.com/guillaumeblanc/ozz-animation)**,
 and **[Jolt Physics](https://github.com/jrouwe/JoltPhysics)**.
 
-> **Render backend migration (in progress):** SDL3/SDL_GPU is the current, live render path (below) but is being **fully replaced** — not run alongside — by an embedded LibGodot RenderingServer: libgodot linked as a static library inside the host executable via godot-cpp/GDExtension, not a rewrite onto the Godot editor/engine. GO decision 2026-08-19; migration Phases A–F and the godot-cpp/GDExtension integration layer are complete and live-verified (3 spikes: `add_child()`, NPC skeleton animation, `CompositorEffect`). Open: Group 1 (terrain) pipeline, then full cutover.
+> **Render backend: SDL3/SDL_GPU, permanently.** An embedded LibGodot RenderingServer replacement was explored (GO decision 2026-08-19, Phases A–F, godot-cpp/GDExtension integration layer, then further growth-then-flip prototyping) but **rejected 2026-08-23** after a measured ~50% GPU perf regression on target hardware (Godot's built-in Forward+ renderer vs our own hand-tuned SDL_GPU HAL renderer on Intel HD 520/Gen9), with no viable fix found.
 
 > **Full documentation →** [rdga1bot.github.io/monkey\_dust\_engine/monkey\_dust\_docs.html](https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html)
 

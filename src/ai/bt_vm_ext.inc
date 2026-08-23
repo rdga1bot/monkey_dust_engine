@@ -237,6 +237,7 @@
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
             MdEntity target    = MdRegistry::Get().FromIndex(en->val.e);
+            if (!MdRegistry::Get().Valid(target)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const AgentState* tas  = MdRegistry::Get().Handle(target).try_get_mut<AgentState>();
             if (!tas) { result = BTStatus::Failure; pc = nd.parent; continue; }
             bool enemy = AllianceMatrix::Get().IsEnemy(
@@ -345,6 +346,7 @@
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
             MdEntity          target = MdRegistry::Get().FromIndex(en->val.e);
+            if (!MdRegistry::Get().Valid(target)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const WorldTransform* twt   = MdRegistry::Get().Handle(target).try_get_mut<WorldTransform>();
             if (!twt) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint32_t ks = PathCache::PosKey(wt->x,  wt->z);
@@ -492,7 +494,8 @@
                 const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
                 if (en) {
                     MdEntity target     = MdRegistry::Get().FromIndex(en->val.e);
-                    const AgentState* tas   = MdRegistry::Get().Handle(target).try_get_mut<AgentState>();
+                    const AgentState* tas   = MdRegistry::Get().Valid(target)
+                        ? MdRegistry::Get().Handle(target).try_get_mut<AgentState>() : nullptr;
                     if (tas) {
                         enemy = AllianceMatrix::Get().IsEnemy(
                             static_cast<AllianceGroup>(as->alliance_group),
@@ -570,6 +573,7 @@
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
             MdEntity target       = MdRegistry::Get().FromIndex(en->val.e);
+            if (!MdRegistry::Get().Valid(target)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const WeaponComponent* wc = MdRegistry::Get().Handle(target).try_get_mut<WeaponComponent>();
             if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (!wc->needs_reload) ? BTStatus::Success : BTStatus::Failure;
@@ -582,6 +586,7 @@
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
             MdEntity target       = MdRegistry::Get().FromIndex(en->val.e);
+            if (!MdRegistry::Get().Valid(target)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             const WeaponComponent* wc = MdRegistry::Get().Handle(target).try_get_mut<WeaponComponent>();
             if (!wc) { result = BTStatus::Failure; pc = nd.parent; continue; }
             result = (wc->weapon_type == static_cast<uint8_t>(nd.data)) ? BTStatus::Success : BTStatus::Failure;

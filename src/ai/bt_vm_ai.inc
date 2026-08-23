@@ -172,6 +172,7 @@
             const BlackboardEntry* en = bb_find(*ab, TARGET_ENTITY_BB_KEY);
             if (!en) { result = BTStatus::Failure; pc = nd.parent; continue; }
             MdEntity target = MdRegistry::Get().FromIndex(en->val.e);
+            if (!MdRegistry::Get().Valid(target)) { result = BTStatus::Failure; pc = nd.parent; continue; }
             AgentState*  as_t   = MdRegistry::Get().Handle(target).try_get_mut<AgentState>();
             if (!as_t) { result = BTStatus::Failure; pc = nd.parent; continue; }
             uint8_t bit_idx = static_cast<uint8_t>(nd.data & 0x3Fu);

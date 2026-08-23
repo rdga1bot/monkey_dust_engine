@@ -85,12 +85,16 @@ public:
     // screenspace.frag's VT_SampleAlbedo) -- caller must have already
     // called vt.FlushFillQueue this frame (outside this render pass,
     // before it opens) so any newly-filled pages are visible here.
+    // shade_constant_debug: Крок 0 ablation (2026-08-23) -- true bypasses
+    // TS_ComputeGroundAlbedo with a flat colour via world_params.w, a
+    // single value for the whole draw (uniform branch, not per-pixel).
     void DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
                              const TerrainRenderer::SunParams& sun,
                              float cam_x, float cam_y, float cam_z,
                              float world_origin_x, float world_origin_z, float world_to_uv,
                              float fog_far, const float fog_color[3], float fog_near,
-                             const TerrainRenderer& ground, const TerrainVtPageCache& vt);
+                             const TerrainRenderer& ground, const TerrainVtPageCache& vt,
+                             bool shade_constant_debug = false);
 
 private:
     bool CreateTextures(int w, int h);

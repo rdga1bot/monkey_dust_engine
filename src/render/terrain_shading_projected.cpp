@@ -132,7 +132,8 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
                                                    float cam_x, float cam_y, float cam_z,
                                                    float world_origin_x, float world_origin_z, float world_to_uv,
                                                    float fog_far, const float fog_color[3], float fog_near,
-                                                   const TerrainRenderer& ground, const TerrainVtPageCache& vt) {
+                                                   const TerrainRenderer& ground, const TerrainVtPageCache& vt,
+                                                   bool shade_constant_debug) {
     if (!ready_) return;
     // terrain-vt Phase 4: defensive -- the atlas/indirection textures must
     // be valid, non-null objects to bind (SDL_GPU requires a real sampler
@@ -152,7 +153,8 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
     fubo.ambient[0]     = sun.ambient[0]; fubo.ambient[1] = sun.ambient[1];
     fubo.ambient[2]     = sun.ambient[2]; fubo.ambient[3] = 0.f;
     fubo.world_params[0] = world_origin_x; fubo.world_params[1] = world_origin_z;
-    fubo.world_params[2] = world_to_uv;    fubo.world_params[3] = 0.f;
+    fubo.world_params[2] = world_to_uv;
+    fubo.world_params[3] = shade_constant_debug ? 1.f : 0.f;  // Крок 0 ablation, see header doc comment
     fubo.fog_color_near[0] = fog_color[0]; fubo.fog_color_near[1] = fog_color[1];
     fubo.fog_color_near[2] = fog_color[2]; fubo.fog_color_near[3] = fog_near;
     fubo.fog_far = fog_far;

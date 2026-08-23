@@ -244,6 +244,11 @@ struct TerrainNodeEntry {
     Ref<ImageTexture>   height_tex;
     Ref<ShaderMaterial> material;
     int last_seen_frame = -1;
+    // F3 sculpt follow-up (LibgodotTerrain_InvalidateRegion): AABB in the
+    // same centre-origin world space VisibleNode::origin_x/origin_z use --
+    // needed to test brush-edit overlap without re-deriving depth->size
+    // from the (depth,gx,gz) cache key.
+    float origin_x = 0.f, origin_z = 0.f, size = 0.f;
 };
 
 static TerrainQuadtree             s_terrain_quadtree;
@@ -538,6 +543,9 @@ void LibgodotTerrain_Update(uint64_t scenario_id,
         auto it = s_terrain_node_cache.find(key);
         if (it == s_terrain_node_cache.end()) {
             TerrainNodeEntry entry;
+            entry.origin_x = n.origin_x;
+            entry.origin_z = n.origin_z;
+            entry.size     = n.size;
             entry.height_tex = BuildNodeHeightTexture(n.origin_x, n.origin_z, n.size);
             entry.material.instantiate();
             entry.material->set_shader(s_terrain_node_shader);
@@ -603,6 +611,27 @@ void LibgodotTerrain_Update(uint64_t scenario_id,
     if (s_terrain_frame_counter == 1 || s_terrain_frame_counter % 60 == 0) {
         printf("OK: terrain streaming -- %d visible nodes (depth0=%d depth1=%d depth2=%d depth3=%d), cache=%zu\n",
                count, depth_hist[0], depth_hist[1], depth_hist[2], depth_hist[3], s_terrain_node_cache.size());
+    }
+}
+
+// F3 sculpt follow-up -- see header doc comment. Rebuilds height_tex
+// in-place (same RID, same material -- set_shader_parameter re-points it)
+// for every cached node whose AABB overlaps [wx0,wx1]x[wz0,wz1]; leaves
+// untouched/uncached nodes alone (they read live TerrainAtlas data on
+// their own next cache-miss build already).
+void LibgodotTerrain_InvalidateRegion(float wx0, float wz0, float wx1, float wz1) {
+    if (wx0 > wx1) std::swap(wx0, wx1);
+    if (wz0 > wz1) std::swap(wz0, wz1);
+    for (auto& kv : s_terrain_node_cache) {
+        TerrainNodeEntry& entry = kv.second;
+        if (entry.size <= 0.f) continue;
+        float ex0 = entry.origin_x, ex1 = entry.origin_x + entry.size;
+        float ez0 = entry.origin_z, ez1 = entry.origin_z + entry.size;
+        bool overlap = (ex0 <= wx1 && ex1 >= wx0 && ez0 <= wz1 && ez1 >= wz0);
+        if (!overlap) continue;
+        entry.height_tex = BuildNodeHeightTexture(entry.origin_x, entry.origin_z, entry.size);
+        if (entry.material.is_valid())
+            entry.material->set_shader_parameter("height_tex", entry.height_tex);
     }
 }
 

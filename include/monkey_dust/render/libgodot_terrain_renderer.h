@@ -41,4 +41,19 @@ void LibgodotTerrain_Update(uint64_t scenario_id,
 // через RenderingServer::get_singleton(), потім скидає решту статиків.
 void LibgodotTerrain_Shutdown();
 
+// F3 sculpt follow-up (parity gate blocker #2, section E/F): LibgodotTerrain_
+// Update() caches each visible node's height_tex by (depth,gx,gz) and only
+// rebuilds it on a cache MISS (new node just entered view) — a
+// TerrainAtlas_SetHeight() brush edit alone is invisible until the caller
+// forces the affected node(s) to rebuild. wx0/wz0/wx1/wz1 are in the SAME
+// centre-origin world space LibgodotTerrain_Update's own cam_x/cam_z params
+// use (node origin_x/origin_z, NOT TerrainAtlas's corner-origin [0,29491.2)
+// atlas space -- callers sampling/writing TerrainAtlas_* directly must add/
+// subtract the usual kFeaturesToAtlasShift themselves, same convention
+// TerrainNodeHeightSample already applies). Rebuilds height_tex in place for
+// every cached node whose AABB overlaps the given rect; no-op for nodes not
+// currently cached (they'll sample the edited heights fresh on their own
+// next cache-miss build, which already reads live TerrainAtlas data).
+void LibgodotTerrain_InvalidateRegion(float wx0, float wz0, float wx1, float wz1);
+
 #endif // MD_USE_LIBGODOT

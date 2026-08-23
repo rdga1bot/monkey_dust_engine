@@ -57,6 +57,16 @@ public:
 
     static constexpr int kMaxNodesPublic = 16384;
 
+    // #400 (tier-threshold tuning, 2026-08-23): live override for
+    // detail_multiplier, read by SelectVisible/RecurseNode every frame (no
+    // persistent tree state to invalidate) -- lets md.set_terrain_detail_
+    // multiplier() A/B different subdivide thresholds without a rebuild.
+    // NOT for shipping -- see game/src/render/scene_render.h's field doc
+    // comment for the full ablation rationale, same pattern as
+    // terrain_shade_constant_debug.
+    void SetDetailMultiplier(float v) { detail_multiplier_ = v; }
+    float DetailMultiplier() const { return detail_multiplier_; }
+
 private:
     float world_origin_x_ = 0.f, world_origin_z_ = 0.f;
     float world_extent_   = 0.f;

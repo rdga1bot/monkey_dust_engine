@@ -87,6 +87,21 @@ bool ChunkLodWorld::LoadZoneMesh(SDL_GPUDevice* /*dev*/, int zx, int zy, ZoneSlo
 
 void ChunkLodWorld::UpdateStreaming(SDL_GPUDevice* dev, float cam_x, float cam_z, int radius_zones) {
     if (!ready_) return;
+
+    // kMaxLoadedZones=81 only covers a (2*radius+1)^2 square up to
+    // radius_zones==4 (9x9=81). A caller passing radius_zones>=5 (11x11=121)
+    // would silently under-render -- the load loop below simply can't find a
+    // free slot for zones beyond the 81st, with no other symptom. Clamp and
+    // warn once instead of failing silently.
+    const int kMaxSafeRadius = 4;
+    if (radius_zones > kMaxSafeRadius) {
+        MD_LOG(MD_LOG_WARNING,
+               "[ChunkLodWorld] radius_zones=%d exceeds kMaxLoadedZones capacity "
+               "(max safe radius=%d for %d slots) -- clamping",
+               radius_zones, kMaxSafeRadius, kMaxLoadedZones);
+        radius_zones = kMaxSafeRadius;
+    }
+
     int center_zx = (int)std::floor(cam_x / kChunkSizeM);
     int center_zy = (int)std::floor(cam_z / kChunkSizeM);
     if (center_zx == last_center_zx_ && center_zy == last_center_zy_) return;  // no zone crossing -- skip
@@ -105,8 +120,14 @@ void ChunkLodWorld::UpdateStreaming(SDL_GPUDevice* dev, float cam_x, float cam_z
             int zx = center_zx + dx, zy = center_zy + dz;
             if (zx < 0 || zy < 0 || zx >= atlas_zones_ || zy >= atlas_zones_) continue;
             if (FindSlot(zx, zy) >= 0) continue;
+            bool placed = false;
             for (auto& s : slots_) {
-                if (!s.loaded) { LoadZoneMesh(dev, zx, zy, s); break; }
+                if (!s.loaded) { placed = LoadZoneMesh(dev, zx, zy, s); break; }
+            }
+            if (!placed) {
+                MD_LOG(MD_LOG_WARNING,
+                       "[ChunkLodWorld] no free slot for zone %d,%d (all %d slots full) -- zone will not render",
+                       zx, zy, kMaxLoadedZones);
             }
         }
     }

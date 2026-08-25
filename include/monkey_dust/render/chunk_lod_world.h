@@ -33,6 +33,10 @@ public:
     // containing (cam_x, cam_z) (world-space metres), unloads zones that
     // fell outside it. Cheap to call every frame -- no-ops when the
     // camera hasn't crossed a zone boundary since the last call.
+    //
+    // radius_zones is clamped to 4 internally (9x9=81 == kMaxLoadedZones) --
+    // a larger value would silently under-render since the slot array can't
+    // hold more; UpdateStreaming logs a warning if this clamp triggers.
     void UpdateStreaming(SDL_GPUDevice* dev, float cam_x, float cam_z, int radius_zones);
 
     void Draw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, const float* vp16);

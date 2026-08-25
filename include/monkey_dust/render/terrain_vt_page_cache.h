@@ -144,6 +144,26 @@ public:
     // before the VT system existed. Not reverting/deleting the VT code
     // itself (page table, page-fill compute, cache eviction) -- just
     // gating it fully off so it costs nothing and touches nothing.
+    //
+    // Revival attempt (2026-08-24): re-enabled (MIN_CACHEABLE_TIER=1) and
+    // wired to TerrainQuadtree via a new RequestVisibleNode() bridge.
+    // Functionally correct (real, non-garbage ground shading verified live
+    // via game_cmd_driver screenshots; 70+ resident pages, 0 evictions) but
+    // REVERTED again same session: live GpuProfiler telemetry showed
+    // "Terrain VT Fill" costing ~1.5-4ms EVERY frame even with a fully
+    // static camera held for 25+ seconds -- never converging toward the
+    // near-zero steady-state cost the whole feature depends on for its
+    // payoff. FenceWait stayed ~17ms, no better than the pre-VT ~14-15ms
+    // baseline. Root cause not isolated before the revert decision (leading
+    // suspect: TerrainQuadtree::SelectVisible has no persistent tree state
+    // and recomputes fresh every frame from camera+frustum -- RequestPage's
+    // tier assignment for a boundary-adjacent node can flip frame-to-frame
+    // even for a "static" camera, and RequestSubtile's own doc comment
+    // already describes this exact same-corner tier-flap class of problem
+    // from the ORIGINAL TerrainPatchGrid-driven design, where each flip
+    // forces a real re-fill dispatch, not a no-op). Whoever revisits this:
+    // start there, and get real tier-flip counts (not just resident/
+    // eviction) before re-attempting a live wire-up.
     static constexpr int MIN_CACHEABLE_TIER = 99;
 
     // Symmetric upper bound (this session, editor 3D World investigation):

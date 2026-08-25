@@ -33,7 +33,7 @@ bool TerrainQuadtreeRenderer::Init(SDL_GPUDevice* /*dev*/) {
     pd.raster.cull_back   = false; // skirt quads face outward on all 4 borders
     pd.has_depth_target   = true;
     pd.vert_uniform_bufs  = 1;
-    pd.vert_samplers      = 1; // #398: single combined heightNormalTex (TerrainHeightClipmap level)
+    pd.vert_samplers      = 2; // 2026-08-24: #398 reverted -- heightTex + normalTex (world-wide)
     pd.vert_path = "shaders/terrain_quadtree.vert";
     pd.frag_path = "shaders/terrain_gbuffer_mini.frag"; // unmodified, same output contract
     pd.frag_uniform_bufs = 0;
@@ -56,8 +56,7 @@ void TerrainQuadtreeRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
 }
 
 void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
-                                        const TerrainWorldHeightmap& hmap,
-                                        const TerrainHeightClipmap& clipmap, const float* vp16,
+                                        const TerrainWorldHeightmap& hmap, const float* vp16,
                                         const TerrainQuadtree::VisibleNode& node,
                                         float cam_x, float cam_y, float cam_z) {
     if (!ready_) return;
@@ -69,9 +68,6 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuff
 
     SDL_BindGPUGraphicsPipeline(rp, gbuffer_pipeline_.SDLPipeline());
 
-    int clip_ox = 0, clip_oz = 0;
-    clipmap.LevelOriginIndex(node.depth, clip_ox, clip_oz);
-
     TerrainQuadtreeUBO ubo{};
     std::memcpy(ubo.vp, vp16, 64);
     ubo.origin_size_texel_morph[0] = node.origin_x;
@@ -80,16 +76,19 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuff
     ubo.origin_size_texel_morph[3] = node.morph;
     ubo.height_range[0] = hmap.HeightMin();
     ubo.height_range[1] = hmap.HeightMax();
-    ubo.height_range[2] = (float)clip_ox;
-    ubo.height_range[3] = (float)clip_oz;
+    ubo.height_range[2] = hmap.WorldExtent();
+    ubo.height_range[3] = (float)hmap.Resolution();
     ubo.cam_pos_skirt[0] = cam_x;
     ubo.cam_pos_skirt[1] = cam_y;
     ubo.cam_pos_skirt[2] = cam_z;
     ubo.cam_pos_skirt[3] = node.skirt_depth;
     SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
 
-    SDL_GPUTextureSamplerBinding samp{ clipmap.LevelTexture(node.depth), clipmap.LevelSampler(node.depth) };
-    SDL_BindGPUVertexSamplers(rp, 0, &samp, 1);
+    SDL_GPUTextureSamplerBinding samp[2] = {
+        { hmap.Texture(), hmap.Sampler() },
+        { hmap.NormalTexture(), hmap.NormalSampler() },
+    };
+    SDL_BindGPUVertexSamplers(rp, 0, samp, 2);
 
     SDL_GPUBufferBinding filled_ib{ filled_ibo_.SDLBuffer(), 0u };
     SDL_BindGPUIndexBuffer(rp, &filled_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);

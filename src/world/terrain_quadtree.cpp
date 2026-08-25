@@ -16,14 +16,24 @@ bool QuadtreeAabbInFrustum(float ox, float oz, float size, float ymin, float yma
     return true;
 }
 
-// Same 5x5 relief-sample convention TerrainPatchGrid used (this session's
-// Phase 4) -- cheap enough to run per VISIBLE node per frame (only drawn
-// nodes pay this, a small bounded set, not all zones).
+// 2026-08-24: a FIXED skirt margin cannot be correct -- disproved live,
+// twice. First guess (5m) left real gaps everywhere; second guess (100m,
+// picked from a single South Hive A/B) still left a hole right next to
+// the player at a second reported location (11115.5,9676.2), because
+// probing md.terrain_height on a grid there found real local relief up
+// to ~188m (84m..272m) inside one node footprint -- ALREADY bigger than
+// the 100m guess. Real Kenshi terrain relief is NOT bounded by a single
+// constant anywhere in the world; the margin has to be measured per node,
+// not guessed once and reused everywhere. See QuadtreeSampleHeightRange
+// below (this is the same relief sample this code had before, restored --
+// it was wrongly judged "vestigial" and deleted on the mistaken assumption
+// that CDLOD morph alone already closes the LOD-boundary gap; it doesn't,
+// on real steep terrain).
 constexpr int kQuadtreeReliefSampleGrid = 5;
-constexpr float kQuadtreeSkirtMarginM = 5.0f;
+constexpr float kQuadtreeSkirtMarginM = 5.0f; // pad on top of measured relief
 
 float QuadtreeSampleHeightRange(TerrainQuadtree::HeightSampleFn sampler, float ox, float oz, float size) {
-    if (!sampler) return 0.f;
+    if (!sampler) return kQuadtreeSkirtMarginM;
     float hmin = 1e30f, hmax = -1e30f;
     for (int sz = 0; sz < kQuadtreeReliefSampleGrid; ++sz) {
         float wz = oz + (float)sz / (float)(kQuadtreeReliefSampleGrid - 1) * size;
@@ -96,13 +106,10 @@ void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
         return;
     }
 
-    // Conservative whole-world Y bound for culling -- tightened below via
-    // the same relief sample already needed for skirt depth.
+    // height_range doubles as this node's skirt depth (below) and a
+    // tighter Y bound for the frustum test than the old fixed fallback --
+    // this sampler call was already unavoidable, no added cost from reusing it.
     float height_range = QuadtreeSampleHeightRange(sampler, ox, oz, size);
-    // HeightRange alone doesn't give an absolute Y bound (no HeightMin
-    // tracked here since we don't persist per-node state) -- use a
-    // generous fixed fallback band; this only affects culling
-    // conservativeness, not correctness (skirt depth is exact).
     constexpr float kFallbackYMin = -500.f, kFallbackYMax = 4000.f;
     if (!QuadtreeAabbInFrustum(ox, oz, size, kFallbackYMin, kFallbackYMax, frustum_planes)) return;
 
@@ -133,6 +140,16 @@ void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
         out[count].size = size;
         out[count].depth = depth;
         out[count].morph = morph;
+        // 2026-08-24, "falls through textures" user report: skirt_depth
+        // MUST scale with this node's own measured relief (height_range) --
+        // see QuadtreeSampleHeightRange's doc comment for why a fixed
+        // constant was tried twice and disproved twice. On a steep real
+        // Kenshi cliff this legitimately produces a large skirt ("curtain")
+        // -- that is the correct, complete fix (no visible gap, ever) at
+        // the cost of a stretched-texture wall being visible instead of a
+        // hole. A cosmetic follow-up (shading the skirt as fog/cliff-color
+        // instead of stretched ground texture, or a smarter neighbor-aware
+        // sizing) is a SEPARATE task from closing the hole.
         out[count].skirt_depth = height_range;
         ++count;
     }

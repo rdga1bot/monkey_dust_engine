@@ -3,7 +3,6 @@
 #include <SDL3/SDL_gpu.h>
 #include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/render/terrain_world_heightmap.h>
-#include <monkey_dust/render/terrain_height_clipmap.h>
 #include <monkey_dust/world/terrain_quadtree.h>
 
 // Final terrain architecture (2026-08-18, "Ogre-quadtree (geomorph+skirts)",
@@ -24,13 +23,11 @@ public:
 
     // Draws ONE node (filled grid + 4 border skirts) inside an already-open
     // G-buffer render pass. node.morph/skirt_depth come straight from
-    // TerrainQuadtree::SelectVisible; hmap supplies height_min/max only
-    // (#398 -- world-wide height/normal textures no longer bound directly);
-    // clipmap supplies the actual per-draw texture/sampler + origin index
-    // for node.depth's own cache level (TerrainHeightClipmap).
+    // TerrainQuadtree::SelectVisible; hmap supplies the world-wide
+    // height+normal textures directly (2026-08-24: #398's TerrainHeightClipmap
+    // reverted -- see terrain_quadtree.vert's own doc comment for why).
     void DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
-                  const TerrainWorldHeightmap& hmap,
-                  const TerrainHeightClipmap& clipmap, const float* vp16,
+                  const TerrainWorldHeightmap& hmap, const float* vp16,
                   const TerrainQuadtree::VisibleNode& node,
                   float cam_x, float cam_y, float cam_z);
 

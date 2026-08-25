@@ -14,6 +14,26 @@ struct TerrainQuadtreeUBO {
     float cam_pos_skirt[4];
 };
 static_assert(sizeof(TerrainQuadtreeUBO) == 64 + 16 * 3, "TerrainQuadtreeUBO size mismatch");
+
+// Field order matches shaders/terrain_quadtree_forward.frag's PatchFrag/
+// ForwardCam exactly (std140) -- same layout as terrain_shading_projected.
+// cpp's ProjFragUBO/ProjCamUBO, duplicated here rather than shared since
+// the two classes have no common base and this is the only member that
+// would be shared.
+struct ForwardFragUBO {
+    float sun_dir_str[4];
+    float ambient[4];
+    float world_params[4];
+    float fog_color_near[4];
+    float fog_far;
+    float _pad[3];
+};
+static_assert(sizeof(ForwardFragUBO) == 80, "ForwardFragUBO size mismatch");
+
+struct ForwardCamUBO {
+    float cam_pos_ws[4];
+};
+static_assert(sizeof(ForwardCamUBO) == 16, "ForwardCamUBO size mismatch");
 } // namespace
 
 bool TerrainQuadtreeRenderer::Init(SDL_GPUDevice* /*dev*/) {
@@ -48,11 +68,38 @@ bool TerrainQuadtreeRenderer::Init(SDL_GPUDevice* /*dev*/) {
     return true;
 }
 
+bool TerrainQuadtreeRenderer::InitForward(SDL_GPUDevice* /*dev*/) {
+    GpuPipeline::Desc pd;
+    pd.layout.count       = 0; // vertex-buffer-less, same IBO-only technique as gbuffer_pipeline_
+    pd.raster.depth_test  = true;
+    pd.raster.depth_write = true;
+    pd.raster.cull_back   = false; // skirt quads face outward on all 4 borders
+    pd.has_depth_target   = true;
+    pd.vert_uniform_bufs  = 1;
+    pd.vert_samplers      = 2; // heightTex + normalTex (world-wide), same as gbuffer_pipeline_
+    pd.vert_path = "shaders/terrain_quadtree.vert"; // shared, unmodified -- see that file's own doc comment
+    pd.frag_path = "shaders/terrain_quadtree_forward.frag";
+    pd.frag_uniform_bufs = 2; // set=3 binding=0 PatchFrag, binding=1 ForwardCam
+    pd.frag_samplers     = 5; // set=2: tex_colour,tex_ground,tex_ground_baked,tex_overlay_mask,zoneGroundLayersTex
+    pd.frag_storage_bufs = 0;
+    // color_format left INVALID -- draws into the caller's real swapchain-
+    // format main color target, not an isolated G-buffer (the whole point
+    // of reviving forward shading: no separate G-buffer texture at all).
+    if (!forward_pipeline_.Create(pd)) {
+        MD_LOG(MD_LOG_WARNING, "[TerrainQuadtreeRenderer] forward pipeline create failed");
+        return false;
+    }
+    forward_ready_ = true;
+    return true;
+}
+
 void TerrainQuadtreeRenderer::Shutdown(SDL_GPUDevice* /*dev*/) {
     gbuffer_pipeline_.Destroy();
+    if (forward_ready_) forward_pipeline_.Destroy();
     filled_ibo_.Shutdown();
     skirt_ibo_.Shutdown();
     ready_ = false;
+    forward_ready_ = false;
 }
 
 void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
@@ -67,6 +114,88 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuff
     float texelSize = node.size / kPatchQuads;
 
     SDL_BindGPUGraphicsPipeline(rp, gbuffer_pipeline_.SDLPipeline());
+
+    TerrainQuadtreeUBO ubo{};
+    std::memcpy(ubo.vp, vp16, 64);
+    ubo.origin_size_texel_morph[0] = node.origin_x;
+    ubo.origin_size_texel_morph[1] = node.origin_z;
+    ubo.origin_size_texel_morph[2] = texelSize;
+    ubo.origin_size_texel_morph[3] = node.morph;
+    ubo.height_range[0] = hmap.HeightMin();
+    ubo.height_range[1] = hmap.HeightMax();
+    ubo.height_range[2] = hmap.WorldExtent();
+    ubo.height_range[3] = (float)hmap.Resolution();
+    ubo.cam_pos_skirt[0] = cam_x;
+    ubo.cam_pos_skirt[1] = cam_y;
+    ubo.cam_pos_skirt[2] = cam_z;
+    ubo.cam_pos_skirt[3] = node.skirt_depth;
+    SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
+
+    SDL_GPUTextureSamplerBinding samp[2] = {
+        { hmap.Texture(), hmap.Sampler() },
+        { hmap.NormalTexture(), hmap.NormalSampler() },
+    };
+    SDL_BindGPUVertexSamplers(rp, 0, samp, 2);
+
+    SDL_GPUBufferBinding filled_ib{ filled_ibo_.SDLBuffer(), 0u };
+    SDL_BindGPUIndexBuffer(rp, &filled_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    SDL_DrawGPUIndexedPrimitives(rp, filled_index_count_, 1, 0, 0, 0);
+
+    SDL_GPUBufferBinding skirt_ib{ skirt_ibo_.SDLBuffer(), 0u };
+    SDL_BindGPUIndexBuffer(rp, &skirt_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    SDL_DrawGPUIndexedPrimitives(rp, skirt_index_count_, 1, 0, 0, 0);
+}
+
+void TerrainQuadtreeRenderer::BeginForward(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                                            const TerrainRenderer::SunParams& sun,
+                                            float cam_x, float cam_y, float cam_z,
+                                            float world_origin_x, float world_origin_z, float world_to_uv,
+                                            float fog_far, const float fog_color[3], float fog_near,
+                                            const TerrainRenderer& ground) {
+    if (!forward_ready_) return;
+    SDL_BindGPUGraphicsPipeline(rp, forward_pipeline_.SDLPipeline());
+
+    ForwardFragUBO fubo{};
+    fubo.sun_dir_str[0] = sun.dir[0]; fubo.sun_dir_str[1] = sun.dir[1];
+    fubo.sun_dir_str[2] = sun.dir[2]; fubo.sun_dir_str[3] = sun.strength;
+    fubo.ambient[0]     = sun.ambient[0]; fubo.ambient[1] = sun.ambient[1];
+    fubo.ambient[2]     = sun.ambient[2]; fubo.ambient[3] = 0.f;
+    fubo.world_params[0] = world_origin_x; fubo.world_params[1] = world_origin_z;
+    fubo.world_params[2] = world_to_uv;    fubo.world_params[3] = 0.f;
+    fubo.fog_color_near[0] = fog_color[0]; fubo.fog_color_near[1] = fog_color[1];
+    fubo.fog_color_near[2] = fog_color[2]; fubo.fog_color_near[3] = fog_near;
+    fubo.fog_far = fog_far;
+    SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
+
+    ForwardCamUBO cubo{};
+    cubo.cam_pos_ws[0] = cam_x; cubo.cam_pos_ws[1] = cam_y;
+    cubo.cam_pos_ws[2] = cam_z; cubo.cam_pos_ws[3] = 0.f;
+    SDL_PushGPUFragmentUniformData(cmd, 1, &cubo, sizeof(cubo));
+
+    // set=2: same 4 shared ground samplers + zoneGroundLayersTex the resolve
+    // path binds -- contiguous 0..4, no VT bindings needed (VT sampling is
+    // dead code on the live ShadeTerrainGround path, see terrain_quadtree_
+    // forward.frag's own doc comment).
+    SDL_GPUTextureSamplerBinding ground_bindings[4];
+    ground.GetSharedGroundSamplers(ground_bindings);
+    for (int i = 0; i < 4; ++i) {
+        if (!ground_bindings[i].texture || !ground_bindings[i].sampler) return;
+    }
+    SDL_BindGPUFragmentSamplers(rp, 0, ground_bindings, 4);
+    SDL_GPUTextureSamplerBinding zone_binding[1] = {
+        { ground.ZoneGroundLayersTexture(), ground.ZoneGroundLayersSampler() },
+    };
+    SDL_BindGPUFragmentSamplers(rp, 4, zone_binding, 1);
+}
+
+void TerrainQuadtreeRenderer::DrawNodeForward(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                                               const TerrainWorldHeightmap& hmap, const float* vp16,
+                                               const TerrainQuadtree::VisibleNode& node,
+                                               float cam_x, float cam_y, float cam_z) {
+    if (!forward_ready_) return;
+
+    constexpr float kPatchQuads = 16.0f;
+    float texelSize = node.size / kPatchQuads;
 
     TerrainQuadtreeUBO ubo{};
     std::memcpy(ubo.vp, vp16, 64);

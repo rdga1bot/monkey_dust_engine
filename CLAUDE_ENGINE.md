@@ -1,3 +1,15 @@
+---
+id: kb-engine-claude-engine
+type: architecture
+status: active
+date: 2026-04-27
+updated: 2026-05-14
+repo: engine
+tags: [engine, architecture, api-surface, split-readiness, ecs]
+summary: "engine/ submodule router doc: public API surface, split-readiness rules, world-registry ownership"
+related: [engine/README.md]
+---
+
 # monkey_dust/engine — universal core (Flare-engine analog)
 
 > **Головний документ проекту:** `CLAUDE_CONSTITUTION.md` у приватному репо `monkey_dust/`.

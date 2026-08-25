@@ -1,3 +1,14 @@
+---
+id: kb-engine-readme
+type: reference
+status: active
+date: 2026-05-14
+updated: 2026-08-23
+repo: engine
+tags: [engine, readme, sdl-gpu, rendering, ecs, public-repo]
+summary: "Public engine/ README: feature list (rendering/AI/ECS/physics/terrain/nav/audio/scripting), build, repo layout"
+---
+
 # monkey_dust Engine — C++17 Game Engine (SDL_GPU/Vulkan)
 
 Open-source C++17 game engine library for a Flare-inspired isometric RPG sandbox.

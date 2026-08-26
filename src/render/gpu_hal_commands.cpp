@@ -13,8 +13,14 @@
 // ── GpuCommandBuffer ─────────────────────────────────────────────────────────
 
 void GpuCommandBuffer::BindPipeline(GpuPipeline* p) {
+    // Granite-style dedup (RENDER_VS_GRANITE_DEEPSEEK_RESEARCH.md, gpu_hal
+    // topic): skip the redundant SDL_BindGPUGraphicsPipeline call when the
+    // same pipeline is already bound. Safe across passes because pipeline_
+    // is reset to nullptr in EndPass()/GpuComputePass::End(), so the first
+    // bind in a new pass always goes through.
+    bool same = (pipeline_ == p);
     pipeline_ = p;
-    if (!p) return;
+    if (!p || same) return;
 
 #ifdef MD_SDL_GPU
     if (sdl_cmd_) {

@@ -70,7 +70,19 @@ const char* GpuDevice::DriverName() const {
 }
 
 SDL_GPUCommandBuffer* GpuDevice::AcquireCommandBuffer() {
-    return SDL_AcquireGPUCommandBuffer(device_);
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
+    if (cmd) cmd_buffer_active_ = true;
+    return cmd;
+}
+
+void GpuDevice::WarnIfActive(const char* what) const {
+    if (cmd_buffer_active_) {
+        MD_LOG(MD_LOG_WARNING,
+               "[GpuDevice] %s called while a command buffer is active -- "
+               "resizing/destroying a persistent GPU resource mid-frame can "
+               "use-after-free on the Intel Vulkan driver (see "
+               "npc_render_deferred.cpp RenderFrame doc comment)", what);
+    }
 }
 
 SDL_GPUTexture* GpuDevice::AcquireSwapchainTexture(SDL_GPUCommandBuffer* cmd,
@@ -109,12 +121,14 @@ void GpuDevice::Submit(SDL_GPUCommandBuffer* cmd) {
         last_gpu_ms_ = freq ? (float)((double)(t1 - t0) * 1000.0 / (double)freq) : 0.f;
         if (f) SDL_ReleaseGPUFence(device_, f);
         GpuFrameTimeline::Get().OnSubmit();
+        cmd_buffer_active_ = false;
         return;
     }
 
     prev_fence_ = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
     // Timeline: record submit timestamp for latency measurement.
     GpuFrameTimeline::Get().OnSubmit();
+    cmd_buffer_active_ = false;
 }
 
 } // namespace md

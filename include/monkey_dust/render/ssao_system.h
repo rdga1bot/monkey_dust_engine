@@ -139,10 +139,14 @@ struct SSAOPrep1UBO {
 };
 static_assert(sizeof(SSAOPrep1UBO) == 16);
 
-// ── SSAOMainUBO (std140, 40B — must match ssao_main.frag) ──────────────────────
+// ── SSAOMainUBO (std140, 48B — must match ssao_main.frag) ──────────────────────
 // PERF-17: AI.exe (Alien Isolation) RE found 4 SSAO params vs our 2.
 //   occlusion_ao_infl    → ao_influence:       how much AO darkens final colour
 //   specular_occlusion   → specular_occlusion: reduce specular in occluded areas
+// horizon_angle_threshold/shadow_power: cherry-picked from AMD FidelityFX CACAO's
+// tunable set (RENDER_VS_GRANITE_DEEPSEEK_RESEARCH.md, postprocess topic) --
+// NOT the CACAO library itself, just its two most impactful scalar knobs
+// grafted onto our existing 8-sample Poisson kernel.
 struct SSAOMainUBO {
     float inv_proj_x;        // 1/proj[0][0] = tan(fovy/2)*aspect
     float inv_proj_y;        // 1/proj[1][1] = tan(fovy/2)
@@ -154,7 +158,8 @@ struct SSAOMainUBO {
     float fade_scale;        // 1.0/80.0
     float ao_influence;      // 1.0  — global AO→colour weight (AI.exe: occlusion_ao_infl)
     float specular_occlusion;// 0.3  — AO reduces specular (AI.exe: specular_occlusion)
-    float _pad[2];
+    float horizon_angle_threshold; // 0.06 (CACAO default) — reject near-grazing-angle occlusion
+    float shadow_power;      // 1.0 (neutral) — contrast curve exponent on final AO
 };
 static_assert(sizeof(SSAOMainUBO) == 48);
 
@@ -162,7 +167,11 @@ static_assert(sizeof(SSAOMainUBO) == 48);
 struct SSAOBlurUBO {
     float pixel_w;
     float pixel_h;
-    float _pad[2];
+    float bilateral_sigma_sq; // 5.0 (CACAO default) — Gaussian falloff on AO-value
+                              // difference, multiplied into the existing binary
+                              // edge weight (softens blur inside non-edge regions
+                              // without touching edge-preservation behavior)
+    float _pad;
 };
 static_assert(sizeof(SSAOBlurUBO) == 16);
 

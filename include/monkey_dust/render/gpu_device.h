@@ -81,6 +81,23 @@ public:
     // happening (confirmed via [EditorScreenshot] saved log lines).
     void RecordExternalGpuMs(float ms) { last_gpu_ms_ = ms; }
 
+    // Frame-resource-resize tripwire (RENDER_VS_GRANITE_DEEPSEEK_RESEARCH.md,
+    // scene_orchestration topic): resizing a persistent texture (depth,
+    // G-buffer, ...) while a command buffer is mid-recording caused a real
+    // SIGSEGV inside the Intel Vulkan driver (see npc_render_deferred.cpp's
+    // RenderFrame doc comment) -- a still-forming/in-flight command buffer
+    // referenced the just-destroyed texture. Correct call sites already run
+    // before AcquireCommandBuffer(); this is a regression tripwire for the
+    // next one that doesn't. Call before any Shutdown()/Init()/EnsureSize()
+    // on a persistent frame resource.
+    bool HasActiveCommandBuffer() const { return cmd_buffer_active_; }
+    void WarnIfActive(const char* what) const;
+    // The screenshot-capture path (tools/editor/editor_screenshot.cpp)
+    // submits its own command buffer directly via SDL_GPU, bypassing
+    // Submit() above -- it must report completion here itself, mirroring
+    // RecordExternalGpuMs's already-established external-caller pattern.
+    void NotifyCommandBufferSubmitted() { cmd_buffer_active_ = false; }
+
 private:
     GpuDevice() = default;
     SDL_GPUDevice* device_       = nullptr;
@@ -89,6 +106,7 @@ private:
     SDL_GPUFence*  prev_fence_   = nullptr;
     bool           sync_timing_  = false;
     float          last_gpu_ms_  = 0.f;
+    bool           cmd_buffer_active_ = false;
 };
 
 } // namespace md

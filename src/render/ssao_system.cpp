@@ -317,6 +317,13 @@ void SSAOSystem::MainPass(SDL_GPUCommandBuffer* cmd,
     ubo.bias         = 0.03f;
     ubo.intensity    = 1.2f;
     ubo.fade_scale   = 1.f / 80.f;
+    // These two were previously left uninitialized (POD `SSAOMainUBO ubo;`
+    // with no member-init) -- fixing that latent bug while wiring the field.
+    ubo.ao_influence = 1.0f;
+    ubo.specular_occlusion = 0.3f;
+    // CACAO-cherry-picked tunables (RENDER_VS_GRANITE_DEEPSEEK_RESEARCH.md).
+    ubo.horizon_angle_threshold = 0.06f;
+    ubo.shadow_power            = 1.0f; // neutral; report gave no CACAO default
 
     // Two samplers: b=0 = linear_depth, b=1 = view_normals (from Prep1)
     SDL_GPUTextureSamplerBinding sbs[2] = {
@@ -333,7 +340,10 @@ void SSAOSystem::BlurPass(SDL_GPUCommandBuffer* cmd) {
     if (!enabled_ || !blur_temp_ || !ssao_blurred_) return;
     if (!blur_h_pipeline_.SDLPipeline() || !blur_v_pipeline_.SDLPipeline()) return;
 
-    SSAOBlurUBO ubo = { 1.f/(float)half_w_, 1.f/(float)half_h_, {0.f,0.f} };
+    // bilateral_sigma_sq = 5.0 (CACAO default, RENDER_VS_GRANITE_DEEPSEEK_
+    // RESEARCH.md postprocess topic) -- Gaussian falloff multiplied into the
+    // existing binary edge weight.
+    SSAOBlurUBO ubo = { 1.f/(float)half_w_, 1.f/(float)half_h_, 5.0f, 0.f };
 
     // Horizontal: ssao_raw → blur_temp_
     {

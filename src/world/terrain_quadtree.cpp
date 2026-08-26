@@ -60,6 +60,11 @@ void TerrainQuadtree::Init(float world_origin_x, float world_origin_z, float wor
     height_sampler_ = height_sampler;
 }
 
+void TerrainQuadtree::SetScreenParams(float screen_width_px, float fovy_degrees) {
+    screen_width_px_ = screen_width_px > 1.f ? screen_width_px : 1280.f;
+    fovy_degrees_    = fovy_degrees > 1.f ? fovy_degrees : 45.f;
+}
+
 namespace {
 // Recursive per-zone traversal -- no persistent state, purely a function of
 // (origin, size, depth) and the camera. See terrain_quadtree.h's own doc
@@ -156,15 +161,30 @@ void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
 }
 } // namespace
 
+namespace {
+constexpr float kReferenceScreenWidthPx = 1280.f; // Intel HD 520 target res (CLAUDE.md)
+constexpr float kReferenceFovyDeg       = 45.f;   // game_init.cpp camera.fovy default
+} // namespace
+
 int TerrainQuadtree::SelectVisible(const float cam_pos[3], const float frustum_planes[16],
                                     VisibleNode* out, int max_out) const {
     int count = 0;
+    // B1: scale detail_multiplier_ by actual screen width / FOV relative to
+    // the reference config -- at the reference (SetScreenParams never
+    // called, or called with 1280/45) this is an exact 1.0x no-op, so the
+    // recursion below is byte-for-byte identical to the pre-B1 formula.
+    constexpr float kDeg2Rad = 3.14159265358979323846f / 180.f;
+    float ref_tan = std::tan(kReferenceFovyDeg * 0.5f * kDeg2Rad);
+    float cur_tan = std::tan(fovy_degrees_ * 0.5f * kDeg2Rad);
+    float effective_multiplier = detail_multiplier_
+        * (screen_width_px_ / kReferenceScreenWidthPx)
+        * (ref_tan / cur_tan);
     int num_zones = (int)(world_extent_ / chunk_size_ + 0.5f);
     for (int zz = 0; zz < num_zones && count < max_out; ++zz) {
         for (int zx = 0; zx < num_zones && count < max_out; ++zx) {
             float ox = world_origin_x_ + (float)zx * chunk_size_;
             float oz = world_origin_z_ + (float)zz * chunk_size_;
-            RecurseNode(ox, oz, chunk_size_, 0, max_depth_, detail_multiplier_,
+            RecurseNode(ox, oz, chunk_size_, 0, max_depth_, effective_multiplier,
                         cam_pos, frustum_planes, height_sampler_, out, max_out, count);
         }
     }

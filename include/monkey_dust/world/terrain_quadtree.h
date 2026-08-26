@@ -67,6 +67,31 @@ public:
     void SetDetailMultiplier(float v) { detail_multiplier_ = v; }
     float DetailMultiplier() const { return detail_multiplier_; }
 
+    // B1 (Ulrich screen-space-error finding, RENDER_VS_ULRICH_CHUNKLOD_
+    // DEEPSEEK_RESEARCH.md's lod_selection_math topic): the threshold above
+    // (`size * detail_multiplier`) was completely FOV/resolution-independent
+    // -- a 4K 90-FOV view and an 800x600 45-FOV view selected identical
+    // nodes at identical camera positions, which is provably wrong (higher
+    // resolution resolves smaller angular error; narrower FOV maps the same
+    // angular error to a smaller world-space distance). Call once per frame
+    // with the real screen width (px) and vertical FOV (degrees) before
+    // SelectVisible; SelectVisible scales detail_multiplier_ by
+    // (screen_width/1280) * (tan(22.5deg)/tan(fovy/2)) so that at this
+    // project's reference config (1280px, fovy=45 -- Intel HD 520 target
+    // resolution, game_init.cpp's camera.fovy default) it reproduces
+    // task #400's already-tuned numeric behaviour exactly (never called ==
+    // identical to today). Deliberately does NOT attempt per-node relief-
+    // based error scaling (the "flat area and a cliff get the same LOD"
+    // half of the same finding) -- using the already-sampled height_range
+    // as an error term was tried during implementation and rejected: with
+    // realistic screen/FOV constants the projected acceptable-range comes
+    // out several thousand metres even for near-flat terrain (this
+    // codebase's whole-footprint relief is orders of magnitude cruder than
+    // Ulrich's real per-level baked vertex-displacement error), which would
+    // need real live-tuned calibration this session couldn't do responsibly
+    // blind. That refinement is a separate, explicitly deferred follow-up.
+    void SetScreenParams(float screen_width_px, float fovy_degrees);
+
 private:
     float world_origin_x_ = 0.f, world_origin_z_ = 0.f;
     float world_extent_   = 0.f;
@@ -74,4 +99,6 @@ private:
     int   max_depth_      = 3;
     float detail_multiplier_ = 3.0f;
     HeightSampleFn height_sampler_ = nullptr;
+    float screen_width_px_ = 1280.f;
+    float fovy_degrees_    = 45.f;
 };

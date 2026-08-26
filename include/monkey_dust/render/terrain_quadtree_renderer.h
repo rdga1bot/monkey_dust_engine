@@ -63,14 +63,64 @@ public:
                          const TerrainQuadtree::VisibleNode& node,
                          float cam_x, float cam_y, float cam_z);
 
+    // B3 (Granite terrain finding, RENDER_VS_GRANITE_DEEPSEEK_RESEARCH.md):
+    // Granite instances up to 512 patches in one draw_indexed; our DrawNode
+    // loop issues 2 draws + 1 UBO push PER node instead. This is the
+    // instanced replacement for the G-buffer path specifically (DrawNode
+    // stays as-is, still used by the forward path and any other caller).
+    //
+    // Per-node data (origin, texelSize, morph, skirtDepth) is read from a
+    // TEXTURE (nodeDataTex, 2 texels/node, gl_InstanceIndex-indexed) in a
+    // SEPARATE vertex shader (terrain_quadtree_batched.vert), not an SSBO:
+    // no shader anywhere in this codebase combines vert_samplers>0 with
+    // vert_storage_bufs>0, and this exact combination sits in the same
+    // territory as multiple already-documented Intel Gen9 ANV silent-fail/
+    // hang bugs (GpuPipeline::Create's own vert_storage_bufs+frag_samplers
+    // guard, gpu_hal_pipeline.cpp). terrain_quadtree.vert already has 2
+    // vertex samplers (heightTex, normalTex); a 3rd sampler reuses an
+    // already-proven-safe resource category instead of introducing an
+    // untested-on-this-hardware one. Kept as a fully separate vertex
+    // shader (not a shared/parameterized one) specifically so the forward
+    // pipeline (real frag_samplers=5) never risks inheriting any change
+    // made here.
+    bool InitBatched(SDL_GPUDevice* dev);
+    bool IsBatchedReady() const { return batched_ready_; }
+
+    // Packs `count` nodes into the CPU-side staging buffer and uploads to
+    // nodeDataTex. MUST run inside an already-open SDL_GPUCopyPass on the
+    // frame's own command buffer, BEFORE the G-buffer render pass opens --
+    // mirrors TerrainVtPageCache::UploadPageMeta's "caller owns the copy
+    // pass" convention (SDL_GPU disallows nesting a copy pass inside an
+    // already-active render pass). Capped at kMaxBatchedNodes.
+    void UploadNodeData(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
+                        const TerrainQuadtree::VisibleNode* nodes, int count);
+
+    // Binds the batched pipeline + per-frame-constant vertex resources
+    // (height/normal/nodeData samplers, vp/height_range/cam_pos UBO).
+    void BeginBatched(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+                      const TerrainWorldHeightmap& hmap, const float* vp16,
+                      float cam_x, float cam_y, float cam_z);
+
+    // Issues ONE instanced draw_indexed for the filled grid + ONE for the
+    // skirt strips, covering the `count` nodes uploaded via UploadNodeData
+    // this frame (count must match the UploadNodeData call this frame).
+    void DrawBatched(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int count);
+
+    static constexpr int kMaxBatchedNodes = 8192; // half of kMaxNodesPublic -- generous vs typical per-frame visible counts
+    static constexpr int kNodeDataTexWidth = 256;
+
 private:
     GpuPipeline gbuffer_pipeline_;
     GpuPipeline forward_pipeline_;
+    GpuPipeline batched_pipeline_;
     GpuStaticBuffer filled_ibo_;
     GpuStaticBuffer skirt_ibo_;
     uint32_t filled_index_count_ = 0;
     uint32_t skirt_index_count_  = 0;
     bool ready_ = false;
     bool forward_ready_ = false;
+    bool batched_ready_ = false;
+    SDL_GPUTexture* node_data_tex_     = nullptr;
+    SDL_GPUSampler* node_data_sampler_ = nullptr;
 };
 #endif

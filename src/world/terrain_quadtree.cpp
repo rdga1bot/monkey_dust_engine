@@ -166,6 +166,119 @@ constexpr float kReferenceScreenWidthPx = 1280.f; // Intel HD 520 target res (CL
 constexpr float kReferenceFovyDeg       = 45.f;   // game_init.cpp camera.fovy default
 } // namespace
 
+namespace {
+// B2 (Ulrich activation-level-propagation finding, RENDER_VS_ULRICH_
+// CHUNKLOD_DEEPSEEK_RESEARCH.md): lightweight neighbor-LOD-mismatch
+// mitigation SUPPLEMENT, not a replacement for skirts -- the report's own
+// verdict is explicit that even Ulrich's real reference relies on
+// skirts/overlap (EXTRA_BOX_SIZE, "crack-filling skirts"), not a pure
+// structural no-gap guarantee.
+//
+// The plan for this step originally called for INSERTING a new node one
+// level finer than a >=2-levels-coarser neighbor to fill the gap
+// structurally. Implementing that revealed a real correctness bug before
+// it shipped: the coarser ancestor node is already emitted and covers
+// that same footprint, so inserting a finer node on top of it (rather
+// than replacing/shrinking the ancestor, a much larger structural
+// change) would draw OVERLAPPING geometry -- z-fighting, not a fix. This
+// project's own terrain-thrashing history (docs/TERRAIN_PATTERNS_SURVEY.md)
+// is exactly the pattern of shipping unverified terrain-geometry changes
+// on paper-plan confidence, so this got caught and scoped down here
+// instead of shipped broken.
+//
+// What ships instead: for each emitted node with a same-depth neighbor
+// slot covered only by an ancestor >=2 levels coarser, widen THIS node's
+// own skirt_depth to at least that coarse neighbor's already-computed
+// relief (out[].skirt_depth) -- the real vertical discontinuity that
+// needs hiding across that edge. Pure data adjustment on already-emitted
+// nodes, zero new geometry, zero overlap risk, reuses the skirt
+// mechanism already shipped and proven (2026-08-24 "falls through
+// textures" fix).
+struct QuadtreeNBEntry { int32_t depth, ix, iz, node_index; };
+constexpr int kQuadtreeNBHashSize = 32768; // pow2, > 2x kMaxNodesPublic(16384) for load factor
+
+uint32_t QuadtreeNBHash(int32_t depth, int32_t ix, int32_t iz) {
+    uint32_t h = 2166136261u;
+    h = (h ^ (uint32_t)depth) * 16777619u;
+    h = (h ^ (uint32_t)ix)    * 16777619u;
+    h = (h ^ (uint32_t)iz)    * 16777619u;
+    return h;
+}
+
+// Returns the stored node_index if (depth,ix,iz) is present, else -1.
+int QuadtreeNBFind(const QuadtreeNBEntry entries[], int table_size,
+                    int32_t depth, int32_t ix, int32_t iz) {
+    uint32_t h = QuadtreeNBHash(depth, ix, iz) & (uint32_t)(table_size - 1);
+    for (int probe = 0; probe < table_size; ++probe) {
+        int slot = (int)((h + (uint32_t)probe) & (uint32_t)(table_size - 1));
+        const QuadtreeNBEntry& e = entries[slot];
+        if (e.depth == -1) return -1; // empty slot: not found
+        if (e.depth == depth && e.ix == ix && e.iz == iz) return e.node_index;
+    }
+    return -1; // table full and not found (should not happen, sized with margin)
+}
+
+void QuadtreeNBInsert(QuadtreeNBEntry entries[], int table_size,
+                       int32_t depth, int32_t ix, int32_t iz, int node_index) {
+    uint32_t h = QuadtreeNBHash(depth, ix, iz) & (uint32_t)(table_size - 1);
+    for (int probe = 0; probe < table_size; ++probe) {
+        int slot = (int)((h + (uint32_t)probe) & (uint32_t)(table_size - 1));
+        QuadtreeNBEntry& e = entries[slot];
+        if (e.depth == -1 || (e.depth == depth && e.ix == ix && e.iz == iz)) {
+            e.depth = depth; e.ix = ix; e.iz = iz; e.node_index = node_index;
+            return;
+        }
+    }
+    // Table full: drop silently -- sized with a 2x margin above
+    // kMaxNodesPublic specifically so this should never trigger.
+}
+
+void QuadtreeBalanceNeighbors(float world_origin_x, float world_origin_z, float chunk_size,
+                               TerrainQuadtree::VisibleNode* out, int count) {
+    static QuadtreeNBEntry s_entries[kQuadtreeNBHashSize];
+    for (int i = 0; i < kQuadtreeNBHashSize; ++i) s_entries[i].depth = -1;
+
+    for (int i = 0; i < count; ++i) {
+        float size = out[i].size;
+        int32_t ix = (int32_t)std::lround((out[i].origin_x - world_origin_x) / size);
+        int32_t iz = (int32_t)std::lround((out[i].origin_z - world_origin_z) / size);
+        QuadtreeNBInsert(s_entries, kQuadtreeNBHashSize, out[i].depth, ix, iz, i);
+    }
+
+    constexpr float kDirs[4][2] = { {-1.f,0.f}, {1.f,0.f}, {0.f,-1.f}, {0.f,1.f} };
+    for (int i = 0; i < count; ++i) {
+        int depth = out[i].depth;
+        float size = out[i].size;
+        if (depth < 1) continue; // no ancestor can be >=2 levels coarser than depth 0
+
+        for (int d = 0; d < 4; ++d) {
+            float nb_ox = out[i].origin_x + kDirs[d][0] * size;
+            float nb_oz = out[i].origin_z + kDirs[d][1] * size;
+
+            int32_t same_ix = (int32_t)std::lround((nb_ox - world_origin_x) / size);
+            int32_t same_iz = (int32_t)std::lround((nb_oz - world_origin_z) / size);
+            if (QuadtreeNBFind(s_entries, kQuadtreeNBHashSize, depth, same_ix, same_iz) >= 0)
+                continue; // same-depth neighbor already exists -- no gap
+
+            int d_found = -1, found_index = -1;
+            for (int dd = depth - 1; dd >= 0; --dd) {
+                float size_dd = chunk_size / (float)(1 << dd);
+                float coarse_ox = std::floor((nb_ox - world_origin_x) / size_dd) * size_dd + world_origin_x;
+                float coarse_oz = std::floor((nb_oz - world_origin_z) / size_dd) * size_dd + world_origin_z;
+                int32_t cix = (int32_t)std::lround((coarse_ox - world_origin_x) / size_dd);
+                int32_t ciz = (int32_t)std::lround((coarse_oz - world_origin_z) / size_dd);
+                int idx = QuadtreeNBFind(s_entries, kQuadtreeNBHashSize, dd, cix, ciz);
+                if (idx >= 0) { d_found = dd; found_index = idx; break; }
+            }
+            if (d_found < 0 || d_found > depth - 2) continue; // no gap, or gap < 2 levels
+
+            float coarse_relief = out[found_index].skirt_depth;
+            if (coarse_relief > out[i].skirt_depth) out[i].skirt_depth = coarse_relief;
+        }
+    }
+}
+} // namespace
+
 int TerrainQuadtree::SelectVisible(const float cam_pos[3], const float frustum_planes[16],
                                     VisibleNode* out, int max_out) const {
     int count = 0;
@@ -188,5 +301,6 @@ int TerrainQuadtree::SelectVisible(const float cam_pos[3], const float frustum_p
                         cam_pos, frustum_planes, height_sampler_, out, max_out, count);
         }
     }
+    QuadtreeBalanceNeighbors(world_origin_x_, world_origin_z_, chunk_size_, out, count);
     return count;
 }

@@ -52,6 +52,18 @@ public:
     // plane) + camera position. Returns count written to out[] (capped at
     // max_out). Deterministic function of cam_pos/frustum -- safe to call
     // every frame with no state carried between calls.
+    //
+    // B2 (Ulrich activation-level-propagation finding, RENDER_VS_ULRICH_
+    // CHUNKLOD_DEEPSEEK_RESEARCH.md): after the recursive selection above,
+    // an internal post-pass (QuadtreeBalanceNeighbors, terrain_quadtree.cpp)
+    // widens a node's skirt_depth when one of its 4 edge neighbors is
+    // covered only by an ancestor >=2 levels coarser -- using that coarse
+    // neighbor's own already-measured relief as the target, since that is
+    // the real vertical discontinuity needing a deeper skirt to hide. Pure
+    // data adjustment on already-emitted nodes (no new nodes, no geometry
+    // changes) -- see the .cpp doc comment for why inserting new nodes was
+    // tried and rejected (it draws overlapping geometry on top of the
+    // still-emitted coarse ancestor).
     int SelectVisible(const float cam_pos[3], const float frustum_planes[16],
                        VisibleNode* out, int max_out) const;
 

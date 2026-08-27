@@ -283,9 +283,18 @@ int TerrainQuadtree::SelectVisible(const float cam_pos[3], const float frustum_p
                                     VisibleNode* out, int max_out) const {
     int count = 0;
     // B1: scale detail_multiplier_ by actual screen width / FOV relative to
-    // the reference config -- at the reference (SetScreenParams never
-    // called, or called with 1280/45) this is an exact 1.0x no-op, so the
-    // recursion below is byte-for-byte identical to the pre-B1 formula.
+    // the reference config. audit S2-10 (2026-08-27): camera.fovy is
+    // hardcoded to 45.0f for the whole game (game_init.cpp, never
+    // reassigned anywhere in game/src/) and the shipped target resolution
+    // is exactly 1280px -- so effective_multiplier == detail_multiplier_
+    // bit-for-bit on EVERY real session today, not just at some reference
+    // edge case. This is currently forward-looking infrastructure for a
+    // future resolution-agnostic build (window resize, settings menu
+    // resolution picker), NOT an active LOD mitigation -- do not credit it
+    // with any measured FPS/node-count effect for the current target
+    // config, and do not re-investigate it as a candidate cause for an FPS
+    // complaint reproduced at 1280x720/45fovy (it cannot have changed
+    // anything there by construction).
     constexpr float kDeg2Rad = 3.14159265358979323846f / 180.f;
     float ref_tan = std::tan(kReferenceFovyDeg * 0.5f * kDeg2Rad);
     float cur_tan = std::tan(fovy_degrees_ * 0.5f * kDeg2Rad);

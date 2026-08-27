@@ -18,6 +18,26 @@ void GpuCommandBuffer::BindPipeline(GpuPipeline* p) {
     // same pipeline is already bound. Safe across passes because pipeline_
     // is reset to nullptr in EndPass()/GpuComputePass::End(), so the first
     // bind in a new pass always goes through.
+    //
+    // audit S2-9 (2026-08-27): only 4 minor files route through this
+    // wrapper -- the real render hot path (terrain, NPC, SSAO, deferred
+    // lighting, ~39 raw SDL_BindGPUGraphicsPipeline call sites across 20
+    // files) calls the SDL function directly. Investigated whether wiring
+    // them through this dedup would help: it would not. Every one of those
+    // hot paths already binds its pipeline EXACTLY ONCE per render pass
+    // (terrain's DrawNode/DrawNodeForward loop over N visible nodes never
+    // rebinds -- the pipeline bind happens once in BeginForward/DrawBatched
+    // before the loop; NPC drawing uses one SoA-instanced indexed draw per
+    // frame, not a per-NPC loop with per-NPC pipeline switches; point/
+    // strip-light and deferred-lighting passes bind once then loop draws).
+    // There is no redundant same-pipeline rebind in this codebase's actual
+    // hot paths to eliminate -- the "many small draws each re-binding a
+    // pipeline" problem Granite's research describes doesn't arise here
+    // because this project already avoids per-object draw calls via SoA/
+    // instancing/batching (a different, structural answer to the same
+    // underlying problem). Do not wire more call sites through this
+    // wrapper expecting a measurable win; it would be correct but inert,
+    // same as A1 already is.
     bool same = (pipeline_ == p);
     pipeline_ = p;
     if (!p || same) return;

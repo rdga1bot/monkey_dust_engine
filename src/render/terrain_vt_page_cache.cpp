@@ -39,6 +39,21 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
         MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] Init: invalid device or heightmap not ready");
         return false;
     }
+    // audit S2-11 (2026-08-27): MIN_CACHEABLE_TIER=99 (its own doc comment,
+    // "VT caching disabled entirely") guarantees RequestPage's tier gate
+    // rejects every possible call -- MAX_CACHEABLE_TIER=3 is the highest
+    // tier ever requested anyway, so 99 can never be satisfied. Allocating
+    // the 33MB atlas+indirection and binding it every frame in
+    // TerrainShadingProjected::DrawShadingResolve for a cache that can
+    // never hold a page is pure waste on an iGPU sharing memory bandwidth
+    // with the CPU. IsReady() stays false, DrawShadingResolve's own
+    // vt.IsReady() gate (terrain_shading_projected.cpp) already skips the
+    // 3 VT bindings when this returns false -- no caller change needed.
+    if (MIN_CACHEABLE_TIER > MAX_CACHEABLE_TIER) {
+        MD_LOG(MD_LOG_INFO, "[TerrainVtPageCache] disabled (MIN_CACHEABLE_TIER=%d > MAX_CACHEABLE_TIER=%d) -- skipping resource allocation",
+               MIN_CACHEABLE_TIER, MAX_CACHEABLE_TIER);
+        return false;
+    }
     patch_size_   = patch_size;
     world_extent_ = hmap.WorldExtent();
     height_min_   = hmap.HeightMin();

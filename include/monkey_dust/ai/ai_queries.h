@@ -93,7 +93,7 @@ flecs::query<InjuryState, LimbHealth>& InjuryLimbHealth();
 flecs::query<AgentState, NpcSchedule>& AgentStateSchedule();
 flecs::query<AIAgent, BTComponent>& AIAgentBT();
 flecs::query<SquadController>& SquadControllers();
-flecs::query<AIAgent, BTComponent, WorldTransform>& AIAgentBTWorldTransform();
+flecs::query<AIAgent, BTComponent, WorldTransform, AIAgentTickState>& AIAgentBTWorldTransform();
 flecs::query<AgentState, WorldTransform>& AgentStateWorldTransform();
 flecs::query<AgentState>& AgentStateOnly();
 flecs::query<SenseComponent, WorldTransform, AgentState>& SenseWorldTransformAgentState();

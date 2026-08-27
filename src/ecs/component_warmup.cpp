@@ -80,6 +80,7 @@ void WarmUpEngineComponents() {
     w.component<AgentBlackboard>();
     w.component<AgentState>();
     w.component<AIAgent>();
+    w.component<AIAgentTickState>();
     w.component<AIScript>();
     w.component<AnimatorComponent>();
     w.component<BehaviorTreeComponent>();

@@ -160,19 +160,31 @@ void RegisterCoreComponents() {
                (int)(sizeof(combat_fields) / sizeof(combat_fields[0])),
                (uint16_t)sizeof(Combat));
 
-    // AIAgent
+    // AIAgent — last_tick_ms/bt_node moved to AIAgentTickState (audit S1-00,
+    // 2026-08-27): they used to live here, but writing them every tick from
+    // inside the order_by<AIAgent> sorted query dirtied AIAgent's own change
+    // monitor, forcing a re-sort that flecs asserts on while the world is
+    // multithreaded (see ai_agent.h's doc comment for the full mechanism).
     static const FieldDesc ai_agent_fields[] = {
-        MD_FIELD_RANGE(AIAgent, lod_level,         U8, 1.f, 0.f, 2.f),
         MD_FIELD(AIAgent, faction_id,        U32),
-        MD_FIELD(AIAgent, last_tick_ms,      F32),
-        MD_FIELD(AIAgent, bt_node,           I8),
-        MD_FIELD(AIAgent, personal_relation, I8),
         MD_FIELD(AIAgent, bt_template_id,    U8),
         MD_FIELD_RANGE(AIAgent, level, U8, 1.f, 1.f, 255.f),
     };
     r.Register("ai_agent", ai_agent_fields,
                (int)(sizeof(ai_agent_fields) / sizeof(ai_agent_fields[0])),
                (uint16_t)sizeof(AIAgent));
+
+    // AIAgentTickState — lod_level/personal_relation moved here too (second
+    // S1-00 pass, 2026-08-27): see ai_agent.h's doc comment.
+    static const FieldDesc ai_agent_tick_state_fields[] = {
+        MD_FIELD(AIAgentTickState, last_tick_ms,      F32),
+        MD_FIELD(AIAgentTickState, bt_node,           I8),
+        MD_FIELD_RANGE(AIAgentTickState, lod_level, U8, 1.f, 0.f, 2.f),
+        MD_FIELD(AIAgentTickState, personal_relation, I8),
+    };
+    r.Register("ai_agent_tick_state", ai_agent_tick_state_fields,
+               (int)(sizeof(ai_agent_tick_state_fields) / sizeof(ai_agent_tick_state_fields[0])),
+               (uint16_t)sizeof(AIAgentTickState));
 
     // NavAgent — skip path[] (large fixed array), render_x/z (internal smoothing).
     static const FieldDesc nav_agent_fields[] = {

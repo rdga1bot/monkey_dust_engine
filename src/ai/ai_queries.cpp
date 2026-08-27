@@ -52,9 +52,14 @@ static int CompareAIAgentFaction(flecs::entity_t, const AIAgent* a,
     return (a->faction_id > b->faction_id) - (a->faction_id < b->faction_id);
 }
 
-flecs::query<AIAgent, BTComponent, WorldTransform>& AIAgentBTWorldTransform() {
+flecs::query<AIAgent, BTComponent, WorldTransform, AIAgentTickState>& AIAgentBTWorldTransform() {
+    // AIAgentTickState is a 4th term alongside AIAgent, not folded into it
+    // (see ai_agent.h's doc comment on the type) -- writing it every tick
+    // must NOT dirty AIAgent's own change monitor, which order_by<AIAgent>
+    // below depends on staying clean while JobGraph runs this batch in
+    // multithreaded mode (audit S1-00, 2026-08-27).
     static auto q = MdRegistry::Get().Raw()
-        .query_builder<AIAgent, BTComponent, WorldTransform>()
+        .query_builder<AIAgent, BTComponent, WorldTransform, AIAgentTickState>()
         .order_by<AIAgent>(CompareAIAgentFaction)
         .build();
     return q;

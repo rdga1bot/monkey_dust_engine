@@ -130,6 +130,7 @@ flecs directly. `AllianceMatrix` and `NpcRelationshipComponent` use real flecs r
 - TINST dirty-flag — skip GPU upload when tiles unchanged
 - TransformSoA faction dirty — range upload (not full 65536-slot buffer)
 - Hot-reload file watcher (POSIX `stat` + `SDL_Thread`); live BT JSON reload
+- **`TS_ComputeGroundAlbedo`** ground shading rewritten on Granite's (`github.com/Themaister/Granite`) branchless `mediump` splat-blend formula (2026-08-28): confirmed real ~12.4ms/frame cost at 1920×1056 via randomized A/B, root cause was 873-instruction old zone/cliff/detail formula hard-failing SIMD16 register allocation on Intel Gen9 ANV (permanently capped at SIMD8). New formula compiles to 265 instructions, `0:0 spills:fills`, and now succeeds through SIMD32 — verified live via `INTEL_DEBUG=fs`. Measured real FPS win (34-47 → 50-60 FPS). Old formula kept as `TS_ComputeGroundAlbedo_ZoneLegacy` for a planned phase-2 reintroduction of real per-region Kenshi ground data on top of the new baseline.
 
 ---
 

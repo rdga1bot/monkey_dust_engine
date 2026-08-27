@@ -308,9 +308,9 @@
 <section class="doc-section" id="sdlgpu">
   <h2>🏆 SDL_GPU — поточний бекенд (стан після FIX-8)</h2>
 
-  <div class="callout warn">
-    <div class="callout-title">Заплановано повну заміну — див. <a href="#libgodot">LibGodot-міграцію</a></div>
-    SDL_GPU лишається ЄДИНИМ активним рендер-бекендом СЬОГОДНІ (гра, редактор, усі HAL-класи нижче — реальний, живий код). Але це вже не довгостроковий шлях: рішення GO на повну заміну SDL3/SDL_GPU на embedded LibGodot RenderingServer прийнято 2026-08-19, Фази A–F міграційного плану завершені, godot-cpp/GDExtension шар підтверджено 3 живими спайками. SDL_GPU НЕ буде dual-run поруч з LibGodot — це повна заміна, коли термейн (Group 1) і решта груп рендер-коду будуть перенесені.
+  <div class="callout ok">
+    <div class="callout-title">Постійний рендер-шлях — LibGodot-міграцію ДОСЛІДЖЕНО Й ВІДХИЛЕНО (2026-08-23), див. <a href="#libgodot">деталі</a></div>
+    SDL_GPU — єдиний і тепер постійний рендер-бекенд. Повна LibGodot-заміна пройшла GO-рішення, 3 спайки, повний 10-фазний аудит і Фази A–F (усе реально працювало), але виміряна ~50% GPU перф-регресія на цільовому Intel HD 520 (Forward+ overhead проти власного SDL_GPU HAL) не мала знайденого фіксу — відхилено. Побічна цінність збереглась: аудит 614 <code>get_mut&lt;&gt;</code> сайтів знайшов і закрив 6 реальних use-after-destroy багів у бойовому AI.
   </div>
 
   <div class="callout ok">

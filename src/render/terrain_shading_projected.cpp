@@ -137,13 +137,25 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
     if (!ready_) return;
     // terrain-vt Phase 4: defensive -- the atlas/indirection textures must
     // be valid, non-null objects to bind (SDL_GPU requires a real sampler
-    // binding, not an optional one). Both callers (game, editor) already
-    // Init() this cache right alongside the rest of the granite terrain
-    // pipeline this function itself depends on (`ready_`), so this should
-    // never actually trip in practice -- but bailing cleanly here is far
-    // safer than binding two null textures if that invariant is ever
-    // violated (e.g. a future caller reorders init steps).
-    if (!vt.IsReady()) return;
+    // binding, not an optional one).
+    //
+    // 2026-08-27 fix: this USED to check `!vt.IsReady()`, which bailed out
+    // of this entire function -- including the SDL_DrawGPUPrimitives call
+    // below that actually resolves terrain shading to the screen -- any
+    // time real VT caching was disabled (IsReady() reflects "actively
+    // caching pages", not "safe to bind"). Since VT is now permanently
+    // disabled (see TerrainVtPageCache::Init()'s own doc comment),
+    // IsReady() is permanently false, and terrain silently stopped
+    // rendering entirely (G-buffer fill still ran and cost real GPU time;
+    // this resolve pass, the thing that turns it into visible pixels,
+    // never did). Root-caused via git bisect + live screenshot
+    // classification. TerrainVtPageCache::InitDisabledFallback() now
+    // guarantees Atlas/IndirectionTexture()/PageMetaSSBO() are always
+    // valid 1x1/1-slot objects even when disabled, so a direct null check
+    // on what's actually bound below is both correct AND matches this
+    // comment's original intent (defensive null-safety, not a "VT active"
+    // gate).
+    if (!vt.AtlasTexture() || !vt.IndirectionTexture() || !vt.PageMetaSSBO()) return;
 
     SDL_BindGPUGraphicsPipeline(rp, resolve_pipeline_.SDLPipeline());
 

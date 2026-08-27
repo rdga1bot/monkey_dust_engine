@@ -347,6 +347,11 @@ private:
                                   int fine_ix, int fine_iz, int span, uint32_t value);
     void UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp, int slot,
                          float origin_x, float origin_z, float world_size);
+    // 2026-08-27 fix (see Init()'s doc comment): allocates minimal 1x1/
+    // 1-slot fallback resources so every accessor stays safely bindable
+    // when real caching is permanently disabled, without paying for the
+    // full 33MB atlas+indirection allocation.
+    bool InitDisabledFallback(SDL_GPUDevice* dev);
 
     SDL_GPUTexture*    atlas_tex_     = nullptr;
     SDL_GPUSampler*    atlas_sampler_ = nullptr;

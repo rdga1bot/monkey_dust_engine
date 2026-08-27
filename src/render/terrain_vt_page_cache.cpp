@@ -39,20 +39,35 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
         MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] Init: invalid device or heightmap not ready");
         return false;
     }
-    // audit S2-11 (2026-08-27): MIN_CACHEABLE_TIER=99 (its own doc comment,
-    // "VT caching disabled entirely") guarantees RequestPage's tier gate
-    // rejects every possible call -- MAX_CACHEABLE_TIER=3 is the highest
-    // tier ever requested anyway, so 99 can never be satisfied. Allocating
-    // the 33MB atlas+indirection and binding it every frame in
-    // TerrainShadingProjected::DrawShadingResolve for a cache that can
-    // never hold a page is pure waste on an iGPU sharing memory bandwidth
-    // with the CPU. IsReady() stays false, DrawShadingResolve's own
-    // vt.IsReady() gate (terrain_shading_projected.cpp) already skips the
-    // 3 VT bindings when this returns false -- no caller change needed.
+    // audit S2-11 (2026-08-27) + follow-up fix (2026-08-27, same day): MIN_
+    // CACHEABLE_TIER=99 (its own doc comment, "VT caching disabled
+    // entirely") guarantees RequestPage's tier gate rejects every possible
+    // call -- MAX_CACHEABLE_TIER=3 is the highest tier ever requested
+    // anyway, so 99 can never be satisfied. Allocating the full 33MB
+    // atlas+indirection for a cache that can never hold a page is pure
+    // waste on an iGPU sharing memory bandwidth with the CPU.
+    //
+    // The ORIGINAL S2-11 fix returned false here with NO resources
+    // allocated at all, on the claim that TerrainShadingProjected::
+    // DrawShadingResolve's `if (!vt.IsReady()) return;` gate would just
+    // skip "the 3 VT bindings". That claim was never verified live and was
+    // wrong: that gate is the FIRST line of the function, before the
+    // fullscreen-triangle draw call that actually resolves terrain shading
+    // to the screen -- so a permanently-false IsReady() made terrain
+    // render literally nothing every frame (G-buffer fill still ran and
+    // cost real GPU time, but the resolve pass that turns it into visible
+    // pixels never executed). Root-caused via git bisect + live screenshot
+    // classification after the regression shipped.
+    //
+    // Fix: still skip the real (33MB) allocation, but always create
+    // minimal 1x1/1-slot fallback resources below so every accessor
+    // (AtlasTexture/IndirectionTexture/PageMetaSSBO) returns a valid,
+    // bindable object regardless of whether real caching is enabled.
+    // ready_ stays false (RequestPage/FlushFillQueue etc. remain fully
+    // inert, unchanged from before this fix) -- only the bindability
+    // contract changes.
     if (MIN_CACHEABLE_TIER > MAX_CACHEABLE_TIER) {
-        MD_LOG(MD_LOG_INFO, "[TerrainVtPageCache] disabled (MIN_CACHEABLE_TIER=%d > MAX_CACHEABLE_TIER=%d) -- skipping resource allocation",
-               MIN_CACHEABLE_TIER, MAX_CACHEABLE_TIER);
-        return false;
+        return InitDisabledFallback(dev);
     }
     patch_size_   = patch_size;
     world_extent_ = hmap.WorldExtent();
@@ -242,6 +257,117 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
     ready_ = true;
     MD_LOG(MD_LOG_INFO, "[TerrainVtPageCache] ready: %dx%d atlas (%d slots), %dx%d indirection, patch_size=%.1f",
            SLOTS_X * PAGE_TEXELS, SLOTS_Y * PAGE_TEXELS, NUM_SLOTS, INDIR_SIZE, INDIR_SIZE, patch_size_);
+    return true;
+}
+
+bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
+    // 1x1 atlas: same format/usage contract as the real atlas (minus
+    // COMPUTE_STORAGE_WRITE, since a disabled cache is never written by
+    // terrain_page_fill.comp) so DrawShadingResolve's binding code path is
+    // completely unchanged whether VT is enabled or not.
+    {
+        SDL_GPUTextureCreateInfo ti{};
+        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+        ti.width                = 1;
+        ti.height               = 1;
+        ti.layer_count_or_depth = 1;
+        ti.num_levels           = 1;
+        ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        atlas_tex_ = SDL_CreateGPUTexture(dev, &ti);
+        if (!atlas_tex_) {
+            MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback atlas texture create failed: %s", SDL_GetError());
+            return false;
+        }
+    }
+    {
+        SDL_GPUSamplerCreateInfo si{};
+        si.min_filter     = SDL_GPU_FILTER_NEAREST;
+        si.mag_filter     = SDL_GPU_FILTER_NEAREST;
+        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        atlas_sampler_ = SDL_CreateGPUSampler(dev, &si);
+        if (!atlas_sampler_) {
+            MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback atlas sampler create failed: %s", SDL_GetError());
+            return false;
+        }
+    }
+    // 1x1 indirection, initialized to kNotResident -- VT_SampleAlbedo (the
+    // shader side) reads this first and falls back to the live per-pixel
+    // path whenever a texel says "not resident", which is now the ONLY
+    // value this texture can ever contain.
+    {
+        SDL_GPUTextureCreateInfo ti{};
+        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+        ti.width                = 1;
+        ti.height               = 1;
+        ti.layer_count_or_depth = 1;
+        ti.num_levels           = 1;
+        ti.format               = SDL_GPU_TEXTUREFORMAT_R32_UINT;
+        ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        indir_tex_ = SDL_CreateGPUTexture(dev, &ti);
+        if (!indir_tex_) {
+            MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback indirection texture create failed: %s", SDL_GetError());
+            return false;
+        }
+    }
+    {
+        SDL_GPUSamplerCreateInfo si{};
+        si.min_filter     = SDL_GPU_FILTER_NEAREST;
+        si.mag_filter     = SDL_GPU_FILTER_NEAREST;
+        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        indir_sampler_ = SDL_CreateGPUSampler(dev, &si);
+        if (!indir_sampler_) {
+            MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback indirection sampler create failed: %s", SDL_GetError());
+            return false;
+        }
+    }
+    {
+        uint32_t not_resident = kNotResident;
+        SDL_GPUTransferBufferCreateInfo tbi{};
+        tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tbi.size  = (Uint32)sizeof(uint32_t);
+        SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+        if (tb) {
+            void* map = SDL_MapGPUTransferBuffer(dev, tb, false);
+            if (map) memcpy(map, &not_resident, sizeof(not_resident));
+            SDL_UnmapGPUTransferBuffer(dev, tb);
+
+            SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+            SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+            SDL_GPUTextureTransferInfo src{};
+            src.transfer_buffer = tb;
+            src.pixels_per_row  = 1;
+            src.rows_per_layer  = 1;
+            SDL_GPUTextureRegion dst{};
+            dst.texture = indir_tex_;
+            dst.w = 1; dst.h = 1; dst.d = 1;
+            SDL_UploadToGPUTexture(cp, &src, &dst, false);
+            SDL_EndGPUCopyPass(cp);
+            SDL_SubmitGPUCommandBuffer(cmd);
+            SDL_ReleaseGPUTransferBuffer(dev, tb);
+        }
+    }
+    // 1-slot page-meta buffer -- never actually indexed (indirection always
+    // says kNotResident), just needs to be a valid bindable SSBO.
+    {
+        SDL_GPUBufferCreateInfo bi{};
+        bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
+        bi.size  = (Uint32)(4 * sizeof(float));
+        page_meta_buf_ = SDL_CreateGPUBuffer(dev, &bi);
+        if (!page_meta_buf_) {
+            MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback page-meta buffer create failed: %s", SDL_GetError());
+            return false;
+        }
+    }
+    ready_ = false;  // page-management (RequestPage/FlushFillQueue) stays fully inert
+    MD_LOG(MD_LOG_INFO, "[TerrainVtPageCache] disabled (MIN_CACHEABLE_TIER=%d > MAX_CACHEABLE_TIER=%d) -- 1x1 fallback resources only, real caching inert",
+           MIN_CACHEABLE_TIER, MAX_CACHEABLE_TIER);
     return true;
 }
 

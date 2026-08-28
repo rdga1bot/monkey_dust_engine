@@ -52,4 +52,30 @@ struct TerrainQuadtreeMesh {
 // Builds the ONE shared index buffer (called once, at renderer Init()).
 TerrainQuadtreeMesh BuildTerrainQuadtreeMesh();
 
+// docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 2: builds a stitched,
+// skirt-free index buffer for ONE of 16 border configurations. edgeMask
+// bit 0=north(row=16) 1=south(row=0) 2=east(col=16) 3=west(col=0); a set
+// bit means that edge borders a neighbor exactly ONE quadtree depth level
+// coarser and needs its outer ring "zippered": every other border vertex
+// is dropped from the outer silhouette (its true height is simply not
+// used there) so the remaining 9-of-17 border points exactly match the
+// coarser neighbor's own 9 border points -- eliminating the T-junction
+// crack structurally, with zero vertical skirt geometry. Corner quads
+// are always plain (never zippered) -- a quadtree corner point is always
+// a shared anchor between a node and every possible neighbor depth, so
+// it never has a fine/coarse density mismatch to resolve (unlike edge
+// midpoints).
+//
+// ONLY a 1-level gap is representable this way; a >=2-level gap (rare --
+// see QuadtreeBalanceNeighbors's own "no gap, or gap<2" comment) needs
+// the old skirt path as a fallback (not handled by this function).
+//
+// Requires TerrainQuadtree::LodMode()==1 (OpenMW-style discrete LOD, no
+// morph): continuous CDLOD morphing (mode 0, default) interpolates a
+// border vertex's world position continuously every frame between its
+// own-LOD and parent-LOD height sample, which a STATIC index-buffer weld
+// cannot track -- see terrain_quadtree.h's SetLodMode doc comment. This
+// is why mode 1 forces morph=0 unconditionally.
+std::vector<uint32_t> BuildTerrainQuadtreeStitchedIndices(uint8_t edgeMask);
+
 } // namespace md

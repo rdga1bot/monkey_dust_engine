@@ -67,4 +67,113 @@ TerrainQuadtreeMesh BuildTerrainQuadtreeMesh() {
     return out;
 }
 
+namespace {
+// Emits one plain quad (c,r)-(c+1,r)-(c,r+1)-(c+1,r+1), same winding as
+// BuildTerrainQuadtreeMesh's own interior-fill loop above.
+inline void EmitPlainQuad(std::vector<uint32_t>& out, int c, int r) {
+    uint32_t i0 = RegularIdx(c, r);
+    uint32_t i1 = RegularIdx(c + 1, r);
+    uint32_t i2 = RegularIdx(c, r + 1);
+    uint32_t i3 = RegularIdx(c + 1, r + 1);
+    out.push_back(i0); out.push_back(i2); out.push_back(i1);
+    out.push_back(i1); out.push_back(i2); out.push_back(i3);
+}
+} // namespace
+
+std::vector<uint32_t> BuildTerrainQuadtreeStitchedIndices(uint8_t edgeMask) {
+    constexpr int N = TerrainQuadtreeMesh::kPatchQuads; // 16
+    std::vector<uint32_t> out;
+    out.reserve((size_t)N * N * 6);
+
+    const bool north = (edgeMask & 0x1) != 0;
+    const bool south = (edgeMask & 0x2) != 0;
+    const bool east  = (edgeMask & 0x4) != 0;
+    const bool west  = (edgeMask & 0x8) != 0;
+
+    // Core interior: quad-rows/cols 1..N-2, never touched by any edge
+    // treatment (identical for all 16 configurations).
+    for (int row = 1; row <= N - 2; ++row) {
+        for (int col = 1; col <= N - 2; ++col) {
+            EmitPlainQuad(out, col, row);
+        }
+    }
+
+    // 4 corner quads -- always plain, see this function's own doc comment
+    // (terrain_quadtree_mesh.h) for why corners never need zippering.
+    EmitPlainQuad(out, 0,     0);     // SW
+    EmitPlainQuad(out, N - 1, 0);     // SE
+    EmitPlainQuad(out, 0,     N - 1); // NW
+    EmitPlainQuad(out, N - 1, N - 1); // NE
+
+    // North strip (border row=N, interior row=N-1), quad-cols 1..N-2.
+    // Winding hand-derived + signed-area-verified per edge (see Phase 2
+    // plan doc / commit message) -- north and west need swapped triangle
+    // order relative to south/east, matching the SAME asymmetry the
+    // existing skirt-strip loop's own winding already has by construction.
+    if (!north) {
+        for (int col = 1; col <= N - 2; ++col) EmitPlainQuad(out, col, N - 1);
+    } else {
+        for (int c0 = 1; c0 <= N - 3; c0 += 2) {
+            uint32_t F0 = RegularIdx(c0,     N - 1);
+            uint32_t F1 = RegularIdx(c0 + 1, N - 1);
+            uint32_t F2 = RegularIdx(c0 + 2, N - 1);
+            uint32_t Q0 = RegularIdx(c0,     N);
+            uint32_t Q1 = RegularIdx(c0 + 2, N);
+            out.push_back(F0); out.push_back(Q0); out.push_back(F1);
+            out.push_back(F1); out.push_back(Q0); out.push_back(Q1);
+            out.push_back(F1); out.push_back(Q1); out.push_back(F2);
+        }
+    }
+
+    // South strip (border row=0, interior row=1), quad-cols 1..N-2.
+    if (!south) {
+        for (int col = 1; col <= N - 2; ++col) EmitPlainQuad(out, col, 0);
+    } else {
+        for (int c0 = 1; c0 <= N - 3; c0 += 2) {
+            uint32_t F0 = RegularIdx(c0,     1);
+            uint32_t F1 = RegularIdx(c0 + 1, 1);
+            uint32_t F2 = RegularIdx(c0 + 2, 1);
+            uint32_t Q0 = RegularIdx(c0,     0);
+            uint32_t Q1 = RegularIdx(c0 + 2, 0);
+            out.push_back(F0); out.push_back(F1); out.push_back(Q0);
+            out.push_back(F1); out.push_back(Q1); out.push_back(Q0);
+            out.push_back(F1); out.push_back(F2); out.push_back(Q1);
+        }
+    }
+
+    // East strip (border col=N, interior col=N-1), quad-rows 1..N-2.
+    if (!east) {
+        for (int row = 1; row <= N - 2; ++row) EmitPlainQuad(out, N - 1, row);
+    } else {
+        for (int r0 = 1; r0 <= N - 3; r0 += 2) {
+            uint32_t F0 = RegularIdx(N - 1, r0);
+            uint32_t F1 = RegularIdx(N - 1, r0 + 1);
+            uint32_t F2 = RegularIdx(N - 1, r0 + 2);
+            uint32_t Q0 = RegularIdx(N,     r0);
+            uint32_t Q1 = RegularIdx(N,     r0 + 2);
+            out.push_back(F0); out.push_back(F1); out.push_back(Q0);
+            out.push_back(F1); out.push_back(Q1); out.push_back(Q0);
+            out.push_back(F1); out.push_back(F2); out.push_back(Q1);
+        }
+    }
+
+    // West strip (border col=0, interior col=1), quad-rows 1..N-2.
+    if (!west) {
+        for (int row = 1; row <= N - 2; ++row) EmitPlainQuad(out, 0, row);
+    } else {
+        for (int r0 = 1; r0 <= N - 3; r0 += 2) {
+            uint32_t F0 = RegularIdx(1, r0);
+            uint32_t F1 = RegularIdx(1, r0 + 1);
+            uint32_t F2 = RegularIdx(1, r0 + 2);
+            uint32_t Q0 = RegularIdx(0, r0);
+            uint32_t Q1 = RegularIdx(0, r0 + 2);
+            out.push_back(F0); out.push_back(Q0); out.push_back(F1);
+            out.push_back(F1); out.push_back(Q0); out.push_back(Q1);
+            out.push_back(F1); out.push_back(Q1); out.push_back(F2);
+        }
+    }
+
+    return out;
+}
+
 } // namespace md

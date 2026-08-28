@@ -65,6 +65,21 @@ public:
 
     int LoadedZoneCount() const;
     int64_t LoadedTriangleCount() const;
+    // Cumulative count of zone (re)loads caused by an LOD-level CHANGE
+    // (Фаза 2's distance re-check + Фаза 3's neighbor-consistency clamp),
+    // separate from the zone add/remove scan's normal streaming-in loads.
+    // Diagnostic for the Фаза 4 GPU-regression investigation (docs/
+    // TERRAIN_CHUNKLOD_PORT_PLAN.md's reopened plan) -- a call sequence
+    // where this keeps climbing every single UpdateStreaming() call at a
+    // STATIONARY camera would mean the neighbor-clamp never settles
+    // (oscillates instead of converging), which is real, ongoing disk
+    // I/O + GPU buffer churn every frame, not a one-time cost.
+    int64_t LodReloadCount() const { return lod_reload_count_; }
+    // Per-LOD-level histogram of currently loaded zones (index 0=finest..
+    // kNumLodLevels-1=coarsest). Also a Фаза 4 diagnostic -- confirms or
+    // refutes the hypothesis that the neighbor-clamp forces far more
+    // zones toward the finest levels than distance-only SelectLod would.
+    void LodHistogram(int out_counts[kNumLodLevels]) const;
 
     // Exposed for unit testing -- pure function of distance, no state.
     // Mirrors chunklod.cpp's compute_lod() log2(distance) falloff
@@ -88,6 +103,7 @@ private:
     int last_center_zx_ = -1000, last_center_zy_ = -1000;
     GpuPipeline pipeline_;
     bool ready_ = false;
+    int64_t lod_reload_count_ = 0;
 
     int FindSlot(int zx, int zy) const;
     bool LoadZoneMesh(SDL_GPUDevice* dev, int zx, int zy, int lod, ZoneSlot& slot);

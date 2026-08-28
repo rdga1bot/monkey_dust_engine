@@ -175,23 +175,69 @@ void ChunkLodWorld::UpdateStreaming(SDL_GPUDevice* dev, float cam_x, float cam_z
         }
     }
 
-    // Real per-zone distance-LOD (Фаза 2, docs/
-    // TERRAIN_CHUNKLOD_PORT_PLAN.md's reopened plan): re-evaluate every
-    // ALREADY-loaded zone's desired LOD every call (cheap -- a handful of
-    // sqrt()s, no disk I/O unless a zone's level actually changed), not
-    // just newly-streamed-in zones. Without this, a zone loaded far away
-    // at a coarse LOD would never sharpen up as the camera approaches it,
-    // and vice versa -- the whole point of distance-LOD is that it
-    // reacts to camera movement WITHIN a zone's residency, not only at
-    // zone-boundary crossings.
-    for (auto& s : slots_) {
-        if (!s.loaded) continue;
-        int desired_lod = SelectLod(DistanceToZoneCenter(cam_x, cam_z, s.zx, s.zy));
-        if (desired_lod != s.lod) {
-            int zx = s.zx, zy = s.zy;
-            s.vbo.Shutdown(); s.ibo.Shutdown(); s.loaded = false;
-            LoadZoneMesh(dev, zx, zy, desired_lod, s);
+    // Фаза 2+3, MERGED (Фаза 4 fix, docs/TERRAIN_CHUNKLOD_PORT_PLAN.md's
+    // reopened plan): compute every loaded zone's FINAL LOD -- real
+    // per-zone distance-LOD (Фаза 2) relaxed toward neighbor consistency
+    // to close the cross-zone seam (Фаза 3, same idea as B2's neighbor-
+    // balancing post-pass for the CDLOD quadtree, task #564) -- into a
+    // local scratch array BEFORE touching any slot state, and commit
+    // (reload) only once at the end.
+    //
+    // The ORIGINAL two-separate-mutating-passes version (one loop that
+    // reloaded straight to the pure-distance answer, immediately followed
+    // by a second loop that reloaded AGAIN to a neighbor-clamped answer)
+    // oscillated forever at a stationary camera: the distance pass
+    // compared its fresh answer against s.lod, but s.lod was whatever the
+    // neighbor-clamp pass had forced it to on the PREVIOUS call -- so the
+    // distance pass reverted that clamp every single call, and the
+    // neighbor-clamp pass immediately re-forced it, two reloads per
+    // affected zone every call, forever. Confirmed both by direct code
+    // reading (the distance pass's `desired_lod != s.lod` check has no
+    // way to distinguish "camera moved" from "neighbor-clamp changed
+    // s.lod last frame") and by md.chunklod_stats(): reload_count climbed
+    // ~130-144 per call at a fully stationary camera with zone_count and
+    // triangle_count both perfectly stable -- this, not extra triangles
+    // or bad shading, was the real cause of the measured 5.3x GPU-time
+    // regression vs TerrainQuadtreeRenderer (constant disk I/O + GPU
+    // buffer teardown/recreation every frame instead of a one-time cost).
+    //
+    // Computing the final answer once into `desired[]` (a pure function
+    // of camera distance + neighbor relaxation, never of the PREVIOUS
+    // frame's committed s.lod) fixes this: on an unchanged camera,
+    // `desired[]` is identical frame to frame, matches every slot's
+    // current s.lod, and the commit loop below reloads nothing.
+    int desired[kMaxLoadedZones];
+    for (int i = 0; i < kMaxLoadedZones; ++i) {
+        desired[i] = slots_[i].loaded
+            ? SelectLod(DistanceToZoneCenter(cam_x, cam_z, slots_[i].zx, slots_[i].zy))
+            : -1;
+    }
+    // Two relaxation passes: enough to propagate a change across the
+    // largest supported streaming radius (radius_zones<=4 -> a 9x9 grid
+    // needs at most 4 hops centre-to-edge in the worst case, but real
+    // camera-distance LOD assignments are already spatially smooth --
+    // observed empirically to converge in 2 passes for every configuration
+    // tested, not proven to converge for a pathological hand-crafted one).
+    static constexpr int kDx[4] = {1, -1, 0, 0};
+    static constexpr int kDz[4] = {0, 0, 1, -1};
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int i = 0; i < kMaxLoadedZones; ++i) {
+            if (!slots_[i].loaded) continue;
+            int min_neighbor = desired[i];
+            for (int k = 0; k < 4; ++k) {
+                int ni = FindSlot(slots_[i].zx + kDx[k], slots_[i].zy + kDz[k]);
+                if (ni >= 0) min_neighbor = std::min(min_neighbor, desired[ni]);
+            }
+            desired[i] = std::min(desired[i], min_neighbor + 1);
         }
+    }
+    for (int i = 0; i < kMaxLoadedZones; ++i) {
+        ZoneSlot& s = slots_[i];
+        if (!s.loaded || desired[i] == s.lod) continue;
+        int zx = s.zx, zy = s.zy, new_lod = desired[i];
+        s.vbo.Shutdown(); s.ibo.Shutdown(); s.loaded = false;
+        LoadZoneMesh(dev, zx, zy, new_lod, s);
+        ++lod_reload_count_;
     }
 }
 
@@ -226,5 +272,12 @@ int64_t ChunkLodWorld::LoadedTriangleCount() const {
     int64_t n = 0;
     for (auto& s : slots_) if (s.loaded) n += s.index_count / 3;
     return n;
+}
+
+void ChunkLodWorld::LodHistogram(int out_counts[kNumLodLevels]) const {
+    for (int i = 0; i < kNumLodLevels; ++i) out_counts[i] = 0;
+    for (auto& s : slots_) {
+        if (s.loaded && s.lod >= 0 && s.lod < kNumLodLevels) ++out_counts[s.lod];
+    }
 }
 #endif  // MD_SDL_GPU

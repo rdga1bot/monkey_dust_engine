@@ -46,6 +46,17 @@ float QuadtreeSampleHeightRange(TerrainQuadtree::HeightSampleFn sampler, float o
     }
     return (hmax - hmin) + kQuadtreeSkirtMarginM;
 }
+
+// 2026-08-28 (docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 1): integer
+// log2, matching OpenMW's own components/terrain/quadtreeworld.cpp::Log2
+// (same signature/semantics -- floor(log2(n)), Log2(0)=0) so the ported
+// comparison below reproduces their bucket math exactly, not an
+// approximation of it.
+unsigned int QuadtreeLog2(unsigned int n) {
+    unsigned int lod = 0;
+    while (n >>= 1) ++lod;
+    return lod;
+}
 } // namespace
 
 void TerrainQuadtree::Init(float world_origin_x, float world_origin_z, float world_extent,
@@ -72,7 +83,8 @@ namespace {
 void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
                   float detail_multiplier, const float cam_pos[3], const float frustum_planes[16],
                   TerrainQuadtree::HeightSampleFn sampler,
-                  TerrainQuadtree::VisibleNode* out, int max_out, int& count) {
+                  TerrainQuadtree::VisibleNode* out, int max_out, int& count,
+                  int lod_mode, float min_node_size) {
     if (count >= max_out) return;
 
     float cx = ox + size * 0.5f, cz = oz + size * 0.5f;
@@ -102,12 +114,35 @@ void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
     // dist approaches range.
     float range = size * detail_multiplier;
 
-    if (depth < max_depth && dist < range) {
+    // lod_mode==1: OpenMW-style discrete comparison (docs/OPENMW_TERRAIN_
+    // BORROWED_TECHNIQUES.md Phase 1) -- subdivide when this node's native
+    // LOD level (log2(size/minSize), i.e. how many halvings from the
+    // finest leaf) is coarser than what the distance "affords"
+    // (log2(dist/(minSize*detail_multiplier))). detail_multiplier reused
+    // as OpenMW's `factor`; their `cellSize` term collapses to 1 here since
+    // sizes are already real world metres, not abstract cell units. This
+    // mode has NO morph term at all (matches the ported reference exactly,
+    // not an enhancement of it) -- see this function's own doc comment.
+    bool shouldSubdivide;
+    if (lod_mode == 1) {
+        unsigned int nativeLod = (min_node_size > 0.f)
+            ? QuadtreeLog2(static_cast<unsigned int>(size / min_node_size + 0.5f))
+            : 0;
+        float denom = min_node_size * detail_multiplier;
+        unsigned int targetLod = (denom > 0.f)
+            ? QuadtreeLog2(static_cast<unsigned int>(std::max(0.f, dist / denom)))
+            : 0;
+        shouldSubdivide = nativeLod > targetLod;
+    } else {
+        shouldSubdivide = dist < range;
+    }
+
+    if (depth < max_depth && shouldSubdivide) {
         float half = size * 0.5f;
-        RecurseNode(ox,        oz,        half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count);
-        RecurseNode(ox + half, oz,        half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count);
-        RecurseNode(ox,        oz + half, half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count);
-        RecurseNode(ox + half, oz + half, half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count);
+        RecurseNode(ox,        oz,        half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size);
+        RecurseNode(ox + half, oz,        half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size);
+        RecurseNode(ox,        oz + half, half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size);
+        RecurseNode(ox + half, oz + half, half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size);
         return;
     }
 
@@ -138,6 +173,7 @@ void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
     if (morph < 0.f) morph = 0.f;
     if (morph > 1.f) morph = 1.f;
     if (depth == 0) morph = 0.f; // zone root has no parent to blend toward
+    if (lod_mode == 1) morph = 0.f; // OpenMW-style: discrete LOD, no morph term
 
     if (count < max_out) {
         out[count].origin_x = ox;
@@ -302,12 +338,14 @@ int TerrainQuadtree::SelectVisible(const float cam_pos[3], const float frustum_p
         * (screen_width_px_ / kReferenceScreenWidthPx)
         * (ref_tan / cur_tan);
     int num_zones = (int)(world_extent_ / chunk_size_ + 0.5f);
+    float min_node_size = chunk_size_ / (float)(1 << max_depth_);
     for (int zz = 0; zz < num_zones && count < max_out; ++zz) {
         for (int zx = 0; zx < num_zones && count < max_out; ++zx) {
             float ox = world_origin_x_ + (float)zx * chunk_size_;
             float oz = world_origin_z_ + (float)zz * chunk_size_;
             RecurseNode(ox, oz, chunk_size_, 0, max_depth_, effective_multiplier,
-                        cam_pos, frustum_planes, height_sampler_, out, max_out, count);
+                        cam_pos, frustum_planes, height_sampler_, out, max_out, count,
+                        lod_mode_, min_node_size);
         }
     }
     QuadtreeBalanceNeighbors(world_origin_x_, world_origin_z_, chunk_size_, out, count);

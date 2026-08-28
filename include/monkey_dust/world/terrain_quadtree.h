@@ -104,12 +104,26 @@ public:
     // blind. That refinement is a separate, explicitly deferred follow-up.
     void SetScreenParams(float screen_width_px, float fovy_degrees);
 
+    // 2026-08-28 (docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 1): OpenMW's
+    // components/terrain/quadtreeworld.cpp DefaultLodCallback uses a discrete
+    // log2(dist/(minSize*factor)) vs log2(size/minSize) bucket comparison
+    // instead of this class's continuous `dist < size*detail_multiplier`
+    // range test. Ported here as an OFF-by-default alternative for direct
+    // A/B, not a replacement -- the existing range+morph test is already
+    // more sophisticated (continuous distance response, real geomorph,
+    // B1's FOV/resolution-aware scaling); the OpenMW version has none of
+    // that in this port (no morph term at all -- see RecurseNode's mode==1
+    // branch). Mode 0 = existing (default), 1 = OpenMW-style discrete.
+    void SetLodMode(int mode) { lod_mode_ = mode; }
+    int LodMode() const { return lod_mode_; }
+
 private:
     float world_origin_x_ = 0.f, world_origin_z_ = 0.f;
     float world_extent_   = 0.f;
     float chunk_size_     = 460.8f;
     int   max_depth_      = 3;
     float detail_multiplier_ = 3.0f;
+    int   lod_mode_ = 0; // 0=default range+morph, 1=OpenMW-style discrete log2
     HeightSampleFn height_sampler_ = nullptr;
     float screen_width_px_ = 1280.f;
     float fovy_degrees_    = 45.f;

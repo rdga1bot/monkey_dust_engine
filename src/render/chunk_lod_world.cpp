@@ -67,6 +67,22 @@ bool ChunkLodWorld::LoadZoneMesh(SDL_GPUDevice* /*dev*/, int zx, int zy, ZoneSlo
     uint32_t vcount = 0, icount = 0;
     bool ok = std::fread(&vcount, sizeof(vcount), 1, f) == 1 &&
               std::fread(&icount, sizeof(icount), 1, f) == 1;
+    // Sanity-bound counts read from the bake file before resize() -- a
+    // truncated/corrupted zone_*.mesh (e.g. bake interrupted mid-write,
+    // disk corruption) could otherwise hand resize() a huge garbage
+    // vcount/icount, attempting a multi-GB allocation and crashing the
+    // game process. 16M is far above any real zone (finest LOD is a few
+    // thousand verts, see chunklod_bake's own Phase 2 gate results) but
+    // well below what would risk the uint32_t byte-size cast below
+    // overflowing (16M * sizeof(ChunkLodWorldVertex)=24B ~= 384MB).
+    constexpr uint32_t kMaxSaneCount = 16u * 1024u * 1024u;
+    if (ok && (vcount > kMaxSaneCount || icount > kMaxSaneCount)) {
+        MD_LOG(MD_LOG_WARNING,
+               "[ChunkLodWorld] zone %d,%d: implausible vcount=%u/icount=%u -- "
+               "rejecting (corrupted or truncated bake file?)",
+               zx, zy, vcount, icount);
+        ok = false;
+    }
     std::vector<ChunkLodWorldVertex> verts;
     std::vector<uint32_t> indices;
     if (ok) {

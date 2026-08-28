@@ -58,9 +58,21 @@ int ChunkLodWorld::FindSlot(int zx, int zy) const {
     return -1;
 }
 
-bool ChunkLodWorld::LoadZoneMesh(SDL_GPUDevice* /*dev*/, int zx, int zy, ZoneSlot& slot) {
+int ChunkLodWorld::SelectLod(float dist_to_zone_center) {
+    // Same log2(distance) falloff as chunklod.cpp's real compute_lod()
+    // (tmp_/chunklod_reference/chunklod.cpp:2145-2161), applied at
+    // whole-zone granularity: kLod0MaxDist is the distance within which
+    // the finest baked level is used; each doubling beyond that drops
+    // one more level, clamped to the levels we actually baked.
+    constexpr float kLod0MaxDist = 300.0f;
+    if (dist_to_zone_center <= kLod0MaxDist) return 0;
+    int lod = 1 + (int)std::floor(std::log2(dist_to_zone_center / kLod0MaxDist));
+    return lod < kNumLodLevels - 1 ? lod : kNumLodLevels - 1;
+}
+
+bool ChunkLodWorld::LoadZoneMesh(SDL_GPUDevice* /*dev*/, int zx, int zy, int lod, ZoneSlot& slot) {
     char path[600];
-    std::snprintf(path, sizeof(path), "%s/zone_%d_%d.mesh", bake_dir_, zx, zy);
+    std::snprintf(path, sizeof(path), "%s/zone_%d_%d_lod%d.mesh", bake_dir_, zx, zy, lod);
     FILE* f = std::fopen(path, "rb");
     if (!f) return false;
 
@@ -97,9 +109,18 @@ bool ChunkLodWorld::LoadZoneMesh(SDL_GPUDevice* /*dev*/, int zx, int zy, ZoneSlo
     slot.vbo.Init(0x8892u /*GL_ARRAY_BUFFER*/, verts.data(), (uint32_t)(verts.size() * sizeof(ChunkLodWorldVertex)));
     slot.ibo.Init(0x8893u /*GL_ELEMENT_ARRAY_BUFFER*/, indices.data(), (uint32_t)(indices.size() * sizeof(uint32_t)));
     slot.index_count = icount;
-    slot.zx = zx; slot.zy = zy; slot.loaded = true;
+    slot.zx = zx; slot.zy = zy; slot.lod = lod; slot.loaded = true;
     return true;
 }
+
+namespace {
+float DistanceToZoneCenter(float cam_x, float cam_z, int zx, int zy) {
+    float cx = ((float)zx + 0.5f) * kChunkSizeM;
+    float cz = ((float)zy + 0.5f) * kChunkSizeM;
+    float dx = cam_x - cx, dz = cam_z - cz;
+    return std::sqrt(dx * dx + dz * dz);
+}
+}  // namespace
 
 void ChunkLodWorld::UpdateStreaming(SDL_GPUDevice* dev, float cam_x, float cam_z, int radius_zones) {
     if (!ready_) return;
@@ -120,31 +141,56 @@ void ChunkLodWorld::UpdateStreaming(SDL_GPUDevice* dev, float cam_x, float cam_z
 
     int center_zx = (int)std::floor(cam_x / kChunkSizeM);
     int center_zy = (int)std::floor(cam_z / kChunkSizeM);
-    if (center_zx == last_center_zx_ && center_zy == last_center_zy_) return;  // no zone crossing -- skip
-    last_center_zx_ = center_zx; last_center_zy_ = center_zy;
+    if (center_zx != last_center_zx_ || center_zy != last_center_zy_) {
+        last_center_zx_ = center_zx; last_center_zy_ = center_zy;
 
-    // Unload slots now outside the (Chebyshev) radius.
-    for (auto& s : slots_) {
-        if (!s.loaded) continue;
-        if (std::abs(s.zx - center_zx) > radius_zones || std::abs(s.zy - center_zy) > radius_zones) {
-            s.vbo.Shutdown(); s.ibo.Shutdown(); s.loaded = false;
+        // Unload slots now outside the (Chebyshev) radius.
+        for (auto& s : slots_) {
+            if (!s.loaded) continue;
+            if (std::abs(s.zx - center_zx) > radius_zones || std::abs(s.zy - center_zy) > radius_zones) {
+                s.vbo.Shutdown(); s.ibo.Shutdown(); s.loaded = false;
+            }
+        }
+        // Load zones now inside the radius that aren't loaded yet, at
+        // whatever LOD their real distance from the camera calls for.
+        for (int dz = -radius_zones; dz <= radius_zones; ++dz) {
+            for (int dx = -radius_zones; dx <= radius_zones; ++dx) {
+                int zx = center_zx + dx, zy = center_zy + dz;
+                if (zx < 0 || zy < 0 || zx >= atlas_zones_ || zy >= atlas_zones_) continue;
+                if (FindSlot(zx, zy) >= 0) continue;
+                bool placed = false;
+                for (auto& s : slots_) {
+                    if (!s.loaded) {
+                        int lod = SelectLod(DistanceToZoneCenter(cam_x, cam_z, zx, zy));
+                        placed = LoadZoneMesh(dev, zx, zy, lod, s);
+                        break;
+                    }
+                }
+                if (!placed) {
+                    MD_LOG(MD_LOG_WARNING,
+                           "[ChunkLodWorld] no free slot for zone %d,%d (all %d slots full) -- zone will not render",
+                           zx, zy, kMaxLoadedZones);
+                }
+            }
         }
     }
-    // Load zones now inside the radius that aren't loaded yet.
-    for (int dz = -radius_zones; dz <= radius_zones; ++dz) {
-        for (int dx = -radius_zones; dx <= radius_zones; ++dx) {
-            int zx = center_zx + dx, zy = center_zy + dz;
-            if (zx < 0 || zy < 0 || zx >= atlas_zones_ || zy >= atlas_zones_) continue;
-            if (FindSlot(zx, zy) >= 0) continue;
-            bool placed = false;
-            for (auto& s : slots_) {
-                if (!s.loaded) { placed = LoadZoneMesh(dev, zx, zy, s); break; }
-            }
-            if (!placed) {
-                MD_LOG(MD_LOG_WARNING,
-                       "[ChunkLodWorld] no free slot for zone %d,%d (all %d slots full) -- zone will not render",
-                       zx, zy, kMaxLoadedZones);
-            }
+
+    // Real per-zone distance-LOD (Фаза 2, docs/
+    // TERRAIN_CHUNKLOD_PORT_PLAN.md's reopened plan): re-evaluate every
+    // ALREADY-loaded zone's desired LOD every call (cheap -- a handful of
+    // sqrt()s, no disk I/O unless a zone's level actually changed), not
+    // just newly-streamed-in zones. Without this, a zone loaded far away
+    // at a coarse LOD would never sharpen up as the camera approaches it,
+    // and vice versa -- the whole point of distance-LOD is that it
+    // reacts to camera movement WITHIN a zone's residency, not only at
+    // zone-boundary crossings.
+    for (auto& s : slots_) {
+        if (!s.loaded) continue;
+        int desired_lod = SelectLod(DistanceToZoneCenter(cam_x, cam_z, s.zx, s.zy));
+        if (desired_lod != s.lod) {
+            int zx = s.zx, zy = s.zy;
+            s.vbo.Shutdown(); s.ibo.Shutdown(); s.loaded = false;
+            LoadZoneMesh(dev, zx, zy, desired_lod, s);
         }
     }
 }

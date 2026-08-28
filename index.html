@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>monkey_dust Engine — C++17 Game Engine (SDL_GPU → LibGodot RenderingServer migration) · Developer Docs</title>
-<meta name="description" content="Developer documentation for monkey_dust: C++17 isometric RPG engine, currently on SDL3 SDL_GPU (Vulkan), migrating fully to an embedded LibGodot RenderingServer render path (libgodot as a static lib inside our own executable — not a Godot-project rewrite). flecs ECS, Jolt Physics, ozz-animation. AI behavior trees, terrain atlas, GPU-driven rendering.">
+<title>monkey_dust Engine — C++17 Game Engine (SDL3 + SDL_GPU/Vulkan) · Developer Docs</title>
+<meta name="description" content="Developer documentation for monkey_dust: C++17 isometric RPG engine on SDL3 + SDL_GPU (Vulkan) — the permanent render backend (a full LibGodot RenderingServer migration was evaluated and rejected 2026-08-23 after a measured ~50% GPU regression on Intel HD 520). flecs ECS, Jolt Physics, ozz-animation. AI behavior trees, terrain atlas, GPU-driven rendering.">
 <link rel="canonical" href="https://rdga1bot.github.io/monkey_dust_engine/">
 <meta property="og:title" content="monkey_dust Engine — Developer Docs">
-<meta property="og:description" content="C++17 isometric RPG engine: SDL_GPU/Vulkan (current) migrating to embedded LibGodot RenderingServer, flecs ECS, Jolt Physics, ozz-animation.">
+<meta property="og:description" content="C++17 isometric RPG engine: SDL_GPU/Vulkan (permanent backend), flecs ECS, Jolt Physics, ozz-animation.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://rdga1bot.github.io/monkey_dust_engine/">
 <script type="application/ld+json">
@@ -15,7 +15,7 @@
  "name":"monkey_dust Engine","programmingLanguage":"C++",
  "applicationCategory":"GameEngine",
  "codeRepository":"https://github.com/rdga1bot/monkey_dust",
- "runtimePlatform":"SDL3 / Vulkan (SDL_GPU) — migrating to embedded LibGodot RenderingServer",
+ "runtimePlatform":"SDL3 / Vulkan (SDL_GPU) — permanent render backend",
  "operatingSystem":"Linux",
  "license":"https://opensource.org/licenses/MIT"}
 </script>
@@ -278,16 +278,16 @@
 <section class="doc-section" id="intro">
   <div class="breadcrumb"><span>Документація</span> <span class="sep">›</span> Огляд</div>
   <div class="hero">
-    <div class="version-badge">v26.5 · C++17 · SDL3 + SDL_GPU (Vulkan, поточний) → LibGodot RenderingServer (в міграції) · flecs · Jolt · Recast · 1750 тестів · 2026-08-21</div>
+    <div class="version-badge">v26.6 · C++17 · SDL3 + SDL_GPU (Vulkan, постійний бекенд) · flecs · Jolt · Recast · 1750 тестів · 2026-08-28</div>
     <h1>monkey_dust</h1>
     <p style="font-size:17px;color:var(--text);margin-bottom:0;">
-      Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Поточний бекенд: SDL3 + SDL_GPU (Vulkan), OpenGL/Raylib повністю видалено (FIX-8). <strong>У процесі повної заміни</strong> на embedded LibGodot RenderingServer (libgodot як статична бібліотека всередині власного виконуваного файлу, через godot-cpp/GDExtension — не перехід на повноцінний Godot-проєкт) — див. <a href="#libgodot">LibGodot-міграція</a>. AI архітектура натхненна механіками Alien: Isolation. Kenshi asset pipeline (KEN-1–8): cgltf GLB, ozz-animation, Jolt CharacterVirtual, DetourCrowd. Terrain atlas <code>world_hmap.r32</code> (67 MB, 4096 зон). Цільове залізо: Intel HD 520 (AVX2).
+      Ізометричний RPG-sandbox з відкритим світом. C++17 без ігрового рушія — тільки бібліотеки. Рендер-пайплайн натхненний Flare Engine. Бекенд: SDL3 + SDL_GPU (Vulkan), OpenGL/Raylib повністю видалено (FIX-8). Повна заміна на embedded LibGodot RenderingServer була досліджена (3 спайки, 10-фазний аудит, Фази A-F) і <strong>відхилена 2026-08-23</strong> через виміряну ~50% GPU-регресію на Intel HD 520 — SDL_GPU лишається постійним рендер-шляхом, див. <a href="#libgodot">LibGodot-міграція</a>. AI архітектура натхненна механіками Alien: Isolation. Kenshi asset pipeline (KEN-1–8): cgltf GLB, ozz-animation, Jolt CharacterVirtual, DetourCrowd. Terrain atlas <code>world_hmap.r32</code> (67 MB, 4096 зон). Цільове залізо: Intel HD 520 (AVX2).
     </p>
     <div class="hero-meta">
       <div class="hero-meta-item"><span class="dot">●</span> C++17, без C++20</div>
       <div class="hero-meta-item"><span class="dot">●</span> Linux · Intel HD 520 (AVX2)</div>
       <div class="hero-meta-item"><span class="dot">●</span> 1280×720 · 60 FPS</div>
-      <div class="hero-meta-item"><span class="dot">●</span> SDL3 + SDL_GPU (Vulkan, поточний) → LibGodot RenderingServer (в міграції)</div>
+      <div class="hero-meta-item"><span class="dot">●</span> SDL3 + SDL_GPU (Vulkan) — постійний бекенд</div>
       <div class="hero-meta-item"><span class="dot">●</span> 1557 GTests · Game: Proprietary · Engine: MIT · Tools: GPL-3.0</div>
     </div>
   </div>

@@ -270,7 +270,7 @@ void QuadtreeNBInsert(QuadtreeNBEntry entries[], int table_size,
 }
 
 void QuadtreeBalanceNeighbors(float world_origin_x, float world_origin_z, float chunk_size,
-                               TerrainQuadtree::VisibleNode* out, int count) {
+                               TerrainQuadtree::VisibleNode* out, int count, int lod_mode) {
     static QuadtreeNBEntry s_entries[kQuadtreeNBHashSize];
     for (int i = 0; i < kQuadtreeNBHashSize; ++i) s_entries[i].depth = -1;
 
@@ -281,7 +281,17 @@ void QuadtreeBalanceNeighbors(float world_origin_x, float world_origin_z, float 
         QuadtreeNBInsert(s_entries, kQuadtreeNBHashSize, out[i].depth, ix, iz, i);
     }
 
+    // kDirs order: 0=west(-x) 1=east(+x) 2=south(-z) 3=north(+z) -- matches
+    // the shader's own north=+z convention (terrain_quadtree.vert's skirt
+    // normal assignment). Phase 2's stitch_edge_mask bit order is
+    // DIFFERENT (0=north 1=south 2=east 3=west, matching
+    // BuildTerrainQuadtreeStitchedIndices) -- kStitchBit below maps d -> that bit.
     constexpr float kDirs[4][2] = { {-1.f,0.f}, {1.f,0.f}, {0.f,-1.f}, {0.f,1.f} };
+    constexpr uint8_t kStitchBit[4] = { 0x8, 0x4, 0x2, 0x1 }; // west,east,south,north
+    for (int i = 0; i < count; ++i) {
+        out[i].use_stitched_mesh = (lod_mode == 1);
+    }
+
     for (int i = 0; i < count; ++i) {
         int depth = out[i].depth;
         float size = out[i].size;
@@ -306,7 +316,17 @@ void QuadtreeBalanceNeighbors(float world_origin_x, float world_origin_z, float 
                 int idx = QuadtreeNBFind(s_entries, kQuadtreeNBHashSize, dd, cix, ciz);
                 if (idx >= 0) { d_found = dd; found_index = idx; break; }
             }
-            if (d_found < 0 || d_found > depth - 2) continue; // no gap, or gap < 2 levels
+            if (d_found < 0) continue; // no neighbor at all (world edge) -- plain border, no stitch needed
+
+            if (lod_mode == 1) {
+                if (d_found == depth - 1) {
+                    out[i].stitch_edge_mask |= kStitchBit[d]; // exactly 1 level coarser -- zipper this edge
+                } else if (d_found <= depth - 2) {
+                    out[i].needs_skirt_fallback = true; // >=2 level gap -- stitched IBO can't represent this
+                }
+            }
+
+            if (d_found > depth - 2) continue; // no gap, or gap < 2 levels -- skirt widening moot below
 
             float coarse_relief = out[found_index].skirt_depth;
             if (coarse_relief > out[i].skirt_depth) out[i].skirt_depth = coarse_relief;
@@ -348,6 +368,6 @@ int TerrainQuadtree::SelectVisible(const float cam_pos[3], const float frustum_p
                         lod_mode_, min_node_size);
         }
     }
-    QuadtreeBalanceNeighbors(world_origin_x_, world_origin_z_, chunk_size_, out, count);
+    QuadtreeBalanceNeighbors(world_origin_x_, world_origin_z_, chunk_size_, out, count, lod_mode_);
     return count;
 }

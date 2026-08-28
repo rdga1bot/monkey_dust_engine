@@ -46,6 +46,17 @@ bool TerrainQuadtreeRenderer::Init(SDL_GPUDevice* /*dev*/) {
     filled_index_count_ = (uint32_t)mesh.filled_indices.size();
     skirt_index_count_  = (uint32_t)mesh.skirt_indices.size();
 
+    // docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 2: concatenate all
+    // 16 stitched-IBO variants into one buffer.
+    std::vector<uint32_t> stitched_all;
+    for (int mask = 0; mask < 16; ++mask) {
+        std::vector<uint32_t> variant = md::BuildTerrainQuadtreeStitchedIndices((uint8_t)mask);
+        stitched_offsets_[mask] = (uint32_t)(stitched_all.size() * sizeof(uint32_t));
+        stitched_counts_[mask]  = (uint32_t)variant.size();
+        stitched_all.insert(stitched_all.end(), variant.begin(), variant.end());
+    }
+    stitched_ibo_.Init(0x8893u, stitched_all.data(), stitched_all.size() * sizeof(uint32_t));
+
     GpuPipeline::Desc pd;
     pd.layout.count       = 0; // vertex-buffer-less -- gl_VertexIndex comes from the bound IBO alone
     pd.raster.depth_test  = true;
@@ -259,6 +270,7 @@ void TerrainQuadtreeRenderer::Shutdown(SDL_GPUDevice* dev) {
     }
     filled_ibo_.Shutdown();
     skirt_ibo_.Shutdown();
+    stitched_ibo_.Shutdown();
     ready_ = false;
     forward_ready_ = false;
     batched_ready_ = false;
@@ -298,6 +310,19 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuff
         { hmap.NormalTexture(), hmap.NormalSampler() },
     };
     SDL_BindGPUVertexSamplers(rp, 0, samp, 2);
+
+    // docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 2: a node built with
+    // LodMode()==1 and no >=2-level neighbor gap draws its precomputed
+    // zippered variant instead of filled+skirt -- no vertical skirt
+    // geometry at all. Any other node (LodMode()==0 default, or a rare
+    // >=2-level gap the stitched IBO can't represent) uses the original,
+    // unconditionally-correct filled+skirt path unchanged.
+    if (node.use_stitched_mesh && !node.needs_skirt_fallback) {
+        SDL_GPUBufferBinding stitched_ib{ stitched_ibo_.SDLBuffer(), stitched_offsets_[node.stitch_edge_mask] };
+        SDL_BindGPUIndexBuffer(rp, &stitched_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        SDL_DrawGPUIndexedPrimitives(rp, stitched_counts_[node.stitch_edge_mask], 1, 0, 0, 0);
+        return;
+    }
 
     SDL_GPUBufferBinding filled_ib{ filled_ibo_.SDLBuffer(), 0u };
     SDL_BindGPUIndexBuffer(rp, &filled_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);

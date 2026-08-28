@@ -28,6 +28,24 @@ public:
                                    // 1 at the boundary where a coarser sibling
                                    // would have been drawn instead.
         float skirt_depth;        // per-node, from HeightRange sampled at Init
+
+        // docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 2. use_stitched_mesh
+        // is set unconditionally to (LodMode()==1) for every node -- an
+        // explicit, unambiguous signal the renderer needs since
+        // stitch_edge_mask==0 is otherwise indistinguishable between "mode
+        // 0, always uses skirts" and "mode 1, zero coarser neighbors,
+        // stitched IBO variant 0 is fine". Bit 0=north 1=south 2=east
+        // 3=west (matches BuildTerrainQuadtreeStitchedIndices's own
+        // edgeMask convention) -- set when that edge borders a neighbor
+        // exactly 1 depth level coarser and needs the zippered stitch.
+        // needs_skirt_fallback is set when any edge's gap is >=2 levels
+        // (rare -- see QuadtreeBalanceNeighbors's "no gap, or gap<2"
+        // comment) -- the stitched IBO can't represent that; the renderer
+        // must fall back to the old filled_ibo_+skirt_ibo_ draw for this
+        // node even though use_stitched_mesh is true.
+        bool    use_stitched_mesh = false;
+        uint8_t stitch_edge_mask = 0;
+        bool    needs_skirt_fallback = false;
     };
 
     using HeightSampleFn = float (*)(float world_x, float world_z);

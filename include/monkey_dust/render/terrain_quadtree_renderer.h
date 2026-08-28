@@ -117,6 +117,17 @@ private:
     GpuStaticBuffer skirt_ibo_;
     uint32_t filled_index_count_ = 0;
     uint32_t skirt_index_count_  = 0;
+
+    // docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 2: all 16
+    // BuildTerrainQuadtreeStitchedIndices(edgeMask) variants concatenated
+    // into ONE GPU buffer at Init() -- stitched_offsets_[mask] is the byte
+    // offset into stitched_ibo_ for that mask's slice (SDL_GPUBufferBinding
+    // supports a nonzero offset into a shared buffer), stitched_counts_[mask]
+    // is its index count. Only consulted in DrawNode when
+    // node.use_stitched_mesh && !node.needs_skirt_fallback.
+    GpuStaticBuffer stitched_ibo_;
+    uint32_t stitched_offsets_[16] = {};
+    uint32_t stitched_counts_[16]  = {};
     bool ready_ = false;
     bool forward_ready_ = false;
     bool batched_ready_ = false;

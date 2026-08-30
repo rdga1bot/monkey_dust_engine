@@ -8,6 +8,7 @@
 #include <monkey_dust/world/clutter_gen.h>
 #include <monkey_dust/world/world_registry.h>
 #include <monkey_dust/physics/jolt_world.h>
+#include <monkey_dust/platform/frame_stats.h>
 
 // ── TerrainStreamQueue ────────────────────────────────────────────────────────
 // Single-producer / single-consumer async queue for terrain chunk generation.
@@ -83,23 +84,57 @@ public:
         return false;  // queue full — caller falls back to synchronous Build
     }
 
+    // render-audit-2026 §11.6: measured 8 chunks/poll() call as the
+    // dominant pattern on the worst-streaming zone (14/15 sampled calls),
+    // at a consistent ~2.5-3.4ms/chunk -- many cheap chunks in one burst,
+    // not one/few expensive ones. Same fix shape as §11.5's
+    // HandleTerrainStreaming budget: cap chunks drained per call, leave
+    // the rest ready-but-unconsumed in slots_[] for the next call (no
+    // separate pending list needed here -- the slot array itself already
+    // persists this state across calls).
+    static constexpr int   POLL_BUDGET_CHUNKS = 2;
+    static constexpr float POLL_BUDGET_MS     = 3.0f;
+
     // Main thread: poll completed slots, call GPU upload + caller-provided callback.
-    // Returns number of slots uploaded.
+    // Returns number of slots uploaded (bounded by POLL_BUDGET_CHUNKS/MS --
+    // remaining ready slots are picked up by a later call).
     template<typename UploadFn>
     int poll(UploadFn&& fn) {
         int n = 0;
+        double t0 = std::chrono::duration<double>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
         for (int i = 0; i < CAPACITY; ++i) {
+            if (n >= POLL_BUDGET_CHUNKS) break;
             auto& s = slots_[i];
             if (s.consumed.load(std::memory_order_relaxed)) continue;
             if (!s.ready.load(std::memory_order_acquire))   continue;
             if (s.chunk) {
+                // render-audit-2026: these two run synchronously on the
+                // MAIN/render thread once a background chunk build finishes
+                // -- prime suspect for the 30-56ms TerrainStreamPoll spikes
+                // (docs/RENDER_AUDIT_2026.md §11.2), since the callback's
+                // own JoltAddTerrainMesh/TerrainQueryInit measured <2ms.
+                FS_BEGIN("TerrainGenUpload");
                 TerrainGen_Upload(*s.chunk);
+                FS_END("TerrainGenUpload");
+                FS_BEGIN("ClutterUpload");
                 ClutterGen_UploadFrom(*s.chunk, s.clutter_v, s.clutter_vc,
                                       s.clutter_i, s.clutter_ic);
+                FS_END("ClutterUpload");
                 fn(s);
             }
             s.consumed.store(true, std::memory_order_release);
             ++n;
+            double elapsed_ms = (std::chrono::duration<double>(
+                std::chrono::steady_clock::now().time_since_epoch()).count() - t0) * 1000.0;
+            if (elapsed_ms > POLL_BUDGET_MS) break;
+        }
+        if (n > 0) {
+            double ms = (std::chrono::duration<double>(
+                std::chrono::steady_clock::now().time_since_epoch()).count() - t0) * 1000.0;
+            if (ms > 5.0)
+                fprintf(stderr, "[STREAM] poll() drained %d chunk(s) in %.1fms (%.1fms/chunk avg)\n",
+                        n, ms, ms / (double)n);
         }
         return n;
     }

@@ -177,16 +177,35 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     // world-wide normal texture now, once, right after the height texture
     // is ready -- same "one-time startup cost" class as everything above,
     // not a per-frame or per-window operation.
+    //
+    // 2026-08-29 (task #556 falsification test, docs/research/
+    // OGRE_NEXT_TERRA_NORMAL_MIP_DEEPSEEK_RESEARCH.md): this texture used
+    // to be num_levels=1, always sampled at textureLod(...,0.0) regardless
+    // of the sampling vertex's mesh LOD tier -- a coarse/distant node's
+    // 17x17 grid vertices are spaced many native normal-texels apart, so
+    // each one point-samples ONE native texel of a high-frequency signal
+    // instead of an average over its true world-space footprint. On steep
+    // Kenshi cliffs (large per-texel normal variance) that is classic
+    // undersampling -> per-vertex normal noise -> the reported black/white
+    // "cliff speckle" (tests/editor_scenarios/editor_verify_bw_pattern_*.lua).
+    // Fix: give normal_tex_ a real mip chain (same formula as this file's
+    // OLD pre-#398 height mip count) and have terrain_quadtree.vert fetch
+    // it at a LOD derived from the vertex's own texelSize vs this texture's
+    // native texel size, so a coarse node's vertices sample a pre-filtered
+    // (box-averaged), not raw, normal.
+    Uint32 normal_num_levels = 1;
+    { int sz = N; while (sz > 1) { sz >>= 1; ++normal_num_levels; } }
     {
         SDL_GPUTextureCreateInfo nti = {};
         nti.type                 = SDL_GPU_TEXTURETYPE_2D;
         nti.width                = (Uint32)N;
         nti.height               = (Uint32)N;
         nti.layer_count_or_depth = 1;
-        nti.num_levels           = 1;
+        nti.num_levels           = normal_num_levels;
         nti.format               = SDL_GPU_TEXTUREFORMAT_R8G8_SNORM;
         nti.usage                = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE
-                                  | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+                                  | SDL_GPU_TEXTUREUSAGE_SAMPLER
+                                  | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET; // required by SDL_GenerateMipmapsForGPUTexture below, same as tex_'s own (now-unused) mip path
         normal_tex_ = SDL_CreateGPUTexture(dev, &nti);
         if (!normal_tex_) {
             fprintf(stderr, "[TerrainWorldHeightmap] normal texture create failed: %s\n", SDL_GetError());
@@ -198,10 +217,12 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
         SDL_GPUSamplerCreateInfo nsi{};
         nsi.min_filter     = SDL_GPU_FILTER_LINEAR;
         nsi.mag_filter     = SDL_GPU_FILTER_LINEAR;
-        nsi.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        nsi.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
         nsi.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         nsi.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         nsi.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+        nsi.min_lod        = 0.f;
+        nsi.max_lod        = (float)(normal_num_levels - 1);
         normal_sampler_ = SDL_CreateGPUSampler(dev, &nsi);
         if (!normal_sampler_) {
             fprintf(stderr, "[TerrainWorldHeightmap] normal sampler create failed: %s\n", SDL_GetError());
@@ -249,6 +270,10 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
             uint32_t g = (uint32_t)((N + 7) / 8);
             SDL_DispatchGPUCompute(pass, g, g, 1);
             SDL_EndGPUComputePass(pass);
+            // Compute pass only wrote mip 0 (readwrite storage binding
+            // defaults to level 0) -- fill levels 1..normal_num_levels-1
+            // from it now, same call already used for tex_ before #398.
+            SDL_GenerateMipmapsForGPUTexture(bcmd, normal_tex_);
         } else {
             fprintf(stderr, "[TerrainWorldHeightmap] normal bake SDL_BeginGPUComputePass failed: %s\n", SDL_GetError());
         }
@@ -256,7 +281,7 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
         if (fence) { SDL_WaitForGPUFences(dev, true, &fence, 1); SDL_ReleaseGPUFence(dev, fence); }
         bake_pipeline.Destroy();
 
-        fprintf(stderr, "[TerrainWorldHeightmap] normal bake done: %dx%d RG8_SNORM\n", N, N);
+        fprintf(stderr, "[TerrainWorldHeightmap] normal bake done: %dx%d RG8_SNORM, %u mips\n", N, N, normal_num_levels);
     }
 
     return true;

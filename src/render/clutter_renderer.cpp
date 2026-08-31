@@ -63,13 +63,14 @@ void ClutterRenderer::DrawChunk(
     if (!pipeline_.SDLPipeline()) return;
     if (!chunk.clutter_vbo.SDLBuffer() || !chunk.clutter_ibo.SDLBuffer()) return;
 
-    SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
-
-    SDL_GPUBufferBinding vb { chunk.clutter_vbo.SDLBuffer(), 0u };
-    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
-
-    SDL_GPUBufferBinding ib { chunk.clutter_ibo.SDLBuffer(), 0u };
-    SDL_BindGPUIndexBuffer(rp, &ib, SDL_GPU_INDEXELEMENTSIZE_16BIT);
+    // GpuPassView::FromRaw (docs/HAL_CLOSURE_INVENTORY.md M1 pilot) --
+    // TEMPORARY until the caller migrates its own SDL_BeginGPURenderPass
+    // to GpuRenderPass; see billboard_renderer.cpp's RenderInPass for the
+    // same pattern and rationale (shared pass, not owned by this function).
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&pipeline_);
+    pv.BindVertexBuffer(&chunk.clutter_vbo);
+    pv.BindIndexBuffer(&chunk.clutter_ibo, SDL_GPU_INDEXELEMENTSIZE_16BIT);
 
     PropTexShared& pt = PropTexShared::Get();
     if (pt.ready) {
@@ -78,15 +79,15 @@ void ClutterRenderer::DrawChunk(
             { pt.tex_veg->SDLTexture(),  pt.tex_veg->SDLSampler()  },
             { tex_dummy_.SDLTexture(),   tex_dummy_.SDLSampler()   },
         };
-        SDL_BindGPUFragmentSamplers(rp, 0, sb, 3);
+        pv.BindFragmentSamplers(0, sb, 3);
     }
 
-    SDL_PushGPUVertexUniformData(cmd, 0, vp16, 64);
-    SDL_PushGPUFragmentUniformData(cmd, 0, sun32, 32);
+    pv.PushVertexUniforms(0, vp16, 64);
+    pv.PushFragmentUniforms(0, sun32, 32);
 
     // ONE draw call for the whole chunk's merged clutter — GPU cost is the
     // same whether this represents 5 rocks or 5000 (KEN-CLUTTER Tier 2).
-    SDL_DrawGPUIndexedPrimitives(rp, (uint32_t)chunk.clutter_index_count, 1, 0, 0, 0);
+    pv.DrawIndexed((uint32_t)chunk.clutter_index_count, 1, 0, 0, 0);
 #else
     (void)chunk; (void)vp16; (void)sun32;
 #endif

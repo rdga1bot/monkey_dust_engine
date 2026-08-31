@@ -4,6 +4,7 @@
 
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/md_log.h>
 #endif
 
@@ -48,8 +49,9 @@ void SSBO::Upload(const void* data, int size_bytes, int offset) {
             memcpy((uint8_t*)map + offset, data, (size_t)size_bytes);
             SDL_UnmapGPUTransferBuffer(dev, sdl_transfer_[s]);
         }
-        SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-        SDL_GPUCopyPass* pass = SDL_BeginGPUCopyPass(cmd);
+        SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+        GpuCopyPass pass;
+        pass.Begin(cmd);
         SDL_GPUTransferBufferLocation src = {};
         src.transfer_buffer = sdl_transfer_[s];
         src.offset          = (Uint32)offset;
@@ -57,9 +59,9 @@ void SSBO::Upload(const void* data, int size_bytes, int offset) {
         dst_r.buffer = sdl_buf_[s];
         dst_r.offset = (Uint32)offset;
         dst_r.size   = (Uint32)size_bytes;
-        SDL_UploadToGPUBuffer(pass, &src, &dst_r, false);
-        SDL_EndGPUCopyPass(pass);
-        SDL_SubmitGPUCommandBuffer(cmd);
+        pass.UploadBuffer(src, dst_r, false);
+        pass.End();
+        md::GpuDevice::Get().Submit(cmd);
     }
 #endif
 }
@@ -93,7 +95,8 @@ void SSBO::UploadInCmd(SDL_GPUCommandBuffer* cmd, const void* data, int size_byt
         memcpy((uint8_t*)map + offset, data, (size_t)size_bytes);
         SDL_UnmapGPUTransferBuffer(dev, sdl_transfer_[s]);
     }
-    SDL_GPUCopyPass* pass = SDL_BeginGPUCopyPass(cmd);
+    GpuCopyPass pass;
+    pass.Begin(cmd);
     SDL_GPUTransferBufferLocation src = {};
     src.transfer_buffer = sdl_transfer_[s];
     src.offset          = (Uint32)offset;
@@ -101,7 +104,7 @@ void SSBO::UploadInCmd(SDL_GPUCommandBuffer* cmd, const void* data, int size_byt
     dst_r.buffer = sdl_buf_[s];
     dst_r.offset = (Uint32)offset;
     dst_r.size   = (Uint32)size_bytes;
-    SDL_UploadToGPUBuffer(pass, &src, &dst_r, false);
-    SDL_EndGPUCopyPass(pass);
+    pass.UploadBuffer(src, dst_r, false);
+    pass.End();
 }
 #endif

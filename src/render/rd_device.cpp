@@ -1,5 +1,7 @@
 #include <monkey_dust/render/rd_device.h>
 #ifdef MD_SDL_GPU
+#include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/gpu_device.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -61,15 +63,16 @@ void RdDevice::BuildDummyResources(SDL_GPUDevice* dev) {
         void* p = SDL_MapGPUTransferBuffer(dev, tb, false);
         if (p) memcpy(p, kWhite, 4);
         SDL_UnmapGPUTransferBuffer(dev, tb);
-        SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-        SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+        SDL_GPUCommandBuffer* cmd = GpuDevice::Get().AcquireCommandBuffer();
+        GpuCopyPass cp;
+        cp.Begin(cmd);
         SDL_GPUTextureTransferInfo src{};
         src.transfer_buffer = tb; src.pixels_per_row = 1; src.rows_per_layer = 1;
         SDL_GPUTextureRegion dst{};
         dst.texture = dummy_tex_; dst.w = dst.h = dst.d = 1;
-        SDL_UploadToGPUTexture(cp, &src, &dst, false);
-        SDL_EndGPUCopyPass(cp);
-        SDL_SubmitGPUCommandBuffer(cmd);
+        cp.UploadTexture(src, dst, false);
+        cp.End();
+        GpuDevice::Get().Submit(cmd);
         SDL_ReleaseGPUTransferBuffer(dev, tb);
     }
 

@@ -234,60 +234,63 @@ void SSAOSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
     if (!enabled_ || !linear_depth_ || !prep_pipeline_.SDLPipeline()) return;
 
     // Render to linear_depth_ at half-res (no depth attachment)
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture     = linear_depth_;
-    ct.load_op     = SDL_GPU_LOADOP_DONT_CARE;
-    ct.store_op    = SDL_GPU_STOREOP_STORE;
-    ct.clear_color = { 0, 0, 0, 0 };
-
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    GpuCommandBuffer cb;
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd             = cmd;
+    cpd.color_tex       = linear_depth_;
+    cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE
+    cb.BeginColorPass(cpd);
+    SDL_GPURenderPass* pass = cb.SDLPass();
     if (!pass) {
         MD_LOG(MD_LOG_WARNING, "SSAOSystem::PrepPass: begin failed: %s", SDL_GetError());
         return;
     }
 
-    SDL_BindGPUGraphicsPipeline(pass, prep_pipeline_.SDLPipeline());
+    GpuPassView pv = GpuPassView::FromRaw(pass, cmd);
+    pv.BindPipeline(&prep_pipeline_);
 
     // set=0 binding=0: hw depth texture
     SDL_GPUTextureSamplerBinding sb = { hw_depth, hw_sampler };
-    SDL_BindGPUFragmentSamplers(pass, 0, &sb, 1);
+    pv.BindFragmentSamplers(0, &sb, 1);
 
     // set=1 binding=0: SSAOPrepUBO
     SSAOPrepUBO ubo = { near_z, far_z, {0.f, 0.f} };
-    SDL_PushGPUFragmentUniformData(cmd, 0, &ubo, sizeof(ubo));
+    pv.PushFragmentUniforms(0, &ubo, sizeof(ubo));
 
     // Fullscreen triangle: 3 verts, no VBO
     SDL_GPUViewport vp = { 0.f, 0.f, (float)half_w_, (float)half_h_, 0.f, 1.f };
     SDL_SetGPUViewport(pass, &vp);
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    pv.Draw(3, 1, 0, 0);
 
-    SDL_EndGPURenderPass(pass);
+    cb.EndPass();
 }
 
 // ── Helper: begin a fullscreen render pass on an RT, draw 3 verts, end ────────
-static void FullscreenPass(SDL_GPUCommandBuffer* cmd, SDL_GPUGraphicsPipeline* pipeline,
+static void FullscreenPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipeline,
                             SDL_GPUTexture* target, int tw, int th,
                             const SDL_GPUTextureSamplerBinding* sbs, int nsbs,
                             const void* frag_ubo, uint32_t frag_ubo_sz) {
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture  = target;
-    ct.load_op  = SDL_GPU_LOADOP_DONT_CARE;
-    ct.store_op = SDL_GPU_STOREOP_STORE;
-
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    GpuCommandBuffer cb;
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd             = cmd;
+    cpd.color_tex       = target;
+    cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE
+    cb.BeginColorPass(cpd);
+    SDL_GPURenderPass* pass = cb.SDLPass();
     if (!pass) return;
 
-    SDL_BindGPUGraphicsPipeline(pass, pipeline);
+    GpuPassView pv = GpuPassView::FromRaw(pass, cmd);
+    pv.BindPipeline(pipeline);
     if (nsbs > 0)
-        SDL_BindGPUFragmentSamplers(pass, 0, sbs, (Uint32)nsbs);
+        pv.BindFragmentSamplers(0, sbs, (uint32_t)nsbs);
     if (frag_ubo)
-        SDL_PushGPUFragmentUniformData(cmd, 0, frag_ubo, frag_ubo_sz);
+        pv.PushFragmentUniforms(0, frag_ubo, frag_ubo_sz);
 
     SDL_GPUViewport vp = { 0.f, 0.f, (float)tw, (float)th, 0.f, 1.f };
     SDL_SetGPUViewport(pass, &vp);
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    pv.Draw(3, 1, 0, 0);
 
-    SDL_EndGPURenderPass(pass);
+    cb.EndPass();
 }
 
 // ── VBfA 6-pass Prep1: Sobel 3×3 normals from linear_depth ──────────────────
@@ -298,7 +301,7 @@ void SSAOSystem::Prep1Pass(SDL_GPUCommandBuffer* cmd,
 
     SSAOPrep1UBO ubo = { inv_proj_x, inv_proj_y, 1.f/(float)half_w_, 1.f/(float)half_h_ };
     SDL_GPUTextureSamplerBinding sb = { linear_depth_, linear_sampler_ };
-    FullscreenPass(cmd, prep1_pipeline_.SDLPipeline(),
+    FullscreenPass(cmd, &prep1_pipeline_,
                    view_normals_, half_w_, half_h_,
                    &sb, 1, &ubo, sizeof(ubo));
 }
@@ -331,7 +334,7 @@ void SSAOSystem::MainPass(SDL_GPUCommandBuffer* cmd,
         { view_normals_ ? view_normals_ : linear_depth_, linear_sampler_ }
     };
     int nsbs = view_normals_ ? 2 : 1;
-    FullscreenPass(cmd, main_pipeline_.SDLPipeline(),
+    FullscreenPass(cmd, &main_pipeline_,
                    ssao_raw_, half_w_, half_h_,
                    sbs, nsbs, &ubo, sizeof(ubo));
 }
@@ -348,7 +351,7 @@ void SSAOSystem::BlurPass(SDL_GPUCommandBuffer* cmd) {
     // Horizontal: ssao_raw → blur_temp_
     {
         SDL_GPUTextureSamplerBinding sb = { ssao_raw_, point_sampler_ };
-        FullscreenPass(cmd, blur_h_pipeline_.SDLPipeline(),
+        FullscreenPass(cmd, &blur_h_pipeline_,
                        blur_temp_, half_w_, half_h_,
                        &sb, 1, &ubo, sizeof(ubo));
     }
@@ -359,7 +362,7 @@ void SSAOSystem::BlurPass(SDL_GPUCommandBuffer* cmd) {
             { blur_temp_, point_sampler_ },
             { ssao_raw_,  point_sampler_ }
         };
-        FullscreenPass(cmd, blur_v_pipeline_.SDLPipeline(),
+        FullscreenPass(cmd, &blur_v_pipeline_,
                        ssao_blurred_, half_w_, half_h_,
                        sbs, 2, &ubo, sizeof(ubo));
     }
@@ -371,24 +374,26 @@ void SSAOSystem::ApplyPass(SDL_GPUCommandBuffer* cmd,
     if (!swapchain_tex) return;
 
     // Open a LOAD render pass on the swapchain (don't clear the scene)
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture  = swapchain_tex;
-    ct.load_op  = SDL_GPU_LOADOP_LOAD;   // preserve existing scene
-    ct.store_op = SDL_GPU_STOREOP_STORE;
+    GpuCommandBuffer cb;
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd        = cmd;
+    cpd.color_tex  = swapchain_tex;
+    cpd.load_color = true; // LOAD, preserve existing scene
+    cb.BeginColorPass(cpd);
+    if (!cb.SDLPass()) return;
+    SDL_GPURenderPass* pass = cb.SDLPass();
 
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    if (!pass) return;
-
-    SDL_BindGPUGraphicsPipeline(pass, apply_pipeline_.SDLPipeline());
+    cb.BindPipeline(&apply_pipeline_);
 
     SDL_GPUTextureSamplerBinding sb = { ssao_blurred_, linear_sampler_ };
-    SDL_BindGPUFragmentSamplers(pass, 0, &sb, 1);
+    cb.BindFragmentSamplers(0, &sb, 1);
 
+    // SetGPUViewport has no HAL wrapper yet -- out of scope, see above.
     SDL_GPUViewport vp = { 0.f, 0.f, (float)sw, (float)sh, 0.f, 1.f };
     SDL_SetGPUViewport(pass, &vp);
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    cb.Draw(3);
 
-    SDL_EndGPURenderPass(pass);
+    cb.EndPass();
 }
 
 void SSAOSystem::Dispatch(SDL_GPUCommandBuffer* cmd,
@@ -400,25 +405,30 @@ void SSAOSystem::Dispatch(SDL_GPUCommandBuffer* cmd,
                            float strength,  float power) {
     if (!enabled_) return;
 
-    // Open compute pass — bind AO texture as readwrite (set=1, binding=0)
-    SDL_GPUStorageTextureReadWriteBinding rw_tex = {};
-    rw_tex.texture = ao_tex_;
-    rw_tex.cycle   = false;
+    // Compute pass — bind AO texture as readwrite (set=1, binding=0). Uses
+    // GpuComputePass::StorageBindings' rw_textures (added for this exact
+    // site as part of the M1 copy/upload group's follow-up: Begin used to
+    // hardcode storage-texture bindings to nullptr,0, which had forced this
+    // site to bypass the wrapper with raw SDL -- fixed, now goes through
+    // GpuComputePass like the call below).
+    GpuComputePass::StorageBindings sb;
+    sb.cmd = cmd;
+    sb.rw_textures[0] = { ao_tex_, false };
+    sb.num_rw_textures = 1;
 
-    SDL_GPUComputePass* pass = SDL_BeginGPUComputePass(cmd, &rw_tex, 1, nullptr, 0);
-    if (!pass) {
+    GpuComputePass pass;
+    pass.Begin(&legacy_pipeline_, sb);
+    if (!pass.SDLPass()) {
         MD_LOG(MD_LOG_WARNING, "SSAOSystem: SDL_BeginGPUComputePass failed: %s", SDL_GetError());
         return;
     }
-
-    SDL_BindGPUComputePipeline(pass, legacy_pipeline_.SDLComputePipeline());
 
     // Bind depth+RT1 as samplers (set=0, binding=0..1)
     SDL_GPUTextureSamplerBinding samplers[2] = {
         { gbuf_depth, gbuf_sampler },
         { gbuf_rt1,   gbuf_sampler }
     };
-    SDL_BindGPUComputeSamplers(pass, 0, samplers, 2);
+    pass.BindSamplers(0, samplers, 2);
 
     // Push uniform params (set=2, binding=0)
     SSAOParams params;
@@ -431,14 +441,14 @@ void SSAOSystem::Dispatch(SDL_GPUCommandBuffer* cmd,
     params.bias      = bias;
     params.strength  = strength;
     params.power     = power;
-    SDL_PushGPUComputeUniformData(cmd, 0, &params, sizeof(params));
+    pass.PushUniforms(0, &params, sizeof(params));
 
     // Dispatch: one workgroup per 8×8 tile of the half-res AO texture
     uint32_t gx = ((uint32_t)half_w_ + 7) / 8;
     uint32_t gy = ((uint32_t)half_h_ + 7) / 8;
-    SDL_DispatchGPUCompute(pass, gx, gy, 1);
+    pass.Dispatch(gx, gy, 1);
 
-    SDL_EndGPUComputePass(pass);
+    pass.End();
 }
 
 void SSAOSystem::Shutdown() {

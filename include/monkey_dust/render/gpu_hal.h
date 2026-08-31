@@ -241,6 +241,20 @@ public:
         float                 clear_depth    = 1.0f;
         bool                  load_color     = false; // false = CLEAR on entry
         bool                  load_depth     = false;
+        // 2026-08-30 (M1 "owns-its-pass" group 3): LOADOP_DONT_CARE on an
+        // iGPU with a shared memory bus (Intel HD 520, 25.6 GB/s) is a real
+        // bandwidth saving, not a micro-opt -- it tells the driver to skip
+        // reading the previous render-target contents entirely, which
+        // matters for fullscreen post-process passes that fully overwrite
+        // their target every call. Replacing it with CLEAR would be a
+        // silent behavior change that pixel-diff A/B cannot catch (CLEAR
+        // produces the same visible result ahead of a full overwrite --
+        // the only difference is memory traffic, which no A/B in this
+        // repo measures). Both flags default to false = identical to the
+        // pre-extension struct, so no existing caller (5 call sites as of
+        // this comment) changes behavior by not setting them.
+        bool                  color_dont_care     = false; // true overrides load_color -> LOADOP_DONT_CARE
+        bool                  depth_discard_after = false; // true -> depth STOREOP_DONT_CARE (mirrors DepthDesc::discard_after)
     };
     void BeginColorPass(const ColorPassDesc& desc);
 
@@ -317,6 +331,13 @@ struct GpuComputeStorageBindings {
     // Read-only storage buffers — bound via SDL_BindGPUComputeStorageBuffers.
     SDL_GPUBuffer* ro_buffers[8] = {};
     uint32_t       num_ro_buffers = 0;
+    // Read-write storage TEXTURES — also declared to SDL_BeginGPUComputePass
+    // (its 2nd/3rd args, previously hardcoded nullptr,0 — see GpuComputePass::
+    // Begin's doc comment for the 3 real sites this unblocks: terrain normal
+    // bake, terrain page-fill, SSAOSystem::Dispatch, all writing a storage
+    // texture, not just buffers).
+    SDL_GPUStorageTextureReadWriteBinding rw_textures[4] = {};
+    uint32_t                              num_rw_textures = 0;
 #endif
 };
 
@@ -335,6 +356,18 @@ struct GpuComputeStorageBindings {
 //   pass.PushUniforms(0, &data, sizeof(data));
 //   pass.Dispatch(gx, gy, gz);    // SDL_DispatchGPUCompute
 //   pass.End();                   // SDL_EndGPUComputePass (barriers implicit)
+//
+// Storage-texture note (fixed as part of the M1 copy/upload/download group):
+// Begin used to hardcode SDL_BeginGPUComputePass's storage-texture args to
+// nullptr,0, forcing any dispatch that writes a storage TEXTURE (not just
+// buffers) to bypass this class entirely and hand-roll raw SDL — 3 confirmed
+// real sites did exactly that (terrain_world_heightmap.cpp's normal bake,
+// terrain_vt_page_cache.cpp's page-fill, SSAOSystem::Dispatch's AO write).
+// A repo-wide grep for functions taking a raw SDL_GPUComputePass* parameter
+// found none — unlike GpuCopyPass, no real caller-shares-a-compute-pass
+// scenario exists, so there is no FromRaw here; the actual gap was purely
+// the storage-texture hardcode plus a missing sampler-bind method, both
+// fixed below instead of adding an unneeded non-owning variant.
 // ─────────────────────────────────────────────────────────────────────────────
 class GpuComputePass {
 public:
@@ -357,12 +390,24 @@ public:
 #ifdef MD_SDL_GPU
     // Push uniform data (UBO slot) for the compute shader.
     void PushUniforms(uint32_t slot, const void* data, uint32_t size_bytes);
+    // Bind texture-sampler pairs (set=0, ascending binding order) for the
+    // compute shader — the 3 storage-texture sites above all need this;
+    // GpuComputePass had no equivalent before (only ro_buffers went through
+    // Begin's StorageBindings; textures had no path in at all).
+    void BindSamplers(uint32_t first_slot, const SDL_GPUTextureSamplerBinding* bindings, uint32_t count);
 #endif
 
     void Dispatch(uint32_t gx, uint32_t gy, uint32_t gz);
 
     // barrier_flags: BARRIER_* constants (OpenGL). SDL_GPU barriers are implicit.
     void End(uint32_t barrier_flags = BARRIER_STORAGE);
+
+#ifdef MD_SDL_GPU
+    // Null after a failed Begin (e.g. SDL_BeginGPUComputePass returned
+    // nullptr) — callers that need to detect that failure (matching the
+    // raw-SDL call sites this Begin extension replaced) check this.
+    SDL_GPUComputePass* SDLPass() const { return sdl_pass_; }
+#endif
 
 private:
     GpuComputePipeline* pipeline_ = nullptr;
@@ -372,10 +417,103 @@ private:
 #endif
 };
 
+#ifdef MD_SDL_GPU
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuCopyPass — scoped SDL_GPUCopyPass wrapper for upload/download/texture-copy.
+// SDL_GPU only (OpenGL has no equivalent copy-pass concept).
+//
+// Real-shape survey before writing this (docs/HAL_CLOSURE_PROGRESS.md,
+// "copy/upload/download/blit/mipmap group"): every real call site does
+// exactly one of 5 operations inside an open SDL_GPUCopyPass — no repo
+// call site does buffer-to-buffer copy, so that SDL_GPU function has no
+// wrapper here (YAGNI, not an oversight). Struct params are passed through
+// as the real SDL types (SDL_GPUTextureTransferInfo, SDL_GPUBufferRegion,
+// etc.) verbatim — every call site already builds these inline, so wrapping
+// them in a new type would be pure indirection, not abstraction.
+//
+// Two entry points, same reasoning as GpuPassView:
+//   - Begin(cmd) — owns the pass, calls SDL_BeginGPUCopyPass/EndGPUCopyPass.
+//     Use this for a single-purpose pass (most call sites: one upload, close).
+//   - FromRaw(cp, cmd) — non-owning, for callers that receive an
+//     ALREADY-OPEN SDL_GPUCopyPass* from someone else (confirmed real,
+//     not hypothetical: GpuRingBuffer::UploadInPass, TerrainQuadtreeRenderer::
+//     UploadNodeData, TerrainVtPageCache::UploadIndirectionRegion/
+//     UploadPageMeta all take a caller-opened SDL_GPUCopyPass* today —
+//     batching multiple uploads into one pass for perf). No End() call
+//     needed/allowed on a FromRaw instance — the opener closes it.
+// ─────────────────────────────────────────────────────────────────────────────
+class GpuCopyPass {
+public:
+    static GpuCopyPass FromRaw(SDL_GPUCopyPass* cp, SDL_GPUCommandBuffer* cmd) {
+        GpuCopyPass v;
+        v.sdl_pass_ = cp;
+        v.sdl_cmd_  = cmd;
+        v.owns_pass_ = false;
+        return v;
+    }
+
+    void Begin(SDL_GPUCommandBuffer* cmd) {
+        sdl_cmd_   = cmd;
+        sdl_pass_  = SDL_BeginGPUCopyPass(cmd);
+        owns_pass_ = true;
+    }
+    void End() {
+        if (owns_pass_ && sdl_pass_) SDL_EndGPUCopyPass(sdl_pass_);
+        sdl_pass_ = nullptr;
+    }
+
+    void UploadTexture(const SDL_GPUTextureTransferInfo& src,
+                        const SDL_GPUTextureRegion& dst, bool cycle = false) {
+        if (sdl_pass_) SDL_UploadToGPUTexture(sdl_pass_, &src, &dst, cycle);
+    }
+    void UploadBuffer(const SDL_GPUTransferBufferLocation& src,
+                       const SDL_GPUBufferRegion& dst, bool cycle = false) {
+        if (sdl_pass_) SDL_UploadToGPUBuffer(sdl_pass_, &src, &dst, cycle);
+    }
+    void DownloadTexture(const SDL_GPUTextureRegion& src,
+                          const SDL_GPUTextureTransferInfo& dst) {
+        if (sdl_pass_) SDL_DownloadFromGPUTexture(sdl_pass_, &src, &dst);
+    }
+    void DownloadBuffer(const SDL_GPUBufferRegion& src,
+                         const SDL_GPUTransferBufferLocation& dst) {
+        if (sdl_pass_) SDL_DownloadFromGPUBuffer(sdl_pass_, &src, &dst);
+    }
+    void CopyTextureToTexture(const SDL_GPUTextureLocation& src,
+                               const SDL_GPUTextureLocation& dst,
+                               uint32_t w, uint32_t h, uint32_t d = 1,
+                               bool cycle = false) {
+        if (sdl_pass_) SDL_CopyGPUTextureToTexture(sdl_pass_, &src, &dst, w, h, d, cycle);
+    }
+
+    SDL_GPUCopyPass*      SDLPass() const { return sdl_pass_; }
+    SDL_GPUCommandBuffer* SDLCmd()  const { return sdl_cmd_; }
+
+private:
+    SDL_GPUCopyPass*      sdl_pass_  = nullptr;
+    SDL_GPUCommandBuffer* sdl_cmd_   = nullptr;
+    bool                  owns_pass_ = false;
+};
+
+// GpuGenerateMipmaps / GpuBlitTexture — same shape as GpuPush*Uniforms above:
+// both SDL functions take the command buffer directly, no pass object at
+// all (confirmed by reading the SDL3 header, not assumed) — the second
+// confirmed instance of this "operation binds to cmd, not to a pass" shape
+// in this HAL (first was uniform-push). Forcing these through GpuCopyPass
+// would require opening a pass neither function uses.
+inline void GpuGenerateMipmaps(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* tex) {
+    if (cmd && tex) SDL_GenerateMipmapsForGPUTexture(cmd, tex);
+}
+inline void GpuBlitTexture(SDL_GPUCommandBuffer* cmd, const SDL_GPUBlitInfo& info) {
+    if (cmd) SDL_BlitGPUTexture(cmd, &info);
+}
+#endif // MD_SDL_GPU
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuDepthTexture — depth texture for shadow passes.
 // OpenGL: FBO + GL_DEPTH_COMPONENT24 texture.
-// SDL_GPU: SDL_GPUTexture(D24_UNORM, DEPTH_STENCIL_TARGET|SAMPLER) — no FBO.
+// SDL_GPU: SDL_GPUTexture(D32_FLOAT, DEPTH_STENCIL_TARGET|SAMPLER) — no FBO.
+//   D32_FLOAT, not D24_UNORM: Intel Gen9 (HD 520) cannot sample D24_UNORM
+//   (see gpu_hal_buffers.cpp's Init() for the same note at the real call site).
 //   shadow_border: GL uses CLAMP_TO_BORDER (white); SDL_GPU uses CLAMP_TO_EDGE
 //   (SDL3 has no border color support — minor edge artifact, acceptable).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -406,6 +544,157 @@ private:
     SDL_GPUSampler* sdl_sampler_ = nullptr;
 #endif
 };
+
+#ifdef MD_SDL_GPU
+struct GpuSamplerDesc; // defined below -- GpuSampler::Init only needs a reference param
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuSampler / GpuColorTexture — split texture/sampler ownership (SDL_GPU only).
+//
+// M1 HAL-closure, §3 item 9 (2026-08-31): every texture-owning class above
+// (GpuTexture, GpuDepthTexture) bundles exactly one sampler with exactly one
+// texture -- correct for the asset-loading/depth-attachment shapes they were
+// built for, but real post-process call sites don't share that shape.
+// bloom_system.cpp creates 4 render targets against 2 samplers (shared by
+// filter-mode purpose, not paired to any one texture); motion_blur.cpp and
+// deferred_lighting.cpp have the same N-textures-vs-M-samplers pattern.
+// Forcing these through GpuTexture would silently create extra sampler
+// objects the original code never had -- a real resource-count divergence
+// invisible to pixel-diff A/B (the same class of gap named in this file's
+// error-path lesson, docs/HAL_CLOSURE_PROGRESS.md). These two classes are
+// deliberately NOT coupled to each other; callers own however many of each
+// their real binding pattern needs.
+class GpuSampler {
+public:
+    bool Init(const GpuSamplerDesc& desc);
+    void Shutdown();
+    SDL_GPUSampler* SDLSampler() const { return sdl_sampler_; }
+private:
+    SDL_GPUSampler* sdl_sampler_ = nullptr;
+};
+
+class GpuColorTexture {
+public:
+    bool Init(int w, int h, SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage,
+              uint32_t num_levels = 1);
+    void Shutdown();
+    SDL_GPUTexture* SDLTexture() const { return sdl_tex_; }
+    int Width()  const { return w_; }
+    int Height() const { return h_; }
+private:
+    SDL_GPUTexture* sdl_tex_ = nullptr;
+    int w_ = 0, h_ = 0;
+};
+#endif // MD_SDL_GPU
+
+#ifdef MD_SDL_GPU
+class GpuStaticBuffer; // defined below -- GpuPassView only needs pointer params
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuPassView — non-owning handle for binding/drawing into an ALREADY-OPEN
+// render pass. No Begin()/End(): lifetime is the call, not ownership.
+//
+// Why this exists (docs/HAL_CLOSURE_INVENTORY.md, M1 pilot): GpuCommandBuffer
+// and GpuRenderPass both OWN their pass's lifecycle (BeginColorPass/BeginColor
+// create sdl_pass_, End*() destroys it) -- neither can wrap a pass some OTHER
+// caller already opened. But most scene-drawing code (billboard/prop/clutter/
+// vegetation renderers) is called INTO a pass its caller opened once and
+// shares across many draws for perf (one pass, not N) -- exactly the shape
+// neither owning wrapper fits. That mismatch, not carelessness, is why ~90%
+// of scene code bypassed the HAL before M1.
+//
+// Two entry points:
+//   - GpuRenderPass::View(cmd) -- the pass already went through Begin*() on
+//     a GpuRenderPass. This is the steady-state path once M1 finishes
+//     migrating pass-openers off raw SDL_BeginGPURenderPass.
+//   - GpuPassView::FromRaw(rp, cmd) -- TEMPORARY, remove after M1: for call
+//     sites that still receive a raw SDL_GPURenderPass* from a caller not
+//     yet migrated to GpuRenderPass. Do not add new FromRaw() call sites
+//     once the caller side is migrated -- route through View() instead.
+// ─────────────────────────────────────────────────────────────────────────────
+class GpuPassView {
+public:
+    static GpuPassView FromRaw(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd) {
+        return GpuPassView(rp, cmd);
+    }
+
+    void BindPipeline(GpuPipeline* pipeline);
+    void BindVertexBuffer(GpuVertexBuffer* buf);
+    // Overload for the other vertex-buffer-shaped class in the HAL --
+    // GpuStaticBuffer (e.g. terrain-chunk clutter_vbo) exposes the same
+    // SDLBuffer() accessor as GpuVertexBuffer but is a different type.
+    void BindVertexBuffer(const GpuStaticBuffer* buf);
+    // No wrapper existed for indexed binding/draw anywhere in the HAL before
+    // this (docs/HAL_CLOSURE_INVENTORY.md §2.3/§2.4) -- added here because a
+    // GpuPassView caller needs both to close a file completely, not deferred
+    // to a later group when doing so would leave the file half-migrated.
+    void BindIndexBuffer(const GpuStaticBuffer* buf, SDL_GPUIndexElementSize elem_size);
+    void BindFragmentSamplers(uint32_t first_slot,
+                               const SDL_GPUTextureSamplerBinding* bindings,
+                               uint32_t count);
+    // Vertex-stage sampler counterpart -- editor_char_preview_runtime.cpp's
+    // hair draw samples a bone-matrices texture from the vertex shader via
+    // SDL_BindGPUVertexSamplers (distinct call from the fragment one above).
+    void BindVertexSamplers(uint32_t first_slot,
+                             const SDL_GPUTextureSamplerBinding* bindings,
+                             uint32_t count);
+    // No wrapper existed for fragment storage-buffer binding before this --
+    // added for terrain_shading_projected.cpp's DrawShadingResolve(), which
+    // binds vt.PageMetaSSBO() via SDL_BindGPUFragmentStorageBuffers (a
+    // different bind call than the sampler one above, same pass-scoped shape).
+    void BindFragmentStorageBuffers(uint32_t first_slot,
+                                     SDL_GPUBuffer* const* storage_buffers,
+                                     uint32_t count);
+    // Same gap, vertex-stage side -- npc_render_frame_prep.cpp's depth
+    // prepass binds TransformSoA/vis/faction/bone SSBOs to the vertex stage
+    // via SDL_BindGPUVertexStorageBuffers.
+    void BindVertexStorageBuffers(uint32_t first_slot,
+                                   SDL_GPUBuffer* const* storage_buffers,
+                                   uint32_t count);
+    void PushVertexUniforms  (uint32_t slot, const void* data, uint32_t size_bytes);
+    void PushFragmentUniforms(uint32_t slot, const void* data, uint32_t size_bytes);
+    void Draw(uint32_t vertex_count, uint32_t instance_count = 1,
+              uint32_t first_vertex = 0, uint32_t first_instance = 0);
+    void DrawIndexed(uint32_t index_count, uint32_t instance_count = 1,
+                      uint32_t first_index = 0, int32_t vertex_offset = 0,
+                      uint32_t first_instance = 0);
+
+    SDL_GPURenderPass*    SDLPass() const { return sdl_pass_; }
+    SDL_GPUCommandBuffer* SDLCmd()  const { return sdl_cmd_; }
+
+private:
+    GpuPassView(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd)
+        : sdl_pass_(rp), sdl_cmd_(cmd) {}
+    SDL_GPURenderPass*    sdl_pass_ = nullptr;
+    SDL_GPUCommandBuffer* sdl_cmd_  = nullptr;
+    friend class GpuRenderPass;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuPush{Vertex,Fragment,Compute}Uniforms — stateless passthrough.
+//
+// Unlike bind/draw calls, SDL_GPU's three push-uniform functions
+// (SDL_PushGPUVertexUniformData / ...Fragment... / ...Compute...) take ONLY
+// a command buffer, never a render pass or compute pass handle. So neither
+// GpuPassView (pass-scoped) nor GpuComputePass (owns compute-pass lifecycle)
+// is the right shape to wrap them -- forcing callers through either would
+// require a pass object these calls don't need, including the 3 real M1
+// call sites that push compute uniforms from functions with no GpuComputePass
+// at all (raw SDL_BeginGPUComputePass, e.g. terrain_vt_page_cache.cpp). A
+// bare free function matches what the SDL_GPU API itself expects.
+inline void GpuPushVertexUniforms(SDL_GPUCommandBuffer* cmd, uint32_t slot,
+                                   const void* data, uint32_t size_bytes) {
+    if (cmd) SDL_PushGPUVertexUniformData(cmd, slot, data, size_bytes);
+}
+inline void GpuPushFragmentUniforms(SDL_GPUCommandBuffer* cmd, uint32_t slot,
+                                     const void* data, uint32_t size_bytes) {
+    if (cmd) SDL_PushGPUFragmentUniformData(cmd, slot, data, size_bytes);
+}
+inline void GpuPushComputeUniforms(SDL_GPUCommandBuffer* cmd, uint32_t slot,
+                                    const void* data, uint32_t size_bytes) {
+    if (cmd) SDL_PushGPUComputeUniformData(cmd, slot, data, size_bytes);
+}
+#endif
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuRenderPass — scoped render pass bound to one or more attachments.
@@ -455,6 +744,12 @@ public:
 
 #ifdef MD_SDL_GPU
     SDL_GPURenderPass* SDLPass() const { return sdl_pass_; }
+
+    // Non-owning view for binding/drawing into this pass. `cmd` is the same
+    // command buffer passed to Begin*() -- GpuRenderPass doesn't retain it
+    // itself (only sdl_pass_), so the caller (who still holds it) supplies
+    // it here. See GpuPassView's doc comment for why this exists.
+    GpuPassView View(SDL_GPUCommandBuffer* cmd) const { return GpuPassView(sdl_pass_, cmd); }
 #endif
 
 private:
@@ -487,13 +782,27 @@ void GpuDrawIndexedIndirect(unsigned int indirect_buf_id, uint32_t draw_count = 
 // of a second per-chunk synchronous upload (see GpuUploadBatch doc comment
 // for why that matters on Intel ANV).
 static constexpr unsigned int GPU_TARGET_STORAGE = 0xFFFFFFFEu;
+// M1 HAL-closure, §3 item 8 (2026-08-31): real one-shot buffer-creation call
+// sites (npc_gpu_culler.cpp's pos_buf_/vis_buf_, terrain_vt_page_cache.cpp's
+// page_meta_buf_) all need COMPUTE_STORAGE_READ and/or _WRITE usage, which
+// GPU_TARGET_STORAGE's GRAPHICS_STORAGE_READ mapping cannot express -- a
+// real usage-taxonomy gap, not a bypass to shame (this class was built for
+// vertex/index/graphics-storage-read buffers; compute storage never had a
+// caller until now). Two sentinels, matching the two real usage shapes
+// found (no _WO/write-only compute variant exists as a real need yet).
+static constexpr unsigned int GPU_TARGET_COMPUTE_STORAGE_RO = 0xFFFFFFFDu;
+static constexpr unsigned int GPU_TARGET_COMPUTE_STORAGE_RW = 0xFFFFFFFCu;
 
 class GpuStaticBuffer {
 public:
     // gl_target: GL_ARRAY_BUFFER or GL_ELEMENT_ARRAY_BUFFER (used for usage hint),
-    // or GPU_TARGET_STORAGE for a fragment-storage-buffer-bindable resource.
-    // SDL_GPU path maps GL_ELEMENT_ARRAY_BUFFER → INDEX usage,
-    // GPU_TARGET_STORAGE → GRAPHICS_STORAGE_READ, rest → VERTEX.
+    // GPU_TARGET_STORAGE for a fragment-storage-buffer-bindable resource, or
+    // GPU_TARGET_COMPUTE_STORAGE_RO/_RW for a compute-storage-buffer-bindable
+    // resource (read-only or read-write). SDL_GPU path maps
+    // GL_ELEMENT_ARRAY_BUFFER → INDEX usage, GPU_TARGET_STORAGE →
+    // GRAPHICS_STORAGE_READ, GPU_TARGET_COMPUTE_STORAGE_RO →
+    // COMPUTE_STORAGE_READ, GPU_TARGET_COMPUTE_STORAGE_RW →
+    // COMPUTE_STORAGE_READ|COMPUTE_STORAGE_WRITE, rest → VERTEX.
     void Init(unsigned int gl_target, const void* data, uint32_t size_bytes);
     // Creates the GPU-side buffer only, no data upload — pair with GpuUploadBatch::Add()
     // (gpu_hal.h below) to fill it. Use when uploading many small buffers at once
@@ -634,6 +943,26 @@ public:
 #ifdef MD_SDL_GPU
     bool InitRenderTarget(int w, int h, const GpuSamplerDesc& s = {},
                           SDL_GPUTextureFormat format = SDL_GPU_TEXTUREFORMAT_INVALID);
+    // Compute-storage-writable texture (SDL_GPU only) -- InitRenderTarget
+    // above always ORs in COLOR_TARGET|SAMPLER, which doesn't fit: real
+    // compute-write call sites need a caller-specified usage combination
+    // (M1 HAL-closure, §3 item 9, 2026-08-31 -- 3 confirmed real shapes,
+    // not one: ssao_system.cpp's ao_tex_ and terrain_vt_page_cache.cpp's
+    // atlas_tex_ are COMPUTE_STORAGE_WRITE|SAMPLER with no COLOR_TARGET;
+    // terrain_world_heightmap.cpp's normal_tex_ additionally ORs in
+    // COLOR_TARGET because it's the target of its own
+    // SDL_GenerateMipmapsForGPUTexture call). num_levels is an explicit
+    // caller-computed value, not derived from GpuSamplerDesc::gen_mipmap
+    // via MipLevels(w,h) the way InitRenderTarget's is, because
+    // normal_tex_'s real mip-level count is computed differently (from N,
+    // not from w/h via the shared power-of-two halving helper) and forcing
+    // it through the same derivation risked a silent off-by-one in the mip
+    // chain length -- exactly the class of divergence pixel-diff A/B can't
+    // catch (see docs/HAL_CLOSURE_PROGRESS.md's error-path methodology
+    // lesson for the general form of this risk).
+    bool InitCompute(int w, int h, SDL_GPUTextureFormat format,
+                      SDL_GPUTextureUsageFlags usage, uint32_t num_levels,
+                      const GpuSamplerDesc& s = {});
 #else
     bool InitRenderTarget(int w, int h, const GpuSamplerDesc& s = {});
 #endif

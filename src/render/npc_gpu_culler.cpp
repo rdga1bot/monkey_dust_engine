@@ -1,6 +1,7 @@
 #include <monkey_dust/render/npc_gpu_culler.h>
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <cstdio>
 #include <cstring>
 
@@ -36,17 +37,11 @@ bool NpcGpuCuller::Init() {
     const uint32_t vis_sz  = (uint32_t)(MAX_NPCS     * sizeof(uint32_t)); // uint[64]
 
     // RO position buffer (device-side, filled each frame via upload transfer).
-    SDL_GPUBufferCreateInfo bci{};
-    bci.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ;
-    bci.size  = pos_sz;
-    pos_buf_ = SDL_CreateGPUBuffer(dev, &bci);
+    pos_buf_.InitEmpty(GPU_TARGET_COMPUTE_STORAGE_RO, pos_sz);
 
     // RW visibility buffer: written by compute, then downloaded via copy pass.
     // READ+WRITE needed so the download copy pass can read it as a source.
-    bci.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE |
-                SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ;
-    bci.size  = vis_sz;
-    vis_buf_ = SDL_CreateGPUBuffer(dev, &bci);
+    vis_buf_.InitEmpty(GPU_TARGET_COMPUTE_STORAGE_RW, vis_sz);
 
     // Upload transfer buffer (CPU→GPU positions).
     SDL_GPUTransferBufferCreateInfo tci{};
@@ -59,7 +54,7 @@ bool NpcGpuCuller::Init() {
     tci.size  = vis_sz;
     dl_buf_ = SDL_CreateGPUTransferBuffer(dev, &tci);
 
-    if (!pos_buf_ || !vis_buf_ || !upload_buf_ || !dl_buf_) {
+    if (!pos_buf_.SDLBuffer() || !vis_buf_.SDLBuffer() || !upload_buf_ || !dl_buf_) {
         fprintf(stderr, "[NpcGpuCuller] buffer allocation failed\n");
         return false;
     }
@@ -71,9 +66,9 @@ bool NpcGpuCuller::Init() {
 
 void NpcGpuCuller::Shutdown() {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
+    pos_buf_.Shutdown();
+    vis_buf_.Shutdown();
     if (dev) {
-        if (pos_buf_)    { SDL_ReleaseGPUBuffer(dev, pos_buf_);                pos_buf_    = nullptr; }
-        if (vis_buf_)    { SDL_ReleaseGPUBuffer(dev, vis_buf_);                vis_buf_    = nullptr; }
         if (upload_buf_) { SDL_ReleaseGPUTransferBuffer(dev, upload_buf_);     upload_buf_ = nullptr; }
         if (dl_buf_)     { SDL_ReleaseGPUTransferBuffer(dev, dl_buf_);         dl_buf_     = nullptr; }
     }
@@ -91,7 +86,7 @@ int NpcGpuCuller::Cull(const float* npc_x, const float* npc_z, int count,
 
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
     // Acquire a dedicated command buffer for the compute dispatch.
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
+    SDL_GPUCommandBuffer* cmd = GpuDevice::Get().AcquireCommandBuffer();
     if (!cmd) return 0;
 
     const int n = count < MAX_NPCS ? count : MAX_NPCS;
@@ -106,11 +101,12 @@ int NpcGpuCuller::Cull(const float* npc_x, const float* npc_z, int count,
         }
         SDL_UnmapGPUTransferBuffer(dev, upload_buf_);
 
-        SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+        GpuCopyPass cp;
+        cp.Begin(cmd);
         SDL_GPUTransferBufferLocation src{ upload_buf_, 0 };
-        SDL_GPUBufferRegion dst{ pos_buf_, 0, (uint32_t)(n * 2 * sizeof(float)) };
-        SDL_UploadToGPUBuffer(cp, &src, &dst, true);
-        SDL_EndGPUCopyPass(cp);
+        SDL_GPUBufferRegion dst{ pos_buf_.SDLBuffer(), 0, (uint32_t)(n * 2 * sizeof(float)) };
+        cp.UploadBuffer(src, dst, true);
+        cp.End();
     }
 
     // ── Dispatch compute ──────────────────────────────────────────────────────
@@ -118,10 +114,10 @@ int NpcGpuCuller::Cull(const float* npc_x, const float* npc_z, int count,
         GpuComputeStorageBindings bindings;
         bindings.cmd = cmd;
         // RW buffer: visibility output (set=1, binding=0)
-        bindings.rw_buffers[0] = { vis_buf_, false };
+        bindings.rw_buffers[0] = { vis_buf_.SDLBuffer(), false };
         bindings.num_rw_buffers = 1;
         // RO buffer: positions (set=0, binding=0)
-        bindings.ro_buffers[0]  = pos_buf_;
+        bindings.ro_buffers[0]  = pos_buf_.SDLBuffer();
         bindings.num_ro_buffers = 1;
 
         GpuComputePass pass;
@@ -147,16 +143,17 @@ int NpcGpuCuller::Cull(const float* npc_x, const float* npc_z, int count,
 
     // ── Download visibility result ────────────────────────────────────────────
     {
-        SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
-        SDL_GPUBufferRegion src{ vis_buf_, 0, (uint32_t)(n * sizeof(uint32_t)) };
+        GpuCopyPass cp;
+        cp.Begin(cmd);
+        SDL_GPUBufferRegion src{ vis_buf_.SDLBuffer(), 0, (uint32_t)(n * sizeof(uint32_t)) };
         SDL_GPUTransferBufferLocation dst{ dl_buf_, 0 };
-        SDL_DownloadFromGPUBuffer(cp, &src, &dst);
-        SDL_EndGPUCopyPass(cp);
+        cp.DownloadBuffer(src, dst);
+        cp.End();
     }
 
     // Submit + sync (blocking readback, Intel HD 520 shared memory — fast).
     GpuDevice::Get().Submit(cmd);
-    SDL_WaitForGPUIdle(dev);
+    GpuDevice::Get().WaitForIdle();
 
     // ── Read back result ──────────────────────────────────────────────────────
     const uint32_t* ptr = (const uint32_t*)SDL_MapGPUTransferBuffer(dev, dl_buf_, false);

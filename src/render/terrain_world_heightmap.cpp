@@ -1,6 +1,7 @@
 #include <monkey_dust/render/terrain_world_heightmap.h>
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_hal.h>
+#include <monkey_dust/render/gpu_device.h>
 #include <monkey_dust/world/terrain_gen.h>
 #include <monkey_dust/world/chunk_def.h>
 #include <monkey_dust/world/terrain_chunk.h>  // TERRAIN_GRID
@@ -85,11 +86,6 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     }
     free(h_tmp);
 
-    SDL_GPUTextureCreateInfo ti = {};
-    ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-    ti.width                = (Uint32)N;
-    ti.height               = (Uint32)N;
-    ti.layer_count_or_depth = 1;
     // #398 mip-chain removal (2026-08-23): this texture is ALWAYS sampled
     // at explicit textureLod(..., 0.0) in the live vertex shader path
     // (terrain_quadtree.vert's SampleHeightFrac/SampleNormal) -- geomorph's
@@ -105,19 +101,27 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     // floor(log2(N))+1 (14 levels for N=8193) -- ~44MB of never-sampled
     // GPU memory. If VT paging is ever revived with tier>0, restore that
     // formula here (this texture/sampler is the same one page-fill binds).
-    ti.num_levels = 1;
-    ti.format     = SDL_GPU_TEXTUREFORMAT_R16_UNORM;
-    ti.usage      = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-    // COLOR_TARGET usage is required by SDL_GenerateMipmapsForGPUTexture
-    // even though this texture is never bound as an actual pipeline
-    // color attachment anywhere -- matches GpuTexture::InitFromMemory's
-    // own gen_mipmap path (gpu_hal_buffers.cpp), same requirement there.
-
-    tex_ = SDL_CreateGPUTexture(dev, &ti);
-    if (!tex_) {
+    const uint32_t kNumLevels = 1;
+    GpuSamplerDesc tex_sdesc;
+    tex_sdesc.min_filter = GpuSamplerDesc::Filter::LINEAR; // mipmap_mode moot with 1 level
+    tex_sdesc.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    tex_sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    tex_sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    tex_sdesc.gen_mipmap = false; // -> CreateSDLSampler's max_lod=0, matches kNumLevels=1
+    // COLOR_TARGET usage (added internally by InitRenderTarget) is required
+    // by SDL_GenerateMipmapsForGPUTexture even though this texture is never
+    // bound as an actual pipeline color attachment anywhere -- matches
+    // GpuTexture::InitFromMemory's own gen_mipmap path, same requirement.
+    if (!tex_.InitRenderTarget(N, N, tex_sdesc, SDL_GPU_TEXTUREFORMAT_R16_UNORM)) {
         fprintf(stderr, "[TerrainWorldHeightmap] SDL_CreateGPUTexture(R16_UNORM, %dx%d) failed: %s\n",
                 N, N, SDL_GetError());
         free(h16);
+        return false;
+    }
+    if (!tex_.SDLSampler()) {
+        fprintf(stderr, "[TerrainWorldHeightmap] sampler create failed: %s\n", SDL_GetError());
+        free(h16);
+        tex_.Shutdown();
         return false;
     }
 
@@ -128,8 +132,7 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     if (!tb) {
         fprintf(stderr, "[TerrainWorldHeightmap] transfer buffer create failed: %s\n", SDL_GetError());
         free(h16);
-        SDL_ReleaseGPUTexture(dev, tex_);
-        tex_ = nullptr;
+        tex_.Shutdown();
         return false;
     }
     void* ptr = SDL_MapGPUTransferBuffer(dev, tb, false);
@@ -137,41 +140,25 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     SDL_UnmapGPUTransferBuffer(dev, tb);
     free(h16);
 
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+    GpuCopyPass cp;
+    cp.Begin(cmd);
     SDL_GPUTextureTransferInfo src{};
     src.transfer_buffer = tb;
     src.pixels_per_row   = (Uint32)N;
     src.rows_per_layer   = (Uint32)N;
     SDL_GPUTextureRegion dst{};
-    dst.texture = tex_;
+    dst.texture = tex_.SDLTexture();
     dst.w = (Uint32)N; dst.h = (Uint32)N; dst.d = 1;
-    SDL_UploadToGPUTexture(cp, &src, &dst, false);
-    SDL_EndGPUCopyPass(cp);
+    cp.UploadTexture(src, dst, false);
+    cp.End();
     // #398: no SDL_GenerateMipmapsForGPUTexture call -- single level only,
-    // see ti.num_levels=1's doc comment above.
-    SDL_SubmitGPUCommandBuffer(cmd);
+    // see kNumLevels=1's doc comment above.
+    md::GpuDevice::Get().Submit(cmd);
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 
-    SDL_GPUSamplerCreateInfo si{};
-    si.min_filter        = SDL_GPU_FILTER_LINEAR;
-    si.mag_filter        = SDL_GPU_FILTER_LINEAR;
-    si.mipmap_mode       = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;  // moot with 1 level, harmless
-    si.address_mode_u    = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    si.address_mode_v    = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    si.address_mode_w    = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    si.min_lod           = 0.f;
-    si.max_lod           = (float)(ti.num_levels - 1);
-    sampler_ = SDL_CreateGPUSampler(dev, &si);
-    if (!sampler_) {
-        fprintf(stderr, "[TerrainWorldHeightmap] sampler create failed: %s\n", SDL_GetError());
-        SDL_ReleaseGPUTexture(dev, tex_);
-        tex_ = nullptr;
-        return false;
-    }
-
     fprintf(stderr, "[TerrainWorldHeightmap] ready: %dx%d R16_UNORM, %u mips, height=[%.2f,%.2f]m, extent=%.1fm\n",
-            N, N, ti.num_levels, height_min_, height_max_, world_extent_);
+            N, N, kNumLevels, height_min_, height_max_, world_extent_);
 
     // Full-variant Phase 3 (serene-pondering-teapot.md): bake the
     // world-wide normal texture now, once, right after the height texture
@@ -196,39 +183,26 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     Uint32 normal_num_levels = 1;
     { int sz = N; while (sz > 1) { sz >>= 1; ++normal_num_levels; } }
     {
-        SDL_GPUTextureCreateInfo nti = {};
-        nti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        nti.width                = (Uint32)N;
-        nti.height               = (Uint32)N;
-        nti.layer_count_or_depth = 1;
-        nti.num_levels           = normal_num_levels;
-        nti.format               = SDL_GPU_TEXTUREFORMAT_R8G8_SNORM;
-        nti.usage                = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE
-                                  | SDL_GPU_TEXTUREUSAGE_SAMPLER
-                                  | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET; // required by SDL_GenerateMipmapsForGPUTexture below, same as tex_'s own (now-unused) mip path
-        normal_tex_ = SDL_CreateGPUTexture(dev, &nti);
-        if (!normal_tex_) {
+        GpuSamplerDesc normal_sdesc;
+        normal_sdesc.min_filter = GpuSamplerDesc::Filter::LINEAR_MIPMAP; // -> mipmap_mode=LINEAR
+        normal_sdesc.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+        normal_sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        normal_sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        normal_sdesc.gen_mipmap = true; // -> CreateSDLSampler's max_lod=1000, clamps to normal_num_levels-1 anyway
+        const SDL_GPUTextureUsageFlags normal_usage =
+            SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE
+            | SDL_GPU_TEXTUREUSAGE_SAMPLER
+            | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET; // required by SDL_GenerateMipmapsForGPUTexture below, same as tex_'s own (now-unused) mip path
+        if (!normal_tex_.InitCompute(N, N, SDL_GPU_TEXTUREFORMAT_R8G8_SNORM,
+                                      normal_usage, normal_num_levels, normal_sdesc)) {
             fprintf(stderr, "[TerrainWorldHeightmap] normal texture create failed: %s\n", SDL_GetError());
-            SDL_ReleaseGPUSampler(dev, sampler_); sampler_ = nullptr;
-            SDL_ReleaseGPUTexture(dev, tex_); tex_ = nullptr;
+            tex_.Shutdown();
             return false;
         }
-
-        SDL_GPUSamplerCreateInfo nsi{};
-        nsi.min_filter     = SDL_GPU_FILTER_LINEAR;
-        nsi.mag_filter     = SDL_GPU_FILTER_LINEAR;
-        nsi.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
-        nsi.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        nsi.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        nsi.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        nsi.min_lod        = 0.f;
-        nsi.max_lod        = (float)(normal_num_levels - 1);
-        normal_sampler_ = SDL_CreateGPUSampler(dev, &nsi);
-        if (!normal_sampler_) {
+        if (!normal_tex_.SDLSampler()) {
             fprintf(stderr, "[TerrainWorldHeightmap] normal sampler create failed: %s\n", SDL_GetError());
-            SDL_ReleaseGPUTexture(dev, normal_tex_); normal_tex_ = nullptr;
-            SDL_ReleaseGPUSampler(dev, sampler_); sampler_ = nullptr;
-            SDL_ReleaseGPUTexture(dev, tex_); tex_ = nullptr;
+            normal_tex_.Shutdown();
+            tex_.Shutdown();
             return false;
         }
 
@@ -241,44 +215,47 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
         pd.threadcount_x = 8; pd.threadcount_y = 8; pd.threadcount_z = 1;
         if (!bake_pipeline.Create(pd)) {
             fprintf(stderr, "[TerrainWorldHeightmap] normal bake compute pipeline create failed\n");
-            SDL_ReleaseGPUSampler(dev, normal_sampler_); normal_sampler_ = nullptr;
-            SDL_ReleaseGPUTexture(dev, normal_tex_); normal_tex_ = nullptr;
-            SDL_ReleaseGPUSampler(dev, sampler_); sampler_ = nullptr;
-            SDL_ReleaseGPUTexture(dev, tex_); tex_ = nullptr;
+            normal_tex_.Shutdown();
+            tex_.Shutdown();
             return false;
         }
 
         SDL_GPUCommandBuffer* bcmd = SDL_AcquireGPUCommandBuffer(dev);
-        SDL_GPUStorageTextureReadWriteBinding rw{};
-        rw.texture = normal_tex_;
-        rw.cycle   = false;
-        SDL_GPUComputePass* pass = SDL_BeginGPUComputePass(bcmd, &rw, 1, nullptr, 0);
-        if (pass) {
-            SDL_BindGPUComputePipeline(pass, bake_pipeline.SDLComputePipeline());
+        GpuComputePass::StorageBindings sb;
+        sb.cmd = bcmd;
+        sb.rw_textures[0] = { normal_tex_.SDLTexture(), false };
+        sb.num_rw_textures = 1;
+
+        GpuComputePass pass;
+        pass.Begin(&bake_pipeline, sb);
+        if (pass.SDLPass()) {
             SDL_GPUTextureSamplerBinding samp{};
-            samp.texture = tex_;
-            samp.sampler = sampler_;
-            SDL_BindGPUComputeSamplers(pass, 0, &samp, 1);
+            samp.texture = tex_.SDLTexture();
+            samp.sampler = tex_.SDLSampler();
+            pass.BindSamplers(0, &samp, 1);
 
             NormalBakeUBO nubo{};
             nubo.world_params[0] = world_extent_;
             nubo.world_params[1] = (float)N;
             nubo.world_params[2] = height_max_ - height_min_;
             nubo.world_params[3] = height_min_;
-            SDL_PushGPUComputeUniformData(bcmd, 0, &nubo, sizeof(nubo));
+            pass.PushUniforms(0, &nubo, sizeof(nubo));
 
             uint32_t g = (uint32_t)((N + 7) / 8);
-            SDL_DispatchGPUCompute(pass, g, g, 1);
-            SDL_EndGPUComputePass(pass);
+            pass.Dispatch(g, g, 1);
+            pass.End();
             // Compute pass only wrote mip 0 (readwrite storage binding
             // defaults to level 0) -- fill levels 1..normal_num_levels-1
             // from it now, same call already used for tex_ before #398.
-            SDL_GenerateMipmapsForGPUTexture(bcmd, normal_tex_);
+            GpuGenerateMipmaps(bcmd, normal_tex_.SDLTexture());
         } else {
             fprintf(stderr, "[TerrainWorldHeightmap] normal bake SDL_BeginGPUComputePass failed: %s\n", SDL_GetError());
         }
-        SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(bcmd);
-        if (fence) { SDL_WaitForGPUFences(dev, true, &fence, 1); SDL_ReleaseGPUFence(dev, fence); }
+        SDL_GPUFence* fence = md::GpuDevice::Get().SubmitAndAcquireFence(bcmd);
+        if (fence) {
+            md::GpuDevice::Get().WaitForFence(fence);
+            md::GpuDevice::Get().ReleaseFence(fence);
+        }
         bake_pipeline.Destroy();
 
         fprintf(stderr, "[TerrainWorldHeightmap] normal bake done: %dx%d RG8_SNORM, %u mips\n", N, N, normal_num_levels);
@@ -288,9 +265,8 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
 }
 
 void TerrainWorldHeightmap::Shutdown(SDL_GPUDevice* dev) {
-    if (normal_sampler_) { SDL_ReleaseGPUSampler(dev, normal_sampler_); normal_sampler_ = nullptr; }
-    if (normal_tex_)     { SDL_ReleaseGPUTexture(dev, normal_tex_);     normal_tex_     = nullptr; }
-    if (sampler_) { SDL_ReleaseGPUSampler(dev, sampler_); sampler_ = nullptr; }
-    if (tex_)     { SDL_ReleaseGPUTexture(dev, tex_);     tex_     = nullptr; }
+    (void)dev;
+    normal_tex_.Shutdown();
+    tex_.Shutdown();
 }
 #endif

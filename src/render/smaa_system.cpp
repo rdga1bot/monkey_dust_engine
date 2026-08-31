@@ -46,31 +46,22 @@ void SMAASystem::Init(SDL_GPUDevice* dev, int w, int h) {
     dev_ = dev; w_ = w; h_ = h;
 
     // Intermediate RGBA8 render targets
-    SDL_GPUTextureCreateInfo ti = {};
-    ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-    ti.width                = (Uint32)w;
-    ti.height               = (Uint32)h;
-    ti.layer_count_or_depth = 1;
-    ti.num_levels           = 1;
-    ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-    ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-
-    rt_edges_ = SDL_CreateGPUTexture(dev, &ti);
-    rt_blend_ = SDL_CreateGPUTexture(dev, &ti);
-    if (!rt_edges_ || !rt_blend_) {
+    const SDL_GPUTextureUsageFlags rt_usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
+                                             | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    bool rt_ok = rt_edges_.Init(w, h, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, rt_usage);
+    rt_ok &= rt_blend_.Init(w, h, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, rt_usage);
+    if (!rt_ok) {
         MD_LOG(MD_LOG_WARNING, "SMAASystem: RT create failed");
         return;
     }
 
-    SDL_GPUSamplerCreateInfo si = {};
-    si.min_filter     = SDL_GPU_FILTER_LINEAR;
-    si.mag_filter     = SDL_GPU_FILTER_LINEAR;
-    si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-    si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    linear_sampler_ = SDL_CreateGPUSampler(dev, &si);
-    if (!linear_sampler_) {
+    GpuSamplerDesc sdesc;
+    sdesc.min_filter = GpuSamplerDesc::Filter::LINEAR;
+    sdesc.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    sdesc.gen_mipmap = false;
+    if (!linear_sampler_.Init(sdesc)) {
         MD_LOG(MD_LOG_WARNING, "SMAASystem: sampler create failed");
         return;
     }
@@ -100,26 +91,35 @@ static void RunFullscreenPass(GpuPipeline&  pipe,
                                SDL_GPUSampler*       sampler,
                                const SmaaUBO&        ubo,
                                bool load_output = false) {
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture  = out_tex;
-    ct.load_op  = load_output ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
-    ct.store_op = SDL_GPU_STOREOP_STORE;
+    // GpuCommandBuffer (own-pass HAL wrapper, docs/HAL_CLOSURE_INVENTORY.md
+    // M1 pilot) -- this function already opens+closes its own pass locally,
+    // so it fits the wrapper's owning design directly (unlike callers that
+    // draw into a pass someone else opened -- see GpuPassView instead).
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd            = cmd;
+    cpd.color_tex      = out_tex;
+    // Match the original SDL_GPUColorTargetInfo ct = {} zero-init exactly:
+    // clear_color={0,0,0,0}, not ColorPassDesc's own default of {0,0,0,1}.
+    cpd.clear_color[0] = 0.f; cpd.clear_color[1] = 0.f;
+    cpd.clear_color[2] = 0.f; cpd.clear_color[3] = 0.f;
+    cpd.load_color     = load_output;
 
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    if (!pass) return;
+    GpuCommandBuffer cb;
+    cb.BeginColorPass(cpd);
+    if (!cb.SDLPass()) return;
 
-    SDL_BindGPUGraphicsPipeline(pass, pipe.SDLPipeline());
+    cb.BindPipeline(&pipe);
 
     SDL_GPUTextureSamplerBinding bindings[2] = {};
     for (int i = 0; i < n_inputs && i < 2; ++i) {
         bindings[i].texture = in_textures[i];
         bindings[i].sampler = sampler;
     }
-    SDL_BindGPUFragmentSamplers(pass, 0, bindings, (Uint32)n_inputs);
-    SDL_PushGPUFragmentUniformData(cmd, 0, &ubo, sizeof(ubo));
+    cb.BindFragmentSamplers(0, bindings, (Uint32)n_inputs);
+    cb.PushFragmentUniforms(0, &ubo, sizeof(ubo));
 
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);  // fullscreen triangle
-    SDL_EndGPURenderPass(pass);
+    cb.Draw(3);  // fullscreen triangle -- Draw() hardcodes instance_count=1, matches original
+    cb.EndPass();
 }
 
 void SMAASystem::Render(SDL_GPUCommandBuffer* cmd,
@@ -134,15 +134,15 @@ void SMAASystem::Render(SDL_GPUCommandBuffer* cmd,
 
     // Pass 1: luma edge detect → rt_edges_
     { SDL_GPUTexture* in[1] = { input_tex };
-      RunFullscreenPass(edge_pipe_, cmd, rt_edges_, in, 1, linear_sampler_, ubo); }
+      RunFullscreenPass(edge_pipe_, cmd, rt_edges_.SDLTexture(), in, 1, linear_sampler_.SDLSampler(), ubo); }
 
     // Pass 2: blend weight → rt_blend_
-    { SDL_GPUTexture* in[1] = { rt_edges_ };
-      RunFullscreenPass(blend_pipe_, cmd, rt_blend_, in, 1, linear_sampler_, ubo); }
+    { SDL_GPUTexture* in[1] = { rt_edges_.SDLTexture() };
+      RunFullscreenPass(blend_pipe_, cmd, rt_blend_.SDLTexture(), in, 1, linear_sampler_.SDLSampler(), ubo); }
 
     // Pass 3: final blend → swapchain (LOAD to preserve prior content if needed)
-    { SDL_GPUTexture* in[2] = { input_tex, rt_blend_ };
-      RunFullscreenPass(final_pipe_, cmd, swapchain_tex, in, 2, linear_sampler_, ubo, true); }
+    { SDL_GPUTexture* in[2] = { input_tex, rt_blend_.SDLTexture() };
+      RunFullscreenPass(final_pipe_, cmd, swapchain_tex, in, 2, linear_sampler_.SDLSampler(), ubo, true); }
 }
 
 void SMAASystem::Shutdown() {
@@ -150,9 +150,7 @@ void SMAASystem::Shutdown() {
     edge_pipe_.Destroy();
     blend_pipe_.Destroy();
     final_pipe_.Destroy();
-    if (rt_edges_)      { SDL_ReleaseGPUTexture(dev_, rt_edges_);      rt_edges_       = nullptr; }
-    if (rt_blend_)      { SDL_ReleaseGPUTexture(dev_, rt_blend_);      rt_blend_       = nullptr; }
-    if (linear_sampler_){ SDL_ReleaseGPUSampler(dev_, linear_sampler_); linear_sampler_ = nullptr; }
+    rt_edges_.Shutdown(); rt_blend_.Shutdown(); linear_sampler_.Shutdown();
     dev_     = nullptr;
     enabled_ = false;
 }

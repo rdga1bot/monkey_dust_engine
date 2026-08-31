@@ -9,6 +9,7 @@
 
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #endif
 
 #ifdef __AVX2__
@@ -326,14 +327,15 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
             }
             SDL_UnmapGPUTransferBuffer(dev, sdl_xzyr_stg_[s]);
         }
-        SDL_GPUCopyPass* cpass = SDL_BeginGPUCopyPass(cmd);
+        GpuCopyPass cpass;
+        cpass.Begin(cmd);
         SDL_GPUTransferBufferLocation src = {};
         src.transfer_buffer = sdl_xzyr_stg_[s];
         SDL_GPUBufferRegion dst_r = {};
         dst_r.buffer = sdl_xzyr_buf_[s];
         dst_r.size   = byte_sz;
-        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, false);
-        SDL_EndGPUCopyPass(cpass);
+        cpass.UploadBuffer(src, dst_r, false);
+        cpass.End();
         xzyr_dirty_ = false;
     }
 
@@ -345,14 +347,15 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
                 dst[i] = (uint32_t)faction[i];
             SDL_UnmapGPUTransferBuffer(dev, sdl_faction_stg_[s]);
         }
-        SDL_GPUCopyPass* cpass = SDL_BeginGPUCopyPass(cmd);
+        GpuCopyPass cpass;
+        cpass.Begin(cmd);
         SDL_GPUTransferBufferLocation src = {};
         src.transfer_buffer = sdl_faction_stg_[s];
         SDL_GPUBufferRegion dst_r = {};
         dst_r.buffer = sdl_faction_buf_[s];
         dst_r.size   = (Uint32)(active_count * sizeof(uint32_t));
-        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, false);
-        SDL_EndGPUCopyPass(cpass);
+        cpass.UploadBuffer(src, dst_r, false);
+        cpass.End();
     }
 
     // Upload skin tint data to current slot (rarely changes; re-uploaded
@@ -363,14 +366,15 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
             memcpy(dst, skin_rgba, (size_t)active_count * 4 * sizeof(float));
             SDL_UnmapGPUTransferBuffer(dev, sdl_skin_stg_[s]);
         }
-        SDL_GPUCopyPass* cpass = SDL_BeginGPUCopyPass(cmd);
+        GpuCopyPass cpass;
+        cpass.Begin(cmd);
         SDL_GPUTransferBufferLocation src = {};
         src.transfer_buffer = sdl_skin_stg_[s];
         SDL_GPUBufferRegion dst_r = {};
         dst_r.buffer = sdl_skin_buf_[s];
         dst_r.size   = (Uint32)(active_count * 4 * sizeof(float));
-        SDL_UploadToGPUBuffer(cpass, &src, &dst_r, false);
-        SDL_EndGPUCopyPass(cpass);
+        cpass.UploadBuffer(src, dst_r, false);
+        cpass.End();
     }
 }
 #endif

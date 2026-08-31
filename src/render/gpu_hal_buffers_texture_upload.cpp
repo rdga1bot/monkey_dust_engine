@@ -33,6 +33,31 @@ bool GpuTexture::InitRenderTarget(int w, int h, const GpuSamplerDesc& s) {
 #endif
 }
 
+bool GpuTexture::InitCompute(int w, int h, SDL_GPUTextureFormat format,
+                              SDL_GPUTextureUsageFlags usage, uint32_t num_levels,
+                              const GpuSamplerDesc& s) {
+    w_ = w; h_ = h;
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (!dev) return false;
+
+    SDL_GPUTextureCreateInfo ti = {};
+    ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+    ti.format               = format;
+    ti.usage                = usage;
+    ti.width                = (Uint32)w;
+    ti.height               = (Uint32)h;
+    ti.layer_count_or_depth = 1;
+    ti.num_levels           = num_levels;
+    sdl_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    if (!sdl_tex_) {
+        MD_LOG(MD_LOG_WARNING, "[GpuTexture] InitCompute SDL_CreateGPUTexture failed: %s", SDL_GetError());
+        return false;
+    }
+    md::GpuResourceTracker::Get().OnTextureCreate();
+    sdl_sampler_ = CreateSDLSampler(dev, s);
+    return true;
+}
+
 bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSamplerDesc& s) {
     w_ = w; h_ = h;
 #ifdef MD_SDL_GPU

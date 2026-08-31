@@ -209,7 +209,9 @@ void TerrainQuadtreeRenderer::UploadNodeData(SDL_GPUDevice* dev, SDL_GPUCopyPass
     SDL_GPUTextureRegion dst{};
     dst.texture = node_data_tex_;
     dst.w = (Uint32)kNodeDataTexWidth; dst.h = (Uint32)rows; dst.d = 1;
-    SDL_UploadToGPUTexture(cp, &src, &dst, false);
+    // FromRaw: cp is a pass the CALLER opened (npc_render_frame_prep.cpp) and
+    // will End() itself -- no cmd needed here, no upload/download method uses it.
+    GpuCopyPass::FromRaw(cp, nullptr).UploadTexture(src, dst, false);
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 }
 
@@ -217,8 +219,8 @@ void TerrainQuadtreeRenderer::BeginBatched(SDL_GPURenderPass* rp, SDL_GPUCommand
                                             const TerrainWorldHeightmap& hmap, const float* vp16,
                                             float cam_x, float cam_y, float cam_z) {
     if (!batched_ready_) return;
-    (void)cmd;
-    SDL_BindGPUGraphicsPipeline(rp, batched_pipeline_.SDLPipeline());
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&batched_pipeline_);
 
     struct TerrainBatchUBO {
         float vp[16];
@@ -234,28 +236,26 @@ void TerrainQuadtreeRenderer::BeginBatched(SDL_GPURenderPass* rp, SDL_GPUCommand
     ubo.cam_pos_pad[1] = cam_y;
     ubo.cam_pos_pad[2] = cam_z;
     ubo.cam_pos_pad[3] = 0.f;
-    SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
+    pv.PushVertexUniforms(0, &ubo, sizeof(ubo));
 
     SDL_GPUTextureSamplerBinding samp[3] = {
         { hmap.Texture(), hmap.Sampler() },
         { hmap.NormalTexture(), hmap.NormalSampler() },
         { node_data_tex_, node_data_sampler_ },
     };
-    SDL_BindGPUVertexSamplers(rp, 0, samp, 3);
+    pv.BindVertexSamplers(0, samp, 3);
 }
 
 void TerrainQuadtreeRenderer::DrawBatched(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int count) {
-    (void)cmd;
     if (!batched_ready_ || count <= 0) return;
     if (count > kMaxBatchedNodes) count = kMaxBatchedNodes;
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
 
-    SDL_GPUBufferBinding filled_ib{ filled_ibo_.SDLBuffer(), 0u };
-    SDL_BindGPUIndexBuffer(rp, &filled_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    SDL_DrawGPUIndexedPrimitives(rp, filled_index_count_, (Uint32)count, 0, 0, 0);
+    pv.BindIndexBuffer(&filled_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    pv.DrawIndexed(filled_index_count_, (uint32_t)count, 0, 0, 0);
 
-    SDL_GPUBufferBinding skirt_ib{ skirt_ibo_.SDLBuffer(), 0u };
-    SDL_BindGPUIndexBuffer(rp, &skirt_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    SDL_DrawGPUIndexedPrimitives(rp, skirt_index_count_, (Uint32)count, 0, 0, 0);
+    pv.BindIndexBuffer(&skirt_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    pv.DrawIndexed(skirt_index_count_, (uint32_t)count, 0, 0, 0);
 }
 
 void TerrainQuadtreeRenderer::Shutdown(SDL_GPUDevice* dev) {
@@ -287,7 +287,8 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuff
     constexpr float kPatchQuads = 16.0f;
     float texelSize = node.size / kPatchQuads;
 
-    SDL_BindGPUGraphicsPipeline(rp, gbuffer_pipeline_.SDLPipeline());
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&gbuffer_pipeline_);
 
     TerrainQuadtreeUBO ubo{};
     std::memcpy(ubo.vp, vp16, 64);
@@ -303,13 +304,13 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuff
     ubo.cam_pos_skirt[1] = cam_y;
     ubo.cam_pos_skirt[2] = cam_z;
     ubo.cam_pos_skirt[3] = node.skirt_depth;
-    SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
+    pv.PushVertexUniforms(0, &ubo, sizeof(ubo));
 
     SDL_GPUTextureSamplerBinding samp[2] = {
         { hmap.Texture(), hmap.Sampler() },
         { hmap.NormalTexture(), hmap.NormalSampler() },
     };
-    SDL_BindGPUVertexSamplers(rp, 0, samp, 2);
+    pv.BindVertexSamplers(0, samp, 2);
 
     // docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 2: a node built with
     // LodMode()==1 and no >=2-level neighbor gap draws its precomputed
@@ -318,19 +319,22 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuff
     // >=2-level gap the stitched IBO can't represent) uses the original,
     // unconditionally-correct filled+skirt path unchanged.
     if (node.use_stitched_mesh && !node.needs_skirt_fallback) {
+        pv.BindIndexBuffer(&stitched_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        // BindIndexBuffer's offset param is fixed at 0 (see gpu_hal.h) --
+        // this call needs a non-zero per-mask offset, so bind the raw SDL
+        // buffer with the real offset directly rather than force a signature
+        // change onto every other (offset==0) caller of this HAL method.
         SDL_GPUBufferBinding stitched_ib{ stitched_ibo_.SDLBuffer(), stitched_offsets_[node.stitch_edge_mask] };
         SDL_BindGPUIndexBuffer(rp, &stitched_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-        SDL_DrawGPUIndexedPrimitives(rp, stitched_counts_[node.stitch_edge_mask], 1, 0, 0, 0);
+        pv.DrawIndexed(stitched_counts_[node.stitch_edge_mask], 1, 0, 0, 0);
         return;
     }
 
-    SDL_GPUBufferBinding filled_ib{ filled_ibo_.SDLBuffer(), 0u };
-    SDL_BindGPUIndexBuffer(rp, &filled_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    SDL_DrawGPUIndexedPrimitives(rp, filled_index_count_, 1, 0, 0, 0);
+    pv.BindIndexBuffer(&filled_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    pv.DrawIndexed(filled_index_count_, 1, 0, 0, 0);
 
-    SDL_GPUBufferBinding skirt_ib{ skirt_ibo_.SDLBuffer(), 0u };
-    SDL_BindGPUIndexBuffer(rp, &skirt_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    SDL_DrawGPUIndexedPrimitives(rp, skirt_index_count_, 1, 0, 0, 0);
+    pv.BindIndexBuffer(&skirt_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    pv.DrawIndexed(skirt_index_count_, 1, 0, 0, 0);
 }
 
 void TerrainQuadtreeRenderer::BeginForward(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
@@ -340,7 +344,8 @@ void TerrainQuadtreeRenderer::BeginForward(SDL_GPURenderPass* rp, SDL_GPUCommand
                                             float fog_far, const float fog_color[3], float fog_near,
                                             const TerrainRenderer& ground) {
     if (!forward_ready_) return;
-    SDL_BindGPUGraphicsPipeline(rp, forward_pipeline_.SDLPipeline());
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&forward_pipeline_);
 
     ForwardFragUBO fubo{};
     fubo.sun_dir_str[0] = sun.dir[0]; fubo.sun_dir_str[1] = sun.dir[1];
@@ -352,12 +357,12 @@ void TerrainQuadtreeRenderer::BeginForward(SDL_GPURenderPass* rp, SDL_GPUCommand
     fubo.fog_color_near[0] = fog_color[0]; fubo.fog_color_near[1] = fog_color[1];
     fubo.fog_color_near[2] = fog_color[2]; fubo.fog_color_near[3] = fog_near;
     fubo.fog_far = fog_far;
-    SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
+    pv.PushFragmentUniforms(0, &fubo, sizeof(fubo));
 
     ForwardCamUBO cubo{};
     cubo.cam_pos_ws[0] = cam_x; cubo.cam_pos_ws[1] = cam_y;
     cubo.cam_pos_ws[2] = cam_z; cubo.cam_pos_ws[3] = 0.f;
-    SDL_PushGPUFragmentUniformData(cmd, 1, &cubo, sizeof(cubo));
+    pv.PushFragmentUniforms(1, &cubo, sizeof(cubo));
 
     // set=2: same 4 shared ground samplers + zoneGroundLayersTex the resolve
     // path binds -- contiguous 0..4, no VT bindings needed (VT sampling is
@@ -368,11 +373,11 @@ void TerrainQuadtreeRenderer::BeginForward(SDL_GPURenderPass* rp, SDL_GPUCommand
     for (int i = 0; i < 4; ++i) {
         if (!ground_bindings[i].texture || !ground_bindings[i].sampler) return;
     }
-    SDL_BindGPUFragmentSamplers(rp, 0, ground_bindings, 4);
+    pv.BindFragmentSamplers(0, ground_bindings, 4);
     SDL_GPUTextureSamplerBinding zone_binding[1] = {
         { ground.ZoneGroundLayersTexture(), ground.ZoneGroundLayersSampler() },
     };
-    SDL_BindGPUFragmentSamplers(rp, 4, zone_binding, 1);
+    pv.BindFragmentSamplers(4, zone_binding, 1);
 }
 
 void TerrainQuadtreeRenderer::DrawNodeForward(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
@@ -398,20 +403,19 @@ void TerrainQuadtreeRenderer::DrawNodeForward(SDL_GPURenderPass* rp, SDL_GPUComm
     ubo.cam_pos_skirt[1] = cam_y;
     ubo.cam_pos_skirt[2] = cam_z;
     ubo.cam_pos_skirt[3] = node.skirt_depth;
-    SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.PushVertexUniforms(0, &ubo, sizeof(ubo));
 
     SDL_GPUTextureSamplerBinding samp[2] = {
         { hmap.Texture(), hmap.Sampler() },
         { hmap.NormalTexture(), hmap.NormalSampler() },
     };
-    SDL_BindGPUVertexSamplers(rp, 0, samp, 2);
+    pv.BindVertexSamplers(0, samp, 2);
 
-    SDL_GPUBufferBinding filled_ib{ filled_ibo_.SDLBuffer(), 0u };
-    SDL_BindGPUIndexBuffer(rp, &filled_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    SDL_DrawGPUIndexedPrimitives(rp, filled_index_count_, 1, 0, 0, 0);
+    pv.BindIndexBuffer(&filled_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    pv.DrawIndexed(filled_index_count_, 1, 0, 0, 0);
 
-    SDL_GPUBufferBinding skirt_ib{ skirt_ibo_.SDLBuffer(), 0u };
-    SDL_BindGPUIndexBuffer(rp, &skirt_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    SDL_DrawGPUIndexedPrimitives(rp, skirt_index_count_, 1, 0, 0, 0);
+    pv.BindIndexBuffer(&skirt_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    pv.DrawIndexed(skirt_index_count_, 1, 0, 0, 0);
 }
 #endif // MD_SDL_GPU

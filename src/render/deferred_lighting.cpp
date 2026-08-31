@@ -58,34 +58,27 @@ void DeferredLightingSystem::Init(SDL_GPUDevice* dev, int w, int h) {
     dev_ = dev; w_ = w; h_ = h;
 
     // HDR color target (RGBA16F — enough range before tonemapping)
-    SDL_GPUTextureCreateInfo ti = {};
-    ti.type                    = SDL_GPU_TEXTURETYPE_2D;
-    ti.width                   = static_cast<Uint32>(w);
-    ti.height                  = static_cast<Uint32>(h);
-    ti.layer_count_or_depth    = 1;
-    ti.num_levels              = 1;
-    ti.format                  = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
-    ti.usage                   = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
-                                 SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    hdr_color_ = SDL_CreateGPUTexture(dev, &ti);
-    if (!hdr_color_) {
+    const SDL_GPUTextureUsageFlags rt_usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
+                                             | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    if (!hdr_color_.Init(w, h, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, rt_usage)) {
         MD_LOG(MD_LOG_WARNING, "DeferredLightingSystem: failed to create HDR texture");
         return;
     }
 
     // NEAREST + CLAMP for GBuffer / depth reads (no interpolation on G-buffer)
-    SDL_GPUSamplerCreateInfo si = {};
-    si.min_filter     = SDL_GPU_FILTER_NEAREST;
-    si.mag_filter     = SDL_GPU_FILTER_NEAREST;
-    si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    sampler_nearest_ = SDL_CreateGPUSampler(dev, &si);
+    GpuSamplerDesc nearest_sdesc;
+    nearest_sdesc.min_filter = GpuSamplerDesc::Filter::NEAREST;
+    nearest_sdesc.mag_filter = GpuSamplerDesc::Filter::NEAREST;
+    nearest_sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    nearest_sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    nearest_sdesc.gen_mipmap = false;
+    sampler_nearest_.Init(nearest_sdesc);
 
     // BILINEAR + CLAMP for EVSM moment maps (bilinear improves soft shadow quality)
-    si.min_filter = SDL_GPU_FILTER_LINEAR;
-    si.mag_filter = SDL_GPU_FILTER_LINEAR;
-    sampler_linear_ = SDL_CreateGPUSampler(dev, &si);
+    GpuSamplerDesc linear_sdesc = nearest_sdesc;
+    linear_sdesc.min_filter = GpuSamplerDesc::Filter::LINEAR;
+    linear_sdesc.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    sampler_linear_.Init(linear_sdesc);
 
     // Fullscreen triangle pipeline
     // frag samplers → set=2 binding 0..6: RT0, RT1, Depth, EVSM0-3
@@ -107,7 +100,7 @@ void DeferredLightingSystem::Init(SDL_GPUDevice* dev, int w, int h) {
 
     if (!pipeline_.Create(d)) {
         MD_LOG(MD_LOG_WARNING, "DeferredLightingSystem: pipeline create failed");
-        SDL_ReleaseGPUTexture(dev, hdr_color_); hdr_color_ = nullptr;
+        hdr_color_.Shutdown();
         return;
     }
 
@@ -117,32 +110,33 @@ void DeferredLightingSystem::Init(SDL_GPUDevice* dev, int w, int h) {
 void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
                                               const GBuffer& gbuf,
                                               SDL_GPUTexture* depth_tex) {
-    if (!hdr_color_) return;
+    if (!hdr_color_.SDLTexture()) return;
 
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture     = hdr_color_;
-    ct.load_op     = SDL_GPU_LOADOP_CLEAR;
-    ct.store_op    = SDL_GPU_STOREOP_STORE;
-    ct.clear_color = { 0.0f, 0.0f, 0.0f, 1.0f };
-
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    if (!pass) {
+    GpuCommandBuffer cb;
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd            = cmd;
+    cpd.color_tex      = hdr_color_.SDLTexture();
+    cpd.clear_color[0] = 0.f; cpd.clear_color[1] = 0.f;
+    cpd.clear_color[2] = 0.f; cpd.clear_color[3] = 1.f;
+    cpd.load_color     = false; // CLEAR, matches original exactly
+    cb.BeginColorPass(cpd);
+    if (!cb.SDLPass()) {
         MD_LOG(MD_LOG_WARNING, "DeferredLightingSystem: BeginGPURenderPass failed");
         return;
     }
 
-    SDL_BindGPUGraphicsPipeline(pass, pipeline_.SDLPipeline());
+    cb.BindPipeline(&pipeline_);
 
     // ── slots 0-2: GBuffer RT0, RT1, Depth → SPIR-V set=2 binding=0/1/2 ───────
     {
         SDL_GPUTextureSamplerBinding b[3] = {};
-        b[0] = { gbuf.RT0(), sampler_nearest_ };
-        b[1] = { gbuf.RT1(), sampler_nearest_ };
+        b[0] = { gbuf.RT0(), sampler_nearest_.SDLSampler() };
+        b[1] = { gbuf.RT1(), sampler_nearest_.SDLSampler() };
         // Depth: use the scene depth texture if provided, otherwise a dummy.
         // Shader guards against out-of-bounds reconstruction (depth == 0 or 1 → skip).
         b[2] = { depth_tex ? depth_tex : gbuf.RT0(),  // fallback: no shadow if no depth
-                 sampler_nearest_ };
-        SDL_BindGPUFragmentSamplers(pass, 0, b, 3);
+                 sampler_nearest_.SDLSampler() };
+        cb.BindFragmentSamplers(0, b, 3);
     }
 
     // ── slots 3-6: EVSM moment maps → SPIR-V set=2 binding=3/4/5/6 ─────────
@@ -151,11 +145,11 @@ void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
     {
         SDL_GPUTexture* fallback = gbuf.RT0();  // safe dummy (never sampled if !evsm_ready)
         SDL_GPUTextureSamplerBinding b[4] = {};
-        b[0] = { evsm_ready ? evsm.MomentTex(0) : fallback, sampler_linear_ };
-        b[1] = { evsm_ready ? evsm.MomentTex(1) : fallback, sampler_linear_ };
-        b[2] = { evsm_ready ? evsm.MomentTex(2) : fallback, sampler_linear_ };
-        b[3] = { evsm_ready ? evsm.MomentTex(3) : fallback, sampler_linear_ };
-        SDL_BindGPUFragmentSamplers(pass, 3, b, 4);   // slots 3,4,5,6
+        b[0] = { evsm_ready ? evsm.MomentTex(0) : fallback, sampler_linear_.SDLSampler() };
+        b[1] = { evsm_ready ? evsm.MomentTex(1) : fallback, sampler_linear_.SDLSampler() };
+        b[2] = { evsm_ready ? evsm.MomentTex(2) : fallback, sampler_linear_.SDLSampler() };
+        b[3] = { evsm_ready ? evsm.MomentTex(3) : fallback, sampler_linear_.SDLSampler() };
+        cb.BindFragmentSamplers(3, b, 4);   // slots 3,4,5,6
     }
 
     // ── frag UBO slot=0 → SPIR-V set=3 binding=0: DeferredAmbientUBO ────────
@@ -195,19 +189,19 @@ void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
 
         ubo.evsm_warp_c = evsm_ready ? evsm.WarpC() : 40.f;
 
-        SDL_PushGPUFragmentUniformData(cmd, 0, &ubo, sizeof(ubo));
+        cb.PushFragmentUniforms(0, &ubo, sizeof(ubo));
     }
 
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
-    SDL_EndGPURenderPass(pass);
+    cb.Draw(3);
+    cb.EndPass();
 }
 
 void DeferredLightingSystem::Shutdown() {
     if (!dev_) return;
     pipeline_.Destroy();
-    if (hdr_color_)     { SDL_ReleaseGPUTexture(dev_, hdr_color_);      hdr_color_ = nullptr; }
-    if (sampler_nearest_){ SDL_ReleaseGPUSampler(dev_, sampler_nearest_); sampler_nearest_ = nullptr; }
-    if (sampler_linear_) { SDL_ReleaseGPUSampler(dev_, sampler_linear_);  sampler_linear_ = nullptr; }
+    hdr_color_.Shutdown();
+    sampler_nearest_.Shutdown();
+    sampler_linear_.Shutdown();
     dev_ = nullptr;
 }
 

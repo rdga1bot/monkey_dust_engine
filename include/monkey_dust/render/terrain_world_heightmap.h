@@ -1,6 +1,7 @@
 #pragma once
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/gpu_hal.h>
 
 // Granite-style terrain migration, Phase 1 (plan at
 // /home/rdga1/.claude/plans/serene-pondering-teapot.md): ONE static,
@@ -38,10 +39,10 @@ public:
     // equivalent because there is no window to rebuild.
     bool Init(SDL_GPUDevice* dev);
     void Shutdown(SDL_GPUDevice* dev);
-    bool IsReady() const { return tex_ != nullptr; }
+    bool IsReady() const { return tex_.SDLTexture() != nullptr; }
 
-    SDL_GPUTexture* Texture() const { return tex_; }
-    SDL_GPUSampler* Sampler() const { return sampler_; }
+    SDL_GPUTexture* Texture() const { return tex_.SDLTexture(); }
+    SDL_GPUSampler* Sampler() const { return tex_.SDLSampler(); }
 
     // Full-variant Phase 3 (serene-pondering-teapot.md): world-wide baked
     // normal texture, RG8_SNORM (normal.xz; y = sqrt(1-x^2-z^2) downstream),
@@ -51,8 +52,8 @@ public:
     // scale (RenderDoc: normal delta 0.0000 at every boundary), applied
     // here so any two patches sampling this texture at a shared world
     // position agree exactly, regardless of each patch's own tier.
-    SDL_GPUTexture* NormalTexture() const { return normal_tex_; }
-    SDL_GPUSampler* NormalSampler() const { return normal_sampler_; }
+    SDL_GPUTexture* NormalTexture() const { return normal_tex_.SDLTexture(); }
+    SDL_GPUSampler* NormalSampler() const { return normal_tex_.SDLSampler(); }
 
     // Height decode: worldY = HeightMin() + SampledFrac * (HeightMax()-HeightMin())
     float HeightMin() const { return height_min_; }
@@ -67,10 +68,8 @@ public:
     int Resolution() const { return res_; }
 
 private:
-    SDL_GPUTexture* tex_     = nullptr;
-    SDL_GPUSampler* sampler_ = nullptr;
-    SDL_GPUTexture* normal_tex_     = nullptr;
-    SDL_GPUSampler* normal_sampler_ = nullptr;
+    GpuTexture tex_;
+    GpuTexture normal_tex_;
     float height_min_   = 0.f;
     float height_max_   = 0.f;
     float world_extent_ = 0.f;

@@ -88,11 +88,11 @@ void ParticleRenderer::DrawSDLGPU(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* c
     ubo.cameraPos[0] = cam_pos.x;
     ubo.cameraPos[1] = cam_pos.y;
     ubo.cameraPos[2] = cam_pos.z;
-    SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
-    SDL_GPUBufferBinding vb = { vbuf_.SDLBuffer(), 0 };
-    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
-    SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
-    SDL_DrawGPUPrimitives(rp, (Uint32)count, 1, 0, 0);
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&pipeline_);
+    pv.BindVertexBuffer(&vbuf_);
+    pv.PushVertexUniforms(0, &ubo, sizeof(ubo));
+    pv.Draw((uint32_t)count, 1, 0, 0);
 }
 
 #endif // MD_SDL_GPU

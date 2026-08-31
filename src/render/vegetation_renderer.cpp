@@ -63,9 +63,10 @@ void VegetationRenderer::DrawBillboards(
     }
     pos_buf_.UploadInCmd(cmd, packed, count * 16);
 
-    SDL_BindGPUGraphicsPipeline(rp, bill_pipe_.SDLPipeline());
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&bill_pipe_);
     SDL_GPUBuffer* stor = pos_buf_.SDLBuffer();
-    SDL_BindGPUVertexStorageBuffers(rp, 0, &stor, 1);
+    pv.BindVertexStorageBuffers(0, &stor, 1);
 
     struct BillUBO {
         float vp[16];
@@ -85,9 +86,9 @@ void VegetationRenderer::DrawBillboards(
     ubo.sun_col[2]=sun_col3[2]; ubo.sun_col[3]=0.f;
     ubo.ambient[0]=ambient3[0]; ubo.ambient[1]=ambient3[1];
     ubo.ambient[2]=ambient3[2]; ubo.ambient[3]=0.f;
-    SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
+    pv.PushVertexUniforms(0, &ubo, sizeof(ubo));
 
-    SDL_DrawGPUPrimitives(rp, 6, (uint32_t)count, 0, 0);
+    pv.Draw(6, (uint32_t)count, 0, 0);
 }
 #else
 void VegetationRenderer::DrawBillboards(

@@ -62,6 +62,22 @@ void GpuDevice::Shutdown() {
         SDL_DestroyGPUDevice(device_);
         device_ = nullptr;
         window_ = nullptr;
+        // M1 HAL-closure fix (2026-08-31): prev_fence_ is a handle owned by
+        // the device just destroyed above -- leaving it set here is a
+        // cross-device use-after-free waiting to happen the next time
+        // Init() is called (a fresh SDL_GPUDevice*, but Submit()'s first
+        // line would still try to SDL_ReleaseGPUFence() this stale handle
+        // against the NEW device). Was latent because nothing outside a
+        // single Init-to-process-exit lifetime called Submit() without a
+        // full BeginFrame() cycle to drain it first -- surfaced by the GPU
+        // unit tests, which each Init()/Shutdown() their own isolated
+        // device and call one-shot Init() paths (e.g. TerrainWorldHeightmap
+        // ::Init()) that Submit() without ever calling BeginFrame() --
+        // confirmed via gdb backtrace: SIGSEGV inside libvulkan_intel.so,
+        // called from Submit() from the NEXT test's Init() path.
+        prev_fence_        = nullptr;
+        cmd_buffer_active_ = false;
+        frame_slot_        = 0;
     }
 }
 
@@ -129,6 +145,23 @@ void GpuDevice::Submit(SDL_GPUCommandBuffer* cmd) {
     // Timeline: record submit timestamp for latency measurement.
     GpuFrameTimeline::Get().OnSubmit();
     cmd_buffer_active_ = false;
+}
+
+SDL_GPUFence* GpuDevice::SubmitAndAcquireFence(SDL_GPUCommandBuffer* cmd) {
+    return SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+}
+
+bool GpuDevice::WaitForFence(SDL_GPUFence* fence) {
+    if (!fence) return false;
+    return SDL_WaitForGPUFences(device_, true, &fence, 1);
+}
+
+void GpuDevice::ReleaseFence(SDL_GPUFence* fence) {
+    if (fence) SDL_ReleaseGPUFence(device_, fence);
+}
+
+void GpuDevice::WaitForIdle() {
+    if (device_) SDL_WaitForGPUIdle(device_);
 }
 
 } // namespace md

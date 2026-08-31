@@ -2,6 +2,7 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/rd_device.h>
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <cstdio>
 #include <cstring>
 #include "stb_image.h"
@@ -51,8 +52,9 @@ bool RdTexture::Upload(const uint8_t* rgba8, const Desc& d) {
     if (map) memcpy(map, rgba8, upload_size);
     SDL_UnmapGPUTransferBuffer(dev, tb);
 
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+    GpuCopyPass cp;
+    cp.Begin(cmd);
     SDL_GPUTextureTransferInfo src{};
     src.transfer_buffer = tb;
     src.pixels_per_row  = d.width;
@@ -62,11 +64,11 @@ bool RdTexture::Upload(const uint8_t* rgba8, const Desc& d) {
     dst.w       = d.width;
     dst.h       = d.height;
     dst.d       = 1;
-    SDL_UploadToGPUTexture(cp, &src, &dst, false);
-    SDL_EndGPUCopyPass(cp);
+    cp.UploadTexture(src, dst, false);
+    cp.End();
     if (d.gen_mipmaps && mip_levels_ > 1)
-        SDL_GenerateMipmapsForGPUTexture(cmd, tex_);
-    SDL_SubmitGPUCommandBuffer(cmd);
+        GpuGenerateMipmaps(cmd, tex_);
+    md::GpuDevice::Get().Submit(cmd);
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 
     // Sampler: LINEAR_MIPMAP when mips>1, NEAREST when single-mip (Intel ANV workaround).

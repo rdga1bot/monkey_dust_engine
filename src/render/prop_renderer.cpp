@@ -124,16 +124,14 @@ void PropRenderer::DrawRaw(
     if (!mesh_.vbo.SDLBuffer() || !mesh_.ibo.SDLBuffer()) return;
 
     // Bind pipeline + mesh buffers once.
-    SDL_BindGPUGraphicsPipeline(rp, pipeline_.SDLPipeline());
-
-    SDL_GPUBufferBinding vb { mesh_.vbo.SDLBuffer(), 0u };
-    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&pipeline_);
+    pv.BindVertexBuffer(&mesh_.vbo);
 
     SDL_GPUIndexElementSize idx_size = mesh_.indices_u16
         ? SDL_GPU_INDEXELEMENTSIZE_16BIT
         : SDL_GPU_INDEXELEMENTSIZE_32BIT;
-    SDL_GPUBufferBinding ib { mesh_.ibo.SDLBuffer(), 0u };
-    SDL_BindGPUIndexBuffer(rp, &ib, idx_size);
+    pv.BindIndexBuffer(&mesh_.ibo, idx_size);
 
     // Bind rock+veg samplers (PropTexShared) + this instance's own texture
     // (tex_custom_ — real per-mesh diffuse when PropMesh::has_custom_tex,
@@ -146,11 +144,11 @@ void PropRenderer::DrawRaw(
             { pt.tex_veg->SDLTexture(),    pt.tex_veg->SDLSampler()    },
             { tex_custom_.SDLTexture(),    tex_custom_.SDLSampler()    },
         };
-        SDL_BindGPUFragmentSamplers(rp, 0, sb, 3);
+        pv.BindFragmentSamplers(0, sb, 3);
     }
 
     // Push fragment UBO once (sun params are shared for all props).
-    SDL_PushGPUFragmentUniformData(cmd, 0, sun32, 32);
+    pv.PushFragmentUniforms(0, sun32, 32);
 
     // Per-instance draws (no malloc, fixed UBO stack).
     PropVertUBO v_ubo;
@@ -191,8 +189,8 @@ void PropRenderer::DrawRaw(
             v_ubo.model_quat[3] = 0.f;  // w==0 -> shader falls back to model_normal tilt
         }
 
-        SDL_PushGPUVertexUniformData(cmd, 0, &v_ubo, sizeof(v_ubo));
-        SDL_DrawGPUIndexedPrimitives(rp, mesh_.index_count, 1, 0, 0, 0);
+        pv.PushVertexUniforms(0, &v_ubo, sizeof(v_ubo));
+        pv.DrawIndexed(mesh_.index_count, 1, 0, 0, 0);
     }
 #else
     (void)positions_xyz; (void)count; (void)vp16; (void)sun32;

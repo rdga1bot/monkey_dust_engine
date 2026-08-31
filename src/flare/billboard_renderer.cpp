@@ -228,12 +228,18 @@ void BillboardRenderer::RenderInPass(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer
 
     float alpha_thr = 0.5f;
 
-    SDL_BindGPUGraphicsPipeline(rp, sdl_pipeline_.SDLPipeline());
-    SDL_GPUBufferBinding vb = { sdl_vbuf_.SDLBuffer(), 0 };
-    SDL_BindGPUVertexBuffers(rp, 0, &vb, 1);
+    // GpuPassView::FromRaw (docs/HAL_CLOSURE_INVENTORY.md M1 pilot) --
+    // TEMPORARY until the caller (npc_render_draw_scene.cpp) migrates its
+    // own SDL_BeginGPURenderPass to GpuRenderPass; this rp/cmd pair still
+    // arrives raw because THIS pass is shared across many renderers'
+    // draws (one pass, not one-per-renderer), which GpuCommandBuffer's
+    // owning BeginColorPass can't wrap.
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&sdl_pipeline_);
+    pv.BindVertexBuffer(&sdl_vbuf_);
 
-    SDL_PushGPUVertexUniformData(cmd, 0, &ubo, sizeof(ubo));
-    SDL_PushGPUFragmentUniformData(cmd, 0, &alpha_thr, sizeof(alpha_thr));
+    pv.PushVertexUniforms(0, &ubo, sizeof(ubo));
+    pv.PushFragmentUniforms(0, &alpha_thr, sizeof(alpha_thr));
 
     for (int ai = 0; ai < MAX_ATLAS; ++ai) {
         int start = sdl_group_start_[ai];
@@ -245,12 +251,11 @@ void BillboardRenderer::RenderInPass(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer
             has ? (SDL_GPUTexture*)atlases_[ai].sdl_tex      : (SDL_GPUTexture*)sdl_dummy_tex_,
             has ? (SDL_GPUSampler*)atlases_[ai].sdl_sampler  : (SDL_GPUSampler*)sdl_dummy_sampler_
         };
-        SDL_BindGPUFragmentSamplers(rp, 0, &sb, 1);
-        SDL_DrawGPUPrimitives(rp,
-            (uint32_t)(end - start) * 6u,  // vertex count
-            1u,                             // instance count
-            (uint32_t)start * 6u,           // first vertex
-            0u);                            // first instance
+        pv.BindFragmentSamplers(0, &sb, 1);
+        pv.Draw((uint32_t)(end - start) * 6u,  // vertex count
+                1u,                             // instance count
+                (uint32_t)start * 6u,           // first vertex
+                0u);                            // first instance
     }
 }
 

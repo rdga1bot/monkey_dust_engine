@@ -215,14 +215,14 @@ public:
     void Shutdown(SDL_GPUDevice* dev);
     bool IsReady() const { return ready_; }
 
-    SDL_GPUTexture* AtlasTexture() const { return atlas_tex_; }
-    SDL_GPUSampler* AtlasSampler() const { return atlas_sampler_; }
-    SDL_GPUTexture* IndirectionTexture() const { return indir_tex_; }
+    SDL_GPUTexture* AtlasTexture() const { return atlas_tex_.SDLTexture(); }
+    SDL_GPUSampler* AtlasSampler() const { return atlas_tex_.SDLSampler(); }
+    SDL_GPUTexture* IndirectionTexture() const { return indir_tex_.SDLTexture(); }
     // Semantically irrelevant (Phase 4's consumer only ever reads this
     // texture via texelFetch, which ignores sampler state entirely) but
     // SDL_GPU still requires a valid non-null sampler object to bind a
     // combined-image-sampler resource -- a plain NEAREST/CLAMP sampler.
-    SDL_GPUSampler* IndirectionSampler() const { return indir_sampler_; }
+    SDL_GPUSampler* IndirectionSampler() const { return indir_tex_.SDLSampler(); }
     float PatchSize() const { return patch_size_; }
 
     // Phase 2 (CPU visibility feedback) calls this once per visible
@@ -297,7 +297,7 @@ public:
     // whatever the indirection texture points at THIS frame, and a
     // triple-buffered ring would serve a stale (2-frames-old) slot's
     // metadata for 2 out of every 3 frames whenever a page is (re)filled.
-    SDL_GPUBuffer* PageMetaSSBO() const { return page_meta_buf_; }
+    SDL_GPUBuffer* PageMetaSSBO() const { return page_meta_buf_.SDLBuffer(); }
 
     int ResidentCount() const { return resident_count_; }
     // terrain-vt Phase 3: total evictions since Init() -- 0 for the whole
@@ -353,11 +353,9 @@ private:
     // full 33MB atlas+indirection allocation.
     bool InitDisabledFallback(SDL_GPUDevice* dev);
 
-    SDL_GPUTexture*    atlas_tex_     = nullptr;
-    SDL_GPUSampler*    atlas_sampler_ = nullptr;
-    SDL_GPUTexture*    indir_tex_     = nullptr;
-    SDL_GPUSampler*    indir_sampler_ = nullptr;
-    SDL_GPUBuffer*     page_meta_buf_ = nullptr;
+    GpuTexture         atlas_tex_;
+    GpuTexture         indir_tex_;
+    GpuStaticBuffer    page_meta_buf_;
     GpuComputePipeline fill_pipeline_;
 
     SlotInfo slots_[NUM_SLOTS];

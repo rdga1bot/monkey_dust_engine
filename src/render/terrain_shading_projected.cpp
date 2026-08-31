@@ -97,22 +97,22 @@ void TerrainShadingProjected::Shutdown() {
 SDL_GPURenderPass* TerrainShadingProjected::BeginGBufferPass(SDL_GPUCommandBuffer* cmd) {
     if (!ready_) return nullptr;
 
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture     = gbuf_color_.SDLTexture();
-    ct.load_op     = SDL_GPU_LOADOP_CLEAR;
-    ct.store_op    = SDL_GPU_STOREOP_STORE;
-    ct.clear_color = { 0.f, 0.f, 0.f, 0.f };
-
-    SDL_GPUDepthStencilTargetInfo ds = {};
-    ds.texture          = gbuf_depth_.SDLTexture();
-    ds.load_op          = SDL_GPU_LOADOP_CLEAR;
-    ds.store_op         = SDL_GPU_STOREOP_STORE;
-    ds.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
-    ds.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
-    ds.clear_depth       = 1.f;
-    ds.cycle             = false;
-
-    return SDL_BeginGPURenderPass(cmd, &ct, 1, &ds);
+    // clear_color MUST be set explicitly to {0,0,0,0} -- ColorPassDesc's own
+    // default is {0,0,0,1} (alpha=1), which would silently corrupt this
+    // G-buffer's alpha channel (same class of bug caught in smaa_system.cpp;
+    // see docs/HAL_CLOSURE_PROGRESS.md's "documented lesson" on this default).
+    GpuCommandBuffer cb;
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd            = cmd;
+    cpd.color_tex      = gbuf_color_.SDLTexture();
+    cpd.depth_tex      = gbuf_depth_.SDLTexture();
+    cpd.clear_color[0] = 0.f; cpd.clear_color[1] = 0.f;
+    cpd.clear_color[2] = 0.f; cpd.clear_color[3] = 0.f;
+    cpd.clear_depth    = 1.f;
+    cpd.load_color     = false; // CLEAR
+    cpd.load_depth     = false; // CLEAR
+    cb.BeginColorPass(cpd);
+    return cb.SDLPass();
 }
 
 void TerrainShadingProjected::EndGBufferPass() {
@@ -157,7 +157,8 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
     // gate).
     if (!vt.AtlasTexture() || !vt.IndirectionTexture() || !vt.PageMetaSSBO()) return;
 
-    SDL_BindGPUGraphicsPipeline(rp, resolve_pipeline_.SDLPipeline());
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&resolve_pipeline_);
 
     ProjFragUBO fubo{};
     fubo.sun_dir_str[0] = sun.dir[0]; fubo.sun_dir_str[1] = sun.dir[1];
@@ -170,12 +171,12 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
     fubo.fog_color_near[0] = fog_color[0]; fubo.fog_color_near[1] = fog_color[1];
     fubo.fog_color_near[2] = fog_color[2]; fubo.fog_color_near[3] = fog_near;
     fubo.fog_far = fog_far;
-    SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof(fubo));
+    GpuPushFragmentUniforms(cmd, 0, &fubo, sizeof(fubo));
 
     ProjCamUBO cubo{};
     cubo.cam_pos_ws[0] = cam_x; cubo.cam_pos_ws[1] = cam_y;
     cubo.cam_pos_ws[2] = cam_z; cubo.cam_pos_ws[3] = 0.f;
-    SDL_PushGPUFragmentUniformData(cmd, 1, &cubo, sizeof(cubo));
+    GpuPushFragmentUniforms(cmd, 1, &cubo, sizeof(cubo));
 
     // set=2: same 4 shared ground samplers the normal forward terrain draw
     // binds (TerrainPatchRenderer::DrawBatch).
@@ -189,19 +190,19 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
     for (int i = 0; i < 4; ++i) {
         if (!ground_bindings[i].texture || !ground_bindings[i].sampler) return;
     }
-    SDL_BindGPUFragmentSamplers(rp, 0, ground_bindings, 4);
+    pv.BindFragmentSamplers(0, ground_bindings, 4);
     // Single remaining SSBO (vtPageMeta) -- zoneGroundLayers moved to a
     // texture (binding=8, bound below with the other samplers) since
     // 2026-08-09, see ZoneGroundLayersTexture's header doc comment.
     SDL_GPUBuffer* storage_bufs[1] = { vt.PageMetaSSBO() };
-    SDL_BindGPUFragmentStorageBuffers(rp, 0, storage_bufs, 1);
+    pv.BindFragmentStorageBuffers(0, storage_bufs, 1);
 
     // set=1: this class's own G-buffer (packed world-pos/normal + dedicated depth).
     SDL_GPUTextureSamplerBinding gbuf_bindings[2] = {
         { gbuf_color_.SDLTexture(), gbuf_color_.SDLSampler() },
         { gbuf_depth_.SDLTexture(), gbuf_depth_.SDLSampler() },
     };
-    SDL_BindGPUFragmentSamplers(rp, 4, gbuf_bindings, 2);
+    pv.BindFragmentSamplers(4, gbuf_bindings, 2);
 
     // terrain-vt Phase 4: indirection + physical atlas -- bindings 6/7,
     // continuing the same contiguous sampler run (see terrain_shading_
@@ -211,7 +212,7 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
         { vt.IndirectionTexture(), vt.IndirectionSampler() },
         { vt.AtlasTexture(),       vt.AtlasSampler() },
     };
-    SDL_BindGPUFragmentSamplers(rp, 6, vt_bindings, 2);
+    pv.BindFragmentSamplers(6, vt_bindings, 2);
 
     // Zone ground-layer lookup -- binding=8, texture not SSBO since
     // 2026-08-09 (Filament-blocker reduction, see ZoneGroundLayersTexture's
@@ -219,8 +220,8 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUC
     SDL_GPUTextureSamplerBinding zone_binding[1] = {
         { ground.ZoneGroundLayersTexture(), ground.ZoneGroundLayersSampler() },
     };
-    SDL_BindGPUFragmentSamplers(rp, 8, zone_binding, 1);
+    pv.BindFragmentSamplers(8, zone_binding, 1);
 
-    SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+    pv.Draw(3, 1, 0, 0);
 }
 #endif

@@ -48,11 +48,11 @@ public:
                    SDL_GPUTexture*       swapchain_tex,
                    int sw, int sh);
 
-    SDL_GPUTexture* MotionTex()     const { return motion_rt_; }
+    SDL_GPUTexture* MotionTex()     const { return motion_rt_.SDLTexture(); }
     // Owned scene color RT (RGBA16F full-res).
     // Non-null only when motion blur is enabled — use as render target for the
     // scene pass when BloomSystem is disabled, then pass to ApplyPass.
-    SDL_GPUTexture* SceneColorTex() const { return scene_color_; }
+    SDL_GPUTexture* SceneColorTex() const { return scene_color_.SDLTexture(); }
     bool IsEnabled()                const { return enabled_; }
 
     // Movement scale passed to the blur shader (default = {0.5,0.5}).
@@ -72,10 +72,10 @@ private:
     GpuPipeline    prep_pipeline_;    // motion_prep.frag
     GpuPipeline    blur_pipeline_;    // motion_blur.frag
 
-    SDL_GPUTexture* motion_rt_   = nullptr;  // RGBA8_UNORM half-res
-    SDL_GPUTexture* scene_color_ = nullptr;  // RGBA16F full-res (own scene RT, no bloom)
-    SDL_GPUSampler* point_samp_  = nullptr;  // NEAREST for motion read
-    SDL_GPUSampler* linear_samp_ = nullptr;  // LINEAR for scene color read
+    GpuColorTexture motion_rt_;    // RGBA8_UNORM half-res
+    GpuColorTexture scene_color_;  // RGBA16F full-res (own scene RT, no bloom)
+    GpuSampler      point_samp_;   // NEAREST for motion read
+    GpuSampler      linear_samp_;  // LINEAR for scene color read
 
     int half_w_ = 0, half_h_ = 0;
     int full_w_ = 0, full_h_ = 0;

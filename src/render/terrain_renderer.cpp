@@ -11,6 +11,7 @@
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #endif
 
 bool TerrainRenderer::Init() {
@@ -395,7 +396,8 @@ void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uin
     SDL_UnmapGPUTransferBuffer(dev, tb);
 
     SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
-    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    GpuCopyPass cp;
+    cp.Begin(cmd);
     SDL_GPUTextureTransferInfo src{};
     src.transfer_buffer = tb;
     src.pixels_per_row  = (Uint32)W;
@@ -403,8 +405,8 @@ void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uin
     SDL_GPUTextureRegion dst{};
     dst.texture = zone_layers_tex_;
     dst.w = (Uint32)W; dst.h = (Uint32)H; dst.d = 1;
-    SDL_UploadToGPUTexture(cp, &src, &dst, false);
-    SDL_EndGPUCopyPass(cp);
+    cp.UploadTexture(src, dst, false);
+    cp.End();
     md::GpuDevice::Get().Submit(cmd);
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 #else

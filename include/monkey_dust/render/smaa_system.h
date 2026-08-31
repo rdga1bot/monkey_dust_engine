@@ -41,9 +41,9 @@ private:
     SDL_GPUDevice* dev_        = nullptr;
     int            w_ = 0, h_ = 0;
 
-    SDL_GPUTexture* rt_edges_   = nullptr;  // RGBA8, pass 1 output
-    SDL_GPUTexture* rt_blend_   = nullptr;  // RGBA8, pass 2 output
-    SDL_GPUSampler* linear_sampler_ = nullptr;
+    GpuColorTexture rt_edges_;  // RGBA8, pass 1 output
+    GpuColorTexture rt_blend_;  // RGBA8, pass 2 output
+    GpuSampler      linear_sampler_;
 
     GpuPipeline edge_pipe_;   // pass 1: luma edge detect
     GpuPipeline blend_pipe_;  // pass 2: blend weight gather

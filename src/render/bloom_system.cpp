@@ -12,33 +12,6 @@ BloomSystem& BloomSystem::Get() {
     return inst;
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-static SDL_GPUTexture* CreateRT(SDL_GPUDevice* dev, int w, int h,
-                                SDL_GPUTextureFormat fmt) {
-    SDL_GPUTextureCreateInfo ti = {};
-    ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-    ti.width                = (Uint32)w;
-    ti.height               = (Uint32)h;
-    ti.layer_count_or_depth = 1;
-    ti.num_levels           = 1;
-    ti.format               = fmt;
-    ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
-                            | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    return SDL_CreateGPUTexture(dev, &ti);
-}
-
-static SDL_GPUSampler* CreateLinearSampler(SDL_GPUDevice* dev) {
-    SDL_GPUSamplerCreateInfo si = {};
-    si.min_filter     = SDL_GPU_FILTER_LINEAR;
-    si.mag_filter     = SDL_GPU_FILTER_LINEAR;
-    si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-    si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    return SDL_CreateGPUSampler(dev, &si);
-}
-
 // Build a fullscreen-triangle pipeline targeting a specific format (or swapchain).
 static bool MakeFullscreenPipe(SDL_GPUTextureFormat fmt,
                                 const char* frag,
@@ -76,25 +49,33 @@ void BloomSystem::Init(SDL_GPUDevice* dev, int w, int h) {
     w_  = w;  h_  = h;
     qw_ = w / 4; qh_ = h / 4;
 
+    const SDL_GPUTextureUsageFlags rt_usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
+                                             | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+
     // Scene color RT (RGBA16F full-res — scene renders here instead of swapchain)
-    scene_color_ = CreateRT(dev, w, h, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT);
-    if (!scene_color_) {
+    if (!scene_color_.Init(w, h, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, rt_usage)) {
         MD_LOG(MD_LOG_WARNING, "BloomSystem: scene_color create failed: %s", SDL_GetError());
         return;
     }
 
     // Quarter-res bloom textures (RGBA16F)
-    bloom_src_  = CreateRT(dev, qw_, qh_, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT);
-    bloom_temp_ = CreateRT(dev, qw_, qh_, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT);
-    bloom_out_  = CreateRT(dev, qw_, qh_, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT);
-    if (!bloom_src_ || !bloom_temp_ || !bloom_out_) {
+    bool rt_ok = bloom_src_.Init(qw_, qh_, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, rt_usage);
+    rt_ok &= bloom_temp_.Init(qw_, qh_, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, rt_usage);
+    rt_ok &= bloom_out_.Init(qw_, qh_, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, rt_usage);
+    if (!rt_ok) {
         MD_LOG(MD_LOG_WARNING, "BloomSystem: bloom RT create failed");
         return;
     }
 
-    scene_sampler_ = CreateLinearSampler(dev);
-    bloom_sampler_ = CreateLinearSampler(dev);
-    if (!scene_sampler_ || !bloom_sampler_) {
+    GpuSamplerDesc linear_sdesc;
+    linear_sdesc.min_filter = GpuSamplerDesc::Filter::LINEAR;
+    linear_sdesc.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+    linear_sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    linear_sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+    linear_sdesc.gen_mipmap = false;
+    bool samp_ok = scene_sampler_.Init(linear_sdesc);
+    samp_ok &= bloom_sampler_.Init(linear_sdesc);
+    if (!samp_ok) {
         MD_LOG(MD_LOG_WARNING, "BloomSystem: sampler create failed");
         return;
     }
@@ -128,7 +109,7 @@ void BloomSystem::Init(SDL_GPUDevice* dev, int w, int h) {
 
 SDL_GPUColorTargetInfo BloomSystem::SceneColorTargetInfo() const {
     SDL_GPUColorTargetInfo ct = {};
-    ct.texture     = scene_color_;
+    ct.texture     = scene_color_.SDLTexture();
     ct.load_op     = SDL_GPU_LOADOP_CLEAR;
     ct.store_op    = SDL_GPU_STOREOP_STORE;
     ct.clear_color = { 0.f, 0.f, 0.f, 1.f };
@@ -138,26 +119,28 @@ SDL_GPUColorTargetInfo BloomSystem::SceneColorTargetInfo() const {
 // ── ComputePass ───────────────────────────────────────────────────────────────
 
 // Internal: begin + draw + end a fullscreen pass on a quarter-res target
-static void QtrPass(SDL_GPUCommandBuffer* cmd, SDL_GPUGraphicsPipeline* pipe,
+static void QtrPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipe,
                     SDL_GPUTexture* target, int tw, int th,
                     const SDL_GPUTextureSamplerBinding* sbs, int nsbs,
                     const void* ubo, uint32_t ubo_sz) {
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture  = target;
-    ct.load_op  = SDL_GPU_LOADOP_DONT_CARE;
-    ct.store_op = SDL_GPU_STOREOP_STORE;
-
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    GpuCommandBuffer cb;
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd             = cmd;
+    cpd.color_tex       = target;
+    cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE (full-quad overwrite follows)
+    cb.BeginColorPass(cpd);
+    SDL_GPURenderPass* pass = cb.SDLPass();
     if (!pass) return;
 
-    SDL_BindGPUGraphicsPipeline(pass, pipe);
-    if (nsbs > 0) SDL_BindGPUFragmentSamplers(pass, 0, sbs, (Uint32)nsbs);
-    if (ubo)      SDL_PushGPUFragmentUniformData(cmd, 0, ubo, ubo_sz);
+    GpuPassView pv = GpuPassView::FromRaw(pass, cmd);
+    pv.BindPipeline(pipe);
+    if (nsbs > 0) pv.BindFragmentSamplers(0, sbs, (uint32_t)nsbs);
+    if (ubo)      pv.PushFragmentUniforms(0, ubo, ubo_sz);
 
     SDL_GPUViewport vp = { 0.f, 0.f, (float)tw, (float)th, 0.f, 1.f };
     SDL_SetGPUViewport(pass, &vp);
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
-    SDL_EndGPURenderPass(pass);
+    pv.Draw(3, 1, 0, 0);
+    cb.EndPass();
 }
 
 void BloomSystem::ComputePass(SDL_GPUCommandBuffer* cmd) {
@@ -169,25 +152,25 @@ void BloomSystem::ComputePass(SDL_GPUCommandBuffer* cmd) {
             1.f / (float)w_, 1.f / (float)h_,   // full-res pixel size
             bloom_threshold, 0.f
         };
-        SDL_GPUTextureSamplerBinding sb = { scene_color_, scene_sampler_ };
-        QtrPass(cmd, downsample_pipe_.SDLPipeline(),
-                bloom_src_, qw_, qh_, &sb, 1, &ubo, sizeof(ubo));
+        SDL_GPUTextureSamplerBinding sb = { scene_color_.SDLTexture(), scene_sampler_.SDLSampler() };
+        QtrPass(cmd, &downsample_pipe_,
+                bloom_src_.SDLTexture(), qw_, qh_, &sb, 1, &ubo, sizeof(ubo));
     }
 
     // ── 2. Gaussian5 horizontal: bloom_src → bloom_temp ──────────────────────
     {
         BloomBlurUBO ubo = { 1.f/(float)qw_, 1.f/(float)qh_, {0.f,0.f} };
-        SDL_GPUTextureSamplerBinding sb = { bloom_src_, bloom_sampler_ };
-        QtrPass(cmd, blur_h_pipe_.SDLPipeline(),
-                bloom_temp_, qw_, qh_, &sb, 1, &ubo, sizeof(ubo));
+        SDL_GPUTextureSamplerBinding sb = { bloom_src_.SDLTexture(), bloom_sampler_.SDLSampler() };
+        QtrPass(cmd, &blur_h_pipe_,
+                bloom_temp_.SDLTexture(), qw_, qh_, &sb, 1, &ubo, sizeof(ubo));
     }
 
     // ── 3. Gaussian5 vertical: bloom_temp → bloom_out ────────────────────────
     {
         BloomBlurUBO ubo = { 1.f/(float)qw_, 1.f/(float)qh_, {0.f,0.f} };
-        SDL_GPUTextureSamplerBinding sb = { bloom_temp_, bloom_sampler_ };
-        QtrPass(cmd, blur_v_pipe_.SDLPipeline(),
-                bloom_out_, qw_, qh_, &sb, 1, &ubo, sizeof(ubo));
+        SDL_GPUTextureSamplerBinding sb = { bloom_temp_.SDLTexture(), bloom_sampler_.SDLSampler() };
+        QtrPass(cmd, &blur_v_pipe_,
+                bloom_out_.SDLTexture(), qw_, qh_, &sb, 1, &ubo, sizeof(ubo));
     }
 }
 
@@ -198,22 +181,24 @@ void BloomSystem::CompositePass(SDL_GPUCommandBuffer* cmd,
     if (!enabled_ || !swapchain_tex) return;
 
     // Open CLEAR pass on swapchain
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture     = swapchain_tex;
-    ct.load_op     = SDL_GPU_LOADOP_CLEAR;
-    ct.store_op    = SDL_GPU_STOREOP_STORE;
-    ct.clear_color = { 0.f, 0.f, 0.f, 1.f };
+    GpuCommandBuffer cb;
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd            = cmd;
+    cpd.color_tex      = swapchain_tex;
+    cpd.clear_color[0] = 0.f; cpd.clear_color[1] = 0.f;
+    cpd.clear_color[2] = 0.f; cpd.clear_color[3] = 1.f;
+    cpd.load_color     = false; // CLEAR, matches original zero-inited ct exactly
+    cb.BeginColorPass(cpd);
+    if (!cb.SDLPass()) return;
+    SDL_GPURenderPass* pass = cb.SDLPass();
 
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
-    if (!pass) return;
-
-    SDL_BindGPUGraphicsPipeline(pass, composite_pipe_.SDLPipeline());
+    cb.BindPipeline(&composite_pipe_);
 
     SDL_GPUTextureSamplerBinding sbs[2] = {
-        { scene_color_, scene_sampler_ },
-        { bloom_out_,   bloom_sampler_ }
+        { scene_color_.SDLTexture(), scene_sampler_.SDLSampler() },
+        { bloom_out_.SDLTexture(),   bloom_sampler_.SDLSampler() }
     };
-    SDL_BindGPUFragmentSamplers(pass, 0, sbs, 2);
+    cb.BindFragmentSamplers(0, sbs, 2);
 
     BloomCompositeUBO ubo = {};
     ubo.bloom_intensity = bloom_intensity;
@@ -223,13 +208,15 @@ void BloomSystem::CompositePass(SDL_GPUCommandBuffer* cmd,
     for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++)
             ubo.eq[i][j] = grade_eq[i][j];
-    SDL_PushGPUFragmentUniformData(cmd, 0, &ubo, sizeof(ubo));
+    cb.PushFragmentUniforms(0, &ubo, sizeof(ubo));
 
+    // SetGPUViewport has no HAL wrapper yet (0% coverage per
+    // docs/HAL_CLOSURE_INVENTORY.md §2.3) -- out of scope for this group.
     SDL_GPUViewport vp = { 0.f, 0.f, (float)sw, (float)sh, 0.f, 1.f };
     SDL_SetGPUViewport(pass, &vp);
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    cb.Draw(3);
 
-    SDL_EndGPURenderPass(pass);
+    cb.EndPass();
 }
 
 // ── SetBiomeGrade (VBfA-R5) ───────────────────────────────────────────────────
@@ -293,10 +280,8 @@ void BloomSystem::Shutdown() {
     blur_h_pipe_.Destroy();
     blur_v_pipe_.Destroy();
     composite_pipe_.Destroy();
-    auto rt = [&](SDL_GPUTexture*& t){ if(t){SDL_ReleaseGPUTexture(dev_,t);t=nullptr;} };
-    auto sm = [&](SDL_GPUSampler*& s){ if(s){SDL_ReleaseGPUSampler(dev_,s);s=nullptr;} };
-    rt(scene_color_); rt(bloom_src_); rt(bloom_temp_); rt(bloom_out_);
-    sm(scene_sampler_); sm(bloom_sampler_);
+    scene_color_.Shutdown(); bloom_src_.Shutdown(); bloom_temp_.Shutdown(); bloom_out_.Shutdown();
+    scene_sampler_.Shutdown(); bloom_sampler_.Shutdown();
     dev_ = nullptr; enabled_ = false;
 }
 

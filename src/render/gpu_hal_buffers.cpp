@@ -125,3 +125,59 @@ void GpuDepthTexture::Shutdown() {
 void GpuDepthTexture::Bind(uint32_t unit) const {
     (void)unit; // SDL_GPU: binding via SDL_BindGPUFragmentSamplers in render pass (Step 6)
 }
+
+// ── GpuSampler ────────────────────────────────────────────────────────────────
+
+#ifdef MD_SDL_GPU
+bool GpuSampler::Init(const GpuSamplerDesc& desc) {
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (!dev) return false;
+    sdl_sampler_ = CreateSDLSampler(dev, desc);
+    if (!sdl_sampler_) {
+        MD_LOG(MD_LOG_WARNING, "[GpuSampler] SDL_CreateGPUSampler failed: %s", SDL_GetError());
+        return false;
+    }
+    return true;
+}
+
+void GpuSampler::Shutdown() {
+    if (sdl_sampler_) {
+        SDL_ReleaseGPUSampler(md::GpuDevice::Get().SDLDevice(), sdl_sampler_);
+        sdl_sampler_ = nullptr;
+    }
+}
+
+// ── GpuColorTexture ───────────────────────────────────────────────────────────
+
+bool GpuColorTexture::Init(int w, int h, SDL_GPUTextureFormat format,
+                            SDL_GPUTextureUsageFlags usage, uint32_t num_levels) {
+    w_ = w; h_ = h;
+    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    if (!dev) return false;
+
+    SDL_GPUTextureCreateInfo ti = {};
+    ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+    ti.format               = format;
+    ti.usage                = usage;
+    ti.width                = (Uint32)w;
+    ti.height               = (Uint32)h;
+    ti.layer_count_or_depth = 1;
+    ti.num_levels           = num_levels;
+    sdl_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    if (!sdl_tex_) {
+        MD_LOG(MD_LOG_WARNING, "[GpuColorTexture] SDL_CreateGPUTexture failed: %s", SDL_GetError());
+        return false;
+    }
+    md::GpuResourceTracker::Get().OnTextureCreate();
+    return true;
+}
+
+void GpuColorTexture::Shutdown() {
+    if (sdl_tex_) {
+        SDL_ReleaseGPUTexture(md::GpuDevice::Get().SDLDevice(), sdl_tex_);
+        sdl_tex_ = nullptr;
+        md::GpuResourceTracker::Get().OnTextureDestroy();
+    }
+    w_ = h_ = 0;
+}
+#endif // MD_SDL_GPU

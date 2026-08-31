@@ -35,8 +35,8 @@ public:
     void Shutdown();
 
     // Scene color RT — render the entire scene here (instead of swapchain).
-    SDL_GPUTexture* SceneColorTex()     const { return scene_color_; }
-    SDL_GPUSampler* SceneColorSampler() const { return scene_sampler_; }
+    SDL_GPUTexture* SceneColorTex()     const { return scene_color_.SDLTexture(); }
+    SDL_GPUSampler* SceneColorSampler() const { return scene_sampler_.SDLSampler(); }
 
     // Helper: fill a SDL_GPUColorTargetInfo for the scene color RT (CLEAR).
     SDL_GPUColorTargetInfo SceneColorTargetInfo() const;
@@ -81,13 +81,13 @@ private:
     int w_ = 0, h_ = 0;    // full-res
     int qw_ = 0, qh_ = 0;  // quarter-res
 
-    SDL_GPUTexture* scene_color_ = nullptr;  // RGBA16F full-res  — scene renders here
-    SDL_GPUTexture* bloom_src_   = nullptr;  // RGBA16F qtr-res   — threshold downsample
-    SDL_GPUTexture* bloom_temp_  = nullptr;  // RGBA16F qtr-res   — H blur intermediate
-    SDL_GPUTexture* bloom_out_   = nullptr;  // RGBA16F qtr-res   — final V blur
+    GpuColorTexture scene_color_;  // RGBA16F full-res  — scene renders here
+    GpuColorTexture bloom_src_;    // RGBA16F qtr-res   — threshold downsample
+    GpuColorTexture bloom_temp_;   // RGBA16F qtr-res   — H blur intermediate
+    GpuColorTexture bloom_out_;    // RGBA16F qtr-res   — final V blur
 
-    SDL_GPUSampler* scene_sampler_ = nullptr;  // LINEAR CLAMP for scene reads
-    SDL_GPUSampler* bloom_sampler_ = nullptr;  // LINEAR CLAMP for bloom reads
+    GpuSampler scene_sampler_;  // LINEAR CLAMP for scene reads
+    GpuSampler bloom_sampler_;  // LINEAR CLAMP for bloom reads
 
     GpuPipeline downsample_pipe_;  // shaders/bloom_downsample.frag
     GpuPipeline blur_h_pipe_;      // shaders/bloom_blur_h.frag

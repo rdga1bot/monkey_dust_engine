@@ -53,6 +53,27 @@ public:
     // Submit the command buffer and acquire a fence for next-frame sync.
     void Submit(SDL_GPUCommandBuffer* cmd);
 
+    // Synchronous one-shot fence cycle -- distinct from Submit() above,
+    // which is deliberately async (fence released a whole frame late in
+    // BeginFrame()). Callers that need this cmd's GPU work done NOW (bake
+    // passes, debug dumps, screenshot readback) submit via
+    // SubmitAndAcquireFence, then WaitForFence/ReleaseFence themselves in
+    // that exact order -- kept as 3 separate 1:1 wrappers, not one fused
+    // helper, because real callers interleave real work between the
+    // steps (sync-timing instrumentation, error-path cleanup that must
+    // run before vs. after the wait) that a fused helper would have to
+    // either drop or grow parameters for.
+    SDL_GPUFence* SubmitAndAcquireFence(SDL_GPUCommandBuffer* cmd);
+    bool          WaitForFence(SDL_GPUFence* fence);
+    void          ReleaseFence(SDL_GPUFence* fence);
+
+    // Block until all GPU work on this device has completed. Real,
+    // narrow use: a one-shot Init() path needs its uploads visible before
+    // treating a resource as ready, and cannot rely on next-frame fencing
+    // because there might not be a "next frame" yet (e.g. before the
+    // interactive loop's first real render). Not a per-frame call.
+    void WaitForIdle();
+
     // terrain-perf-measure (2026-08-12): opt-in synchronous GPU timing.
     // Normal Submit() is deliberately async (fence released a whole frame
     // late, in BeginFrame() -- lets CPU and GPU overlap). That's exactly

@@ -106,7 +106,9 @@ void GpuCommandBuffer::BeginColorPass(const ColorPassDesc& desc) {
     color_info.texture     = desc.color_tex;
     color_info.clear_color = { desc.clear_color[0], desc.clear_color[1],
                                desc.clear_color[2], desc.clear_color[3] };
-    color_info.load_op  = desc.load_color ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
+    color_info.load_op  = desc.color_dont_care ? SDL_GPU_LOADOP_DONT_CARE
+                        : desc.load_color       ? SDL_GPU_LOADOP_LOAD
+                                                : SDL_GPU_LOADOP_CLEAR;
     color_info.store_op = SDL_GPU_STOREOP_STORE;
     color_info.cycle    = false;
 
@@ -115,7 +117,8 @@ void GpuCommandBuffer::BeginColorPass(const ColorPassDesc& desc) {
         depth_info.texture          = desc.depth_tex;
         depth_info.clear_depth      = desc.clear_depth;
         depth_info.load_op          = desc.load_depth ? SDL_GPU_LOADOP_LOAD : SDL_GPU_LOADOP_CLEAR;
-        depth_info.store_op         = SDL_GPU_STOREOP_STORE;
+        depth_info.store_op         = desc.depth_discard_after ? SDL_GPU_STOREOP_DONT_CARE
+                                                                 : SDL_GPU_STOREOP_STORE;
         depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
         depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
         depth_info.cycle            = false;
@@ -140,6 +143,80 @@ void GpuCommandBuffer::PushVertexUniforms(uint32_t slot, const void* data, uint3
 void GpuCommandBuffer::PushFragmentUniforms(uint32_t slot, const void* data, uint32_t size_bytes) {
     if (sdl_cmd_)
         SDL_PushGPUFragmentUniformData(sdl_cmd_, slot, data, size_bytes);
+}
+
+// ── GpuPassView — non-owning, see gpu_hal.h doc comment ──────────────────────
+
+void GpuPassView::BindPipeline(GpuPipeline* pipeline) {
+    if (sdl_pass_ && pipeline) SDL_BindGPUGraphicsPipeline(sdl_pass_, pipeline->SDLPipeline());
+}
+
+void GpuPassView::BindVertexBuffer(GpuVertexBuffer* buf) {
+    if (!sdl_pass_ || !buf || !buf->SDLBuffer()) return;
+    SDL_GPUBufferBinding binding = {};
+    binding.buffer = buf->SDLBuffer();
+    binding.offset = 0;
+    SDL_BindGPUVertexBuffers(sdl_pass_, 0, &binding, 1);
+}
+
+void GpuPassView::BindVertexBuffer(const GpuStaticBuffer* buf) {
+    if (!sdl_pass_ || !buf || !buf->SDLBuffer()) return;
+    SDL_GPUBufferBinding binding = {};
+    binding.buffer = buf->SDLBuffer();
+    binding.offset = 0;
+    SDL_BindGPUVertexBuffers(sdl_pass_, 0, &binding, 1);
+}
+
+void GpuPassView::BindIndexBuffer(const GpuStaticBuffer* buf, SDL_GPUIndexElementSize elem_size) {
+    if (!sdl_pass_ || !buf || !buf->SDLBuffer()) return;
+    SDL_GPUBufferBinding binding = {};
+    binding.buffer = buf->SDLBuffer();
+    binding.offset = 0;
+    SDL_BindGPUIndexBuffer(sdl_pass_, &binding, elem_size);
+}
+
+void GpuPassView::BindFragmentSamplers(uint32_t first_slot,
+                                        const SDL_GPUTextureSamplerBinding* bindings,
+                                        uint32_t count) {
+    if (sdl_pass_) SDL_BindGPUFragmentSamplers(sdl_pass_, first_slot, bindings, count);
+}
+
+void GpuPassView::BindVertexSamplers(uint32_t first_slot,
+                                      const SDL_GPUTextureSamplerBinding* bindings,
+                                      uint32_t count) {
+    if (sdl_pass_) SDL_BindGPUVertexSamplers(sdl_pass_, first_slot, bindings, count);
+}
+
+void GpuPassView::BindFragmentStorageBuffers(uint32_t first_slot,
+                                              SDL_GPUBuffer* const* storage_buffers,
+                                              uint32_t count) {
+    if (sdl_pass_) SDL_BindGPUFragmentStorageBuffers(sdl_pass_, first_slot, storage_buffers, count);
+}
+
+void GpuPassView::BindVertexStorageBuffers(uint32_t first_slot,
+                                            SDL_GPUBuffer* const* storage_buffers,
+                                            uint32_t count) {
+    if (sdl_pass_) SDL_BindGPUVertexStorageBuffers(sdl_pass_, first_slot, storage_buffers, count);
+}
+
+void GpuPassView::PushVertexUniforms(uint32_t slot, const void* data, uint32_t size_bytes) {
+    if (sdl_cmd_) SDL_PushGPUVertexUniformData(sdl_cmd_, slot, data, size_bytes);
+}
+
+void GpuPassView::PushFragmentUniforms(uint32_t slot, const void* data, uint32_t size_bytes) {
+    if (sdl_cmd_) SDL_PushGPUFragmentUniformData(sdl_cmd_, slot, data, size_bytes);
+}
+
+void GpuPassView::Draw(uint32_t vertex_count, uint32_t instance_count,
+                        uint32_t first_vertex, uint32_t first_instance) {
+    if (sdl_pass_) SDL_DrawGPUPrimitives(sdl_pass_, vertex_count, instance_count, first_vertex, first_instance);
+}
+
+void GpuPassView::DrawIndexed(uint32_t index_count, uint32_t instance_count,
+                               uint32_t first_index, int32_t vertex_offset,
+                               uint32_t first_instance) {
+    if (sdl_pass_) SDL_DrawGPUIndexedPrimitives(sdl_pass_, index_count, instance_count,
+                                                 first_index, vertex_offset, first_instance);
 }
 
 void GpuRenderPass::BeginDepthOnly(SDL_GPUCommandBuffer* cmd, const DepthDesc& desc) {
@@ -221,7 +298,7 @@ void GpuComputePass::Begin(GpuComputePipeline* pipeline, const StorageBindings& 
     if (sdl_cmd_ && pipeline && pipeline->sdl_pipeline_) {
         sdl_pass_ = SDL_BeginGPUComputePass(
             sdl_cmd_,
-            nullptr, 0,
+            bindings.rw_textures, bindings.num_rw_textures,
             bindings.rw_buffers, bindings.num_rw_buffers
         );
         if (sdl_pass_) {
@@ -256,6 +333,10 @@ void GpuComputePass::SetUniformVec4Array(int loc, const float* v4, int count) {
 void GpuComputePass::PushUniforms(uint32_t slot, const void* data, uint32_t size_bytes) {
     if (sdl_cmd_)
         SDL_PushGPUComputeUniformData(sdl_cmd_, slot, data, size_bytes);
+}
+
+void GpuComputePass::BindSamplers(uint32_t first_slot, const SDL_GPUTextureSamplerBinding* bindings, uint32_t count) {
+    if (sdl_pass_) SDL_BindGPUComputeSamplers(sdl_pass_, first_slot, bindings, count);
 }
 #endif
 

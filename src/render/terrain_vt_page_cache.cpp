@@ -2,6 +2,7 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/terrain_world_heightmap.h>
 #include <monkey_dust/render/terrain_renderer.h>
+#include <monkey_dust/render/gpu_device.h>
 #include <monkey_dust/platform/md_log.h>
 #include <cstring>
 #include <cstdlib>
@@ -80,32 +81,22 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
     // evsm_shadow.cpp's own doc comment: Intel ANV crashes on
     // SDL_CreateGPUTexture with a compressed format + COMPUTE_STORAGE_WRITE).
     {
-        SDL_GPUTextureCreateInfo ti{};
-        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        ti.width                = (Uint32)(SLOTS_X * PAGE_TEXELS);
-        ti.height                = (Uint32)(SLOTS_Y * PAGE_TEXELS);
-        ti.layer_count_or_depth = 1;
-        ti.num_levels           = 1;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-        ti.usage                = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE
-                                 | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        atlas_tex_ = SDL_CreateGPUTexture(dev, &ti);
-        if (!atlas_tex_) {
+        GpuSamplerDesc atlas_sdesc;
+        atlas_sdesc.min_filter = GpuSamplerDesc::Filter::LINEAR;
+        atlas_sdesc.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+        atlas_sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        atlas_sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        atlas_sdesc.gen_mipmap = false;
+        if (!atlas_tex_.InitCompute((int)(SLOTS_X * PAGE_TEXELS), (int)(SLOTS_Y * PAGE_TEXELS),
+                                     SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                                     SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                                     1, atlas_sdesc)) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] atlas texture create failed: %s", SDL_GetError());
             return false;
         }
-    }
-    {
-        SDL_GPUSamplerCreateInfo si{};
-        si.min_filter     = SDL_GPU_FILTER_LINEAR;
-        si.mag_filter     = SDL_GPU_FILTER_LINEAR;
-        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        atlas_sampler_ = SDL_CreateGPUSampler(dev, &si);
-        if (!atlas_sampler_) {
+        if (!atlas_tex_.SDLSampler()) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] atlas sampler create failed: %s", SDL_GetError());
+            atlas_tex_.Shutdown();
             return false;
         }
     }
@@ -115,31 +106,22 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
     // (SDL_UploadToGPUTexture), never a compute imageStore target, so no
     // COMPUTE_STORAGE_WRITE usage needed here.
     {
-        SDL_GPUTextureCreateInfo ti{};
-        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        ti.width                = (Uint32)INDIR_SIZE;
-        ti.height               = (Uint32)INDIR_SIZE;
-        ti.layer_count_or_depth = 1;
-        ti.num_levels           = 1;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R32_UINT;
-        ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        indir_tex_ = SDL_CreateGPUTexture(dev, &ti);
-        if (!indir_tex_) {
+        GpuSamplerDesc indir_sdesc;
+        indir_sdesc.min_filter = GpuSamplerDesc::Filter::NEAREST;
+        indir_sdesc.mag_filter = GpuSamplerDesc::Filter::NEAREST;
+        indir_sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        indir_sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        indir_sdesc.gen_mipmap = false;
+        if (!indir_tex_.InitCompute((int)INDIR_SIZE, (int)INDIR_SIZE, SDL_GPU_TEXTUREFORMAT_R32_UINT,
+                                     SDL_GPU_TEXTUREUSAGE_SAMPLER, 1, indir_sdesc)) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] indirection texture create failed: %s", SDL_GetError());
+            atlas_tex_.Shutdown();
             return false;
         }
-    }
-    {
-        SDL_GPUSamplerCreateInfo si{};
-        si.min_filter     = SDL_GPU_FILTER_NEAREST;
-        si.mag_filter     = SDL_GPU_FILTER_NEAREST;
-        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        indir_sampler_ = SDL_CreateGPUSampler(dev, &si);
-        if (!indir_sampler_) {
+        if (!indir_tex_.SDLSampler()) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] indirection sampler create failed: %s", SDL_GetError());
+            indir_tex_.Shutdown();
+            atlas_tex_.Shutdown();
             return false;
         }
     }
@@ -162,18 +144,19 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
             if (map) memcpy(map, init_data, tbi.size);
             SDL_UnmapGPUTransferBuffer(dev, tb);
 
-            SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-            SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+            SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+            GpuCopyPass cp;
+            cp.Begin(cmd);
             SDL_GPUTextureTransferInfo src{};
             src.transfer_buffer = tb;
             src.pixels_per_row  = (Uint32)INDIR_SIZE;
             src.rows_per_layer  = (Uint32)INDIR_SIZE;
             SDL_GPUTextureRegion dst{};
-            dst.texture = indir_tex_;
+            dst.texture = indir_tex_.SDLTexture();
             dst.w = (Uint32)INDIR_SIZE; dst.h = (Uint32)INDIR_SIZE; dst.d = 1;
-            SDL_UploadToGPUTexture(cp, &src, &dst, false);
-            SDL_EndGPUCopyPass(cp);
-            SDL_SubmitGPUCommandBuffer(cmd);
+            cp.UploadTexture(src, dst, false);
+            cp.End();
+            md::GpuDevice::Get().Submit(cmd);
             SDL_ReleaseGPUTransferBuffer(dev, tb);
         }
         free(init_data);
@@ -189,19 +172,12 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
     // doesn't actually need this one, but mirrors the flag set) and a
     // fragment-storage-buffer bind (terrain_shading_screenspace.frag).
     {
-        SDL_GPUBufferCreateInfo bi{};
-        bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
-        bi.size  = (Uint32)(NUM_SLOTS * 4 * sizeof(float));
-        page_meta_buf_ = SDL_CreateGPUBuffer(dev, &bi);
-        if (!page_meta_buf_) {
-            MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] page-meta buffer create failed: %s", SDL_GetError());
-            return false;
-        }
         // Zero-init every slot's metadata (world_size defaults to
         // patch_size_ -- harmless, since a slot's meta is only ever read
         // when the indirection texture actually points a resident fine
         // cell at it, which always happens together with a real
         // UploadPageMeta call for that same slot).
+        const uint32_t meta_size = (uint32_t)(NUM_SLOTS * 4 * sizeof(float));
         float* init_meta = (float*)malloc((size_t)NUM_SLOTS * 4 * sizeof(float));
         if (init_meta) {
             for (int i = 0; i < NUM_SLOTS; ++i) {
@@ -210,28 +186,18 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
                 init_meta[i * 4 + 2] = patch_size_;
                 init_meta[i * 4 + 3] = 0.f;
             }
-            SDL_GPUTransferBufferCreateInfo tbi{};
-            tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-            tbi.size  = (Uint32)(NUM_SLOTS * 4 * sizeof(float));
-            SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
-            if (tb) {
-                void* map = SDL_MapGPUTransferBuffer(dev, tb, false);
-                if (map) memcpy(map, init_meta, tbi.size);
-                SDL_UnmapGPUTransferBuffer(dev, tb);
-
-                SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-                SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
-                SDL_GPUTransferBufferLocation src{};
-                src.transfer_buffer = tb;
-                SDL_GPUBufferRegion dst{};
-                dst.buffer = page_meta_buf_;
-                dst.size   = tbi.size;
-                SDL_UploadToGPUBuffer(cp, &src, &dst, false);
-                SDL_EndGPUCopyPass(cp);
-                SDL_SubmitGPUCommandBuffer(cmd);
-                SDL_ReleaseGPUTransferBuffer(dev, tb);
-            }
+            page_meta_buf_.Init(GPU_TARGET_COMPUTE_STORAGE_RW, init_meta, meta_size);
             free(init_meta);
+        } else {
+            // malloc failure fallback: still create the buffer (matches
+            // pre-migration behavior, which created it unconditionally
+            // BEFORE attempting the zero-init upload) -- just uninitialized
+            // instead of zeroed, rather than failing Init() outright.
+            page_meta_buf_.InitEmpty(GPU_TARGET_COMPUTE_STORAGE_RW, meta_size);
+        }
+        if (!page_meta_buf_.SDLBuffer()) {
+            MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] page-meta buffer create failed: %s", SDL_GetError());
+            return false;
         }
     }
 
@@ -266,31 +232,20 @@ bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
     // terrain_page_fill.comp) so DrawShadingResolve's binding code path is
     // completely unchanged whether VT is enabled or not.
     {
-        SDL_GPUTextureCreateInfo ti{};
-        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        ti.width                = 1;
-        ti.height               = 1;
-        ti.layer_count_or_depth = 1;
-        ti.num_levels           = 1;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-        ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        atlas_tex_ = SDL_CreateGPUTexture(dev, &ti);
-        if (!atlas_tex_) {
+        GpuSamplerDesc atlas_sdesc;
+        atlas_sdesc.min_filter = GpuSamplerDesc::Filter::NEAREST;
+        atlas_sdesc.mag_filter = GpuSamplerDesc::Filter::NEAREST;
+        atlas_sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        atlas_sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        atlas_sdesc.gen_mipmap = false;
+        if (!atlas_tex_.InitCompute(1, 1, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                                     SDL_GPU_TEXTUREUSAGE_SAMPLER, 1, atlas_sdesc)) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback atlas texture create failed: %s", SDL_GetError());
             return false;
         }
-    }
-    {
-        SDL_GPUSamplerCreateInfo si{};
-        si.min_filter     = SDL_GPU_FILTER_NEAREST;
-        si.mag_filter     = SDL_GPU_FILTER_NEAREST;
-        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        atlas_sampler_ = SDL_CreateGPUSampler(dev, &si);
-        if (!atlas_sampler_) {
+        if (!atlas_tex_.SDLSampler()) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback atlas sampler create failed: %s", SDL_GetError());
+            atlas_tex_.Shutdown();
             return false;
         }
     }
@@ -299,31 +254,22 @@ bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
     // path whenever a texel says "not resident", which is now the ONLY
     // value this texture can ever contain.
     {
-        SDL_GPUTextureCreateInfo ti{};
-        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        ti.width                = 1;
-        ti.height               = 1;
-        ti.layer_count_or_depth = 1;
-        ti.num_levels           = 1;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R32_UINT;
-        ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        indir_tex_ = SDL_CreateGPUTexture(dev, &ti);
-        if (!indir_tex_) {
+        GpuSamplerDesc indir_sdesc;
+        indir_sdesc.min_filter = GpuSamplerDesc::Filter::NEAREST;
+        indir_sdesc.mag_filter = GpuSamplerDesc::Filter::NEAREST;
+        indir_sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        indir_sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        indir_sdesc.gen_mipmap = false;
+        if (!indir_tex_.InitCompute(1, 1, SDL_GPU_TEXTUREFORMAT_R32_UINT,
+                                     SDL_GPU_TEXTUREUSAGE_SAMPLER, 1, indir_sdesc)) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback indirection texture create failed: %s", SDL_GetError());
+            atlas_tex_.Shutdown();
             return false;
         }
-    }
-    {
-        SDL_GPUSamplerCreateInfo si{};
-        si.min_filter     = SDL_GPU_FILTER_NEAREST;
-        si.mag_filter     = SDL_GPU_FILTER_NEAREST;
-        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        indir_sampler_ = SDL_CreateGPUSampler(dev, &si);
-        if (!indir_sampler_) {
+        if (!indir_tex_.SDLSampler()) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback indirection sampler create failed: %s", SDL_GetError());
+            indir_tex_.Shutdown();
+            atlas_tex_.Shutdown();
             return false;
         }
     }
@@ -338,29 +284,27 @@ bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
             if (map) memcpy(map, &not_resident, sizeof(not_resident));
             SDL_UnmapGPUTransferBuffer(dev, tb);
 
-            SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-            SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+            SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+            GpuCopyPass cp;
+            cp.Begin(cmd);
             SDL_GPUTextureTransferInfo src{};
             src.transfer_buffer = tb;
             src.pixels_per_row  = 1;
             src.rows_per_layer  = 1;
             SDL_GPUTextureRegion dst{};
-            dst.texture = indir_tex_;
+            dst.texture = indir_tex_.SDLTexture();
             dst.w = 1; dst.h = 1; dst.d = 1;
-            SDL_UploadToGPUTexture(cp, &src, &dst, false);
-            SDL_EndGPUCopyPass(cp);
-            SDL_SubmitGPUCommandBuffer(cmd);
+            cp.UploadTexture(src, dst, false);
+            cp.End();
+            md::GpuDevice::Get().Submit(cmd);
             SDL_ReleaseGPUTransferBuffer(dev, tb);
         }
     }
     // 1-slot page-meta buffer -- never actually indexed (indirection always
     // says kNotResident), just needs to be a valid bindable SSBO.
     {
-        SDL_GPUBufferCreateInfo bi{};
-        bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE;
-        bi.size  = (Uint32)(4 * sizeof(float));
-        page_meta_buf_ = SDL_CreateGPUBuffer(dev, &bi);
-        if (!page_meta_buf_) {
+        page_meta_buf_.InitEmpty(GPU_TARGET_COMPUTE_STORAGE_RW, (uint32_t)(4 * sizeof(float)));
+        if (!page_meta_buf_.SDLBuffer()) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] disabled-fallback page-meta buffer create failed: %s", SDL_GetError());
             return false;
         }
@@ -374,11 +318,9 @@ bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
 void TerrainVtPageCache::Shutdown(SDL_GPUDevice* dev) {
     if (!dev) return;
     fill_pipeline_.Destroy();
-    if (atlas_tex_)     { SDL_ReleaseGPUTexture(dev, atlas_tex_);     atlas_tex_     = nullptr; }
-    if (atlas_sampler_) { SDL_ReleaseGPUSampler(dev, atlas_sampler_); atlas_sampler_ = nullptr; }
-    if (indir_tex_)     { SDL_ReleaseGPUTexture(dev, indir_tex_);     indir_tex_     = nullptr; }
-    if (indir_sampler_) { SDL_ReleaseGPUSampler(dev, indir_sampler_); indir_sampler_ = nullptr; }
-    if (page_meta_buf_) { SDL_ReleaseGPUBuffer(dev, page_meta_buf_);  page_meta_buf_ = nullptr; }
+    atlas_tex_.Shutdown();
+    indir_tex_.Shutdown();
+    page_meta_buf_.Shutdown();
     ready_ = false;
 }
 
@@ -518,10 +460,13 @@ void TerrainVtPageCache::UploadIndirectionRegion(SDL_GPUDevice* dev, SDL_GPUCopy
     src.pixels_per_row  = (Uint32)span;
     src.rows_per_layer  = (Uint32)span;
     SDL_GPUTextureRegion dst{};
-    dst.texture = indir_tex_;
+    dst.texture = indir_tex_.SDLTexture();
     dst.x = (Uint32)fine_ix; dst.y = (Uint32)fine_iz;
     dst.w = (Uint32)span; dst.h = (Uint32)span; dst.d = 1;
-    SDL_UploadToGPUTexture(cp, &src, &dst, false);
+    // FromRaw: cp is the caller's already-open pass (FlushFillQueue), shared
+    // across many Upload* calls in one loop for batching -- must NOT open
+    // its own pass here, or the batching silently degrades to N passes.
+    GpuCopyPass::FromRaw(cp, nullptr).UploadTexture(src, dst, false);
     // Transfer buffer is small and one-shot -- release immediately, same
     // as rd_texture.cpp's pattern (SDL_GPU tracks the copy internally,
     // safe to release right after recording the upload command).
@@ -544,10 +489,11 @@ void TerrainVtPageCache::UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
     SDL_GPUTransferBufferLocation src{};
     src.transfer_buffer = tb;
     SDL_GPUBufferRegion dst{};
-    dst.buffer = page_meta_buf_;
+    dst.buffer = page_meta_buf_.SDLBuffer();
     dst.offset = (Uint32)(slot * (int)sizeof(meta));
     dst.size   = (Uint32)sizeof(meta);
-    SDL_UploadToGPUBuffer(cp, &src, &dst, false);
+    // FromRaw: same shared-pass batching contract as UploadIndirectionRegion.
+    GpuCopyPass::FromRaw(cp, nullptr).UploadBuffer(src, dst, false);
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 }
 
@@ -563,7 +509,9 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer
     // location than the one being newly written, see RequestPage's
     // eviction branch).
     {
-        SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+        GpuCopyPass cpw;
+        cpw.Begin(cmd);
+        SDL_GPUCopyPass* cp = cpw.SDLPass();
         if (cp) {
             for (int i = 0; i < invalidate_queue_count_; ++i) {
                 const InvalidateRequest& r = invalidate_queue_[i];
@@ -576,14 +524,14 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer
                                (float)r.fine_ix * FineCell(), (float)r.fine_iz * FineCell(),
                                (float)r.span * FineCell());
             }
-            SDL_EndGPUCopyPass(cp);
         }
+        cpw.End();
     }
     invalidate_queue_count_ = 0;
 
     // 2) Dispatch one page-fill compute invocation per queued request, each
     // in its OWN compute pass (Begin/End per dispatch, all still within
-    // this ONE command buffer -- pushing new SDL_PushGPUComputeUniformData
+    // this ONE command buffer -- pushing new GpuPushComputeUniforms
     // between multiple dispatches inside a SINGLE compute pass works fine
     // once the real bug below was fixed; re-opening the pass per dispatch
     // is just the simplest way to guarantee a fresh, unambiguous binding
@@ -597,27 +545,28 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer
     // every dispatch into its own command buffer with a fence-wait, which
     // changed nothing until the UBO layout itself was fixed.
     //
-    // Raw SDL compute pass (not GpuComputePass) -- see terrain_page_fill.
-    // comp's doc comment: GpuComputePass::Begin hardcodes storage-texture
-    // bindings to nullptr,0 (gpu_hal_commands.cpp), so a pass that writes
-    // a storage TEXTURE (not just buffers) must bypass that wrapper, same
-    // as SSAOSystem::Dispatch already does for ao_tex_.
+    // Uses GpuComputePass via StorageBindings.rw_textures (M1 HAL-closure
+    // follow-up: Begin used to hardcode storage-texture bindings to
+    // nullptr,0, forcing this and SSAOSystem::Dispatch/the normal-bake
+    // pass in terrain_world_heightmap.cpp to bypass the wrapper with raw
+    // SDL -- all 3 real sites now go through GpuComputePass).
     const float world_origin  = hmap.WorldExtent() * 0.5f;  // overlay UV convention -- see PageFillUBO doc comment
     const float overlay_to_uv = 1.0f / hmap.WorldExtent();
 
     for (int i = 0; i < fill_queue_count_; ++i) {
         const FillRequest& r = fill_queue_[i];
 
-        SDL_GPUStorageTextureReadWriteBinding rw_tex{};
-        rw_tex.texture = atlas_tex_;
-        rw_tex.cycle   = false;
+        GpuComputePass::StorageBindings sb;
+        sb.cmd = cmd;
+        sb.rw_textures[0] = { atlas_tex_.SDLTexture(), false };
+        sb.num_rw_textures = 1;
 
-        SDL_GPUComputePass* pass = SDL_BeginGPUComputePass(cmd, &rw_tex, 1, nullptr, 0);
-        if (!pass) {
+        GpuComputePass pass;
+        pass.Begin(&fill_pipeline_, sb);
+        if (!pass.SDLPass()) {
             MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] SDL_BeginGPUComputePass failed: %s", SDL_GetError());
             continue;
         }
-        SDL_BindGPUComputePipeline(pass, fill_pipeline_.SDLComputePipeline());
 
         // set=0: 6 samplers -- heightTex (0), the 4 shared ground samplers
         // (1..4), zoneGroundLayersTex (5, texture not SSBO since
@@ -629,7 +578,7 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer
         ground.GetSharedGroundSamplers(ground_bindings);
         for (int gi = 0; gi < 4; ++gi) samplers[1 + gi] = ground_bindings[gi];
         samplers[5] = { ground.ZoneGroundLayersTexture(), ground.ZoneGroundLayersSampler() };
-        SDL_BindGPUComputeSamplers(pass, 0, samplers, 6);
+        pass.BindSamplers(0, samplers, 6);
 
         PageFillUBO ubo{};
         ubo.world_params[0] = world_origin; ubo.world_params[1] = world_origin;
@@ -655,18 +604,18 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer
         ubo.slot_offset[0] = slot_x; ubo.slot_offset[1] = slot_y;
         ubo.slot_offset[2] = 0; ubo.slot_offset[3] = 0;
 
-        SDL_PushGPUComputeUniformData(cmd, 0, &ubo, sizeof(ubo));
+        pass.PushUniforms(0, &ubo, sizeof(ubo));
 
         const uint32_t groups = (uint32_t)(PAGE_TEXELS / 8);  // 128/8 = 16
-        SDL_DispatchGPUCompute(pass, groups, groups, 1);
+        pass.Dispatch(groups, groups, 1);
 
-        SDL_EndGPUComputePass(pass);
+        pass.End();
     }
     fill_queue_count_ = 0;
 }
 
 bool TerrainVtPageCache::DebugDumpAtlas(SDL_GPUDevice* dev, const char* out_png_path) {
-    if (!ready_ || !atlas_tex_) return false;
+    if (!ready_ || !atlas_tex_.SDLTexture()) return false;
     uint32_t w = (uint32_t)(SLOTS_X * PAGE_TEXELS), h = (uint32_t)(SLOTS_Y * PAGE_TEXELS);
     uint32_t download_size = w * h * 4;
 
@@ -680,25 +629,26 @@ bool TerrainVtPageCache::DebugDumpAtlas(SDL_GPUDevice* dev, const char* out_png_
     }
 
     SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);
-    SDL_GPUCopyPass* cp = SDL_BeginGPUCopyPass(cmd);
+    GpuCopyPass cp;
+    cp.Begin(cmd);
     SDL_GPUTextureRegion src{};
-    src.texture = atlas_tex_;
+    src.texture = atlas_tex_.SDLTexture();
     src.w = w; src.h = h; src.d = 1;
     SDL_GPUTextureTransferInfo dst{};
     dst.transfer_buffer = tb;
     dst.pixels_per_row  = w;
     dst.rows_per_layer  = h;
-    SDL_DownloadFromGPUTexture(cp, &src, &dst);
-    SDL_EndGPUCopyPass(cp);
+    cp.DownloadTexture(src, dst);
+    cp.End();
 
-    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    SDL_GPUFence* fence = md::GpuDevice::Get().SubmitAndAcquireFence(cmd);
     if (!fence) {
         MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] DebugDumpAtlas: submit failed: %s", SDL_GetError());
         SDL_ReleaseGPUTransferBuffer(dev, tb);
         return false;
     }
-    bool waited = SDL_WaitForGPUFences(dev, true, &fence, 1);
-    SDL_ReleaseGPUFence(dev, fence);
+    bool waited = md::GpuDevice::Get().WaitForFence(fence);
+    md::GpuDevice::Get().ReleaseFence(fence);
     if (!waited) {
         SDL_ReleaseGPUTransferBuffer(dev, tb);
         return false;

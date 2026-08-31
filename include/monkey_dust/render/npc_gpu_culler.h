@@ -49,8 +49,8 @@ public:
 
 private:
     GpuComputePipeline pipeline_;
-    SDL_GPUBuffer*     pos_buf_ = nullptr;   // NPC positions (RO)
-    SDL_GPUBuffer*     vis_buf_ = nullptr;   // visibility mask (RW)
+    GpuStaticBuffer    pos_buf_;   // NPC positions (RO)
+    GpuStaticBuffer    vis_buf_;   // visibility mask (RW)
     SDL_GPUTransferBuffer* upload_buf_ = nullptr;  // CPU→GPU positions
     SDL_GPUTransferBuffer* dl_buf_     = nullptr;  // GPU→CPU result
 

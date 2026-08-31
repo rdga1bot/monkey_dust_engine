@@ -10,6 +10,7 @@
 
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #endif
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -293,7 +294,7 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
             bi.destination.h   = (uint32_t)overlay_blits_[oi].h;
             bi.load_op         = SDL_GPU_LOADOP_LOAD;
             bi.filter          = SDL_GPU_FILTER_NEAREST;
-            SDL_BlitGPUTexture(cmd, &bi);
+            GpuBlitTexture(cmd, bi);
         }
 #endif
         md::GpuDevice::Get().Submit(cmd);

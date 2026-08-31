@@ -1,5 +1,6 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/motion_blur.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/md_log.h>
 #include <monkey_dust/platform/md_fs.h>
 #include <cstring>
@@ -45,35 +46,24 @@ void MotionBlurSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
     near_z  = nz;
     far_z   = fz;
 
+    const SDL_GPUTextureUsageFlags rt_usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
+                                             | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+
     // ── RGBA8 motion render target (half-res) ─────────────────────────────────
-    {
-        SDL_GPUTextureCreateInfo ti = {};
-        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        ti.width                = (Uint32)half_w_;
-        ti.height               = (Uint32)half_h_;
-        ti.layer_count_or_depth = 1;
-        ti.num_levels           = 1;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-        ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
-                                | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        motion_rt_ = SDL_CreateGPUTexture(dev, &ti);
-        if (!motion_rt_) {
-            MD_LOG(MD_LOG_WARNING, "MotionBlurSystem: motion_rt create failed: %s", SDL_GetError());
-            return;
-        }
+    if (!motion_rt_.Init(half_w_, half_h_, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, rt_usage)) {
+        MD_LOG(MD_LOG_WARNING, "MotionBlurSystem: motion_rt create failed: %s", SDL_GetError());
+        return;
     }
 
     // ── NEAREST sampler for motion texture read ───────────────────────────────
     {
-        SDL_GPUSamplerCreateInfo si = {};
-        si.min_filter     = SDL_GPU_FILTER_NEAREST;
-        si.mag_filter     = SDL_GPU_FILTER_NEAREST;
-        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        point_samp_ = SDL_CreateGPUSampler(dev, &si);
-        if (!point_samp_) {
+        GpuSamplerDesc sdesc;
+        sdesc.min_filter = GpuSamplerDesc::Filter::NEAREST;
+        sdesc.mag_filter = GpuSamplerDesc::Filter::NEAREST;
+        sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        sdesc.gen_mipmap = false;
+        if (!point_samp_.Init(sdesc)) {
             MD_LOG(MD_LOG_WARNING, "MotionBlurSystem: point_samp create failed");
             return;
         }
@@ -81,36 +71,22 @@ void MotionBlurSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
 
     // ── LINEAR sampler for scene color read ──────────────────────────────────
     {
-        SDL_GPUSamplerCreateInfo si = {};
-        si.min_filter     = SDL_GPU_FILTER_LINEAR;
-        si.mag_filter     = SDL_GPU_FILTER_LINEAR;
-        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        linear_samp_ = SDL_CreateGPUSampler(dev, &si);
-        if (!linear_samp_) {
+        GpuSamplerDesc sdesc;
+        sdesc.min_filter = GpuSamplerDesc::Filter::LINEAR;
+        sdesc.mag_filter = GpuSamplerDesc::Filter::LINEAR;
+        sdesc.wrap_s     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        sdesc.wrap_t     = GpuSamplerDesc::Wrap::CLAMP_TO_EDGE;
+        sdesc.gen_mipmap = false;
+        if (!linear_samp_.Init(sdesc)) {
             MD_LOG(MD_LOG_WARNING, "MotionBlurSystem: linear_samp create failed");
             return;
         }
     }
 
     // ── RGBA16F scene color RT (used when bloom is not active) ────────────────
-    {
-        SDL_GPUTextureCreateInfo ti = {};
-        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        ti.width                = (Uint32)full_w_;
-        ti.height               = (Uint32)full_h_;
-        ti.layer_count_or_depth = 1;
-        ti.num_levels           = 1;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
-        ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
-                                | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        scene_color_ = SDL_CreateGPUTexture(dev, &ti);
-        if (!scene_color_) {
-            MD_LOG(MD_LOG_WARNING, "MotionBlurSystem: scene_color create failed: %s", SDL_GetError());
-            return;
-        }
+    if (!scene_color_.Init(full_w_, full_h_, SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT, rt_usage)) {
+        MD_LOG(MD_LOG_WARNING, "MotionBlurSystem: scene_color create failed: %s", SDL_GetError());
+        return;
     }
 
     // ── Prep pipeline: depth → RGBA8 motion (half-res) ───────────────────────
@@ -167,24 +143,27 @@ void MotionBlurSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
                                  SDL_GPUSampler*       hw_sampler,
                                  const float*          inv_vp16,
                                  const float*          prev_vp16) {
-    if (!enabled_ || !motion_rt_ || !prep_pipeline_.SDLPipeline()) return;
+    if (!enabled_ || !motion_rt_.SDLTexture() || !prep_pipeline_.SDLPipeline()) return;
 
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture     = motion_rt_;
-    ct.load_op     = SDL_GPU_LOADOP_DONT_CARE;
-    ct.store_op    = SDL_GPU_STOREOP_STORE;
-    ct.clear_color = { 0.5f, 0.5f, 0.5f, 1.f }; // neutral motion
-
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    GpuCommandBuffer cb;
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd             = cmd;
+    cpd.color_tex       = motion_rt_.SDLTexture();
+    cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE
+    cpd.clear_color[0] = 0.5f; cpd.clear_color[1] = 0.5f; // neutral motion (unused under DONT_CARE, kept for parity)
+    cpd.clear_color[2] = 0.5f; cpd.clear_color[3] = 1.f;
+    cb.BeginColorPass(cpd);
+    SDL_GPURenderPass* pass = cb.SDLPass();
     if (!pass) {
         MD_LOG(MD_LOG_WARNING, "MotionBlurSystem::PrepPass: begin failed: %s", SDL_GetError());
         return;
     }
 
-    SDL_BindGPUGraphicsPipeline(pass, prep_pipeline_.SDLPipeline());
+    GpuPassView pv = GpuPassView::FromRaw(pass, cmd);
+    pv.BindPipeline(&prep_pipeline_);
 
     SDL_GPUTextureSamplerBinding sb = { hw_depth, hw_sampler };
-    SDL_BindGPUFragmentSamplers(pass, 0, &sb, 1);
+    pv.BindFragmentSamplers(0, &sb, 1);
 
     MotionPrepUBO ubo;
     memcpy(ubo.inv_view_proj, inv_vp16,  64);
@@ -193,13 +172,13 @@ void MotionBlurSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
     ubo.far_z   = far_z;
     ubo._pad[0] = 0.f;
     ubo._pad[1] = 0.f;
-    SDL_PushGPUFragmentUniformData(cmd, 0, &ubo, sizeof(ubo));
+    pv.PushFragmentUniforms(0, &ubo, sizeof(ubo));
 
     SDL_GPUViewport vp = { 0.f, 0.f, (float)half_w_, (float)half_h_, 0.f, 1.f };
     SDL_SetGPUViewport(pass, &vp);
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    pv.Draw(3, 1, 0, 0);
 
-    SDL_EndGPURenderPass(pass);
+    cb.EndPass();
 }
 
 // ── ApplyPass ─────────────────────────────────────────────────────────────────
@@ -209,38 +188,40 @@ void MotionBlurSystem::ApplyPass(SDL_GPUCommandBuffer* cmd,
                                   SDL_GPUSampler*       linear_sampler,
                                   SDL_GPUTexture*       swapchain_tex,
                                   int sw, int sh) {
-    if (!enabled_ || !motion_rt_ || !blur_pipeline_.SDLPipeline()) return;
+    if (!enabled_ || !motion_rt_.SDLTexture() || !blur_pipeline_.SDLPipeline()) return;
     if (!hdr_color_tex || !swapchain_tex) return;
 
     // Write directly to swapchain (DONT_CARE = we replace the entire image)
-    SDL_GPUColorTargetInfo ct = {};
-    ct.texture  = swapchain_tex;
-    ct.load_op  = SDL_GPU_LOADOP_DONT_CARE;
-    ct.store_op = SDL_GPU_STOREOP_STORE;
-
-    SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &ct, 1, nullptr);
+    GpuCommandBuffer cb;
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd             = cmd;
+    cpd.color_tex       = swapchain_tex;
+    cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE
+    cb.BeginColorPass(cpd);
+    SDL_GPURenderPass* pass = cb.SDLPass();
     if (!pass) {
         MD_LOG(MD_LOG_WARNING, "MotionBlurSystem::ApplyPass: begin failed: %s", SDL_GetError());
         return;
     }
 
-    SDL_BindGPUGraphicsPipeline(pass, blur_pipeline_.SDLPipeline());
+    GpuPassView pv = GpuPassView::FromRaw(pass, cmd);
+    pv.BindPipeline(&blur_pipeline_);
 
-    SDL_GPUSampler* col_samp = linear_sampler ? linear_sampler : linear_samp_;
+    SDL_GPUSampler* col_samp = linear_sampler ? linear_sampler : linear_samp_.SDLSampler();
     SDL_GPUTextureSamplerBinding sbs[2] = {
-        { motion_rt_,    point_samp_ },  // set=0 b=0: u_motion
-        { hdr_color_tex, col_samp   },  // set=0 b=1: u_color
+        { motion_rt_.SDLTexture(), point_samp_.SDLSampler() },  // set=0 b=0: u_motion
+        { hdr_color_tex,           col_samp                },  // set=0 b=1: u_color
     };
-    SDL_BindGPUFragmentSamplers(pass, 0, sbs, 2);
+    pv.BindFragmentSamplers(0, sbs, 2);
 
     MotionBlurUBO ubo = { movement_scale_x, movement_scale_y, {0.f, 0.f} };
-    SDL_PushGPUFragmentUniformData(cmd, 0, &ubo, sizeof(ubo));
+    pv.PushFragmentUniforms(0, &ubo, sizeof(ubo));
 
     SDL_GPUViewport vp = { 0.f, 0.f, (float)sw, (float)sh, 0.f, 1.f };
     SDL_SetGPUViewport(pass, &vp);
-    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    pv.Draw(3, 1, 0, 0);
 
-    SDL_EndGPURenderPass(pass);
+    cb.EndPass();
 }
 
 // ── Shutdown ─────────────────────────────────────────────────────────────────
@@ -249,10 +230,8 @@ void MotionBlurSystem::Shutdown() {
     if (!dev_) return;
     prep_pipeline_.Destroy();
     blur_pipeline_.Destroy();
-    if (motion_rt_)   { SDL_ReleaseGPUTexture(dev_, motion_rt_);   motion_rt_   = nullptr; }
-    if (scene_color_) { SDL_ReleaseGPUTexture(dev_, scene_color_); scene_color_ = nullptr; }
-    if (point_samp_)  { SDL_ReleaseGPUSampler(dev_, point_samp_);  point_samp_  = nullptr; }
-    if (linear_samp_) { SDL_ReleaseGPUSampler(dev_, linear_samp_); linear_samp_ = nullptr; }
+    motion_rt_.Shutdown(); scene_color_.Shutdown();
+    point_samp_.Shutdown(); linear_samp_.Shutdown();
     dev_     = nullptr;
     enabled_ = false;
 }

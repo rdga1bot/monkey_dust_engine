@@ -39,8 +39,8 @@ public:
     void DrawAmbientPass(SDL_GPUCommandBuffer* cmd, const GBuffer& gbuf,
                          SDL_GPUTexture* depth_tex = nullptr);
 
-    SDL_GPUTexture* HdrColorTex() const { return hdr_color_; }
-    bool IsReady() const { return hdr_color_ != nullptr; }
+    SDL_GPUTexture* HdrColorTex() const { return hdr_color_.SDLTexture(); }
+    bool IsReady() const { return hdr_color_.SDLTexture() != nullptr; }
 
     // ── Lighting parameters (set before DrawAmbientPass each frame) ────────────
     float sun_dir[3]       = {  0.577f, -0.577f,  0.577f };
@@ -56,9 +56,9 @@ private:
     DeferredLightingSystem() = default;
 
     SDL_GPUDevice*  dev_           = nullptr;
-    SDL_GPUTexture* hdr_color_     = nullptr;
-    SDL_GPUSampler* sampler_nearest_ = nullptr;  // for GBuffer + depth
-    SDL_GPUSampler* sampler_linear_  = nullptr;  // for EVSM moment maps
+    GpuColorTexture hdr_color_;
+    GpuSampler      sampler_nearest_;  // for GBuffer + depth
+    GpuSampler      sampler_linear_;   // for EVSM moment maps
     GpuPipeline     pipeline_;
     float           inv_view_proj_[16] = {};
     int w_ = 0, h_ = 0;

@@ -41,6 +41,23 @@ void TransformSoA::Init() {
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     if (dev) {
+        // Init() runs twice per process: once at startup (game_init.cpp) and
+        // once per `load game` (world_serializer.cpp's Deserialize, which
+        // resets the world without a fresh TransformSoA instance). Release
+        // any buffers from a prior Init() first -- otherwise every load
+        // overwrites the handles and leaks the old ones (DEFECT_INVENTORY.md
+        // #4). SDL_GPU defers the actual GPU-side free until no in-flight
+        // command buffer references the resource, so releasing here is safe
+        // even if the previous frame's draw is still executing.
+        for (int s = 0; s < 3; ++s) {
+            if (sdl_xzyr_buf_[s])    { SDL_ReleaseGPUBuffer(dev, sdl_xzyr_buf_[s]);       sdl_xzyr_buf_[s]    = nullptr; }
+            if (sdl_xzyr_stg_[s])    { GpuReleaseTransferBuffer(dev, sdl_xzyr_stg_[s]);    sdl_xzyr_stg_[s]    = nullptr; }
+            if (sdl_faction_buf_[s]) { SDL_ReleaseGPUBuffer(dev, sdl_faction_buf_[s]);     sdl_faction_buf_[s] = nullptr; }
+            if (sdl_faction_stg_[s]) { GpuReleaseTransferBuffer(dev, sdl_faction_stg_[s]); sdl_faction_stg_[s] = nullptr; }
+            if (sdl_skin_buf_[s])    { SDL_ReleaseGPUBuffer(dev, sdl_skin_buf_[s]);        sdl_skin_buf_[s]    = nullptr; }
+            if (sdl_skin_stg_[s])    { GpuReleaseTransferBuffer(dev, sdl_skin_stg_[s]);    sdl_skin_stg_[s]    = nullptr; }
+        }
+
         static constexpr uint32_t XZYR_SIZE = MAX_SLOTS * 4 * sizeof(float);
         static constexpr uint32_t FACI_SIZE = MAX_SLOTS * sizeof(uint32_t);
         static constexpr uint32_t SKIN_SIZE = MAX_SLOTS * 4 * sizeof(float);

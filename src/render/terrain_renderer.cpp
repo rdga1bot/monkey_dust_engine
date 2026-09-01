@@ -389,7 +389,7 @@ void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uin
     SDL_GPUTransferBufferCreateInfo tbi{};
     tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     tbi.size  = (Uint32)(packed.size() * sizeof(uint32_t));
-    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+    SDL_GPUTransferBuffer* tb = GpuCreateTransferBuffer(dev, &tbi);
     if (!tb) return;
     void* map = GpuMapTransfer(tb, false);
     if (map) memcpy(map, packed.data(), tbi.size);
@@ -408,7 +408,7 @@ void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uin
     cp.UploadTexture(src, dst, false);
     cp.End();
     md::GpuDevice::Get().Submit(cmd);
-    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    GpuReleaseTransferBuffer(dev, tb);
 #else
     (void)data; (void)count_uints;
 #endif

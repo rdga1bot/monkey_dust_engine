@@ -193,7 +193,7 @@ void TerrainQuadtreeRenderer::UploadNodeData(SDL_GPUDevice* dev, SDL_GPUCopyPass
     SDL_GPUTransferBufferCreateInfo tbi{};
     tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     tbi.size  = region_bytes;
-    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+    SDL_GPUTransferBuffer* tb = GpuCreateTransferBuffer(dev, &tbi);
     if (!tb) return;
     void* map = GpuMapTransfer(tb, false);
     if (map) {
@@ -212,7 +212,7 @@ void TerrainQuadtreeRenderer::UploadNodeData(SDL_GPUDevice* dev, SDL_GPUCopyPass
     // FromRaw: cp is a pass the CALLER opened (npc_render_frame_prep.cpp) and
     // will End() itself -- no cmd needed here, no upload/download method uses it.
     GpuCopyPass::FromRaw(cp, nullptr).UploadTexture(src, dst, false);
-    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    GpuReleaseTransferBuffer(dev, tb);
 }
 
 void TerrainQuadtreeRenderer::BeginBatched(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,

@@ -29,7 +29,7 @@ void SSBO::Init(int capacity_bytes, uint32_t extra_sdl_usage) {
             if (!sdl_buf_[s])
                 MD_LOG(MD_LOG_WARNING, "[SSBO] SDL_CreateGPUBuffer[%d] failed: %s", s, SDL_GetError());
 
-            sdl_transfer_[s] = SDL_CreateGPUTransferBuffer(dev, &ti);
+            sdl_transfer_[s] = GpuCreateTransferBuffer(dev, &ti);
             if (!sdl_transfer_[s])
                 MD_LOG(MD_LOG_WARNING, "[SSBO] SDL_CreateGPUTransferBuffer[%d] failed: %s", s, SDL_GetError());
         }
@@ -74,7 +74,7 @@ void SSBO::Shutdown() {
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     for (int s = 0; s < 3; ++s) {
-        if (sdl_transfer_[s]) { SDL_ReleaseGPUTransferBuffer(dev, sdl_transfer_[s]); sdl_transfer_[s] = nullptr; }
+        if (sdl_transfer_[s]) { GpuReleaseTransferBuffer(dev, sdl_transfer_[s]); sdl_transfer_[s] = nullptr; }
         if (sdl_buf_[s])      { SDL_ReleaseGPUBuffer        (dev, sdl_buf_[s]);      sdl_buf_[s]      = nullptr; }
     }
     sdl_cap_ = 0;

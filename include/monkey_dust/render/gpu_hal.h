@@ -732,6 +732,25 @@ inline void* GpuMapTransfer(SDL_GPUTransferBuffer* tb, bool cycle) {
 inline void GpuUnmapTransfer(SDL_GPUTransferBuffer* tb) {
     SDL_UnmapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(), tb);
 }
+
+// GpuCreateTransferBuffer / GpuReleaseTransferBuffer — stateless passthrough,
+// no RAII, same reasoning as GpuMapTransfer/GpuUnmapTransfer above. `dev` is
+// an explicit parameter here (unlike Map/Unmap, which fetch it from the
+// GpuDevice singleton) because these call sites' own functions already take
+// `dev` as a real parameter from their caller -- TerrainVtPageCache::Init,
+// TerrainQuadtreeRenderer::UploadNodeData, TerrainWorldHeightmap's equivalent,
+// etc. are exercised by isolated-device unit tests (see DEFECT_INVENTORY.md
+// #1's cross-device fence bug for why "just use the singleton" is unsafe
+// here) -- silently switching them to GpuDevice::Get().SDLDevice() would
+// create transfer buffers on a different device than the one the caller
+// explicitly chose.
+inline SDL_GPUTransferBuffer* GpuCreateTransferBuffer(SDL_GPUDevice* dev,
+                                                       const SDL_GPUTransferBufferCreateInfo* info) {
+    return SDL_CreateGPUTransferBuffer(dev, info);
+}
+inline void GpuReleaseTransferBuffer(SDL_GPUDevice* dev, SDL_GPUTransferBuffer* tb) {
+    SDL_ReleaseGPUTransferBuffer(dev, tb);
+}
 #endif
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -128,7 +128,7 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     SDL_GPUTransferBufferCreateInfo tbi{};
     tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     tbi.size  = (Uint32)((size_t)N * (size_t)N * sizeof(uint16_t));
-    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+    SDL_GPUTransferBuffer* tb = GpuCreateTransferBuffer(dev, &tbi);
     if (!tb) {
         fprintf(stderr, "[TerrainWorldHeightmap] transfer buffer create failed: %s\n", SDL_GetError());
         free(h16);
@@ -155,7 +155,7 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     // #398: no SDL_GenerateMipmapsForGPUTexture call -- single level only,
     // see kNumLevels=1's doc comment above.
     md::GpuDevice::Get().Submit(cmd);
-    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    GpuReleaseTransferBuffer(dev, tb);
 
     fprintf(stderr, "[TerrainWorldHeightmap] ready: %dx%d R16_UNORM, %u mips, height=[%.2f,%.2f]m, extent=%.1fm\n",
             N, N, kNumLevels, height_min_, height_max_, world_extent_);

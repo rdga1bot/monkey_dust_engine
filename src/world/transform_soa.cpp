@@ -64,10 +64,10 @@ void TransformSoA::Init() {
                 MD_LOG(MD_LOG_WARNING, "[TransformSoA] SDL faction buf[%d] failed: %s", s, SDL_GetError());
 
             ti.size = XZYR_SIZE;
-            sdl_xzyr_stg_[s] = SDL_CreateGPUTransferBuffer(dev, &ti);
+            sdl_xzyr_stg_[s] = GpuCreateTransferBuffer(dev, &ti);
 
             ti.size = FACI_SIZE;
-            sdl_faction_stg_[s] = SDL_CreateGPUTransferBuffer(dev, &ti);
+            sdl_faction_stg_[s] = GpuCreateTransferBuffer(dev, &ti);
 
             bi.size = SKIN_SIZE;
             sdl_skin_buf_[s] = SDL_CreateGPUBuffer(dev, &bi);
@@ -75,7 +75,7 @@ void TransformSoA::Init() {
                 MD_LOG(MD_LOG_WARNING, "[TransformSoA] SDL skin buf[%d] failed: %s", s, SDL_GetError());
 
             ti.size = SKIN_SIZE;
-            sdl_skin_stg_[s] = SDL_CreateGPUTransferBuffer(dev, &ti);
+            sdl_skin_stg_[s] = GpuCreateTransferBuffer(dev, &ti);
         }
     }
 #endif

@@ -47,12 +47,12 @@ bool NpcGpuCuller::Init() {
     SDL_GPUTransferBufferCreateInfo tci{};
     tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     tci.size  = pos_sz;
-    upload_buf_ = SDL_CreateGPUTransferBuffer(dev, &tci);
+    upload_buf_ = GpuCreateTransferBuffer(dev, &tci);
 
     // Download transfer buffer (GPU→CPU visibility).
     tci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
     tci.size  = vis_sz;
-    dl_buf_ = SDL_CreateGPUTransferBuffer(dev, &tci);
+    dl_buf_ = GpuCreateTransferBuffer(dev, &tci);
 
     if (!pos_buf_.SDLBuffer() || !vis_buf_.SDLBuffer() || !upload_buf_ || !dl_buf_) {
         fprintf(stderr, "[NpcGpuCuller] buffer allocation failed\n");
@@ -69,8 +69,8 @@ void NpcGpuCuller::Shutdown() {
     pos_buf_.Shutdown();
     vis_buf_.Shutdown();
     if (dev) {
-        if (upload_buf_) { SDL_ReleaseGPUTransferBuffer(dev, upload_buf_);     upload_buf_ = nullptr; }
-        if (dl_buf_)     { SDL_ReleaseGPUTransferBuffer(dev, dl_buf_);         dl_buf_     = nullptr; }
+        if (upload_buf_) { GpuReleaseTransferBuffer(dev, upload_buf_);     upload_buf_ = nullptr; }
+        if (dl_buf_)     { GpuReleaseTransferBuffer(dev, dl_buf_);         dl_buf_     = nullptr; }
     }
     pipeline_.Destroy();
     ready_ = false;

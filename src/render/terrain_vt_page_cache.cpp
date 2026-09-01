@@ -138,7 +138,7 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
         SDL_GPUTransferBufferCreateInfo tbi{};
         tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
         tbi.size  = (Uint32)(INDIR_SIZE * INDIR_SIZE * sizeof(uint32_t));
-        SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+        SDL_GPUTransferBuffer* tb = GpuCreateTransferBuffer(dev, &tbi);
         if (tb) {
             void* map = GpuMapTransfer(tb, false);
             if (map) memcpy(map, init_data, tbi.size);
@@ -157,7 +157,7 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
             cp.UploadTexture(src, dst, false);
             cp.End();
             md::GpuDevice::Get().Submit(cmd);
-            SDL_ReleaseGPUTransferBuffer(dev, tb);
+            GpuReleaseTransferBuffer(dev, tb);
         }
         free(init_data);
     }
@@ -278,7 +278,7 @@ bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
         SDL_GPUTransferBufferCreateInfo tbi{};
         tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
         tbi.size  = (Uint32)sizeof(uint32_t);
-        SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+        SDL_GPUTransferBuffer* tb = GpuCreateTransferBuffer(dev, &tbi);
         if (tb) {
             void* map = GpuMapTransfer(tb, false);
             if (map) memcpy(map, &not_resident, sizeof(not_resident));
@@ -297,7 +297,7 @@ bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
             cp.UploadTexture(src, dst, false);
             cp.End();
             md::GpuDevice::Get().Submit(cmd);
-            SDL_ReleaseGPUTransferBuffer(dev, tb);
+            GpuReleaseTransferBuffer(dev, tb);
         }
     }
     // 1-slot page-meta buffer -- never actually indexed (indirection always
@@ -449,7 +449,7 @@ void TerrainVtPageCache::UploadIndirectionRegion(SDL_GPUDevice* dev, SDL_GPUCopy
     SDL_GPUTransferBufferCreateInfo tbi{};
     tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     tbi.size  = (Uint32)(count * (int)sizeof(uint32_t));
-    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+    SDL_GPUTransferBuffer* tb = GpuCreateTransferBuffer(dev, &tbi);
     if (!tb) return;
     void* map = GpuMapTransfer(tb, false);
     if (map) memcpy(map, vals, tbi.size);
@@ -470,7 +470,7 @@ void TerrainVtPageCache::UploadIndirectionRegion(SDL_GPUDevice* dev, SDL_GPUCopy
     // Transfer buffer is small and one-shot -- release immediately, same
     // as rd_texture.cpp's pattern (SDL_GPU tracks the copy internally,
     // safe to release right after recording the upload command).
-    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    GpuReleaseTransferBuffer(dev, tb);
 }
 
 void TerrainVtPageCache::UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp, int slot,
@@ -480,7 +480,7 @@ void TerrainVtPageCache::UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
     SDL_GPUTransferBufferCreateInfo tbi{};
     tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     tbi.size  = sizeof(meta);
-    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+    SDL_GPUTransferBuffer* tb = GpuCreateTransferBuffer(dev, &tbi);
     if (!tb) return;
     void* map = GpuMapTransfer(tb, false);
     if (map) memcpy(map, meta, sizeof(meta));
@@ -494,7 +494,7 @@ void TerrainVtPageCache::UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
     dst.size   = (Uint32)sizeof(meta);
     // FromRaw: same shared-pass batching contract as UploadIndirectionRegion.
     GpuCopyPass::FromRaw(cp, nullptr).UploadBuffer(src, dst, false);
-    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    GpuReleaseTransferBuffer(dev, tb);
 }
 
 void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd,
@@ -622,7 +622,7 @@ bool TerrainVtPageCache::DebugDumpAtlas(SDL_GPUDevice* dev, const char* out_png_
     SDL_GPUTransferBufferCreateInfo tbi{};
     tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
     tbi.size  = download_size;
-    SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
+    SDL_GPUTransferBuffer* tb = GpuCreateTransferBuffer(dev, &tbi);
     if (!tb) {
         MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] DebugDumpAtlas: transfer buffer create failed: %s", SDL_GetError());
         return false;
@@ -644,24 +644,24 @@ bool TerrainVtPageCache::DebugDumpAtlas(SDL_GPUDevice* dev, const char* out_png_
     SDL_GPUFence* fence = md::GpuDevice::Get().SubmitAndAcquireFence(cmd);
     if (!fence) {
         MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] DebugDumpAtlas: submit failed: %s", SDL_GetError());
-        SDL_ReleaseGPUTransferBuffer(dev, tb);
+        GpuReleaseTransferBuffer(dev, tb);
         return false;
     }
     bool waited = md::GpuDevice::Get().WaitForFence(fence);
     md::GpuDevice::Get().ReleaseFence(fence);
     if (!waited) {
-        SDL_ReleaseGPUTransferBuffer(dev, tb);
+        GpuReleaseTransferBuffer(dev, tb);
         return false;
     }
 
     void* mapped = GpuMapTransfer(tb, false);
     if (!mapped) {
-        SDL_ReleaseGPUTransferBuffer(dev, tb);
+        GpuReleaseTransferBuffer(dev, tb);
         return false;
     }
     int ok = stbi_write_png(out_png_path, (int)w, (int)h, 4, mapped, (int)(w * 4));
     GpuUnmapTransfer(tb);
-    SDL_ReleaseGPUTransferBuffer(dev, tb);
+    GpuReleaseTransferBuffer(dev, tb);
     if (!ok) {
         MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] DebugDumpAtlas: stbi_write_png failed: %s", out_png_path);
         return false;

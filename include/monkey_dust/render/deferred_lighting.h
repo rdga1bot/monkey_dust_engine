@@ -11,12 +11,9 @@
 //
 // Frame draw order:
 //   1. GBuffer::Begin() + geometry draw + GBuffer::End()
-//   2. SSAOSystem::Dispatch()   [gate: Deferred_Med+]
+//   2. SSAOSystem::MainPass()/BlurPass()/ApplyPass()   [gate: Deferred_Med+]
 //   3. DeferredLightingSystem::DrawAmbientPass(cmd, gbuf)   ← this
-//   4. PointLightSystem::Draw()  — additive point volumes
-//   5. StripLightSystem::Draw()  — additive strip capsules
-//   6. Forward pass (alpha/particles)
-//   7. SMAA (3-pass)
+//   4. Forward pass (alpha/particles)
 //
 // Gate: call IsReady() before use.  Init() creates nothing if !GBufferSystem::IsEnabled().
 // ShaderPaths: shaders/deferred_lighting.vert.spv + deferred_lighting.frag.spv

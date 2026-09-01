@@ -2,7 +2,7 @@
 // GpuTexturePool — unified transient GPU texture allocator (render graph
 // step 3.1). Consolidates ~9 independent, hand-rolled SDL_CreateGPUTexture
 // call sites (GBuffer, DeferredLightingSystem, BloomSystem, MotionBlurSystem,
-// CasPass, OitPass, SSAOSystem, SMAASystem, EvsmShadow — see docs/FULL_AUDIT.md
+// CasPass, OitPass, SSAOSystem, EvsmShadow — see docs/FULL_AUDIT.md
 // render-target inventory) with a single, reusable factory + pool.
 //
 // Not yet wired into any of those systems (that's step 3.3) — this class is

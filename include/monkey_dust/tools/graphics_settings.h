@@ -56,14 +56,12 @@ struct GraphicsSettings {
     bool  ibl_enabled  = true;
     float ibl_intensity= 1.f;
     bool  ssao_enabled = true;       // half-res compute (M30); off on Low preset
-    bool  smaa_enabled = true;       // 3-pass AA (M32); off on Low preset
 
     // ── Preset application ────────────────────────────────────────────────────
     void ApplyPreset(GraphicsPreset p) {
         switch (p) {
         case GraphicsPreset::Low:
             ssao_enabled    = false;
-            smaa_enabled    = false;
             soft_shadows    = false;
             shadow_cascades = 1;
             shadow_distance = 80.f;
@@ -72,7 +70,6 @@ struct GraphicsSettings {
             break;
         case GraphicsPreset::Medium:
             ssao_enabled    = false;
-            smaa_enabled    = true;
             soft_shadows    = true;
             shadow_cascades = 2;
             shadow_distance = 120.f;
@@ -81,7 +78,6 @@ struct GraphicsSettings {
             break;
         case GraphicsPreset::High:
             ssao_enabled    = true;
-            smaa_enabled    = true;
             soft_shadows    = true;
             shadow_cascades = 3;
             shadow_distance = 150.f;

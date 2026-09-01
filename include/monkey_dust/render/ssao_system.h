@@ -13,8 +13,6 @@
 // VBfA-R2 MainPass (upcoming): 8-sample Poisson AO + bilateral blur.
 //   Reads linear_depth → writes ssao_raw RGBA8 (R=AO, GB=packed edge flags).
 //
-// Legacy compute path (ssao.comp 16-tap) preserved as Dispatch() for reference.
-//
 // Frame order:
 //   1. Geometry → depth buffer filled
 //   2. SSAOSystem::PrepPass(cmd, hw_depth, hw_sampler)  ← VBfA-R1
@@ -57,27 +55,14 @@ public:
     void ApplyPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* swapchain_tex,
                    int sw, int sh);
 
-    // Legacy 16-tap compute path (ssao.comp) — kept for reference/testing.
-    void Dispatch(SDL_GPUCommandBuffer* cmd,
-                  SDL_GPUTexture*       gbuf_depth,
-                  SDL_GPUTexture*       gbuf_rt1,
-                  SDL_GPUSampler*       gbuf_sampler,
-                  const float*          inv_view_proj_16,
-                  float radius_uv  = 0.05f,
-                  float bias       = 0.002f,
-                  float strength   = 0.8f,
-                  float power      = 1.5f);
-
     // Textures
     SDL_GPUTexture* LinearDepthTex()  const { return linear_depth_; }
     SDL_GPUTexture* SSAORawTex()      const { return ssao_raw_;     }
     SDL_GPUTexture* SSAOBlurredTex()  const { return ssao_blurred_; }
-    SDL_GPUTexture* AOTexture()       const { return ao_tex_;        } // legacy
 
     // Samplers
     SDL_GPUSampler* LinearSampler()   const { return linear_sampler_; }
     SDL_GPUSampler* PointSampler()    const { return point_sampler_;  }
-    SDL_GPUSampler* AOSampler()       const { return ao_sampler_;     } // legacy
 
     bool IsEnabled() const { return enabled_; }
     int  HalfW()     const { return half_w_; }
@@ -110,11 +95,6 @@ private:
     SDL_GPUTexture*   ssao_raw_      = nullptr;  // RGBA8 half-res (R=AO, GB=packed edges)
     SDL_GPUTexture*   blur_temp_     = nullptr;  // R8   half-res (H blur intermediate)
     SDL_GPUTexture*   ssao_blurred_  = nullptr;  // R8   half-res (final AO)
-
-    // Legacy compute AO
-    GpuComputePipeline legacy_pipeline_;
-    SDL_GPUTexture*   ao_tex_        = nullptr;  // R8_UNORM legacy
-    SDL_GPUSampler*   ao_sampler_    = nullptr;  // LINEAR legacy
 
     int half_w_ = 0, half_h_ = 0;
     int full_w_ = 0, full_h_ = 0;

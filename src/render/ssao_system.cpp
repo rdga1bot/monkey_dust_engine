@@ -3,16 +3,6 @@
 #include <monkey_dust/render/render_tier.h>
 #include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/md_log.h>
-#include <cstring>
-
-// Legacy UBO for ssao.comp (16-tap compute path)
-struct SSAOParams {
-    float inv_vp[16];
-    float full_w, full_h;
-    float half_w, half_h;
-    float radius_uv, bias, strength, power;
-};
-static_assert(sizeof(SSAOParams) == 96);
 
 namespace md {
 
@@ -107,40 +97,6 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
             MD_LOG(MD_LOG_WARNING, "SSAOSystem: prep pipeline create failed");
             return;
         }
-    }
-
-    // ── Legacy compute path (ssao.comp 16-tap) ────────────────────────────────
-    {
-        SDL_GPUTextureCreateInfo ti = {};
-        ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-        ti.width                = (Uint32)half_w_;
-        ti.height               = (Uint32)half_h_;
-        ti.layer_count_or_depth = 1;
-        ti.num_levels           = 1;
-        ti.format               = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
-        ti.usage                = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE
-                                | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        ao_tex_ = GpuCreateTexture(dev, &ti);
-    }
-    if (ao_tex_) {
-        SDL_GPUSamplerCreateInfo si = {};
-        si.min_filter     = SDL_GPU_FILTER_LINEAR;
-        si.mag_filter     = SDL_GPU_FILTER_LINEAR;
-        si.mipmap_mode    = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-        si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        ao_sampler_ = GpuCreateSampler(dev, &si);
-
-        GpuComputePipeline::Desc cd;
-        cd.glsl_path                      = "shaders/ssao.comp";
-        cd.num_samplers                   = 2;
-        cd.num_readwrite_storage_textures = 1;
-        cd.num_uniform_buffers            = 1;
-        cd.threadcount_x = 8;
-        cd.threadcount_y = 8;
-        cd.threadcount_z = 1;
-        legacy_pipeline_.Create(cd);
     }
 
     // ── VBfA-R2: AO textures ─────────────────────────────────────────────────
@@ -396,61 +352,6 @@ void SSAOSystem::ApplyPass(SDL_GPUCommandBuffer* cmd,
     cb.EndPass();
 }
 
-void SSAOSystem::Dispatch(SDL_GPUCommandBuffer* cmd,
-                           SDL_GPUTexture*       gbuf_depth,
-                           SDL_GPUTexture*       gbuf_rt1,
-                           SDL_GPUSampler*       gbuf_sampler,
-                           const float*          inv_view_proj_16,
-                           float radius_uv, float bias,
-                           float strength,  float power) {
-    if (!enabled_) return;
-
-    // Compute pass — bind AO texture as readwrite (set=1, binding=0). Uses
-    // GpuComputePass::StorageBindings' rw_textures (added for this exact
-    // site as part of the M1 copy/upload group's follow-up: Begin used to
-    // hardcode storage-texture bindings to nullptr,0, which had forced this
-    // site to bypass the wrapper with raw SDL -- fixed, now goes through
-    // GpuComputePass like the call below).
-    GpuComputePass::StorageBindings sb;
-    sb.cmd = cmd;
-    sb.rw_textures[0] = { ao_tex_, false };
-    sb.num_rw_textures = 1;
-
-    GpuComputePass pass;
-    pass.Begin(&legacy_pipeline_, sb);
-    if (!pass.SDLPass()) {
-        MD_LOG(MD_LOG_WARNING, "SSAOSystem: SDL_BeginGPUComputePass failed: %s", SDL_GetError());
-        return;
-    }
-
-    // Bind depth+RT1 as samplers (set=0, binding=0..1)
-    SDL_GPUTextureSamplerBinding samplers[2] = {
-        { gbuf_depth, gbuf_sampler },
-        { gbuf_rt1,   gbuf_sampler }
-    };
-    pass.BindSamplers(0, samplers, 2);
-
-    // Push uniform params (set=2, binding=0)
-    SSAOParams params;
-    memcpy(params.inv_vp, inv_view_proj_16, 64);
-    params.full_w    = (float)full_w_;
-    params.full_h    = (float)full_h_;
-    params.half_w    = (float)half_w_;
-    params.half_h    = (float)half_h_;
-    params.radius_uv = radius_uv;
-    params.bias      = bias;
-    params.strength  = strength;
-    params.power     = power;
-    pass.PushUniforms(0, &params, sizeof(params));
-
-    // Dispatch: one workgroup per 8×8 tile of the half-res AO texture
-    uint32_t gx = ((uint32_t)half_w_ + 7) / 8;
-    uint32_t gy = ((uint32_t)half_h_ + 7) / 8;
-    pass.Dispatch(gx, gy, 1);
-
-    pass.End();
-}
-
 void SSAOSystem::Shutdown() {
     if (!dev_) return;
     prep_pipeline_.Destroy();
@@ -458,7 +359,6 @@ void SSAOSystem::Shutdown() {
     blur_h_pipeline_.Destroy();
     blur_v_pipeline_.Destroy();
     apply_pipeline_.Destroy();
-    legacy_pipeline_.Destroy();
     auto rel_tex = [&](SDL_GPUTexture*& t){
         if (t) { GpuReleaseTexture(dev_, t); t = nullptr; }
     };
@@ -469,10 +369,8 @@ void SSAOSystem::Shutdown() {
     rel_tex(ssao_raw_);
     rel_tex(blur_temp_);
     rel_tex(ssao_blurred_);
-    rel_tex(ao_tex_);
     rel_sam(linear_sampler_);
     rel_sam(point_sampler_);
-    rel_sam(ao_sampler_);
     dev_     = nullptr;
     enabled_ = false;
 }

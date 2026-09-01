@@ -710,6 +710,21 @@ inline void GpuPushComputeUniforms(SDL_GPUCommandBuffer* cmd, uint32_t slot,
     if (cmd) SDL_PushGPUComputeUniformData(cmd, slot, data, size_bytes);
 }
 
+// GpuPushDebugGroup / GpuPopDebugGroup — 1:1, no semantics, same class as
+// GpuPushVertexUniforms above (both SDL functions take only `cmd`). RenderDoc
+// group labels for command-buffer regions with no debug info otherwise
+// (SPIR-V builds carry none) -- currently unconditional in every build
+// config, including release; a future candidate for gating behind
+// MONKEY_DUST_EDITOR-style flag (submit-time cost, same logic as ImGui's own
+// #ifdef gate) is NOT done here since that would be a behavior change, out
+// of M1's scope.
+inline void GpuPushDebugGroup(SDL_GPUCommandBuffer* cmd, const char* name) {
+    if (cmd) SDL_PushGPUDebugGroup(cmd, name);
+}
+inline void GpuPopDebugGroup(SDL_GPUCommandBuffer* cmd) {
+    if (cmd) SDL_PopGPUDebugGroup(cmd);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GpuMapTransfer / GpuUnmapTransfer — stateless passthrough, no RAII.
 //

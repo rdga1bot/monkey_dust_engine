@@ -1,6 +1,7 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gbuffer.h>
 #include <monkey_dust/render/render_tier.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/md_log.h>
 // ── GBuffer ───────────────────────────────────────────────────────────────────
 
@@ -17,14 +18,14 @@ void GBuffer::Init(SDL_GPUDevice* dev, int w, int h) {
     // RT0: albedo(RGB) + roughness(A) — RGBA8 unorm
     ti.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     ti.usage  = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    rt0_ = SDL_CreateGPUTexture(dev, &ti);
+    rt0_ = GpuCreateTexture(dev, &ti);
 
     // RT1: oct-normal(RG) + metallic(B) + flags(A) — R16G16B16A16 SNORM (VBfA packssdw).
     // SNORM stores normals in [-1,1] directly — no UNORM remap needed.
     // 2× precision vs RGBA8 UNORM for oct-normals; metallic/flags [0,1] map to positive half.
     ti.format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_SNORM;
     ti.usage  = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    rt1_ = SDL_CreateGPUTexture(dev, &ti);
+    rt1_ = GpuCreateTexture(dev, &ti);
 
     // D32_FLOAT_S8_UINT: Intel Gen9 cannot sample D24_UNORM_S8_UINT (support check was
     // only for DEPTH_STENCIL_TARGET, missing SAMPLER — always use D32 for sampler safety).
@@ -40,7 +41,7 @@ void GBuffer::Init(SDL_GPUDevice* dev, int w, int h) {
     si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    sampler_ = SDL_CreateGPUSampler(dev, &si);
+    sampler_ = GpuCreateSampler(dev, &si);
 
     if (!rt0_ || !rt1_ || !depth_ || !sampler_) {
         MD_LOG(MD_LOG_WARNING, "GBuffer: texture creation failed (%dx%d)", w, h);
@@ -79,9 +80,9 @@ void GBuffer::End() {
 void GBuffer::Shutdown() {
     if (!dev_) return;
     cb_.EndPass();
-    if (sampler_) { SDL_ReleaseGPUSampler(dev_, sampler_); sampler_ = nullptr; }
-    if (rt0_)     { SDL_ReleaseGPUTexture(dev_, rt0_);     rt0_     = nullptr; }
-    if (rt1_)     { SDL_ReleaseGPUTexture(dev_, rt1_);     rt1_     = nullptr; }
+    if (sampler_) { GpuReleaseSampler(dev_, sampler_); sampler_ = nullptr; }
+    if (rt0_)     { GpuReleaseTexture(dev_, rt0_);     rt0_     = nullptr; }
+    if (rt1_)     { GpuReleaseTexture(dev_, rt1_);     rt1_     = nullptr; }
     if (depth_)   { SDL_ReleaseGPUTexture(dev_, depth_);   depth_   = nullptr; }
     dev_ = nullptr;
 }

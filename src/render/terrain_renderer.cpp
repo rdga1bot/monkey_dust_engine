@@ -72,7 +72,7 @@ bool TerrainRenderer::Init() {
         ti.layer_count_or_depth = 1;
         ti.num_levels           = 1;
         ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        zone_layers_tex_ = SDL_CreateGPUTexture(dev, &ti);
+        zone_layers_tex_ = GpuCreateTexture(dev, &ti);
 
         SDL_GPUSamplerCreateInfo si{};
         si.min_filter     = SDL_GPU_FILTER_NEAREST;
@@ -81,7 +81,7 @@ bool TerrainRenderer::Init() {
         si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        zone_layers_sampler_ = SDL_CreateGPUSampler(dev, &si);
+        zone_layers_sampler_ = GpuCreateSampler(dev, &si);
     }
 #endif
     return true;
@@ -264,14 +264,14 @@ void TerrainRenderer::Shutdown() {
 #ifdef MD_SDL_GPU
     SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
     if (dev) {
-        if (fallback_sampler_)       SDL_ReleaseGPUSampler(dev, fallback_sampler_);
-        if (fallback_tex_)           SDL_ReleaseGPUTexture(dev, fallback_tex_);
-        if (fallback_mask_sampler_)  SDL_ReleaseGPUSampler(dev, fallback_mask_sampler_);
-        if (fallback_mask_tex_)      SDL_ReleaseGPUTexture(dev, fallback_mask_tex_);
-        if (fallback_blend_sampler_) SDL_ReleaseGPUSampler(dev, fallback_blend_sampler_);
-        if (fallback_blend_tex_)     SDL_ReleaseGPUTexture(dev, fallback_blend_tex_);
-        if (zone_layers_sampler_)    SDL_ReleaseGPUSampler(dev, zone_layers_sampler_);
-        if (zone_layers_tex_)        SDL_ReleaseGPUTexture(dev, zone_layers_tex_);
+        if (fallback_sampler_)       GpuReleaseSampler(dev, fallback_sampler_);
+        if (fallback_tex_)           GpuReleaseTexture(dev, fallback_tex_);
+        if (fallback_mask_sampler_)  GpuReleaseSampler(dev, fallback_mask_sampler_);
+        if (fallback_mask_tex_)      GpuReleaseTexture(dev, fallback_mask_tex_);
+        if (fallback_blend_sampler_) GpuReleaseSampler(dev, fallback_blend_sampler_);
+        if (fallback_blend_tex_)     GpuReleaseTexture(dev, fallback_blend_tex_);
+        if (zone_layers_sampler_)    GpuReleaseSampler(dev, zone_layers_sampler_);
+        if (zone_layers_tex_)        GpuReleaseTexture(dev, zone_layers_tex_);
     }
     zone_layers_tex_     = nullptr;
     zone_layers_sampler_ = nullptr;

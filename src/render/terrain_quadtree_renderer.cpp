@@ -115,7 +115,7 @@ bool TerrainQuadtreeRenderer::InitBatched(SDL_GPUDevice* dev) {
     ti.num_levels           = 1;
     ti.format               = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_FLOAT;
     ti.usage                = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    node_data_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    node_data_tex_ = GpuCreateTexture(dev, &ti);
     if (!node_data_tex_) {
         MD_LOG(MD_LOG_WARNING, "[TerrainQuadtreeRenderer] node_data_tex create failed: %s", SDL_GetError());
         return false;
@@ -128,7 +128,7 @@ bool TerrainQuadtreeRenderer::InitBatched(SDL_GPUDevice* dev) {
     si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    node_data_sampler_ = SDL_CreateGPUSampler(dev, &si);
+    node_data_sampler_ = GpuCreateSampler(dev, &si);
     if (!node_data_sampler_) {
         MD_LOG(MD_LOG_WARNING, "[TerrainQuadtreeRenderer] node_data_sampler create failed");
         return false;
@@ -263,8 +263,8 @@ void TerrainQuadtreeRenderer::Shutdown(SDL_GPUDevice* dev) {
     if (forward_ready_) forward_pipeline_.Destroy();
     if (batched_ready_) {
         batched_pipeline_.Destroy();
-        if (dev && node_data_tex_) SDL_ReleaseGPUTexture(dev, node_data_tex_);
-        if (dev && node_data_sampler_) SDL_ReleaseGPUSampler(dev, node_data_sampler_);
+        if (dev && node_data_tex_) GpuReleaseTexture(dev, node_data_tex_);
+        if (dev && node_data_sampler_) GpuReleaseSampler(dev, node_data_sampler_);
         node_data_tex_ = nullptr;
         node_data_sampler_ = nullptr;
     }

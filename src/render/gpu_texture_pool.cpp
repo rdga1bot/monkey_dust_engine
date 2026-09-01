@@ -1,4 +1,5 @@
 #include <monkey_dust/render/gpu_texture_pool.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/md_log.h>
 
 namespace md {
@@ -30,7 +31,7 @@ SDL_GPUTexture* GpuTexturePool::Acquire(SDL_GPUDevice* dev, const RGTextureDesc&
     ti.format               = desc.format;
     ti.usage                = desc.usage;
 
-    SDL_GPUTexture* tex = SDL_CreateGPUTexture(dev, &ti);
+    SDL_GPUTexture* tex = GpuCreateTexture(dev, &ti);
     if (!tex) {
         MD_LOG(MD_LOG_WARNING, "[GpuTexturePool] SDL_CreateGPUTexture failed for '%s' (%dx%d)",
                desc.debug_name, desc.width, desc.height);
@@ -68,7 +69,7 @@ void GpuTexturePool::EndFrame() {
 void GpuTexturePool::Shutdown() {
     if (dev_) {
         for (int i = 0; i < count_; ++i) {
-            if (entries_[i].tex) SDL_ReleaseGPUTexture(dev_, entries_[i].tex);
+            if (entries_[i].tex) GpuReleaseTexture(dev_, entries_[i].tex);
         }
     }
     count_ = 0;

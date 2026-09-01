@@ -1,6 +1,7 @@
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/ssao_system.h>
 #include <monkey_dust/render/render_tier.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/md_log.h>
 #include <cstring>
 
@@ -45,7 +46,7 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
         ti.format               = SDL_GPU_TEXTUREFORMAT_R32_FLOAT;
         ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
                                 | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        linear_depth_ = SDL_CreateGPUTexture(dev, &ti);
+        linear_depth_ = GpuCreateTexture(dev, &ti);
         if (!linear_depth_) {
             MD_LOG(MD_LOG_WARNING, "SSAOSystem: linear_depth create failed: %s", SDL_GetError());
             return;
@@ -61,7 +62,7 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
         si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        linear_sampler_ = SDL_CreateGPUSampler(dev, &si);
+        linear_sampler_ = GpuCreateSampler(dev, &si);
         if (!linear_sampler_) {
             MD_LOG(MD_LOG_WARNING, "SSAOSystem: linear_sampler create failed");
             return;
@@ -77,7 +78,7 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
         si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        point_sampler_ = SDL_CreateGPUSampler(dev, &si);
+        point_sampler_ = GpuCreateSampler(dev, &si);
         if (!point_sampler_) {
             MD_LOG(MD_LOG_WARNING, "SSAOSystem: point_sampler create failed");
             return;
@@ -119,7 +120,7 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
         ti.format               = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
         ti.usage                = SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE
                                 | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        ao_tex_ = SDL_CreateGPUTexture(dev, &ti);
+        ao_tex_ = GpuCreateTexture(dev, &ti);
     }
     if (ao_tex_) {
         SDL_GPUSamplerCreateInfo si = {};
@@ -129,7 +130,7 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
         si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        ao_sampler_ = SDL_CreateGPUSampler(dev, &si);
+        ao_sampler_ = GpuCreateSampler(dev, &si);
 
         GpuComputePipeline::Desc cd;
         cd.glsl_path                      = "shaders/ssao.comp";
@@ -153,7 +154,7 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
         ti.format               = fmt;
         ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET
                                 | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        out = SDL_CreateGPUTexture(dev, &ti);
+        out = GpuCreateTexture(dev, &ti);
         return out != nullptr;
     };
 
@@ -460,10 +461,10 @@ void SSAOSystem::Shutdown() {
     apply_pipeline_.Destroy();
     legacy_pipeline_.Destroy();
     auto rel_tex = [&](SDL_GPUTexture*& t){
-        if (t) { SDL_ReleaseGPUTexture(dev_, t); t = nullptr; }
+        if (t) { GpuReleaseTexture(dev_, t); t = nullptr; }
     };
     auto rel_sam = [&](SDL_GPUSampler*& s){
-        if (s) { SDL_ReleaseGPUSampler(dev_, s); s = nullptr; }
+        if (s) { GpuReleaseSampler(dev_, s); s = nullptr; }
     };
     rel_tex(linear_depth_);
     rel_tex(ssao_raw_);

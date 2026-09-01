@@ -8,6 +8,7 @@
 
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #endif
 
 namespace md::flare {
@@ -109,8 +110,8 @@ void BillboardRenderer::Shutdown() {
         sdl_vbuf_.Shutdown();
         SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
         if (dev) {
-            if (sdl_dummy_sampler_) SDL_ReleaseGPUSampler(dev, (SDL_GPUSampler*)sdl_dummy_sampler_);
-            if (sdl_dummy_tex_)     SDL_ReleaseGPUTexture(dev, (SDL_GPUTexture*)sdl_dummy_tex_);
+            if (sdl_dummy_sampler_) GpuReleaseSampler(dev, (SDL_GPUSampler*)sdl_dummy_sampler_);
+            if (sdl_dummy_tex_)     GpuReleaseTexture(dev, (SDL_GPUTexture*)sdl_dummy_tex_);
         }
         sdl_dummy_tex_ = sdl_dummy_sampler_ = nullptr;
         sdl_init_ = false;

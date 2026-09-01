@@ -1,6 +1,7 @@
 #include <monkey_dust/render/cas_pass.h>
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <cstdio>
 
 namespace md {
@@ -21,12 +22,12 @@ void CasPass::CreateTextures(int w, int h) {
     ti.num_levels           = 1;
     ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
                               SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    scene_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    scene_tex_ = GpuCreateTexture(dev, &ti);
 
     // Depth texture for scene render. D32_FLOAT: Intel Gen9 cannot sample D24_UNORM.
     ti.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
     ti.usage   = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
-    depth_tex_ = SDL_CreateGPUTexture(dev, &ti);
+    depth_tex_ = GpuCreateTexture(dev, &ti);
 
     // Nearest sampler for CAS input (no interpolation — read exact pixels).
     SDL_GPUSamplerCreateInfo si{};
@@ -36,7 +37,7 @@ void CasPass::CreateTextures(int w, int h) {
     si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-    sampler_ = SDL_CreateGPUSampler(dev, &si);
+    sampler_ = GpuCreateSampler(dev, &si);
 
     tex_w_ = w;
     tex_h_ = h;
@@ -45,9 +46,9 @@ void CasPass::CreateTextures(int w, int h) {
 void CasPass::DestroyTextures() {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
     if (!dev) return;
-    if (scene_tex_) { SDL_ReleaseGPUTexture(dev, scene_tex_); scene_tex_ = nullptr; }
-    if (depth_tex_) { SDL_ReleaseGPUTexture(dev, depth_tex_); depth_tex_ = nullptr; }
-    if (sampler_)   { SDL_ReleaseGPUSampler(dev, sampler_);   sampler_   = nullptr; }
+    if (scene_tex_) { GpuReleaseTexture(dev, scene_tex_); scene_tex_ = nullptr; }
+    if (depth_tex_) { GpuReleaseTexture(dev, depth_tex_); depth_tex_ = nullptr; }
+    if (sampler_)   { GpuReleaseSampler(dev, sampler_);   sampler_   = nullptr; }
 }
 
 // ── Init / Shutdown / Resize ──────────────────────────────────────────────────

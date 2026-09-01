@@ -766,6 +766,35 @@ inline SDL_GPUTransferBuffer* GpuCreateTransferBuffer(SDL_GPUDevice* dev,
 inline void GpuReleaseTransferBuffer(SDL_GPUDevice* dev, SDL_GPUTransferBuffer* tb) {
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 }
+
+// GpuCreateTexture / GpuReleaseTexture / GpuCreateSampler / GpuReleaseSampler
+// — 1:1, `dev` explicit, same reasoning as GpuCreateTransferBuffer above.
+// Deliberately NOT routed through GpuColorTexture/GpuSampler (the owning
+// classes item 9 built): those fit a "create once, this class's Shutdown()
+// releases it" shape, but the real remainder here has genuinely different
+// ownership per file -- terrain_renderer.cpp creates through a temporary
+// wrapper object then calls .TakeSDLTexture()/.TakeSDLSampler() to move
+// ownership into its own member fields (so ITS OWN Shutdown() controls
+// release timing, not the temporary's destructor); several files release
+// via a shared helper looping over multiple owned texture/sampler pairs.
+// Forcing either pattern into GpuColorTexture/GpuSampler would mean adding
+// a Take()-equivalent or a batch-release API neither class has today, for a
+// one-off need -- the exact over-fitting this session's classes have
+// avoided everywhere else (GpuPassView, GpuCopyPass, GpuComputePass::
+// StorageBindings all grew from a real caller shape, never spec'd ahead of
+// one). A 1:1 pair preserves whatever ownership shape each file already has.
+inline SDL_GPUTexture* GpuCreateTexture(SDL_GPUDevice* dev, const SDL_GPUTextureCreateInfo* info) {
+    return SDL_CreateGPUTexture(dev, info);
+}
+inline void GpuReleaseTexture(SDL_GPUDevice* dev, SDL_GPUTexture* tex) {
+    SDL_ReleaseGPUTexture(dev, tex);
+}
+inline SDL_GPUSampler* GpuCreateSampler(SDL_GPUDevice* dev, const SDL_GPUSamplerCreateInfo* info) {
+    return SDL_CreateGPUSampler(dev, info);
+}
+inline void GpuReleaseSampler(SDL_GPUDevice* dev, SDL_GPUSampler* sampler) {
+    SDL_ReleaseGPUSampler(dev, sampler);
+}
 #endif
 
 // ─────────────────────────────────────────────────────────────────────────────

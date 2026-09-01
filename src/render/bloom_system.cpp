@@ -126,7 +126,7 @@ static void QtrPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipe,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd             = cmd;
-    cpd.color_tex       = target;
+    cpd.color_tex[0]       = target;
     cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE (full-quad overwrite follows)
     cb.BeginColorPass(cpd);
     SDL_GPURenderPass* pass = cb.SDLPass();
@@ -184,7 +184,7 @@ void BloomSystem::CompositePass(SDL_GPUCommandBuffer* cmd,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd            = cmd;
-    cpd.color_tex      = swapchain_tex;
+    cpd.color_tex[0]      = swapchain_tex;
     cpd.clear_color[0] = 0.f; cpd.clear_color[1] = 0.f;
     cpd.clear_color[2] = 0.f; cpd.clear_color[3] = 1.f;
     cpd.load_color     = false; // CLEAR, matches original zero-inited ct exactly

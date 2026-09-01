@@ -115,7 +115,7 @@ void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd            = cmd;
-    cpd.color_tex      = hdr_color_.SDLTexture();
+    cpd.color_tex[0]      = hdr_color_.SDLTexture();
     cpd.clear_color[0] = 0.f; cpd.clear_color[1] = 0.f;
     cpd.clear_color[2] = 0.f; cpd.clear_color[3] = 1.f;
     cpd.load_color     = false; // CLEAR, matches original exactly

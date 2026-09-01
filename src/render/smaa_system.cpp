@@ -97,7 +97,7 @@ static void RunFullscreenPass(GpuPipeline&  pipe,
     // draw into a pass someone else opened -- see GpuPassView instead).
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd            = cmd;
-    cpd.color_tex      = out_tex;
+    cpd.color_tex[0]      = out_tex;
     // Match the original SDL_GPUColorTargetInfo ct = {} zero-init exactly:
     // clear_color={0,0,0,0}, not ColorPassDesc's own default of {0,0,0,1}.
     cpd.clear_color[0] = 0.f; cpd.clear_color[1] = 0.f;

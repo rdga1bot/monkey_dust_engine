@@ -148,7 +148,7 @@ void MotionBlurSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd             = cmd;
-    cpd.color_tex       = motion_rt_.SDLTexture();
+    cpd.color_tex[0]       = motion_rt_.SDLTexture();
     cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE
     cpd.clear_color[0] = 0.5f; cpd.clear_color[1] = 0.5f; // neutral motion (unused under DONT_CARE, kept for parity)
     cpd.clear_color[2] = 0.5f; cpd.clear_color[3] = 1.f;
@@ -195,7 +195,7 @@ void MotionBlurSystem::ApplyPass(SDL_GPUCommandBuffer* cmd,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd             = cmd;
-    cpd.color_tex       = swapchain_tex;
+    cpd.color_tex[0]       = swapchain_tex;
     cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE
     cb.BeginColorPass(cpd);
     SDL_GPURenderPass* pass = cb.SDLPass();

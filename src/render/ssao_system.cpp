@@ -237,7 +237,7 @@ void SSAOSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd             = cmd;
-    cpd.color_tex       = linear_depth_;
+    cpd.color_tex[0]       = linear_depth_;
     cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE
     cb.BeginColorPass(cpd);
     SDL_GPURenderPass* pass = cb.SDLPass();
@@ -273,7 +273,7 @@ static void FullscreenPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipeline,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd             = cmd;
-    cpd.color_tex       = target;
+    cpd.color_tex[0]       = target;
     cpd.color_dont_care = true; // matches original LOADOP_DONT_CARE
     cb.BeginColorPass(cpd);
     SDL_GPURenderPass* pass = cb.SDLPass();
@@ -377,7 +377,7 @@ void SSAOSystem::ApplyPass(SDL_GPUCommandBuffer* cmd,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd        = cmd;
-    cpd.color_tex  = swapchain_tex;
+    cpd.color_tex[0]  = swapchain_tex;
     cpd.load_color = true; // LOAD, preserve existing scene
     cb.BeginColorPass(cpd);
     if (!cb.SDLPass()) return;

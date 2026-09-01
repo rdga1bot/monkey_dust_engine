@@ -104,7 +104,7 @@ SDL_GPURenderPass* TerrainShadingProjected::BeginGBufferPass(SDL_GPUCommandBuffe
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd            = cmd;
-    cpd.color_tex      = gbuf_color_.SDLTexture();
+    cpd.color_tex[0]      = gbuf_color_.SDLTexture();
     cpd.depth_tex      = gbuf_depth_.SDLTexture();
     cpd.clear_color[0] = 0.f; cpd.clear_color[1] = 0.f;
     cpd.clear_color[2] = 0.f; cpd.clear_color[3] = 0.f;

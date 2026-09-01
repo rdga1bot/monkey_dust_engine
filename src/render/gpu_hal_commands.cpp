@@ -103,7 +103,7 @@ void GpuCommandBuffer::BeginColorPass(const ColorPassDesc& desc) {
     sdl_cmd_ = desc.cmd;
 
     SDL_GPUColorTargetInfo color_info = {};
-    color_info.texture     = desc.color_tex;
+    color_info.texture     = desc.color_tex[0];
     color_info.clear_color = { desc.clear_color[0], desc.clear_color[1],
                                desc.clear_color[2], desc.clear_color[3] };
     color_info.load_op  = desc.color_dont_care ? SDL_GPU_LOADOP_DONT_CARE

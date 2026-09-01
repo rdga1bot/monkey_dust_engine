@@ -257,7 +257,7 @@ void EvsmShadow::ApplyBlur(SDL_GPUCommandBuffer* cmd) {
             GpuCommandBuffer cb;
             GpuCommandBuffer::ColorPassDesc cpd;
             cpd.cmd       = cmd;
-            cpd.color_tex = blur_tmp_[k];
+            cpd.color_tex[0] = blur_tmp_[k];
             cb.BeginColorPass(cpd);
             cb.BindPipeline(&blur_pipeline_);
             SDL_GPUTextureSamplerBinding tsb{ moment_tex_[k], sampler_ };
@@ -272,7 +272,7 @@ void EvsmShadow::ApplyBlur(SDL_GPUCommandBuffer* cmd) {
             GpuCommandBuffer cb;
             GpuCommandBuffer::ColorPassDesc cpd;
             cpd.cmd       = cmd;
-            cpd.color_tex = blur_out_[k];
+            cpd.color_tex[0] = blur_out_[k];
             cb.BeginColorPass(cpd);
             cb.BindPipeline(&blur_pipeline_);
             SDL_GPUTextureSamplerBinding tsb{ blur_tmp_[k], sampler_ };

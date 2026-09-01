@@ -107,7 +107,7 @@ void CasPass::Apply(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* output_tex,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd        = cmd;
-    cpd.color_tex  = output_tex;
+    cpd.color_tex[0]  = output_tex;
     cpd.depth_tex  = nullptr;
     cpd.load_color = false;   // CAS replaces the output — clear is fine
     cb.BeginColorPass(cpd);

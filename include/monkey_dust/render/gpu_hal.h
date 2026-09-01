@@ -235,8 +235,15 @@ public:
 #ifdef MD_SDL_GPU
     // Open a color (+ optional depth) render pass on an existing command buffer.
     struct ColorPassDesc {
+        // MRT: gbuffer.cpp is the only 2-target site in the whole tree
+        // (confirmed by grep, M1 §3 item 12) -- sized to that, not grown
+        // speculatively. color_tex[0] is the only slot every other caller
+        // (28 sites) ever touches; num_color_targets defaults to 1 so none
+        // of them change behavior.
+        static constexpr int  MAX_COLOR_TARGETS = 2;
         SDL_GPUCommandBuffer* cmd;
-        SDL_GPUTexture*       color_tex;
+        SDL_GPUTexture*       color_tex[MAX_COLOR_TARGETS] = {};
+        int                   num_color_targets = 1;
         SDL_GPUTexture*       depth_tex      = nullptr;
         float                 clear_color[4] = {0.f, 0.f, 0.f, 1.f};
         float                 clear_depth    = 1.0f;

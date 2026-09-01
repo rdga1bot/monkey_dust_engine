@@ -652,7 +652,7 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
     GpuCommandBuffer cb;
     GpuCommandBuffer::ColorPassDesc cpd;
     cpd.cmd            = cmd;
-    cpd.color_tex      = swap_tex;
+    cpd.color_tex[0]      = swap_tex;
     cpd.clear_color[0] = 0.08f;
     cpd.clear_color[1] = 0.08f;
     cpd.clear_color[2] = 0.12f;

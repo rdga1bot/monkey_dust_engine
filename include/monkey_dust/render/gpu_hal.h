@@ -811,6 +811,26 @@ inline void GpuSetViewport(SDL_GPURenderPass* pass, const SDL_GPUViewport& vp) {
 inline void GpuSetScissor(SDL_GPURenderPass* pass, const SDL_Rect& rect) {
     if (pass) SDL_SetGPUScissor(pass, &rect);
 }
+
+// GpuWindowSupportsPresentMode / GpuSetSwapchainParameters — 1:1, `dev` +
+// `win` explicit (window.h's window_set_vsync() already fetches both from
+// GpuDevice::Get() right next to these calls, so this changes nothing about
+// what the caller has to pass). window.h's own header comment ("Rule M-A:
+// include only from Main.cpp and EditorMain.cpp") restricts who may INCLUDE
+// window.h, not what window.h may depend on -- the file already calls
+// GpuDevice::Get() directly in this same function, so it has zero isolation
+// from gpu_hal concepts to begin with. Not a protected exception (confirmed
+// during §3.1 planning), just the last swapchain/present-mode category that
+// had never been categorized before this pass.
+inline bool GpuWindowSupportsPresentMode(SDL_GPUDevice* dev, SDL_Window* win,
+                                          SDL_GPUPresentMode mode) {
+    return SDL_WindowSupportsGPUPresentMode(dev, win, mode);
+}
+inline bool GpuSetSwapchainParameters(SDL_GPUDevice* dev, SDL_Window* win,
+                                       SDL_GPUSwapchainComposition composition,
+                                       SDL_GPUPresentMode mode) {
+    return SDL_SetGPUSwapchainParameters(dev, win, composition, mode);
+}
 #endif
 
 // ─────────────────────────────────────────────────────────────────────────────

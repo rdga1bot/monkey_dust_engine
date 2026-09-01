@@ -141,6 +141,7 @@
 #  include <cstdio>
 #ifdef MD_SDL_GPU
 #  include <monkey_dust/render/gpu_device.h>
+#  include <monkey_dust/render/gpu_hal.h>
 #endif
 
    // Compat no-ops for Raylib calls that may still appear in non-migrated game code.
@@ -218,8 +219,8 @@
 #ifdef MD_SDL_GPU
        auto& dev = md::GpuDevice::Get();
        if (dev.IsReady()) {
-           bool has_vsync   = SDL_WindowSupportsGPUPresentMode(dev.SDLDevice(), dev.Window(), SDL_GPU_PRESENTMODE_VSYNC);
-           bool has_mailbox = SDL_WindowSupportsGPUPresentMode(dev.SDLDevice(), dev.Window(), SDL_GPU_PRESENTMODE_MAILBOX);
+           bool has_vsync   = GpuWindowSupportsPresentMode(dev.SDLDevice(), dev.Window(), SDL_GPU_PRESENTMODE_VSYNC);
+           bool has_mailbox = GpuWindowSupportsPresentMode(dev.SDLDevice(), dev.Window(), SDL_GPU_PRESENTMODE_MAILBOX);
            SDL_Log("[vsync] supported: vsync=%d mailbox=%d requested=%s",
                    has_vsync, has_mailbox, fps > 0 ? "vsync" : "no-vsync");
            SDL_GPUPresentMode mode;
@@ -230,7 +231,7 @@
            } else {
                mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
            }
-           bool ok = SDL_SetGPUSwapchainParameters(dev.SDLDevice(), dev.Window(),
+           bool ok = GpuSetSwapchainParameters(dev.SDLDevice(), dev.Window(),
                SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
            SDL_Log("[vsync] SetGPUSwapchainParameters mode=%d ok=%d err=%s",
                    (int)mode, ok, ok ? "none" : SDL_GetError());

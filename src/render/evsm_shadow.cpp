@@ -1,6 +1,7 @@
 #include <monkey_dust/render/evsm_shadow.h>
 #ifdef MD_SDL_GPU
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/md_fs.h>
 #include <cstdio>
 
@@ -24,7 +25,7 @@ static SDL_GPUShader* LoadSpv(SDL_GPUDevice* dev, const char* spv_path,
     info.stage               = stage;
     info.num_uniform_buffers = uni;
     info.num_samplers        = smp;
-    SDL_GPUShader* sh = SDL_CreateGPUShader(dev, &info);
+    SDL_GPUShader* sh = GpuCreateShader(dev, &info);
     md::fs_free((char*)code);
     return sh;
 }
@@ -57,7 +58,7 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
         ti.layer_count_or_depth = 1;
         ti.num_levels           = 1;
         ti.usage                = ct_usage;
-        moment_tex_[k] = SDL_CreateGPUTexture(dev, &ti);
+        moment_tex_[k] = GpuCreateTexture(dev, &ti);
         if (!moment_tex_[k]) {
             fprintf(stderr, "[EvsmShadow] moment texture[%d] creation failed: %s\n",
                     k, SDL_GetError());
@@ -74,7 +75,7 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
         si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-        sampler_ = SDL_CreateGPUSampler(dev, &si);
+        sampler_ = GpuCreateSampler(dev, &si);
     }
 
     // ── Moment-write pipeline ─────────────────────────────────────────────────
@@ -86,8 +87,8 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
         SDL_GPUShader* frag = LoadSpv(dev, "shaders/spirv/evsm_moments.frag.spv",
                                        SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
         if (!vert || !frag) {
-            if (vert) SDL_ReleaseGPUShader(dev, vert);
-            if (frag) SDL_ReleaseGPUShader(dev, frag);
+            if (vert) GpuReleaseShader(dev, vert);
+            if (frag) GpuReleaseShader(dev, frag);
             fprintf(stderr, "[EvsmShadow] shader load failed\n");
         } else {
             // Vertex layout: position only (float3, stride 24 = pos+norm same as CSM).
@@ -134,9 +135,9 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
             ci.target_info         = tgt;
             ci.primitive_type      = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
 
-            moment_pipeline_ = SDL_CreateGPUGraphicsPipeline(dev, &ci);
-            SDL_ReleaseGPUShader(dev, vert);
-            SDL_ReleaseGPUShader(dev, frag);
+            moment_pipeline_ = GpuCreateGraphicsPipeline(dev, &ci);
+            GpuReleaseShader(dev, vert);
+            GpuReleaseShader(dev, frag);
 
             if (!moment_pipeline_)
                 fprintf(stderr, "[EvsmShadow] moment pipeline failed: %s\n",
@@ -171,8 +172,8 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
             ti.num_levels           = 1;
             ti.usage                = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
                                        SDL_GPU_TEXTUREUSAGE_SAMPLER;
-            blur_tmp_[k] = SDL_CreateGPUTexture(dev, &ti);
-            blur_out_[k] = SDL_CreateGPUTexture(dev, &ti);
+            blur_tmp_[k] = GpuCreateTexture(dev, &ti);
+            blur_out_[k] = GpuCreateTexture(dev, &ti);
             if (!blur_tmp_[k] || !blur_out_[k]) {
                 fprintf(stderr, "[EvsmShadow] blur texture[%d] failed: %s\n",
                         k, SDL_GetError());
@@ -209,25 +210,25 @@ void EvsmShadow::Shutdown() {
     SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
     if (!dev) return;
     if (moment_pipeline_) {
-        SDL_ReleaseGPUGraphicsPipeline(dev, moment_pipeline_);
+        GpuReleaseGraphicsPipeline(dev, moment_pipeline_);
         moment_pipeline_ = nullptr;
     }
     for (int k = 0; k < NUM_CASCADES; ++k) {
         if (moment_tex_[k]) {
-            SDL_ReleaseGPUTexture(dev, moment_tex_[k]);
+            GpuReleaseTexture(dev, moment_tex_[k]);
             moment_tex_[k] = nullptr;
         }
         if (blur_tmp_[k]) {
-            SDL_ReleaseGPUTexture(dev, blur_tmp_[k]);
+            GpuReleaseTexture(dev, blur_tmp_[k]);
             blur_tmp_[k] = nullptr;
         }
         if (blur_out_[k]) {
-            SDL_ReleaseGPUTexture(dev, blur_out_[k]);
+            GpuReleaseTexture(dev, blur_out_[k]);
             blur_out_[k] = nullptr;
         }
     }
     blur_pipeline_.Destroy();
-    if (sampler_) { SDL_ReleaseGPUSampler(dev, sampler_); sampler_ = nullptr; }
+    if (sampler_) { GpuReleaseSampler(dev, sampler_); sampler_ = nullptr; }
     ready_      = false;
     blur_ready_ = false;
 }

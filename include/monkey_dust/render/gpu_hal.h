@@ -767,6 +767,34 @@ inline void GpuReleaseTransferBuffer(SDL_GPUDevice* dev, SDL_GPUTransferBuffer* 
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 }
 
+// GpuCreateShader / GpuReleaseShader / GpuCreateGraphicsPipeline /
+// GpuReleaseGraphicsPipeline — 1:1, `dev` explicit, same reasoning as
+// GpuCreateTransferBuffer above. Deliberately NOT routed through the
+// GpuPipeline class (which owns the usual Desc-driven Create()/Destroy()
+// used everywhere else in the tree): evsm_shadow.cpp's moment pipeline has
+// its own raw SDL_GPUGraphicsPipelineCreateInfo assembly (custom
+// position-only vertex layout, explicit per-shader uniform/sampler counts
+// via a local LoadSpv() helper, partial-failure shader release on error)
+// that predates GpuPipeline and doesn't map onto its Desc without
+// re-deriving every field GpuPipeline::Create() sets internally --
+// exactly the re-verification risk this session's classes avoid (same
+// reasoning as item 9's texture/sampler classes not being retrofitted
+// onto item 3's remainder). A 1:1 pair preserves the file's existing
+// error-handling shape untouched.
+inline SDL_GPUShader* GpuCreateShader(SDL_GPUDevice* dev, const SDL_GPUShaderCreateInfo* info) {
+    return SDL_CreateGPUShader(dev, info);
+}
+inline void GpuReleaseShader(SDL_GPUDevice* dev, SDL_GPUShader* shader) {
+    SDL_ReleaseGPUShader(dev, shader);
+}
+inline SDL_GPUGraphicsPipeline* GpuCreateGraphicsPipeline(SDL_GPUDevice* dev,
+                                                           const SDL_GPUGraphicsPipelineCreateInfo* info) {
+    return SDL_CreateGPUGraphicsPipeline(dev, info);
+}
+inline void GpuReleaseGraphicsPipeline(SDL_GPUDevice* dev, SDL_GPUGraphicsPipeline* pipeline) {
+    SDL_ReleaseGPUGraphicsPipeline(dev, pipeline);
+}
+
 // GpuCreateTexture / GpuReleaseTexture / GpuCreateSampler / GpuReleaseSampler
 // — 1:1, `dev` explicit, same reasoning as GpuCreateTransferBuffer above.
 // Deliberately NOT routed through GpuColorTexture/GpuSampler (the owning

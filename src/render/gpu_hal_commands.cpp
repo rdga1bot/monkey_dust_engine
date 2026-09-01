@@ -102,15 +102,28 @@ void GpuCommandBuffer::EndPass() {
 void GpuCommandBuffer::BeginColorPass(const ColorPassDesc& desc) {
     sdl_cmd_ = desc.cmd;
 
-    SDL_GPUColorTargetInfo color_info = {};
-    color_info.texture     = desc.color_tex[0];
-    color_info.clear_color = { desc.clear_color[0], desc.clear_color[1],
-                               desc.clear_color[2], desc.clear_color[3] };
-    color_info.load_op  = desc.color_dont_care ? SDL_GPU_LOADOP_DONT_CARE
-                        : desc.load_color       ? SDL_GPU_LOADOP_LOAD
-                                                : SDL_GPU_LOADOP_CLEAR;
-    color_info.store_op = SDL_GPU_STOREOP_STORE;
-    color_info.cycle    = false;
+    // §8.4: reject out-of-range target counts instead of silently truncating
+    // to whatever the fixed array holds.
+    int num_targets = desc.num_color_targets;
+    if (num_targets < 1 || num_targets > ColorPassDesc::MAX_COLOR_TARGETS) {
+        MD_LOG(MD_LOG_WARNING, "BeginColorPass: num_color_targets=%d out of range [1,%d], clamping to 1",
+               num_targets, ColorPassDesc::MAX_COLOR_TARGETS);
+        num_targets = 1;
+    }
+
+    SDL_GPUColorTargetInfo color_info[ColorPassDesc::MAX_COLOR_TARGETS] = {};
+    for (int i = 0; i < num_targets; ++i) {
+        // Target 1 (gbuffer.cpp RT1) genuinely clears to a different color
+        // than target 0 -- see clear_color_mrt1's doc comment in gpu_hal.h.
+        const float* cc = (i == 1) ? desc.clear_color_mrt1 : desc.clear_color;
+        color_info[i].texture     = desc.color_tex[i];
+        color_info[i].clear_color = { cc[0], cc[1], cc[2], cc[3] };
+        color_info[i].load_op  = desc.color_dont_care ? SDL_GPU_LOADOP_DONT_CARE
+                                : desc.load_color       ? SDL_GPU_LOADOP_LOAD
+                                                        : SDL_GPU_LOADOP_CLEAR;
+        color_info[i].store_op = SDL_GPU_STOREOP_STORE;
+        color_info[i].cycle    = false;
+    }
 
     if (desc.depth_tex) {
         SDL_GPUDepthStencilTargetInfo depth_info = {};
@@ -122,9 +135,9 @@ void GpuCommandBuffer::BeginColorPass(const ColorPassDesc& desc) {
         depth_info.stencil_load_op  = SDL_GPU_LOADOP_DONT_CARE;
         depth_info.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
         depth_info.cycle            = false;
-        sdl_pass_ = SDL_BeginGPURenderPass(sdl_cmd_, &color_info, 1, &depth_info);
+        sdl_pass_ = SDL_BeginGPURenderPass(sdl_cmd_, color_info, num_targets, &depth_info);
     } else {
-        sdl_pass_ = SDL_BeginGPURenderPass(sdl_cmd_, &color_info, 1, nullptr);
+        sdl_pass_ = SDL_BeginGPURenderPass(sdl_cmd_, color_info, num_targets, nullptr);
     }
 }
 

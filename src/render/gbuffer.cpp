@@ -52,44 +52,33 @@ void GBuffer::Init(SDL_GPUDevice* dev, int w, int h) {
 }
 
 SDL_GPURenderPass* GBuffer::Begin(SDL_GPUCommandBuffer* cmd) {
-    SDL_GPUColorTargetInfo col[2] = {};
-
-    // RT0 — albedo + roughness
-    col[0].texture      = rt0_;
-    col[0].load_op      = SDL_GPU_LOADOP_CLEAR;
-    col[0].store_op     = SDL_GPU_STOREOP_STORE;
-    col[0].clear_color  = { 0.f, 0.f, 0.f, 1.f };  // clear roughness=1 (fully rough)
-
-    // RT1 — oct-normal(SNORM) + metallic + flags
-    // SNORM: OctEncode(0,0,1)=(0,0) stored directly — clear {0,0,0,0} = "up" normal.
-    col[1].texture      = rt1_;
-    col[1].load_op      = SDL_GPU_LOADOP_CLEAR;
-    col[1].store_op     = SDL_GPU_STOREOP_STORE;
-    col[1].clear_color  = { 0.f, 0.f, 0.f, 0.f };
-
-    SDL_GPUDepthStencilTargetInfo ds = {};
-    ds.texture           = depth_;
-    ds.load_op           = SDL_GPU_LOADOP_CLEAR;
-    ds.store_op          = SDL_GPU_STOREOP_STORE;
-    ds.stencil_load_op   = SDL_GPU_LOADOP_DONT_CARE;
-    ds.stencil_store_op  = SDL_GPU_STOREOP_DONT_CARE;
-    ds.clear_depth       = 1.f;
-    ds.cycle             = false;
-
-    pass_ = SDL_BeginGPURenderPass(cmd, col, 2, &ds);
-    return pass_;
+    // RT0=albedo+roughness clears to {0,0,0,1} (fully rough), RT1=oct-normal
+    // (SNORM, OctEncode(0,0,1)=(0,0))+metallic+flags clears to {0,0,0,0} --
+    // genuinely different per-target, hence clear_color_mrt1 (M1 §3 item 12).
+    GpuCommandBuffer::ColorPassDesc cpd;
+    cpd.cmd                 = cmd;
+    cpd.color_tex[0]        = rt0_;
+    cpd.color_tex[1]        = rt1_;
+    cpd.num_color_targets   = 2;
+    cpd.depth_tex           = depth_;
+    cpd.clear_color[0]      = 0.f; cpd.clear_color[1]      = 0.f;
+    cpd.clear_color[2]      = 0.f; cpd.clear_color[3]      = 1.f;
+    cpd.clear_color_mrt1[0] = 0.f; cpd.clear_color_mrt1[1] = 0.f;
+    cpd.clear_color_mrt1[2] = 0.f; cpd.clear_color_mrt1[3] = 0.f;
+    cpd.clear_depth         = 1.f;
+    cpd.load_color          = false; // CLEAR
+    cpd.load_depth          = false; // CLEAR
+    cb_.BeginColorPass(cpd);
+    return cb_.SDLPass();
 }
 
 void GBuffer::End() {
-    if (pass_) {
-        SDL_EndGPURenderPass(pass_);
-        pass_ = nullptr;
-    }
+    cb_.EndPass();
 }
 
 void GBuffer::Shutdown() {
     if (!dev_) return;
-    if (pass_)    { SDL_EndGPURenderPass(pass_); pass_ = nullptr; }
+    cb_.EndPass();
     if (sampler_) { SDL_ReleaseGPUSampler(dev_, sampler_); sampler_ = nullptr; }
     if (rt0_)     { SDL_ReleaseGPUTexture(dev_, rt0_);     rt0_     = nullptr; }
     if (rt1_)     { SDL_ReleaseGPUTexture(dev_, rt1_);     rt1_     = nullptr; }

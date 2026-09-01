@@ -1,6 +1,7 @@
 #pragma once
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/gpu_hal.h>
 
 // ── GBuffer ───────────────────────────────────────────────────────────────────
 // Compact 2-RT deferred G-Buffer (8 bytes/pixel at 720p = 7.4 MB).
@@ -44,7 +45,7 @@ private:
     SDL_GPUTexture*    rt1_     = nullptr;
     SDL_GPUTexture*    depth_   = nullptr;
     SDL_GPUSampler*    sampler_ = nullptr;
-    SDL_GPURenderPass* pass_    = nullptr;
+    GpuCommandBuffer   cb_; // owns the pass across the Begin()/draw/End() span
     int w_ = 0, h_ = 0;
 };
 

@@ -246,6 +246,13 @@ public:
         int                   num_color_targets = 1;
         SDL_GPUTexture*       depth_tex      = nullptr;
         float                 clear_color[4] = {0.f, 0.f, 0.f, 1.f};
+        // Separate field, not clear_color[MAX_COLOR_TARGETS][4]: gbuffer.cpp's
+        // RT0/RT1 clear colors genuinely differ (confirmed by reading
+        // GBuffer::Begin -- {0,0,0,1} vs {0,0,0,0}), so target 1 needs its own
+        // clear value. Kept apart from clear_color so the 28 existing
+        // single-target callers never have to touch a 2D array they don't use.
+        // Only read when num_color_targets > 1.
+        float                 clear_color_mrt1[4] = {0.f, 0.f, 0.f, 0.f};
         float                 clear_depth    = 1.0f;
         bool                  load_color     = false; // false = CLEAR on entry
         bool                  load_depth     = false;

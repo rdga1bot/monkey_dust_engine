@@ -89,8 +89,8 @@ bool GpuTexture::InitFromDDS(const char* path, const GpuSamplerDesc& s) {
             free(data);
             return false;
         }
-        uint8_t* mapped = (uint8_t*)SDL_MapGPUTransferBuffer(dev, tb, false);
-        if (mapped) { memcpy(mapped, data, total); SDL_UnmapGPUTransferBuffer(dev, tb); }
+        uint8_t* mapped = (uint8_t*)GpuMapTransfer(tb, false);
+        if (mapped) { memcpy(mapped, data, total); GpuUnmapTransfer(tb); }
         free(data);
 
         SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(dev);

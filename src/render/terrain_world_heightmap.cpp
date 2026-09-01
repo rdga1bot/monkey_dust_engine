@@ -135,9 +135,9 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
         tex_.Shutdown();
         return false;
     }
-    void* ptr = SDL_MapGPUTransferBuffer(dev, tb, false);
+    void* ptr = GpuMapTransfer(tb, false);
     if (ptr) memcpy(ptr, h16, (size_t)N * (size_t)N * sizeof(uint16_t));
-    SDL_UnmapGPUTransferBuffer(dev, tb);
+    GpuUnmapTransfer(tb);
     free(h16);
 
     SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();

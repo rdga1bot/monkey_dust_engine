@@ -195,12 +195,12 @@ void TerrainQuadtreeRenderer::UploadNodeData(SDL_GPUDevice* dev, SDL_GPUCopyPass
     tbi.size  = region_bytes;
     SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
     if (!tb) return;
-    void* map = SDL_MapGPUTransferBuffer(dev, tb, false);
+    void* map = GpuMapTransfer(tb, false);
     if (map) {
         if (region_bytes > upload_bytes) memset(map, 0, region_bytes);
         memcpy(map, staging, upload_bytes);
     }
-    SDL_UnmapGPUTransferBuffer(dev, tb);
+    GpuUnmapTransfer(tb);
 
     SDL_GPUTextureTransferInfo src{};
     src.transfer_buffer = tb;

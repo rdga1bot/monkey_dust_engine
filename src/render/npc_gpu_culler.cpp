@@ -84,7 +84,6 @@ int NpcGpuCuller::Cull(const float* npc_x, const float* npc_z, int count,
     last_visible_ = 0;
     if (!ready_ || !npc_x || !npc_z || count <= 0) return 0;
 
-    SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
     // Acquire a dedicated command buffer for the compute dispatch.
     SDL_GPUCommandBuffer* cmd = GpuDevice::Get().AcquireCommandBuffer();
     if (!cmd) return 0;
@@ -93,13 +92,13 @@ int NpcGpuCuller::Cull(const float* npc_x, const float* npc_z, int count,
 
     // ── Upload NPC positions ──────────────────────────────────────────────────
     {
-        float* ptr = (float*)SDL_MapGPUTransferBuffer(dev, upload_buf_, true);
+        float* ptr = (float*)GpuMapTransfer(upload_buf_, true);
         if (!ptr) return 0;
         for (int i = 0; i < n; ++i) {
             ptr[i*2 + 0] = npc_x[i];
             ptr[i*2 + 1] = npc_z[i];
         }
-        SDL_UnmapGPUTransferBuffer(dev, upload_buf_);
+        GpuUnmapTransfer(upload_buf_);
 
         GpuCopyPass cp;
         cp.Begin(cmd);
@@ -156,14 +155,14 @@ int NpcGpuCuller::Cull(const float* npc_x, const float* npc_z, int count,
     GpuDevice::Get().WaitForIdle();
 
     // ── Read back result ──────────────────────────────────────────────────────
-    const uint32_t* ptr = (const uint32_t*)SDL_MapGPUTransferBuffer(dev, dl_buf_, false);
+    const uint32_t* ptr = (const uint32_t*)GpuMapTransfer(dl_buf_, false);
     if (ptr) {
         int visible = 0;
         for (int i = 0; i < n; ++i) {
             results_[i] = ptr[i];
             if (ptr[i]) ++visible;
         }
-        SDL_UnmapGPUTransferBuffer(dev, dl_buf_);
+        GpuUnmapTransfer(dl_buf_);
         last_count_   = n;
         last_visible_ = visible;
     }

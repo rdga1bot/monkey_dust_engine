@@ -149,14 +149,14 @@ bool GpuTexture::InitFromDDSArray(const char* const* paths, int count,
     }
     fprintf(stderr, "[DDS array] transfer buffer created OK\n");
 
-    uint8_t* mapped = (uint8_t*)SDL_MapGPUTransferBuffer(dev, tb, false);
+    uint8_t* mapped = (uint8_t*)GpuMapTransfer(tb, false);
     if (mapped) {
         uint32_t dst_off = 0;
         for (int i=0;i<count;++i) {
             memcpy(mapped + dst_off, (const uint8_t*)layers[i].buf + ref_doff, layer_stride);
             dst_off += (uint32_t)layer_stride;
         }
-        SDL_UnmapGPUTransferBuffer(dev, tb);
+        GpuUnmapTransfer(tb);
     }
     fprintf(stderr, "[DDS array] data mapped+copied OK\n");
 

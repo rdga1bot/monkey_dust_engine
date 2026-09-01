@@ -311,13 +311,12 @@ SDL_GPUBuffer* TransformSoA::SDLSkinBuffer() const {
 void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
     if (!cmd || active_count <= 0) return;
     int s = md::GpuDevice::Get().FrameSlot();
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
 
     // Upload all active xzyr every frame (full upload to current slot — no dirty-range
     // since triple-buffering means cycle=false is safe: GPU never reads this slot).
     if (sdl_xzyr_stg_[s] && sdl_xzyr_buf_[s]) {
         uint32_t byte_sz = (uint32_t)active_count * 4 * sizeof(float);
-        float* dst = (float*)SDL_MapGPUTransferBuffer(dev, sdl_xzyr_stg_[s], false);
+        float* dst = (float*)GpuMapTransfer(sdl_xzyr_stg_[s], false);
         if (dst) {
             for (int i = 0; i < active_count; ++i) {
                 dst[i*4+0] = px[i];
@@ -325,7 +324,7 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
                 dst[i*4+2] = py[i];
                 dst[i*4+3] = rot_y[i];
             }
-            SDL_UnmapGPUTransferBuffer(dev, sdl_xzyr_stg_[s]);
+            GpuUnmapTransfer(sdl_xzyr_stg_[s]);
         }
         GpuCopyPass cpass;
         cpass.Begin(cmd);
@@ -341,11 +340,11 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
 
     // Upload faction data to current slot.
     if (sdl_faction_stg_[s] && sdl_faction_buf_[s]) {
-        uint32_t* dst = (uint32_t*)SDL_MapGPUTransferBuffer(dev, sdl_faction_stg_[s], false);
+        uint32_t* dst = (uint32_t*)GpuMapTransfer(sdl_faction_stg_[s], false);
         if (dst) {
             for (int i = 0; i < active_count; ++i)
                 dst[i] = (uint32_t)faction[i];
-            SDL_UnmapGPUTransferBuffer(dev, sdl_faction_stg_[s]);
+            GpuUnmapTransfer(sdl_faction_stg_[s]);
         }
         GpuCopyPass cpass;
         cpass.Begin(cmd);
@@ -361,10 +360,10 @@ void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
     // Upload skin tint data to current slot (rarely changes; re-uploaded
     // every frame like faction — cost scales with active_count, not MAX_SLOTS).
     if (sdl_skin_stg_[s] && sdl_skin_buf_[s]) {
-        float* dst = (float*)SDL_MapGPUTransferBuffer(dev, sdl_skin_stg_[s], false);
+        float* dst = (float*)GpuMapTransfer(sdl_skin_stg_[s], false);
         if (dst) {
             memcpy(dst, skin_rgba, (size_t)active_count * 4 * sizeof(float));
-            SDL_UnmapGPUTransferBuffer(dev, sdl_skin_stg_[s]);
+            GpuUnmapTransfer(sdl_skin_stg_[s]);
         }
         GpuCopyPass cpass;
         cpass.Begin(cmd);

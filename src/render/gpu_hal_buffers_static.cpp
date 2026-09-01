@@ -35,8 +35,8 @@ void GpuStaticBuffer::Init(unsigned int target, const void* data, uint32_t size)
         return;
     }
 
-    void* map = SDL_MapGPUTransferBuffer(dev, transfer, false);
-    if (map) { memcpy(map, data, size); SDL_UnmapGPUTransferBuffer(dev, transfer); }
+    void* map = GpuMapTransfer(transfer, false);
+    if (map) { memcpy(map, data, size); GpuUnmapTransfer(transfer); }
 
     SDL_GPUCommandBuffer* cmd  = SDL_AcquireGPUCommandBuffer(dev);
     if (!cmd) { MD_LOG(MD_LOG_WARNING, "[GpuStaticBuffer] AcquireCmd failed: %s", SDL_GetError()); return; }

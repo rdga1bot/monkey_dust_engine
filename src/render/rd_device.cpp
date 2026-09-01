@@ -60,9 +60,9 @@ void RdDevice::BuildDummyResources(SDL_GPUDevice* dev) {
         tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
         tbi.size  = 4;
         SDL_GPUTransferBuffer* tb = SDL_CreateGPUTransferBuffer(dev, &tbi);
-        void* p = SDL_MapGPUTransferBuffer(dev, tb, false);
+        void* p = GpuMapTransfer(tb, false);
         if (p) memcpy(p, kWhite, 4);
-        SDL_UnmapGPUTransferBuffer(dev, tb);
+        GpuUnmapTransfer(tb);
         SDL_GPUCommandBuffer* cmd = GpuDevice::Get().AcquireCommandBuffer();
         GpuCopyPass cp;
         cp.Begin(cmd);

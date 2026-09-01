@@ -87,8 +87,8 @@ bool GpuTexture::InitFromMemory(const uint8_t* rgba8, int w, int h, const GpuSam
         tbuf.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
         tbuf.size  = upload_size;
         SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(dev, &tbuf);
-        void* map = SDL_MapGPUTransferBuffer(dev, transfer, false);
-        if (map) { memcpy(map, rgba8, upload_size); SDL_UnmapGPUTransferBuffer(dev, transfer); }
+        void* map = GpuMapTransfer(transfer, false);
+        if (map) { memcpy(map, rgba8, upload_size); GpuUnmapTransfer(transfer); }
 
         SDL_GPUCommandBuffer* cmd  = SDL_AcquireGPUCommandBuffer(dev);
         if (!cmd) { MD_LOG(MD_LOG_WARNING, "[GpuTexture] AcquireCmd failed: %s", SDL_GetError()); SDL_ReleaseGPUTransferBuffer(dev, transfer); return false; }

@@ -17,6 +17,7 @@
 
 #include <monkey_dust/render/md_shader.h>
 #include <monkey_dust/render/gpu_ring_buffer.h>
+#include <monkey_dust/render/gpu_device.h>
 #include <cstdint>
 
 #ifdef MD_SDL_GPU
@@ -693,6 +694,29 @@ inline void GpuPushFragmentUniforms(SDL_GPUCommandBuffer* cmd, uint32_t slot,
 inline void GpuPushComputeUniforms(SDL_GPUCommandBuffer* cmd, uint32_t slot,
                                     const void* data, uint32_t size_bytes) {
     if (cmd) SDL_PushGPUComputeUniformData(cmd, slot, data, size_bytes);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GpuMapTransfer / GpuUnmapTransfer — stateless passthrough, no RAII.
+//
+// `cycle` is a real per-call-site parameter, not a default: some callers need
+// cycle=true (fresh backing memory per Map, avoids stalling on in-flight GPU
+// reads), others need cycle=false (e.g. transform_soa.cpp's per-frame-slot
+// staging buffers, where triple-buffering already guarantees the GPU never
+// reads the slot being mapped -- forcing cycle=true there would be silently
+// wrong, not just suboptimal). A RAII wrapper was considered and rejected:
+// its destructor would call Unmap() at scope exit, not at the exact source
+// line the raw call currently sits on, and a few of these call sites have
+// real code between the memcpy and the existing Unmap() (error-path early
+// returns, buffer-size branches) that scope-exit timing would silently
+// change -- the same class of invisible-to-A/B, invisible-to-tests behavior
+// shift documented for the malloc-failure branch in item 8 and for
+// editor_screenshot.cpp's NotifyCommandBufferSubmitted() ordering.
+inline void* GpuMapTransfer(SDL_GPUTransferBuffer* tb, bool cycle) {
+    return SDL_MapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(), tb, cycle);
+}
+inline void GpuUnmapTransfer(SDL_GPUTransferBuffer* tb) {
+    SDL_UnmapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(), tb);
 }
 #endif
 

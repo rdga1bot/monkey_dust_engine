@@ -175,7 +175,7 @@ void MotionBlurSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
     pv.PushFragmentUniforms(0, &ubo, sizeof(ubo));
 
     SDL_GPUViewport vp = { 0.f, 0.f, (float)half_w_, (float)half_h_, 0.f, 1.f };
-    SDL_SetGPUViewport(pass, &vp);
+    GpuSetViewport(pass, vp);
     pv.Draw(3, 1, 0, 0);
 
     cb.EndPass();
@@ -218,7 +218,7 @@ void MotionBlurSystem::ApplyPass(SDL_GPUCommandBuffer* cmd,
     pv.PushFragmentUniforms(0, &ubo, sizeof(ubo));
 
     SDL_GPUViewport vp = { 0.f, 0.f, (float)sw, (float)sh, 0.f, 1.f };
-    SDL_SetGPUViewport(pass, &vp);
+    GpuSetViewport(pass, vp);
     pv.Draw(3, 1, 0, 0);
 
     cb.EndPass();

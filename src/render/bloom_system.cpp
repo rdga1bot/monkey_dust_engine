@@ -2,6 +2,7 @@
 #include <monkey_dust/render/bloom_system.h>
 #include <monkey_dust/render/render_tier.h>
 #include <monkey_dust/render/gpu_device.h>
+#include <monkey_dust/render/gpu_hal.h>
 #include <monkey_dust/platform/md_log.h>
 #include <cstring>
 
@@ -138,7 +139,7 @@ static void QtrPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipe,
     if (ubo)      pv.PushFragmentUniforms(0, ubo, ubo_sz);
 
     SDL_GPUViewport vp = { 0.f, 0.f, (float)tw, (float)th, 0.f, 1.f };
-    SDL_SetGPUViewport(pass, &vp);
+    GpuSetViewport(pass, vp);
     pv.Draw(3, 1, 0, 0);
     cb.EndPass();
 }
@@ -210,10 +211,8 @@ void BloomSystem::CompositePass(SDL_GPUCommandBuffer* cmd,
             ubo.eq[i][j] = grade_eq[i][j];
     cb.PushFragmentUniforms(0, &ubo, sizeof(ubo));
 
-    // SetGPUViewport has no HAL wrapper yet (0% coverage per
-    // docs/HAL_CLOSURE_INVENTORY.md §2.3) -- out of scope for this group.
     SDL_GPUViewport vp = { 0.f, 0.f, (float)sw, (float)sh, 0.f, 1.f };
-    SDL_SetGPUViewport(pass, &vp);
+    GpuSetViewport(pass, vp);
     cb.Draw(3);
 
     cb.EndPass();

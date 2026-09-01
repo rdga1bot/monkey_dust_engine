@@ -795,6 +795,22 @@ inline SDL_GPUSampler* GpuCreateSampler(SDL_GPUDevice* dev, const SDL_GPUSampler
 inline void GpuReleaseSampler(SDL_GPUDevice* dev, SDL_GPUSampler* sampler) {
     SDL_ReleaseGPUSampler(dev, sampler);
 }
+
+// GpuSetViewport / GpuSetScissor — 1:1, no semantics, same class as
+// GpuPushDebugGroup above (both SDL functions take only the render pass).
+// Free functions rather than GpuPassView/GpuCommandBuffer methods: every
+// real call site already has a bare SDL_GPURenderPass* in scope (some via
+// GpuPassView::FromRaw, some via GpuCommandBuffer::SDLPass(), one --
+// world_map_ui.cpp's first scissor call -- before either wrapper exists yet
+// in that function), so a method would force constructing/reordering a
+// wrapper object purely to make this one call, for zero benefit over taking
+// the pass pointer directly.
+inline void GpuSetViewport(SDL_GPURenderPass* pass, const SDL_GPUViewport& vp) {
+    if (pass) SDL_SetGPUViewport(pass, &vp);
+}
+inline void GpuSetScissor(SDL_GPURenderPass* pass, const SDL_Rect& rect) {
+    if (pass) SDL_SetGPUScissor(pass, &rect);
+}
 #endif
 
 // ─────────────────────────────────────────────────────────────────────────────

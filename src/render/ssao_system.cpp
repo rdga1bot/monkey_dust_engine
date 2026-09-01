@@ -260,7 +260,7 @@ void SSAOSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
 
     // Fullscreen triangle: 3 verts, no VBO
     SDL_GPUViewport vp = { 0.f, 0.f, (float)half_w_, (float)half_h_, 0.f, 1.f };
-    SDL_SetGPUViewport(pass, &vp);
+    GpuSetViewport(pass, vp);
     pv.Draw(3, 1, 0, 0);
 
     cb.EndPass();
@@ -288,7 +288,7 @@ static void FullscreenPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipeline,
         pv.PushFragmentUniforms(0, frag_ubo, frag_ubo_sz);
 
     SDL_GPUViewport vp = { 0.f, 0.f, (float)tw, (float)th, 0.f, 1.f };
-    SDL_SetGPUViewport(pass, &vp);
+    GpuSetViewport(pass, vp);
     pv.Draw(3, 1, 0, 0);
 
     cb.EndPass();
@@ -389,9 +389,8 @@ void SSAOSystem::ApplyPass(SDL_GPUCommandBuffer* cmd,
     SDL_GPUTextureSamplerBinding sb = { ssao_blurred_, linear_sampler_ };
     cb.BindFragmentSamplers(0, &sb, 1);
 
-    // SetGPUViewport has no HAL wrapper yet -- out of scope, see above.
     SDL_GPUViewport vp = { 0.f, 0.f, (float)sw, (float)sh, 0.f, 1.f };
-    SDL_SetGPUViewport(pass, &vp);
+    GpuSetViewport(pass, vp);
     cb.Draw(3);
 
     cb.EndPass();

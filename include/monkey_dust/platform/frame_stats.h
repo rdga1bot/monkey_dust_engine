@@ -179,14 +179,24 @@ public:
 
     // Call once per frame with frame dt (seconds).
     // Returns formatted string when report fires (every 5s), else nullptr.
-    const char* EndFrame(float dt, int fps, int npc_count) {
+    // terrain_pending/vt_resident (task #635, docs/GRANITE_P5_BASELINE.md
+    // reproducibility concern): P5-style perf baselines assumed "same
+    // camera pose == same scene" without checking whether terrain
+    // streaming/VT-cache had actually settled by the time of measurement
+    // (an 8s settle timer is a wait, not a verified precondition). These
+    // two counters make "scene is settled" a checkable fact in the log
+    // instead of an assumption -- pass 0/0 from call sites where terrain
+    // streaming/VT cache don't apply (e.g. editor, tests).
+    const char* EndFrame(float dt, int fps, int npc_count,
+                         int terrain_pending = 0, int vt_resident = 0) {
         CheckFrameSpike();
         accum_ += dt;
         frame_count_++;
         if (accum_ < FS_REPORT_INTERVAL) return nullptr;
 
         char* p = report_buf_;
-        p += snprintf(p, 256, "[PERF] %d FPS | NPCs=%d | ", fps, npc_count);
+        p += snprintf(p, 256, "[PERF] %d FPS | NPCs=%d | TerrainPending=%d VtResident=%d | ",
+                      fps, npc_count, terrain_pending, vt_resident);
         for (int i = 0; i < count_; ++i) {
             float avg = slots_[i].frames > 0
                       ? slots_[i].sum_ms / (float)slots_[i].frames : 0.f;

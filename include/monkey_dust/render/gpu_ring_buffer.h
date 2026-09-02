@@ -3,6 +3,7 @@
 
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/gpu_device.h>
 #endif
 
 // GpuRingBuffer — per-frame CPU→GPU data upload with ring-buffering.
@@ -45,7 +46,7 @@ public:
     void*          MapWriteSDL();
     void           UnmapSDL();
     // Record a copy pass in cmd: current staging → current device buffer.
-    void           Upload(SDL_GPUCommandBuffer* cmd);
+    void           Upload(md::GpuCommandBufferHandle cmd);
     // iGPU zero-copy adaptation: upload within a caller-owned copy pass.
     // Use when batching multiple ring buffer uploads in a single copy pass
     // to reduce driver overhead (N copy-pass begin/end → 1 per frame).

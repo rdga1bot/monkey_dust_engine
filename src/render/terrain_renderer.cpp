@@ -395,7 +395,7 @@ void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uin
     if (map) memcpy(map, packed.data(), tbi.size);
     GpuUnmapTransfer(tb);
 
-    SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+    md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
     GpuCopyPass cp;
     cp.Begin(cmd);
     SDL_GPUTextureTransferInfo src{};

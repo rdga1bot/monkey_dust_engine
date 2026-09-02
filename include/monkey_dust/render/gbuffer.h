@@ -28,7 +28,7 @@ public:
 
     // Begin geometry pass with CLEAR on both color RTs + depth.
     // Returns the SDL_GPURenderPass* for the caller to bind pipeline + draw.
-    SDL_GPURenderPass* Begin(SDL_GPUCommandBuffer* cmd);
+    SDL_GPURenderPass* Begin(md::GpuCommandBufferHandle cmd);
     void               End();
 
     SDL_GPUTexture* RT0()    const { return rt0_;    }  // albedo + roughness

@@ -27,7 +27,7 @@ public:
     // TerrainQuadtree::SelectVisible; hmap supplies the world-wide
     // height+normal textures directly (2026-08-24: #398's TerrainHeightClipmap
     // reverted -- see terrain_quadtree.vert's own doc comment for why).
-    void DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+    void DrawNode(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                   const TerrainWorldHeightmap& hmap, const float* vp16,
                   const TerrainQuadtree::VisibleNode& node,
                   float cam_x, float cam_y, float cam_z);
@@ -47,7 +47,7 @@ public:
     // uniforms) -- call ONCE before the DrawNodeForward loop each frame,
     // mirroring TerrainRenderer::GetSharedGroundSamplers/
     // ZoneGroundLayersTexture's own "shared across all draws" convention.
-    void BeginForward(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+    void BeginForward(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                       const TerrainRenderer::SunParams& sun,
                       float cam_x, float cam_y, float cam_z,
                       float world_origin_x, float world_origin_z, float world_to_uv,
@@ -58,7 +58,7 @@ public:
     // BeginForward; this only pushes the per-node vertex UBO, binds the
     // (world-wide, same for every node) height/normal vertex samplers, and
     // issues the filled+skirt index draws -- same shape as DrawNode.
-    void DrawNodeForward(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+    void DrawNodeForward(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                          const TerrainWorldHeightmap& hmap, const float* vp16,
                          const TerrainQuadtree::VisibleNode& node,
                          float cam_x, float cam_y, float cam_z);
@@ -97,14 +97,14 @@ public:
 
     // Binds the batched pipeline + per-frame-constant vertex resources
     // (height/normal/nodeData samplers, vp/height_range/cam_pos UBO).
-    void BeginBatched(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+    void BeginBatched(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                       const TerrainWorldHeightmap& hmap, const float* vp16,
                       float cam_x, float cam_y, float cam_z);
 
     // Issues ONE instanced draw_indexed for the filled grid + ONE for the
     // skirt strips, covering the `count` nodes uploaded via UploadNodeData
     // this frame (count must match the UploadNodeData call this frame).
-    void DrawBatched(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int count);
+    void DrawBatched(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, int count);
 
     static constexpr int kMaxBatchedNodes = 8192; // half of kMaxNodesPublic -- generous vs typical per-frame visible counts
     static constexpr int kNodeDataTexWidth = 256;

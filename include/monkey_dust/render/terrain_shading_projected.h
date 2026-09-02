@@ -71,7 +71,7 @@ public:
     // instances into the returned pass via TerrainPatchRenderer::
     // DrawBatchGBuffer, then calls EndGBufferPass(). Must run BEFORE
     // DrawShadingResolve, outside (and before) the main color GpuRenderPass.
-    SDL_GPURenderPass* BeginGBufferPass(SDL_GPUCommandBuffer* cmd);
+    SDL_GPURenderPass* BeginGBufferPass(md::GpuCommandBufferHandle cmd);
     void                EndGBufferPass();
 
     // Fullscreen resolve draw -- must run INSIDE the caller's already-open
@@ -88,7 +88,7 @@ public:
     // shade_constant_debug: Крок 0 ablation (2026-08-23) -- true bypasses
     // TS_ComputeGroundAlbedo with a flat colour via world_params.w, a
     // single value for the whole draw (uniform branch, not per-pixel).
-    void DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+    void DrawShadingResolve(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                              const TerrainRenderer::SunParams& sun,
                              float cam_x, float cam_y, float cam_z,
                              float world_origin_x, float world_origin_z, float world_to_uv,

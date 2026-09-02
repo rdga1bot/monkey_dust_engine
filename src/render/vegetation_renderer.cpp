@@ -33,7 +33,7 @@ void VegetationRenderer::Shutdown() {
 
 void VegetationRenderer::DrawMesh(
 #ifdef MD_SDL_GPU
-    SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+    SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
 #endif
     const float* pos3, int count, const float* vp16, const float* sun32,
     float scale, float anim_mode, float anim_time) {
@@ -46,7 +46,7 @@ void VegetationRenderer::DrawMesh(
 
 #ifdef MD_SDL_GPU
 void VegetationRenderer::DrawBillboards(
-    SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+    SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
     const float* pos3, int count,
     const float* vp16, const float* cam_right3,
     const float* sun_col3, const float* ambient3) {

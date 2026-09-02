@@ -85,7 +85,7 @@ int NpcGpuCuller::Cull(const float* npc_x, const float* npc_z, int count,
     if (!ready_ || !npc_x || !npc_z || count <= 0) return 0;
 
     // Acquire a dedicated command buffer for the compute dispatch.
-    SDL_GPUCommandBuffer* cmd = GpuDevice::Get().AcquireCommandBuffer();
+    md::GpuCommandBufferHandle cmd = GpuDevice::Get().AcquireCommandBuffer();
     if (!cmd) return 0;
 
     const int n = count < MAX_NPCS ? count : MAX_NPCS;

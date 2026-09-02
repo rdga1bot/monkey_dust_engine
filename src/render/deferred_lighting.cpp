@@ -107,7 +107,7 @@ void DeferredLightingSystem::Init(SDL_GPUDevice* dev, int w, int h) {
     MD_LOG(MD_LOG_INFO, "DeferredLightingSystem: ready (%dx%d RGBA16F, EVSM shadows)", w, h);
 }
 
-void DeferredLightingSystem::DrawAmbientPass(SDL_GPUCommandBuffer* cmd,
+void DeferredLightingSystem::DrawAmbientPass(md::GpuCommandBufferHandle cmd,
                                               const GBuffer& gbuf,
                                               SDL_GPUTexture* depth_tex) {
     if (!hdr_color_.SDLTexture()) return;

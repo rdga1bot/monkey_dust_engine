@@ -144,7 +144,7 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
             if (map) memcpy(map, init_data, tbi.size);
             GpuUnmapTransfer(tb);
 
-            SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+            md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
             GpuCopyPass cp;
             cp.Begin(cmd);
             SDL_GPUTextureTransferInfo src{};
@@ -284,7 +284,7 @@ bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
             if (map) memcpy(map, &not_resident, sizeof(not_resident));
             GpuUnmapTransfer(tb);
 
-            SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+            md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
             GpuCopyPass cp;
             cp.Begin(cmd);
             SDL_GPUTextureTransferInfo src{};
@@ -497,7 +497,7 @@ void TerrainVtPageCache::UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
     GpuReleaseTransferBuffer(dev, tb);
 }
 
-void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd,
+void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, md::GpuCommandBufferHandle cmd,
                                          const TerrainWorldHeightmap& hmap, const TerrainRenderer& ground) {
     if (!ready_ || fill_queue_count_ == 0) { fill_queue_count_ = 0; return; }
 
@@ -628,7 +628,7 @@ bool TerrainVtPageCache::DebugDumpAtlas(SDL_GPUDevice* dev, const char* out_png_
         return false;
     }
 
-    SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+    md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
     GpuCopyPass cp;
     cp.Begin(cmd);
     SDL_GPUTextureRegion src{};

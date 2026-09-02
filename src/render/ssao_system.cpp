@@ -185,7 +185,7 @@ void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
            half_w_, half_h_);
 }
 
-void SSAOSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
+void SSAOSystem::PrepPass(md::GpuCommandBufferHandle cmd,
                           SDL_GPUTexture*       hw_depth,
                           SDL_GPUSampler*       hw_sampler) {
     if (!enabled_ || !linear_depth_ || !prep_pipeline_.SDLPipeline()) return;
@@ -223,7 +223,7 @@ void SSAOSystem::PrepPass(SDL_GPUCommandBuffer* cmd,
 }
 
 // ── Helper: begin a fullscreen render pass on an RT, draw 3 verts, end ────────
-static void FullscreenPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipeline,
+static void FullscreenPass(md::GpuCommandBufferHandle cmd, GpuPipeline* pipeline,
                             SDL_GPUTexture* target, int tw, int th,
                             const SDL_GPUTextureSamplerBinding* sbs, int nsbs,
                             const void* frag_ubo, uint32_t frag_ubo_sz) {
@@ -251,7 +251,7 @@ static void FullscreenPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipeline,
 }
 
 // ── VBfA 6-pass Prep1: Sobel 3×3 normals from linear_depth ──────────────────
-void SSAOSystem::Prep1Pass(SDL_GPUCommandBuffer* cmd,
+void SSAOSystem::Prep1Pass(md::GpuCommandBufferHandle cmd,
                             float inv_proj_x, float inv_proj_y) {
     if (!enabled_ || !view_normals_ || !prep1_pipeline_.SDLPipeline()) return;
     if (!linear_depth_) return;
@@ -263,7 +263,7 @@ void SSAOSystem::Prep1Pass(SDL_GPUCommandBuffer* cmd,
                    &sb, 1, &ubo, sizeof(ubo));
 }
 
-void SSAOSystem::MainPass(SDL_GPUCommandBuffer* cmd,
+void SSAOSystem::MainPass(md::GpuCommandBufferHandle cmd,
                           float inv_px, float inv_py) {
     if (!enabled_ || !ssao_raw_ || !main_pipeline_.SDLPipeline()) return;
     if (!linear_depth_)  return;
@@ -296,7 +296,7 @@ void SSAOSystem::MainPass(SDL_GPUCommandBuffer* cmd,
                    sbs, nsbs, &ubo, sizeof(ubo));
 }
 
-void SSAOSystem::BlurPass(SDL_GPUCommandBuffer* cmd) {
+void SSAOSystem::BlurPass(md::GpuCommandBufferHandle cmd) {
     if (!enabled_ || !blur_temp_ || !ssao_blurred_) return;
     if (!blur_h_pipeline_.SDLPipeline() || !blur_v_pipeline_.SDLPipeline()) return;
 
@@ -325,7 +325,7 @@ void SSAOSystem::BlurPass(SDL_GPUCommandBuffer* cmd) {
     }
 }
 
-void SSAOSystem::ApplyPass(SDL_GPUCommandBuffer* cmd,
+void SSAOSystem::ApplyPass(md::GpuCommandBufferHandle cmd,
                             SDL_GPUTexture* swapchain_tex, int sw, int sh) {
     if (!enabled_ || !ssao_blurred_ || !apply_pipeline_.SDLPipeline()) return;
     if (!swapchain_tex) return;

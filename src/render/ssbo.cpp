@@ -49,7 +49,7 @@ void SSBO::Upload(const void* data, int size_bytes, int offset) {
             memcpy((uint8_t*)map + offset, data, (size_t)size_bytes);
             GpuUnmapTransfer(sdl_transfer_[s]);
         }
-        SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+        md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
         GpuCopyPass pass;
         pass.Begin(cmd);
         SDL_GPUTransferBufferLocation src = {};
@@ -86,7 +86,7 @@ SDL_GPUBuffer* SSBO::SDLBuffer() const {
     return sdl_buf_[md::GpuDevice::Get().FrameSlot()];
 }
 
-void SSBO::UploadInCmd(SDL_GPUCommandBuffer* cmd, const void* data, int size_bytes, int offset) {
+void SSBO::UploadInCmd(md::GpuCommandBufferHandle cmd, const void* data, int size_bytes, int offset) {
     int s = md::GpuDevice::Get().FrameSlot();
     if (!cmd || !sdl_buf_[s] || !sdl_transfer_[s] || !data || size_bytes <= 0) return;
     void* map = GpuMapTransfer(sdl_transfer_[s], false);

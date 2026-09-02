@@ -244,7 +244,7 @@ void EvsmShadow::Shutdown() {
 // V: blur_tmp_[k]  (sampler) → blur_out_[k] (COLOR_TARGET)
 // moment_tex_ is read-only here. BindArrayForSampling() serves blur_out_[k]
 // instead of moment_tex_[k] once blur_ready_.
-void EvsmShadow::ApplyBlur(SDL_GPUCommandBuffer* cmd) {
+void EvsmShadow::ApplyBlur(md::GpuCommandBufferHandle cmd) {
     if (!cmd || !blur_ready_) return;
 
     struct alignas(16) BlurUBO { float texel[2]; float horizontal; float _pad; };
@@ -288,7 +288,7 @@ void EvsmShadow::ApplyBlur(SDL_GPUCommandBuffer* cmd) {
 
 // ── Shadow pass ───────────────────────────────────────────────────────────────
 
-SDL_GPURenderPass* EvsmShadow::BeginMomentPass(SDL_GPUCommandBuffer* cmd, int cascade) {
+SDL_GPURenderPass* EvsmShadow::BeginMomentPass(md::GpuCommandBufferHandle cmd, int cascade) {
     if (!ready_ || cascade < 0 || cascade >= num_cascades_) return nullptr;
 
     SDL_GPUColorTargetInfo ct{};

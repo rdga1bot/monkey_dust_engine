@@ -277,7 +277,7 @@ public:
     // DrawShadingResolve already binds (TerrainRenderer::
     // GetSharedGroundSamplers/ZoneGroundLayersSSBO) -- page-fill reuses
     // them rather than owning a second copy.
-    void FlushFillQueue(SDL_GPUDevice* dev, SDL_GPUCommandBuffer* cmd,
+    void FlushFillQueue(SDL_GPUDevice* dev, md::GpuCommandBufferHandle cmd,
                          const TerrainWorldHeightmap& hmap, const TerrainRenderer& ground);
 
     // Debug-only (Phase 1 verification): dump the whole atlas to a PNG via

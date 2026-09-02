@@ -116,7 +116,7 @@ void FeatureScatterSystem::Shutdown() {
 void FeatureScatterSystem::Draw(
 #ifdef MD_SDL_GPU
     SDL_GPURenderPass*    rp,
-    SDL_GPUCommandBuffer* cmd,
+    md::GpuCommandBufferHandle cmd,
 #endif
     const float* vp16,
     const float* sun32,

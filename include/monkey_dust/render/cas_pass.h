@@ -40,7 +40,7 @@ public:
     // Apply CAS: reads SceneTex(), writes sharpened result to output_tex.
     // cmd: the current frame command buffer (before Submit).
     // output_tex: typically the swapchain texture.
-    void Apply(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* output_tex,
+    void Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* output_tex,
                int vp_w, int vp_h);
 
 private:

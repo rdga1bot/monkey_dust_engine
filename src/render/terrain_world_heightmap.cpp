@@ -140,7 +140,7 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     GpuUnmapTransfer(tb);
     free(h16);
 
-    SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+    md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
     GpuCopyPass cp;
     cp.Begin(cmd);
     SDL_GPUTextureTransferInfo src{};
@@ -220,7 +220,7 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
             return false;
         }
 
-        SDL_GPUCommandBuffer* bcmd = SDL_AcquireGPUCommandBuffer(dev);
+        md::GpuCommandBufferHandle bcmd = SDL_AcquireGPUCommandBuffer(dev);
         GpuComputePass::StorageBindings sb;
         sb.cmd = bcmd;
         sb.rw_textures[0] = { normal_tex_.SDLTexture(), false };

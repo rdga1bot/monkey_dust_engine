@@ -94,7 +94,7 @@ void TerrainShadingProjected::Shutdown() {
     ready_ = false;
 }
 
-SDL_GPURenderPass* TerrainShadingProjected::BeginGBufferPass(SDL_GPUCommandBuffer* cmd) {
+SDL_GPURenderPass* TerrainShadingProjected::BeginGBufferPass(md::GpuCommandBufferHandle cmd) {
     if (!ready_) return nullptr;
 
     // clear_color MUST be set explicitly to {0,0,0,0} -- ColorPassDesc's own
@@ -127,7 +127,7 @@ void TerrainShadingProjected::EndGBufferPass() {
     // need to remember between calls).
 }
 
-void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                                                    const TerrainRenderer::SunParams& sun,
                                                    float cam_x, float cam_y, float cam_z,
                                                    float world_origin_x, float world_origin_z, float world_to_uv,

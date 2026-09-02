@@ -3,6 +3,7 @@
 
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/gpu_device.h>
 #endif
 
 // Portable flag for indirect-draw usage (pass as extra_sdl_usage to Init).
@@ -34,7 +35,7 @@ public:
     // Returns the current frame's GPU buffer (slot = GpuDevice::FrameSlot()).
     SDL_GPUBuffer* SDLBuffer() const;
     // Upload within an existing frame command buffer's copy pass (writes to current slot).
-    void UploadInCmd(SDL_GPUCommandBuffer* cmd, const void* data, int size_bytes, int offset = 0);
+    void UploadInCmd(md::GpuCommandBufferHandle cmd, const void* data, int size_bytes, int offset = 0);
 #endif
 
 private:

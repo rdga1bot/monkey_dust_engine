@@ -52,7 +52,7 @@ public:
     void RenderToTarget(const FlareMap& map, float now_s,
                         float origin_x, float origin_y, float scale,
                         int vp_w, int vp_h, uint8_t layer_mask,
-                        SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* target_tex);
+                        md::GpuCommandBufferHandle cmd, SDL_GPUTexture* target_tex);
 #endif
 
     // Screen-space overlay: blit an SDL_GPU texture (void* cast) at pixel rect.
@@ -125,7 +125,7 @@ private:
     void RenderSDLGPU(const FlareMap& map, float now_s,
                       float origin_x, float origin_y, float scale,
                       int vp_w, int vp_h, uint8_t layer_mask,
-                      SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* swap_tex);
+                      md::GpuCommandBufferHandle cmd, SDL_GPUTexture* swap_tex);
 #endif // MD_SDL_GPU
 
     static constexpr int MAX_ATLAS  = 4;

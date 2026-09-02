@@ -47,10 +47,10 @@ public:
 #ifdef MD_SDL_GPU
     // SDL_GPU path: call before the render pass begins.
     // Sorts instances, builds flat vertex buffer, uploads via copy pass.
-    void PrepareSDLGPU(SDL_GPUCommandBuffer* cmd);
+    void PrepareSDLGPU(md::GpuCommandBufferHandle cmd);
 
     // SDL_GPU path: draw into an already-open render pass.
-    void RenderInPass(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+    void RenderInPass(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                       const MdCamera& cam, float aspect);
 #endif
 

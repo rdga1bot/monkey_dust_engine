@@ -325,7 +325,7 @@ SDL_GPUBuffer* TransformSoA::SDLSkinBuffer() const {
     return sdl_skin_buf_[md::GpuDevice::Get().FrameSlot()];
 }
 
-void TransformSoA::UploadSDLGPU(SDL_GPUCommandBuffer* cmd) {
+void TransformSoA::UploadSDLGPU(md::GpuCommandBufferHandle cmd) {
     if (!cmd || active_count <= 0) return;
     int s = md::GpuDevice::Get().FrameSlot();
 

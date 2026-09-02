@@ -91,7 +91,7 @@ void GpuRingBuffer::UnmapSDL() {
         SDL_UnmapGPUTransferBuffer(md::GpuDevice::Get().SDLDevice(), sdl_staging_[s]);
 }
 
-void GpuRingBuffer::Upload(SDL_GPUCommandBuffer* cmd) {
+void GpuRingBuffer::Upload(md::GpuCommandBufferHandle cmd) {
     int s = md::GpuDevice::Get().FrameSlot();
     if (!cmd || !sdl_device_[s] || !sdl_staging_[s]) return;
     GpuCopyPass cp;

@@ -64,7 +64,7 @@ public:
 #ifdef MD_SDL_GPU
     // Upload xzyr + faction to SDL_GPU device buffers via copy passes in cmd.
     // Call before any SDL_GPU compute pass that reads transform or faction data.
-    void UploadSDLGPU(SDL_GPUCommandBuffer* cmd);
+    void UploadSDLGPU(md::GpuCommandBufferHandle cmd);
     SDL_GPUBuffer* SDLTransformBuffer() const;
     SDL_GPUBuffer* SDLFactionBuffer()   const;
     SDL_GPUBuffer* SDLSkinBuffer()      const;

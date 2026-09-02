@@ -191,7 +191,7 @@ public:
     // CPU-side bone matrices upload (real-mesh animation path — OzzAnimator::Sample/Blend
     // writes s_all_bones in npc_render_frame_prep.cpp, this uploads it each frame).
     // data: float[npc_count * MAX_BONES * 16], laid out at slot offsets 0..npc_count-1
-    void UploadBonesInCmd(SDL_GPUCommandBuffer* cmd, const void* data, int bytes, int byte_offset = 0) {
+    void UploadBonesInCmd(md::GpuCommandBufferHandle cmd, const void* data, int bytes, int byte_offset = 0) {
         if (bones_ssbo_.SDLBuffer()) bones_ssbo_.UploadInCmd(cmd, data, bytes, byte_offset);
     }
 #endif

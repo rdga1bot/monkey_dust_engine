@@ -65,7 +65,7 @@ void ParticleRenderer::Shutdown() {
 
 #ifdef MD_SDL_GPU
 
-int ParticleRenderer::PrepareSDLGPU(SDL_GPUCommandBuffer* cmd, Vec3 cam_pos) {
+int ParticleRenderer::PrepareSDLGPU(md::GpuCommandBufferHandle cmd, Vec3 cam_pos) {
     void* ptr = vbuf_.MapWrite();
     if (!ptr) return 0;
     int count = ParticleSoA::Get().BuildVertices(
@@ -76,7 +76,7 @@ int ParticleRenderer::PrepareSDLGPU(SDL_GPUCommandBuffer* cmd, Vec3 cam_pos) {
     return count;
 }
 
-void ParticleRenderer::DrawSDLGPU(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+void ParticleRenderer::DrawSDLGPU(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                                    int count, Mat4 vp, Vec3 cam_pos) {
     if (count <= 0 || !rp || !pipeline_.SDLPipeline() || !vbuf_.SDLBuffer()) return;
     // particle.vert UBO: set=1 binding=0 — mat4 viewProj (64B) + vec3 cameraPos + pad (16B) = 80B

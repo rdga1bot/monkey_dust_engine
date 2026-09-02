@@ -35,13 +35,13 @@ public:
     void Shutdown();
 
     // VBfA-R1 Prep0: linearize HW depth → linear_depth R32F (half-res).
-    void PrepPass(SDL_GPUCommandBuffer* cmd,
+    void PrepPass(md::GpuCommandBufferHandle cmd,
                   SDL_GPUTexture*       hw_depth,
                   SDL_GPUSampler*       hw_sampler);
 
     // VBfA 6-pass Prep1: Sobel 3×3 normals from linear_depth → view_normals_ RGBA8.
     // Call after PrepPass, before MainPass.
-    void Prep1Pass(SDL_GPUCommandBuffer* cmd,
+    void Prep1Pass(md::GpuCommandBufferHandle cmd,
                    float inv_proj_x = 1.f, float inv_proj_y = 1.f);
 
     // VBfA-R2: full AO computation. Now reads view_normals_ from Prep1.
@@ -49,10 +49,10 @@ public:
     // BlurPass: ssao_raw → blur_temp_ (H) → ssao_blurred_ (V).
     // ApplyPass: draw fullscreen multiply-blend onto supplied swapchain texture.
     // inv_proj_x = 1/proj[0][0], inv_proj_y = 1/proj[1][1] from camera projection.
-    void MainPass(SDL_GPUCommandBuffer* cmd,
+    void MainPass(md::GpuCommandBufferHandle cmd,
                   float inv_proj_x = 1.f, float inv_proj_y = 1.f);
-    void BlurPass(SDL_GPUCommandBuffer* cmd);
-    void ApplyPass(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* swapchain_tex,
+    void BlurPass(md::GpuCommandBufferHandle cmd);
+    void ApplyPass(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* swapchain_tex,
                    int sw, int sh);
 
     // Textures

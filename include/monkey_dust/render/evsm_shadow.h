@@ -49,7 +49,7 @@ public:
 
     // Open moment-write pass for cascade k. Draw shadow casters, then EndMomentPass().
     // Vertex shader: shadow_csm.vert (same light-space transform as depth pass).
-    SDL_GPURenderPass* BeginMomentPass(SDL_GPUCommandBuffer* cmd, int cascade);
+    SDL_GPURenderPass* BeginMomentPass(md::GpuCommandBufferHandle cmd, int cascade);
     void               EndMomentPass();
 
     SDL_GPUGraphicsPipeline* MomentPipeline() const { return moment_pipeline_; }
@@ -60,7 +60,7 @@ public:
     // see ApplyBlur's own doc comment) run after all moment passes.
     // Ping-pong: moment_tex_[k] → blur_tmp_[k] → moment_tex_[k].
     // Call once per frame AFTER all EndMomentPass() calls, before sampling.
-    void ApplyBlur(SDL_GPUCommandBuffer* cmd);
+    void ApplyBlur(md::GpuCommandBufferHandle cmd);
     bool BlurReady() const { return blur_ready_; }
 
     // ── Sampling ──────────────────────────────────────────────────────────────

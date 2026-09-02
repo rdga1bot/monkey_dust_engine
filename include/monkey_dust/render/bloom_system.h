@@ -42,10 +42,10 @@ public:
     SDL_GPUColorTargetInfo SceneColorTargetInfo() const;
 
     // Downsample → H blur → V blur. Call after scene + SSAO on scene_color_.
-    void ComputePass(SDL_GPUCommandBuffer* cmd);
+    void ComputePass(md::GpuCommandBufferHandle cmd);
 
     // Blit scene_color_ + bloom → swapchain_tex (open CLEAR pass internally).
-    void CompositePass(SDL_GPUCommandBuffer* cmd,
+    void CompositePass(md::GpuCommandBufferHandle cmd,
                        SDL_GPUTexture* swapchain_tex, int sw, int sh);
 
     bool IsEnabled() const { return enabled_; }

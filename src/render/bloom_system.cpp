@@ -120,7 +120,7 @@ SDL_GPUColorTargetInfo BloomSystem::SceneColorTargetInfo() const {
 // ── ComputePass ───────────────────────────────────────────────────────────────
 
 // Internal: begin + draw + end a fullscreen pass on a quarter-res target
-static void QtrPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipe,
+static void QtrPass(md::GpuCommandBufferHandle cmd, GpuPipeline* pipe,
                     SDL_GPUTexture* target, int tw, int th,
                     const SDL_GPUTextureSamplerBinding* sbs, int nsbs,
                     const void* ubo, uint32_t ubo_sz) {
@@ -144,7 +144,7 @@ static void QtrPass(SDL_GPUCommandBuffer* cmd, GpuPipeline* pipe,
     cb.EndPass();
 }
 
-void BloomSystem::ComputePass(SDL_GPUCommandBuffer* cmd) {
+void BloomSystem::ComputePass(md::GpuCommandBufferHandle cmd) {
     if (!enabled_) return;
 
     // ── 1. Downsample + threshold: scene_color → bloom_src (quarter-res) ─────
@@ -177,7 +177,7 @@ void BloomSystem::ComputePass(SDL_GPUCommandBuffer* cmd) {
 
 // ── CompositePass ─────────────────────────────────────────────────────────────
 
-void BloomSystem::CompositePass(SDL_GPUCommandBuffer* cmd,
+void BloomSystem::CompositePass(md::GpuCommandBufferHandle cmd,
                                  SDL_GPUTexture* swapchain_tex, int sw, int sh) {
     if (!enabled_ || !swapchain_tex) return;
 

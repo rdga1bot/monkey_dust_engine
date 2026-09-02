@@ -104,7 +104,7 @@ static_assert(sizeof(PropVertUBO) == 128, "PropVertUBO size mismatch");
 void PropRenderer::DrawRaw(
 #ifdef MD_SDL_GPU
     SDL_GPURenderPass*    rp,
-    SDL_GPUCommandBuffer* cmd,
+    md::GpuCommandBufferHandle cmd,
 #endif
     const float* positions_xyz,
     int          count,

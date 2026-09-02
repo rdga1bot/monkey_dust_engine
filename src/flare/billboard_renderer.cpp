@@ -160,7 +160,7 @@ void BillboardRenderer::Render(const MdCamera& cam, float aspect) {
 
 #ifdef MD_SDL_GPU
 
-void BillboardRenderer::PrepareSDLGPU(SDL_GPUCommandBuffer* cmd) {
+void BillboardRenderer::PrepareSDLGPU(md::GpuCommandBufferHandle cmd) {
     if (!sdl_init_ || count_ == 0) return;
 
     static BillboardInstance sorted[MAX_BILLBOARDS];
@@ -205,7 +205,7 @@ void BillboardRenderer::PrepareSDLGPU(SDL_GPUCommandBuffer* cmd) {
     sdl_vbuf_.Upload(cmd);
 }
 
-void BillboardRenderer::RenderInPass(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+void BillboardRenderer::RenderInPass(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                                       const MdCamera& cam, float aspect) {
     if (!sdl_init_ || !rp || !cmd || count_ == 0) return;
     if (!sdl_pipeline_.SDLPipeline() || !sdl_vbuf_.SDLBuffer()) return;

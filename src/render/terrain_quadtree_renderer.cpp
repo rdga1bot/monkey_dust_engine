@@ -215,7 +215,7 @@ void TerrainQuadtreeRenderer::UploadNodeData(SDL_GPUDevice* dev, SDL_GPUCopyPass
     GpuReleaseTransferBuffer(dev, tb);
 }
 
-void TerrainQuadtreeRenderer::BeginBatched(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+void TerrainQuadtreeRenderer::BeginBatched(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                                             const TerrainWorldHeightmap& hmap, const float* vp16,
                                             float cam_x, float cam_y, float cam_z) {
     if (!batched_ready_) return;
@@ -246,7 +246,7 @@ void TerrainQuadtreeRenderer::BeginBatched(SDL_GPURenderPass* rp, SDL_GPUCommand
     pv.BindVertexSamplers(0, samp, 3);
 }
 
-void TerrainQuadtreeRenderer::DrawBatched(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd, int count) {
+void TerrainQuadtreeRenderer::DrawBatched(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, int count) {
     if (!batched_ready_ || count <= 0) return;
     if (count > kMaxBatchedNodes) count = kMaxBatchedNodes;
     GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
@@ -276,7 +276,7 @@ void TerrainQuadtreeRenderer::Shutdown(SDL_GPUDevice* dev) {
     batched_ready_ = false;
 }
 
-void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                                         const TerrainWorldHeightmap& hmap, const float* vp16,
                                         const TerrainQuadtree::VisibleNode& node,
                                         float cam_x, float cam_y, float cam_z) {
@@ -337,7 +337,7 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, SDL_GPUCommandBuff
     pv.DrawIndexed(skirt_index_count_, 1, 0, 0, 0);
 }
 
-void TerrainQuadtreeRenderer::BeginForward(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+void TerrainQuadtreeRenderer::BeginForward(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                                             const TerrainRenderer::SunParams& sun,
                                             float cam_x, float cam_y, float cam_z,
                                             float world_origin_x, float world_origin_z, float world_to_uv,
@@ -380,7 +380,7 @@ void TerrainQuadtreeRenderer::BeginForward(SDL_GPURenderPass* rp, SDL_GPUCommand
     pv.BindFragmentSamplers(4, zone_binding, 1);
 }
 
-void TerrainQuadtreeRenderer::DrawNodeForward(SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+void TerrainQuadtreeRenderer::DrawNodeForward(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                                                const TerrainWorldHeightmap& hmap, const float* vp16,
                                                const TerrainQuadtree::VisibleNode& node,
                                                float cam_x, float cam_y, float cam_z) {

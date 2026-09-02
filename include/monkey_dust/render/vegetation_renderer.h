@@ -28,7 +28,7 @@ public:
     // Draw near instances as 3D mesh (delegates to PropRenderer).
     void DrawMesh(
 #ifdef MD_SDL_GPU
-        SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+        SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
 #endif
         const float* pos3, int count, const float* vp16, const float* sun32,
         float scale, float anim_mode, float anim_time);
@@ -42,7 +42,7 @@ public:
     // ambient3:  ambient rgb.
     void DrawBillboards(
 #ifdef MD_SDL_GPU
-        SDL_GPURenderPass* rp, SDL_GPUCommandBuffer* cmd,
+        SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
 #endif
         const float* pos3, int count,
         const float* vp16, const float* cam_right3,

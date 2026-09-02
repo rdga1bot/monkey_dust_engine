@@ -63,7 +63,7 @@ void RdDevice::BuildDummyResources(SDL_GPUDevice* dev) {
         void* p = GpuMapTransfer(tb, false);
         if (p) memcpy(p, kWhite, 4);
         GpuUnmapTransfer(tb);
-        SDL_GPUCommandBuffer* cmd = GpuDevice::Get().AcquireCommandBuffer();
+        md::GpuCommandBufferHandle cmd = GpuDevice::Get().AcquireCommandBuffer();
         GpuCopyPass cp;
         cp.Begin(cmd);
         SDL_GPUTextureTransferInfo src{};

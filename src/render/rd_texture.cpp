@@ -52,7 +52,7 @@ bool RdTexture::Upload(const uint8_t* rgba8, const Desc& d) {
     if (map) memcpy(map, rgba8, upload_size);
     GpuUnmapTransfer(tb);
 
-    SDL_GPUCommandBuffer* cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+    md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
     GpuCopyPass cp;
     cp.Begin(cmd);
     SDL_GPUTextureTransferInfo src{};

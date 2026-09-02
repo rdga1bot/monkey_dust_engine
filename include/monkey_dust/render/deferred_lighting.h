@@ -33,7 +33,7 @@ public:
     // depth_tex: scene depth (D32_FLOAT) for EVSM world-pos reconstruction.
     //   Pass nullptr to skip shadow sampling (shadows render unshadowed).
     // cmd must not be inside an active render pass.
-    void DrawAmbientPass(SDL_GPUCommandBuffer* cmd, const GBuffer& gbuf,
+    void DrawAmbientPass(md::GpuCommandBufferHandle cmd, const GBuffer& gbuf,
                          SDL_GPUTexture* depth_tex = nullptr);
 
     SDL_GPUTexture* HdrColorTex() const { return hdr_color_.SDLTexture(); }

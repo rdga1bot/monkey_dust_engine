@@ -52,7 +52,7 @@ void GBuffer::Init(SDL_GPUDevice* dev, int w, int h) {
            w, h, static_cast<float>(w * h * 16) / (1024.f * 1024.f));
 }
 
-SDL_GPURenderPass* GBuffer::Begin(SDL_GPUCommandBuffer* cmd) {
+SDL_GPURenderPass* GBuffer::Begin(md::GpuCommandBufferHandle cmd) {
     // RT0=albedo+roughness clears to {0,0,0,1} (fully rough), RT1=oct-normal
     // (SNORM, OctEncode(0,0,1)=(0,0))+metallic+flags clears to {0,0,0,0} --
     // genuinely different per-target, hence clear_color_mrt1 (M1 §3 item 12).

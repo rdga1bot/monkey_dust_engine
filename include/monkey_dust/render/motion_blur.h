@@ -33,7 +33,7 @@ public:
     // inv_vp16:  current frame inverse(view*proj), column-major float[16]
     // prev_vp16: previous frame view*proj,         column-major float[16]
     // cmd must NOT be inside an active render pass.
-    void PrepPass(SDL_GPUCommandBuffer* cmd,
+    void PrepPass(md::GpuCommandBufferHandle cmd,
                   SDL_GPUTexture*       hw_depth,
                   SDL_GPUSampler*       hw_sampler,
                   const float*          inv_vp16,
@@ -42,7 +42,7 @@ public:
     // Pass 2: 8-tap blur of hdr_color along motion vectors.
     // Writes result directly to swapchain_tex (or any RGBA target).
     // cmd must NOT be inside an active render pass.
-    void ApplyPass(SDL_GPUCommandBuffer* cmd,
+    void ApplyPass(md::GpuCommandBufferHandle cmd,
                    SDL_GPUTexture*       hdr_color_tex,
                    SDL_GPUSampler*       linear_sampler,
                    SDL_GPUTexture*       swapchain_tex,

@@ -46,7 +46,7 @@
 //      fullscreen pass instead of real per-vertex interpolated depth.
 class TerrainShadingProjected {
 public:
-    bool Init(SDL_GPUDevice* dev, int w, int h);
+    bool Init(md::GpuDeviceHandle dev, int w, int h);
     void Shutdown();
     bool IsReady() const { return ready_; }
 
@@ -61,7 +61,7 @@ public:
     // this G-buffer permanently stuck at its stale init-time size, so the
     // terrain content it produces only covered part of the actual window
     // (background showing through the rest) -- diagnosed live 2026-08-02.
-    void EnsureSize(SDL_GPUDevice* dev, int w, int h);
+    void EnsureSize(md::GpuDeviceHandle dev, int w, int h);
 
     GpuTexture&      GBufferColor() { return gbuf_color_; }
     GpuDepthTexture&  GBufferDepth() { return gbuf_depth_; }

@@ -41,7 +41,7 @@ static bool MakeFullscreenPipe(SDL_GPUTextureFormat fmt,
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
-void BloomSystem::Init(SDL_GPUDevice* dev, int w, int h) {
+void BloomSystem::Init(md::GpuDeviceHandle dev, int w, int h) {
     if (!RenderTierSystem::Get().IsDeferred()) {
         MD_LOG(MD_LOG_INFO, "BloomSystem: Forward tier — disabled");
         return;

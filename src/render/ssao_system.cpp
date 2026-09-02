@@ -11,7 +11,7 @@ SSAOSystem& SSAOSystem::Get() {
     return inst;
 }
 
-void SSAOSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
+void SSAOSystem::Init(md::GpuDeviceHandle dev, int full_w, int full_h,
                       float nz, float fz) {
     if (!RenderTierSystem::Get().HasSSAO()) {
         MD_LOG(MD_LOG_INFO, "SSAOSystem: tier < Deferred_Med — disabled");

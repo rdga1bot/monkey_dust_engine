@@ -34,7 +34,7 @@ void SampleIndexToZone(int gi, int& zi, int& local) {
 }
 } // namespace
 
-bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
+bool TerrainWorldHeightmap::Init(md::GpuDeviceHandle dev) {
     if (!TerrainAtlas_Loaded()) {
         fprintf(stderr, "[TerrainWorldHeightmap] TerrainAtlas not loaded\n");
         return false;
@@ -264,7 +264,7 @@ bool TerrainWorldHeightmap::Init(SDL_GPUDevice* dev) {
     return true;
 }
 
-void TerrainWorldHeightmap::Shutdown(SDL_GPUDevice* dev) {
+void TerrainWorldHeightmap::Shutdown(md::GpuDeviceHandle dev) {
     (void)dev;
     normal_tex_.Shutdown();
     tex_.Shutdown();

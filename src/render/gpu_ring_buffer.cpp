@@ -16,7 +16,7 @@ void GpuRingBuffer::Init(uint32_t size_bytes, int binding_hint) {
 
 #ifdef MD_SDL_GPU
     sdl_size_ = size_bytes;
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (dev && size_bytes > 0) {
         SDL_GPUBufferCreateInfo bi = {};
         bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ;
@@ -43,7 +43,7 @@ void GpuRingBuffer::Init(uint32_t size_bytes, int binding_hint) {
 
 void GpuRingBuffer::Shutdown() {
 #ifdef MD_SDL_GPU
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     for (int s = 0; s < N_FRAMES; ++s) {
         if (sdl_device_[s])  { SDL_ReleaseGPUBuffer        (dev, sdl_device_[s]);  sdl_device_[s]  = nullptr; }
         if (sdl_staging_[s]) { SDL_ReleaseGPUTransferBuffer(dev, sdl_staging_[s]); sdl_staging_[s] = nullptr; }

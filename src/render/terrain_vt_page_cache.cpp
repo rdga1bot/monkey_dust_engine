@@ -35,7 +35,7 @@ struct PageFillUBO {
 static_assert(sizeof(PageFillUBO) == 144, "PageFillUBO must match terrain_page_fill.comp's real std140 size");
 } // namespace
 
-bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const TerrainWorldHeightmap& hmap) {
+bool TerrainVtPageCache::Init(md::GpuDeviceHandle dev, float patch_size, const TerrainWorldHeightmap& hmap) {
     if (!dev || !hmap.IsReady()) {
         MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] Init: invalid device or heightmap not ready");
         return false;
@@ -226,7 +226,7 @@ bool TerrainVtPageCache::Init(SDL_GPUDevice* dev, float patch_size, const Terrai
     return true;
 }
 
-bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
+bool TerrainVtPageCache::InitDisabledFallback(md::GpuDeviceHandle dev) {
     // 1x1 atlas: same format/usage contract as the real atlas (minus
     // COMPUTE_STORAGE_WRITE, since a disabled cache is never written by
     // terrain_page_fill.comp) so DrawShadingResolve's binding code path is
@@ -315,7 +315,7 @@ bool TerrainVtPageCache::InitDisabledFallback(SDL_GPUDevice* dev) {
     return true;
 }
 
-void TerrainVtPageCache::Shutdown(SDL_GPUDevice* dev) {
+void TerrainVtPageCache::Shutdown(md::GpuDeviceHandle dev) {
     if (!dev) return;
     fill_pipeline_.Destroy();
     atlas_tex_.Shutdown();
@@ -440,7 +440,7 @@ void TerrainVtPageCache::RequestSubtile(int fine_ix, int fine_iz, int span, int 
     fill_queue_[fill_queue_count_++] = FillRequest{fine_ix, fine_iz, span, tier, slot};
 }
 
-void TerrainVtPageCache::UploadIndirectionRegion(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
+void TerrainVtPageCache::UploadIndirectionRegion(md::GpuDeviceHandle dev, SDL_GPUCopyPass* cp,
                                                   int fine_ix, int fine_iz, int span, uint32_t value) {
     uint32_t vals[FINE_SUBDIV * FINE_SUBDIV];
     int count = span * span;
@@ -473,7 +473,7 @@ void TerrainVtPageCache::UploadIndirectionRegion(SDL_GPUDevice* dev, SDL_GPUCopy
     GpuReleaseTransferBuffer(dev, tb);
 }
 
-void TerrainVtPageCache::UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp, int slot,
+void TerrainVtPageCache::UploadPageMeta(md::GpuDeviceHandle dev, SDL_GPUCopyPass* cp, int slot,
                                          float origin_x, float origin_z, float world_size) {
     float meta[4] = { origin_x, origin_z, world_size, 0.f };
 
@@ -497,7 +497,7 @@ void TerrainVtPageCache::UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
     GpuReleaseTransferBuffer(dev, tb);
 }
 
-void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, md::GpuCommandBufferHandle cmd,
+void TerrainVtPageCache::FlushFillQueue(md::GpuDeviceHandle dev, md::GpuCommandBufferHandle cmd,
                                          const TerrainWorldHeightmap& hmap, const TerrainRenderer& ground) {
     if (!ready_ || fill_queue_count_ == 0) { fill_queue_count_ = 0; return; }
 
@@ -614,7 +614,7 @@ void TerrainVtPageCache::FlushFillQueue(SDL_GPUDevice* dev, md::GpuCommandBuffer
     fill_queue_count_ = 0;
 }
 
-bool TerrainVtPageCache::DebugDumpAtlas(SDL_GPUDevice* dev, const char* out_png_path) {
+bool TerrainVtPageCache::DebugDumpAtlas(md::GpuDeviceHandle dev, const char* out_png_path) {
     if (!ready_ || !atlas_tex_.SDLTexture()) return false;
     uint32_t w = (uint32_t)(SLOTS_X * PAGE_TEXELS), h = (uint32_t)(SLOTS_Y * PAGE_TEXELS);
     uint32_t download_size = w * h * 4;

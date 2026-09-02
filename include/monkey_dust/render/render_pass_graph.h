@@ -130,7 +130,7 @@ public:
     // same name (returns the same cached handle) — only the first call in
     // a frame actually hits the pool. Returns nullptr if no desc was
     // declared for this name, or the pool is exhausted.
-    SDL_GPUTexture* ResolveTexture(SDL_GPUDevice* dev, const char* resource_name);
+    SDL_GPUTexture* ResolveTexture(md::GpuDeviceHandle dev, const char* resource_name);
 
     // Returns the currently-resolved texture for a resource, or nullptr if
     // ResolveTexture hasn't been called for it yet this frame.

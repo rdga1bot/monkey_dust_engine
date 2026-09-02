@@ -14,7 +14,7 @@ MotionBlurSystem& MotionBlurSystem::Get() {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 
-void MotionBlurSystem::Init(SDL_GPUDevice* dev, int full_w, int full_h,
+void MotionBlurSystem::Init(md::GpuDeviceHandle dev, int full_w, int full_h,
                              float nz, float fz) {
     // Gate: check render_settings.json for "motion_blur": true
     {

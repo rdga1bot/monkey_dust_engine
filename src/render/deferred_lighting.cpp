@@ -50,7 +50,7 @@ DeferredLightingSystem& DeferredLightingSystem::Get() {
     return inst;
 }
 
-void DeferredLightingSystem::Init(SDL_GPUDevice* dev, int w, int h) {
+void DeferredLightingSystem::Init(md::GpuDeviceHandle dev, int w, int h) {
     if (!RenderTierSystem::Get().IsDeferred()) {
         MD_LOG(MD_LOG_INFO, "DeferredLightingSystem: Forward tier — disabled");
         return;

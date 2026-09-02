@@ -36,7 +36,7 @@ struct ForwardCamUBO {
 static_assert(sizeof(ForwardCamUBO) == 16, "ForwardCamUBO size mismatch");
 } // namespace
 
-bool TerrainQuadtreeRenderer::Init(SDL_GPUDevice* /*dev*/) {
+bool TerrainQuadtreeRenderer::Init(md::GpuDeviceHandle /*dev*/) {
     md::TerrainQuadtreeMesh mesh = md::BuildTerrainQuadtreeMesh();
 
     filled_ibo_.Init(0x8893u /*GL_ELEMENT_ARRAY_BUFFER*/, mesh.filled_indices.data(),
@@ -79,7 +79,7 @@ bool TerrainQuadtreeRenderer::Init(SDL_GPUDevice* /*dev*/) {
     return true;
 }
 
-bool TerrainQuadtreeRenderer::InitForward(SDL_GPUDevice* /*dev*/) {
+bool TerrainQuadtreeRenderer::InitForward(md::GpuDeviceHandle /*dev*/) {
     GpuPipeline::Desc pd;
     pd.layout.count       = 0; // vertex-buffer-less, same IBO-only technique as gbuffer_pipeline_
     pd.raster.depth_test  = true;
@@ -104,7 +104,7 @@ bool TerrainQuadtreeRenderer::InitForward(SDL_GPUDevice* /*dev*/) {
     return true;
 }
 
-bool TerrainQuadtreeRenderer::InitBatched(SDL_GPUDevice* dev) {
+bool TerrainQuadtreeRenderer::InitBatched(md::GpuDeviceHandle dev) {
     if (!dev) return false;
 
     SDL_GPUTextureCreateInfo ti{};
@@ -156,7 +156,7 @@ bool TerrainQuadtreeRenderer::InitBatched(SDL_GPUDevice* dev) {
     return true;
 }
 
-void TerrainQuadtreeRenderer::UploadNodeData(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
+void TerrainQuadtreeRenderer::UploadNodeData(md::GpuDeviceHandle dev, SDL_GPUCopyPass* cp,
                                               const TerrainQuadtree::VisibleNode* nodes, int count) {
     if (!batched_ready_ || !dev || !cp || count <= 0) return;
     if (count > kMaxBatchedNodes) count = kMaxBatchedNodes;
@@ -258,7 +258,7 @@ void TerrainQuadtreeRenderer::DrawBatched(SDL_GPURenderPass* rp, md::GpuCommandB
     pv.DrawIndexed(skirt_index_count_, (uint32_t)count, 0, 0, 0);
 }
 
-void TerrainQuadtreeRenderer::Shutdown(SDL_GPUDevice* dev) {
+void TerrainQuadtreeRenderer::Shutdown(md::GpuDeviceHandle dev) {
     gbuffer_pipeline_.Destroy();
     if (forward_ready_) forward_pipeline_.Destroy();
     if (batched_ready_) {

@@ -5,7 +5,7 @@
 #include <monkey_dust/platform/md_log.h>
 // ── GBuffer ───────────────────────────────────────────────────────────────────
 
-void GBuffer::Init(SDL_GPUDevice* dev, int w, int h) {
+void GBuffer::Init(md::GpuDeviceHandle dev, int w, int h) {
     dev_ = dev; w_ = w; h_ = h;
 
     SDL_GPUTextureCreateInfo ti = {};
@@ -96,7 +96,7 @@ GBufferSystem& GBufferSystem::Get() {
     return inst;
 }
 
-void GBufferSystem::Init(SDL_GPUDevice* dev, int w, int h) {
+void GBufferSystem::Init(md::GpuDeviceHandle dev, int w, int h) {
     enabled_ = RenderTierSystem::Get().IsDeferred();
     if (!enabled_) {
         MD_LOG(MD_LOG_INFO, "GBufferSystem: Forward tier — GBuffer disabled");

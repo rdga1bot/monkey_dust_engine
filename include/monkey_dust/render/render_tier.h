@@ -30,7 +30,7 @@ public:
     // Auto-detect: sysfs PCI IDs (Linux) → SDL device name → conservative fallback.
     // json_override_path: optional, e.g. "data/render_settings.json".
     // JSON wins over auto-detect if present and valid.
-    RenderTier Detect(SDL_GPUDevice* dev, const char* json_override_path = nullptr);
+    RenderTier Detect(md::GpuDeviceHandle dev, const char* json_override_path = nullptr);
 
     // Hard override (e.g. from CLI arg or game settings menu).
     void       SetTier(RenderTier t) { tier_ = t; }

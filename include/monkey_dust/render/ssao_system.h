@@ -30,7 +30,7 @@ public:
 
     // Allocate textures + pipelines.  No-op if !HasSSAO().
     // near_z / far_z: camera planes for depth linearization.
-    void Init(SDL_GPUDevice* dev, int full_w, int full_h,
+    void Init(md::GpuDeviceHandle dev, int full_w, int full_h,
               float near_z = 0.1f, float far_z = 500.0f);
     void Shutdown();
 
@@ -75,7 +75,7 @@ private:
     SSAOSystem() = default;
 
     bool              enabled_        = false;
-    SDL_GPUDevice*    dev_            = nullptr;
+    md::GpuDeviceHandle    dev_            = nullptr;
 
     // VBfA-R1: linear depth prep
     GpuPipeline       prep_pipeline_;            // fragment-shader depth linearize

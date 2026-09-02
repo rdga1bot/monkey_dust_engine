@@ -4,6 +4,7 @@
 // All render code should clamp to Caps() before creating pipelines/shaders.
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/gpu_device.h>
 
 namespace md {
 
@@ -17,7 +18,7 @@ class RdDevice {
 public:
     static RdDevice& Get() { static RdDevice inst; return inst; }
 
-    void Init(SDL_GPUDevice* dev);
+    void Init(md::GpuDeviceHandle dev);
     void Shutdown();
 
     const RdDeviceCaps&          Caps()         const { return caps_; }
@@ -27,10 +28,10 @@ public:
 
 private:
     RdDevice() = default;
-    void BuildDummyResources(SDL_GPUDevice* dev);
+    void BuildDummyResources(md::GpuDeviceHandle dev);
 
     RdDeviceCaps    caps_;
-    SDL_GPUDevice*  dev_       = nullptr;
+    md::GpuDeviceHandle  dev_       = nullptr;
     SDL_GPUTexture* dummy_tex_  = nullptr;
     SDL_GPUSampler* dummy_samp_ = nullptr;
 };

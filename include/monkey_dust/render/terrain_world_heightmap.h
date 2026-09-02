@@ -37,8 +37,8 @@ public:
     // class of cost as the old system's Init(), already accepted), NOT a
     // per-frame or per-window operation; there is no RebuildRegion
     // equivalent because there is no window to rebuild.
-    bool Init(SDL_GPUDevice* dev);
-    void Shutdown(SDL_GPUDevice* dev);
+    bool Init(md::GpuDeviceHandle dev);
+    void Shutdown(md::GpuDeviceHandle dev);
     bool IsReady() const { return tex_.SDLTexture() != nullptr; }
 
     SDL_GPUTexture* Texture() const { return tex_.SDLTexture(); }

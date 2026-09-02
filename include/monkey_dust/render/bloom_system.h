@@ -31,7 +31,7 @@ public:
     static BloomSystem& Get();
 
     // Allocate textures + pipelines. No-op if !IsDeferred().
-    void Init(SDL_GPUDevice* dev, int w, int h);
+    void Init(md::GpuDeviceHandle dev, int w, int h);
     void Shutdown();
 
     // Scene color RT — render the entire scene here (instead of swapchain).
@@ -76,7 +76,7 @@ public:
 private:
     BloomSystem() = default;
 
-    SDL_GPUDevice*  dev_          = nullptr;
+    md::GpuDeviceHandle  dev_          = nullptr;
     bool            enabled_      = false;
     int w_ = 0, h_ = 0;    // full-res
     int qw_ = 0, qh_ = 0;  // quarter-res

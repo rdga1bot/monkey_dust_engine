@@ -23,7 +23,7 @@
 
 class GBuffer {
 public:
-    void Init(SDL_GPUDevice* dev, int w, int h);
+    void Init(md::GpuDeviceHandle dev, int w, int h);
     void Shutdown();
 
     // Begin geometry pass with CLEAR on both color RTs + depth.
@@ -40,7 +40,7 @@ public:
     bool IsReady() const { return rt0_ != nullptr; }
 
 private:
-    SDL_GPUDevice*     dev_     = nullptr;
+    md::GpuDeviceHandle     dev_     = nullptr;
     SDL_GPUTexture*    rt0_     = nullptr;
     SDL_GPUTexture*    rt1_     = nullptr;
     SDL_GPUTexture*    depth_   = nullptr;
@@ -60,7 +60,7 @@ public:
 
     // Creates GBuffer only if RenderTierSystem::Get().IsDeferred().
     // w/h: render resolution (typically 1280×720).
-    void Init(SDL_GPUDevice* dev, int w, int h);
+    void Init(md::GpuDeviceHandle dev, int w, int h);
     void Shutdown();
 
     bool     IsEnabled() const { return enabled_; }

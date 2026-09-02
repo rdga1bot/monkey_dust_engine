@@ -25,7 +25,7 @@ class MotionBlurSystem {
 public:
     static MotionBlurSystem& Get();
 
-    void Init(SDL_GPUDevice* dev, int full_w, int full_h,
+    void Init(md::GpuDeviceHandle dev, int full_w, int full_h,
               float near_z = 0.1f, float far_z = 500.0f);
     void Shutdown();
 
@@ -67,7 +67,7 @@ private:
     MotionBlurSystem() = default;
 
     bool           enabled_    = false;
-    SDL_GPUDevice* dev_        = nullptr;
+    md::GpuDeviceHandle dev_        = nullptr;
 
     GpuPipeline    prep_pipeline_;    // motion_prep.frag
     GpuPipeline    blur_pipeline_;    // motion_blur.frag

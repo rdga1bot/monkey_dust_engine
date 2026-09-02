@@ -20,7 +20,7 @@ static uint32_t MipCount(uint32_t w, uint32_t h) {
 }
 
 bool RdTexture::Upload(const uint8_t* rgba8, const Desc& d) {
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (!dev || !rgba8 || !d.width || !d.height) return false;
 
     mip_levels_ = d.gen_mipmaps ? MipCount(d.width, d.height) : 1u;
@@ -113,7 +113,7 @@ bool RdTexture::LoadFile(const char* path, bool gen_mipmaps, bool flip_v) {
 }
 
 void RdTexture::Release() {
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (dev) {
         if (samp_) { SDL_ReleaseGPUSampler(dev, samp_); samp_ = nullptr; }
         if (tex_)  { SDL_ReleaseGPUTexture(dev, tex_);  tex_  = nullptr; }

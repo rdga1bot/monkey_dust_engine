@@ -4,7 +4,7 @@
 
 namespace md {
 
-SDL_GPUTexture* GpuTexturePool::Acquire(SDL_GPUDevice* dev, const RGTextureDesc& desc) {
+SDL_GPUTexture* GpuTexturePool::Acquire(md::GpuDeviceHandle dev, const RGTextureDesc& desc) {
     dev_ = dev;  // cached for Shutdown(); all callers share the one GpuDevice
     // Reuse a released entry with an identical desc first.
     for (int i = 0; i < count_; ++i) {

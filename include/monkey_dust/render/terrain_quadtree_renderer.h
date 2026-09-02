@@ -18,8 +18,8 @@
 // unmodified, same packed-normal RGBA32F target.
 class TerrainQuadtreeRenderer {
 public:
-    bool Init(SDL_GPUDevice* dev);
-    void Shutdown(SDL_GPUDevice* dev);
+    bool Init(md::GpuDeviceHandle dev);
+    void Shutdown(md::GpuDeviceHandle dev);
     bool IsReady() const { return ready_; }
 
     // Draws ONE node (filled grid + 4 border skirts) inside an already-open
@@ -39,7 +39,7 @@ public:
     // with DrawNode -- only the fragment stage differs). See that shader's
     // doc comment for why this is the revived Variant B architecture
     // (terrain_research/perf/PROGRESS.md, 2026-08-02).
-    bool InitForward(SDL_GPUDevice* dev);
+    bool InitForward(md::GpuDeviceHandle dev);
     bool IsForwardReady() const { return forward_ready_; }
 
     // Binds the forward pipeline + PER-FRAME-CONSTANT fragment resources
@@ -83,7 +83,7 @@ public:
     // shader (not a shared/parameterized one) specifically so the forward
     // pipeline (real frag_samplers=5) never risks inheriting any change
     // made here.
-    bool InitBatched(SDL_GPUDevice* dev);
+    bool InitBatched(md::GpuDeviceHandle dev);
     bool IsBatchedReady() const { return batched_ready_; }
 
     // Packs `count` nodes into the CPU-side staging buffer and uploads to
@@ -92,7 +92,7 @@ public:
     // mirrors TerrainVtPageCache::UploadPageMeta's "caller owns the copy
     // pass" convention (SDL_GPU disallows nesting a copy pass inside an
     // already-active render pass). Capped at kMaxBatchedNodes.
-    void UploadNodeData(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
+    void UploadNodeData(md::GpuDeviceHandle dev, SDL_GPUCopyPass* cp,
                         const TerrainQuadtree::VisibleNode* nodes, int count);
 
     // Binds the batched pipeline + per-frame-constant vertex resources

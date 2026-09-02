@@ -8,7 +8,7 @@
 namespace md {
 
 // ── Local SPIR-V loader ───────────────────────────────────────────────────────
-static SDL_GPUShader* LoadSpv(SDL_GPUDevice* dev, const char* spv_path,
+static SDL_GPUShader* LoadSpv(md::GpuDeviceHandle dev, const char* spv_path,
                                SDL_GPUShaderStage stage,
                                uint32_t uni = 0, uint32_t smp = 0) {
     uint32_t sz = 0;
@@ -38,7 +38,7 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
     map_size_ = map_size;
     warp_c_   = warp_c;
 
-    SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = GpuDevice::Get().SDLDevice();
     if (!dev) return false;
 
     // ── Moment textures: R16G16_FLOAT (universally supported as color target) ───
@@ -207,7 +207,7 @@ bool EvsmShadow::Init(int num_cascades, int map_size, float warp_c) {
 }
 
 void EvsmShadow::Shutdown() {
-    SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = GpuDevice::Get().SDLDevice();
     if (!dev) return;
     if (moment_pipeline_) {
         GpuReleaseGraphicsPipeline(dev, moment_pipeline_);

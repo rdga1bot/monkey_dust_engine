@@ -39,7 +39,7 @@ void TransformSoA::Init() {
     skin_ssbo_.Init(MAX_SLOTS * 4 * sizeof(float));
 
 #ifdef MD_SDL_GPU
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (dev) {
         // Init() runs twice per process: once at startup (game_init.cpp) and
         // once per `load game` (world_serializer.cpp's Deserialize, which

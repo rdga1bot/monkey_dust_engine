@@ -9,7 +9,7 @@ namespace md {
 // ── Texture management ────────────────────────────────────────────────────────
 
 void CasPass::CreateTextures(int w, int h) {
-    SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = GpuDevice::Get().SDLDevice();
     if (!dev) return;
 
     // Scene color texture: R8G8B8A8_UNORM, sampleable + color target.
@@ -44,7 +44,7 @@ void CasPass::CreateTextures(int w, int h) {
 }
 
 void CasPass::DestroyTextures() {
-    SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = GpuDevice::Get().SDLDevice();
     if (!dev) return;
     if (scene_tex_) { GpuReleaseTexture(dev, scene_tex_); scene_tex_ = nullptr; }
     if (depth_tex_) { GpuReleaseTexture(dev, depth_tex_); depth_tex_ = nullptr; }

@@ -217,7 +217,7 @@ void MdUnloadTexture(MdTexture& t) {
 #else
     if (t.id) { glDeleteTextures(1, &t.id); }
 #ifdef MD_SDL_GPU
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (dev) {
         if (t.sdl_tex)     GpuReleaseTexture(dev, (SDL_GPUTexture*)t.sdl_tex);
         if (t.sdl_sampler) GpuReleaseSampler(dev, (SDL_GPUSampler*)t.sdl_sampler);

@@ -26,7 +26,7 @@ public:
 
     // Creates hdr_color texture + pipeline.
     // Requires GBufferSystem::Get().IsEnabled() == true; no-op otherwise.
-    void Init(SDL_GPUDevice* dev, int w, int h);
+    void Init(md::GpuDeviceHandle dev, int w, int h);
     void Shutdown();
 
     // Draws ambient + directional pass from gbuf into HdrColorTex().
@@ -52,7 +52,7 @@ public:
 private:
     DeferredLightingSystem() = default;
 
-    SDL_GPUDevice*  dev_           = nullptr;
+    md::GpuDeviceHandle  dev_           = nullptr;
     GpuColorTexture hdr_color_;
     GpuSampler      sampler_nearest_;  // for GBuffer + depth
     GpuSampler      sampler_linear_;   // for EVSM moment maps

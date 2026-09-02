@@ -211,8 +211,8 @@ public:
     // range/heightmap resolution, cached once (this cache assumes ONE
     // TerrainWorldHeightmap instance for its whole lifetime, same as
     // TerrainPatchGrid itself).
-    bool Init(SDL_GPUDevice* dev, float patch_size, const TerrainWorldHeightmap& hmap);
-    void Shutdown(SDL_GPUDevice* dev);
+    bool Init(md::GpuDeviceHandle dev, float patch_size, const TerrainWorldHeightmap& hmap);
+    void Shutdown(md::GpuDeviceHandle dev);
     bool IsReady() const { return ready_; }
 
     SDL_GPUTexture* AtlasTexture() const { return atlas_tex_.SDLTexture(); }
@@ -277,14 +277,14 @@ public:
     // DrawShadingResolve already binds (TerrainRenderer::
     // GetSharedGroundSamplers/ZoneGroundLayersSSBO) -- page-fill reuses
     // them rather than owning a second copy.
-    void FlushFillQueue(SDL_GPUDevice* dev, md::GpuCommandBufferHandle cmd,
+    void FlushFillQueue(md::GpuDeviceHandle dev, md::GpuCommandBufferHandle cmd,
                          const TerrainWorldHeightmap& hmap, const TerrainRenderer& ground);
 
     // Debug-only (Phase 1 verification): dump the whole atlas to a PNG via
     // a blocking SDL_DownloadFromGPUTexture readback (same pattern
     // tools/editor/editor_screenshot.cpp already uses for the swapchain)
     // -- NOT a per-frame path.
-    bool DebugDumpAtlas(SDL_GPUDevice* dev, const char* out_png_path);
+    bool DebugDumpAtlas(md::GpuDeviceHandle dev, const char* out_png_path);
 
     // terrain-vt clipmap fix: per-slot (origin_x, origin_z, world_size, 0)
     // metadata, indexed by slot -- VT_SampleAlbedo (terrain_shading_
@@ -343,15 +343,15 @@ private:
     // comment for why tier/span are deliberately NOT part of this lookup.
     int FindSlot(int fine_ix, int fine_iz) const;
     int AllocSlot();
-    void UploadIndirectionRegion(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp,
+    void UploadIndirectionRegion(md::GpuDeviceHandle dev, SDL_GPUCopyPass* cp,
                                   int fine_ix, int fine_iz, int span, uint32_t value);
-    void UploadPageMeta(SDL_GPUDevice* dev, SDL_GPUCopyPass* cp, int slot,
+    void UploadPageMeta(md::GpuDeviceHandle dev, SDL_GPUCopyPass* cp, int slot,
                          float origin_x, float origin_z, float world_size);
     // 2026-08-27 fix (see Init()'s doc comment): allocates minimal 1x1/
     // 1-slot fallback resources so every accessor stays safely bindable
     // when real caching is permanently disabled, without paying for the
     // full 33MB atlas+indirection allocation.
-    bool InitDisabledFallback(SDL_GPUDevice* dev);
+    bool InitDisabledFallback(md::GpuDeviceHandle dev);
 
     GpuTexture         atlas_tex_;
     GpuTexture         indir_tex_;

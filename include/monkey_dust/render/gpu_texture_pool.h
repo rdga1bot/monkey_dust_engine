@@ -14,6 +14,7 @@
 // container-in-hot-path convention (same pattern as PipeCache/SpvCache).
 
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/gpu_device.h>
 
 namespace md {
 
@@ -37,7 +38,7 @@ public:
     // Returns a texture matching desc — reuses a released, matching pool
     // entry if one exists, otherwise creates a new SDL_GPUTexture. Returns
     // nullptr (logs a warning) if the pool is full and none can be reused.
-    SDL_GPUTexture* Acquire(SDL_GPUDevice* dev, const RGTextureDesc& desc);
+    SDL_GPUTexture* Acquire(md::GpuDeviceHandle dev, const RGTextureDesc& desc);
 
     // Marks a previously-Acquired texture as free for reuse by a later
     // Acquire() with a matching desc. Does NOT destroy the GPU resource —
@@ -65,7 +66,7 @@ private:
 
     Entry entries_[MAX_POOLED] = {};
     int   count_ = 0;
-    SDL_GPUDevice* dev_ = nullptr;  // cached from first Acquire(), used by Shutdown()
+    md::GpuDeviceHandle dev_ = nullptr;  // cached from first Acquire(), used by Shutdown()
 };
 
 } // namespace md

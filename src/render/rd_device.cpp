@@ -8,7 +8,7 @@
 
 namespace md {
 
-static bool DetectIntelANV(SDL_GPUDevice* dev) {
+static bool DetectIntelANV(md::GpuDeviceHandle dev) {
     const char* drv = SDL_GetGPUDeviceDriver(dev);
 #ifdef __linux__
     // On Linux, Vulkan is used by Intel ANV, AMD RADV, and NVidia NVK/proprietary.
@@ -24,7 +24,7 @@ static bool DetectIntelANV(SDL_GPUDevice* dev) {
     return false;
 }
 
-void RdDevice::Init(SDL_GPUDevice* dev) {
+void RdDevice::Init(md::GpuDeviceHandle dev) {
     if (!dev) return;
     dev_ = dev;
 
@@ -45,7 +45,7 @@ void RdDevice::Init(SDL_GPUDevice* dev) {
     BuildDummyResources(dev);
 }
 
-void RdDevice::BuildDummyResources(SDL_GPUDevice* dev) {
+void RdDevice::BuildDummyResources(md::GpuDeviceHandle dev) {
     SDL_GPUTextureCreateInfo ti{};
     ti.type                 = SDL_GPU_TEXTURETYPE_2D;
     ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;

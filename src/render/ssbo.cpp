@@ -12,7 +12,7 @@
 void SSBO::Init(int capacity_bytes, uint32_t extra_sdl_usage) {
 #ifdef MD_SDL_GPU
     sdl_cap_ = (uint32_t)capacity_bytes;
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (dev && capacity_bytes > 0) {
         SDL_GPUBufferCreateInfo bi = {};
         bi.usage = SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ |
@@ -40,7 +40,7 @@ void SSBO::Init(int capacity_bytes, uint32_t extra_sdl_usage) {
 // One-shot upload for static SSBOs: fill all 3 slots with the same data.
 void SSBO::Upload(const void* data, int size_bytes, int offset) {
 #ifdef MD_SDL_GPU
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (!dev || !data || size_bytes <= 0) return;
     for (int s = 0; s < 3; ++s) {
         if (!sdl_buf_[s] || !sdl_transfer_[s]) continue;
@@ -72,7 +72,7 @@ void SSBO::Bind(int binding_point) {
 
 void SSBO::Shutdown() {
 #ifdef MD_SDL_GPU
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     for (int s = 0; s < 3; ++s) {
         if (sdl_transfer_[s]) { GpuReleaseTransferBuffer(dev, sdl_transfer_[s]); sdl_transfer_[s] = nullptr; }
         if (sdl_buf_[s])      { SDL_ReleaseGPUBuffer        (dev, sdl_buf_[s]);      sdl_buf_[s]      = nullptr; }

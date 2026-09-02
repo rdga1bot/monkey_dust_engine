@@ -43,7 +43,7 @@ bool TerrainShadingProjected::CreateTextures(int w, int h) {
     return true;
 }
 
-bool TerrainShadingProjected::Init(SDL_GPUDevice* dev, int w, int h) {
+bool TerrainShadingProjected::Init(md::GpuDeviceHandle dev, int w, int h) {
     if (!CreateTextures(w, h)) return false;
 
     GpuPipeline::Desc rd;
@@ -79,7 +79,7 @@ bool TerrainShadingProjected::Init(SDL_GPUDevice* dev, int w, int h) {
 // frame could still reference -- a real SIGSEGV inside the Intel Vulkan driver,
 // diagnosed live 2026-08-02 even after relocating the call to before
 // AcquireCommandBuffer (that relocation alone only fixed the FIRST-frame case).
-void TerrainShadingProjected::EnsureSize(SDL_GPUDevice* dev, int w, int h) {
+void TerrainShadingProjected::EnsureSize(md::GpuDeviceHandle dev, int w, int h) {
     (void)dev;
     if (!ready_ || (w == w_ && h == h_) || w <= 0 || h <= 0) return;
     gbuf_depth_.Shutdown();

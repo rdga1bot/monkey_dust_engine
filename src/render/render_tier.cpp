@@ -121,7 +121,7 @@ const char* RenderTierSystem::TierName() const {
     return "Unknown";
 }
 
-RenderTier RenderTierSystem::Detect(SDL_GPUDevice* dev, const char* json_override_path) {
+RenderTier RenderTierSystem::Detect(md::GpuDeviceHandle dev, const char* json_override_path) {
     // Priority 1: JSON override (user-controlled)
     RenderTier override_tier;
     if (load_json_override(json_override_path, override_tier)) {

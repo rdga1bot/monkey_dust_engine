@@ -63,7 +63,7 @@ bool TerrainRenderer::Init() {
     // empty here; populated once by the caller (World3D editor's
     // synthesis-mesh init, and SceneRender's game-side equivalent).
     {
-        SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+        md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
         SDL_GPUTextureCreateInfo ti{};
         ti.type                 = SDL_GPU_TEXTURETYPE_2D;
         ti.format               = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_UINT;
@@ -262,7 +262,7 @@ void TerrainRenderer::Shutdown() {
     ground_array_ready_ = false;
 
 #ifdef MD_SDL_GPU
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (dev) {
         if (fallback_sampler_)       GpuReleaseSampler(dev, fallback_sampler_);
         if (fallback_tex_)           GpuReleaseTexture(dev, fallback_tex_);
@@ -367,7 +367,7 @@ void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uin
         return;
     }
     if (!zone_layers_tex_) return;
-    SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (!dev) return;
 
     // Repack the caller's flat zone_idx*9+slot layout into the texture's

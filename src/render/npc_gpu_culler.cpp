@@ -16,7 +16,7 @@ NpcGpuCuller& NpcGpuCuller::Get() {
 // ── Init / Shutdown ───────────────────────────────────────────────────────────
 
 bool NpcGpuCuller::Init() {
-    SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = GpuDevice::Get().SDLDevice();
     if (!dev) return false;
 
     // Compute pipeline.
@@ -65,7 +65,7 @@ bool NpcGpuCuller::Init() {
 }
 
 void NpcGpuCuller::Shutdown() {
-    SDL_GPUDevice* dev = GpuDevice::Get().SDLDevice();
+    md::GpuDeviceHandle dev = GpuDevice::Get().SDLDevice();
     pos_buf_.Shutdown();
     vis_buf_.Shutdown();
     if (dev) {

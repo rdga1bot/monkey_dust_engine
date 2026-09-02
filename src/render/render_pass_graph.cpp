@@ -236,7 +236,7 @@ void RenderPassGraph::DeclareTextureDesc(const char* resource_name, const RGText
     e.live_tex = nullptr;
 }
 
-SDL_GPUTexture* RenderPassGraph::ResolveTexture(SDL_GPUDevice* dev, const char* resource_name) {
+SDL_GPUTexture* RenderPassGraph::ResolveTexture(md::GpuDeviceHandle dev, const char* resource_name) {
     if (!resource_name) return nullptr;
     int idx = FindResourceByHash(Hash(resource_name));
     if (idx < 0) {

@@ -167,7 +167,7 @@ void TileMap2DRenderer::Shutdown() {
     if (sdl_init_) {
         sdl_pipeline_.Destroy();
         sdl_vbuf_.Shutdown();
-        SDL_GPUDevice* dev = md::GpuDevice::Get().SDLDevice();
+        md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
         if (dev) {
             if (sdl_dummy_sampler_) GpuReleaseSampler(dev, (SDL_GPUSampler*)sdl_dummy_sampler_);
             if (sdl_dummy_tex_)     GpuReleaseTexture(dev, (SDL_GPUTexture*)sdl_dummy_tex_);

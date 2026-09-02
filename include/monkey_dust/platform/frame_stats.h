@@ -183,20 +183,36 @@ public:
     // reproducibility concern): P5-style perf baselines assumed "same
     // camera pose == same scene" without checking whether terrain
     // streaming/VT-cache had actually settled by the time of measurement
-    // (an 8s settle timer is a wait, not a verified precondition). These
-    // two counters make "scene is settled" a checkable fact in the log
-    // instead of an assumption -- pass 0/0 from call sites where terrain
-    // streaming/VT cache don't apply (e.g. editor, tests).
+    // (an 8s settle timer is a wait, not a verified precondition).
+    //
+    // First cut (2026-09-02) reported the INSTANTANEOUS value at the one
+    // EndFrame() call where the 5s report happens to fire -- a live check
+    // at zone(24,12) with active streaming showed TerrainPending=0 in the
+    // very same line as non-zero TerrainStreamPoll/ClutterUpload costs,
+    // because the queue drained between report ticks. That made the
+    // counter unable to distinguish "never pending this window" from
+    // "was pending, but not at the exact instant we sampled." Now tracks
+    // a running max + count of frames with pending>0 across the WHOLE
+    // window, so "was terrain fully settled for the entire 5s" is a
+    // checkable fact instead of a coin flip on report timing. Pass 0/0
+    // from call sites where terrain streaming/VT cache don't apply (e.g.
+    // editor, tests).
     const char* EndFrame(float dt, int fps, int npc_count,
                          int terrain_pending = 0, int vt_resident = 0) {
         CheckFrameSpike();
         accum_ += dt;
         frame_count_++;
+        if (terrain_pending > terrain_pending_max_) terrain_pending_max_ = terrain_pending;
+        if (terrain_pending > 0) ++terrain_pending_nonzero_frames_;
+        if (vt_resident > vt_resident_max_) vt_resident_max_ = vt_resident;
         if (accum_ < FS_REPORT_INTERVAL) return nullptr;
 
         char* p = report_buf_;
-        p += snprintf(p, 256, "[PERF] %d FPS | NPCs=%d | TerrainPending=%d VtResident=%d | ",
-                      fps, npc_count, terrain_pending, vt_resident);
+        p += snprintf(p, 256,
+                      "[PERF] %d FPS | NPCs=%d | "
+                      "TerrainPendingMax=%d(%d/%dfr>0) VtResidentMax=%d | ",
+                      fps, npc_count, terrain_pending_max_,
+                      terrain_pending_nonzero_frames_, frame_count_, vt_resident_max_);
         for (int i = 0; i < count_; ++i) {
             float avg = slots_[i].frames > 0
                       ? slots_[i].sum_ms / (float)slots_[i].frames : 0.f;
@@ -208,6 +224,9 @@ public:
         }
         accum_ = 0.f;
         frame_count_ = 0;
+        terrain_pending_max_ = 0;
+        terrain_pending_nonzero_frames_ = 0;
+        vt_resident_max_ = 0;
         fprintf(stderr, "%s\n", report_buf_);
         return report_buf_;
     }
@@ -226,6 +245,12 @@ private:
     float     accum_;
     int       frame_count_;
     char      report_buf_[1536];
+    // task #635 follow-up: windowed aggregate for terrain_pending/
+    // vt_resident, see EndFrame()'s doc comment for why instantaneous
+    // wasn't enough.
+    int       terrain_pending_max_ = 0;
+    int       terrain_pending_nonzero_frames_ = 0;
+    int       vt_resident_max_ = 0;
 #ifdef __linux__
     MdOsStatSnapshot os_begin_{0, 0, 0};
     float os_sched_wait_ms_ = 0.f;

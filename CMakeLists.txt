@@ -239,6 +239,24 @@ if(USE_LIBGODOT AND LIBGODOT_SO)
     target_link_libraries(monkey_dust_engine PUBLIC "${LIBGODOT_SO}")
 endif()
 
+# ── Granite migration M2 (engine/src/render/granite_backend.cpp) ────────────
+# GRANITE_ROOT resolved + granite-vulkan target built in root CMakeLists.txt
+# BEFORE this add_subdirectory(engine) call. Same Фаза A constraint as
+# libgodot_bridge.cpp above: granite_backend.cpp is an empty TU (no Granite
+# symbols referenced) when MD_USE_GRANITE is undefined, so engine/ compiles
+# and links for the default USE_SDL3 path with zero Granite dependency when
+# USE_GRANITE=OFF (docs/GRANITE_MIGRATION_PLAN_M0_M6.md M2's own constraint).
+if(USE_GRANITE AND TARGET granite-vulkan)
+    target_include_directories(monkey_dust_engine PRIVATE
+        "${GRANITE_ROOT}/vulkan"
+        "${GRANITE_ROOT}/event"
+        "${GRANITE_ROOT}/application/events"
+        "${GRANITE_ROOT}/util"
+        "${GRANITE_ROOT}/threading")
+    target_compile_definitions(monkey_dust_engine PUBLIC MD_USE_GRANITE)
+    target_link_libraries(monkey_dust_engine PUBLIC granite-vulkan granite-threading granite-util)
+endif()
+
 if(NOT USE_SDL3)
     message(FATAL_ERROR
         "monkey_dust requires -DUSE_SDL3=ON. "

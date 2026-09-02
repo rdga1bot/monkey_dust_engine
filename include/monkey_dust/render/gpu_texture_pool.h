@@ -38,12 +38,12 @@ public:
     // Returns a texture matching desc — reuses a released, matching pool
     // entry if one exists, otherwise creates a new SDL_GPUTexture. Returns
     // nullptr (logs a warning) if the pool is full and none can be reused.
-    SDL_GPUTexture* Acquire(md::GpuDeviceHandle dev, const RGTextureDesc& desc);
+    md::GpuTextureHandle Acquire(md::GpuDeviceHandle dev, const RGTextureDesc& desc);
 
     // Marks a previously-Acquired texture as free for reuse by a later
     // Acquire() with a matching desc. Does NOT destroy the GPU resource —
     // that only happens in Shutdown().
-    void Release(SDL_GPUTexture* tex);
+    void Release(md::GpuTextureHandle tex);
 
     // Call once per frame after all passes have run. Any entry still
     // marked in-use (a caller forgot to Release) is force-freed and logged
@@ -59,7 +59,7 @@ private:
     GpuTexturePool() = default;
 
     struct Entry {
-        SDL_GPUTexture* tex    = nullptr;
+        md::GpuTextureHandle tex    = nullptr;
         RGTextureDesc   desc   = {};
         bool            in_use = false;
     };

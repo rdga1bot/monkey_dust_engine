@@ -98,7 +98,7 @@ void CasPass::Resize(int vp_w, int vp_h) {
 
 // ── Apply ─────────────────────────────────────────────────────────────────────
 
-void CasPass::Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* output_tex,
+void CasPass::Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle output_tex,
                      int vp_w, int vp_h) {
     if (!ready_ || !scene_tex_ || !output_tex) return;
 

@@ -22,7 +22,7 @@ public:
     void Shutdown();
 
     const RdDeviceCaps&          Caps()         const { return caps_; }
-    SDL_GPUTexture*              DummyTex()     const { return dummy_tex_; }
+    md::GpuTextureHandle              DummyTex()     const { return dummy_tex_; }
     SDL_GPUSampler*              DummySamp()    const { return dummy_samp_; }
     SDL_GPUTextureSamplerBinding DummyBinding() const { return {dummy_tex_, dummy_samp_}; }
 
@@ -32,7 +32,7 @@ private:
 
     RdDeviceCaps    caps_;
     md::GpuDeviceHandle  dev_       = nullptr;
-    SDL_GPUTexture* dummy_tex_  = nullptr;
+    md::GpuTextureHandle dummy_tex_  = nullptr;
     SDL_GPUSampler* dummy_samp_ = nullptr;
 };
 

@@ -219,7 +219,7 @@ void MdUnloadTexture(MdTexture& t) {
 #ifdef MD_SDL_GPU
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (dev) {
-        if (t.sdl_tex)     GpuReleaseTexture(dev, (SDL_GPUTexture*)t.sdl_tex);
+        if (t.sdl_tex)     GpuReleaseTexture(dev, (md::GpuTextureHandle)t.sdl_tex);
         if (t.sdl_sampler) GpuReleaseSampler(dev, (SDL_GPUSampler*)t.sdl_sampler);
     }
 #endif

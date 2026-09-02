@@ -70,7 +70,7 @@ public:
     void BindArrayForSampling(SDL_GPURenderPass* pass, uint32_t slot);
 
     // Per-cascade texture (for direct access or debug blit).
-    SDL_GPUTexture* MomentTex(int k) const {
+    md::GpuTextureHandle MomentTex(int k) const {
         return (k >= 0 && k < num_cascades_) ? moment_tex_[k] : nullptr;
     }
     SDL_GPUSampler* MomentSampler() const { return sampler_; }
@@ -80,7 +80,7 @@ public:
     float WarpC()       const { return warp_c_; }
 
 private:
-    SDL_GPUTexture*          moment_tex_[NUM_CASCADES] = {};  // RG32F (or RG16F fallback) per cascade
+    md::GpuTextureHandle          moment_tex_[NUM_CASCADES] = {};  // RG32F (or RG16F fallback) per cascade
     SDL_GPUTextureFormat     moment_fmt_ = SDL_GPU_TEXTUREFORMAT_INVALID;  // actual format used
     SDL_GPUSampler*          sampler_         = nullptr;      // bilinear, clamp
     SDL_GPURenderPass*       moment_pass_     = nullptr;
@@ -90,8 +90,8 @@ private:
     // blur_tmp_: H-pass output (moment_tex → blur_tmp)
     // blur_out_: V-pass output (blur_tmp → blur_out); sampled instead of moment_tex_.
     // Neither moment_tex_ nor its format needs COMPUTE_STORAGE_WRITE.
-    SDL_GPUTexture*   blur_tmp_[NUM_CASCADES] = {};  // H-pass ping-pong intermediate
-    SDL_GPUTexture*   blur_out_[NUM_CASCADES] = {};  // V-pass final output (sampled)
+    md::GpuTextureHandle   blur_tmp_[NUM_CASCADES] = {};  // H-pass ping-pong intermediate
+    md::GpuTextureHandle   blur_out_[NUM_CASCADES] = {};  // V-pass final output (sampled)
     GpuPipeline       blur_pipeline_;  // shaders/shadow_blur.frag, both H+V passes
     bool blur_ready_ = false;
 

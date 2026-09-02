@@ -215,9 +215,9 @@ public:
     void Shutdown(md::GpuDeviceHandle dev);
     bool IsReady() const { return ready_; }
 
-    SDL_GPUTexture* AtlasTexture() const { return atlas_tex_.SDLTexture(); }
+    md::GpuTextureHandle AtlasTexture() const { return atlas_tex_.SDLTexture(); }
     SDL_GPUSampler* AtlasSampler() const { return atlas_tex_.SDLSampler(); }
-    SDL_GPUTexture* IndirectionTexture() const { return indir_tex_.SDLTexture(); }
+    md::GpuTextureHandle IndirectionTexture() const { return indir_tex_.SDLTexture(); }
     // Semantically irrelevant (Phase 4's consumer only ever reads this
     // texture via texelFetch, which ignores sampler state entirely) but
     // SDL_GPU still requires a valid non-null sampler object to bind a

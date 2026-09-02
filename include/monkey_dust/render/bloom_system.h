@@ -35,7 +35,7 @@ public:
     void Shutdown();
 
     // Scene color RT — render the entire scene here (instead of swapchain).
-    SDL_GPUTexture* SceneColorTex()     const { return scene_color_.SDLTexture(); }
+    md::GpuTextureHandle SceneColorTex()     const { return scene_color_.SDLTexture(); }
     SDL_GPUSampler* SceneColorSampler() const { return scene_sampler_.SDLSampler(); }
 
     // Helper: fill a SDL_GPUColorTargetInfo for the scene color RT (CLEAR).
@@ -46,7 +46,7 @@ public:
 
     // Blit scene_color_ + bloom → swapchain_tex (open CLEAR pass internally).
     void CompositePass(md::GpuCommandBufferHandle cmd,
-                       SDL_GPUTexture* swapchain_tex, int sw, int sh);
+                       md::GpuTextureHandle swapchain_tex, int sw, int sh);
 
     bool IsEnabled() const { return enabled_; }
     int  Width()  const { return w_; }

@@ -139,7 +139,7 @@ void MotionBlurSystem::Init(md::GpuDeviceHandle dev, int full_w, int full_h,
 // ── PrepPass ─────────────────────────────────────────────────────────────────
 
 void MotionBlurSystem::PrepPass(md::GpuCommandBufferHandle cmd,
-                                 SDL_GPUTexture*       hw_depth,
+                                 md::GpuTextureHandle       hw_depth,
                                  SDL_GPUSampler*       hw_sampler,
                                  const float*          inv_vp16,
                                  const float*          prev_vp16) {
@@ -184,9 +184,9 @@ void MotionBlurSystem::PrepPass(md::GpuCommandBufferHandle cmd,
 // ── ApplyPass ─────────────────────────────────────────────────────────────────
 
 void MotionBlurSystem::ApplyPass(md::GpuCommandBufferHandle cmd,
-                                  SDL_GPUTexture*       hdr_color_tex,
+                                  md::GpuTextureHandle       hdr_color_tex,
                                   SDL_GPUSampler*       linear_sampler,
-                                  SDL_GPUTexture*       swapchain_tex,
+                                  md::GpuTextureHandle       swapchain_tex,
                                   int sw, int sh) {
     if (!enabled_ || !motion_rt_.SDLTexture() || !blur_pipeline_.SDLPipeline()) return;
     if (!hdr_color_tex || !swapchain_tex) return;

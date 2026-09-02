@@ -316,7 +316,7 @@ void EvsmShadow::BindArrayForSampling(SDL_GPURenderPass* pass, uint32_t slot) {
     // Otherwise, fall back to unblurred moment_tex_ (blur disabled or not supported).
     SDL_GPUTextureSamplerBinding tsb[NUM_CASCADES];
     for (int k = 0; k < num_cascades_; ++k) {
-        SDL_GPUTexture* tex = (blur_ready_ && blur_out_[k]) ? blur_out_[k] : moment_tex_[k];
+        md::GpuTextureHandle tex = (blur_ready_ && blur_out_[k]) ? blur_out_[k] : moment_tex_[k];
         tsb[k] = { tex, sampler_ };
     }
     SDL_BindGPUFragmentSamplers(pass, slot, tsb, (uint32_t)num_cascades_);

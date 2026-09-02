@@ -236,7 +236,7 @@ void RenderPassGraph::DeclareTextureDesc(const char* resource_name, const RGText
     e.live_tex = nullptr;
 }
 
-SDL_GPUTexture* RenderPassGraph::ResolveTexture(md::GpuDeviceHandle dev, const char* resource_name) {
+md::GpuTextureHandle RenderPassGraph::ResolveTexture(md::GpuDeviceHandle dev, const char* resource_name) {
     if (!resource_name) return nullptr;
     int idx = FindResourceByHash(Hash(resource_name));
     if (idx < 0) {
@@ -250,7 +250,7 @@ SDL_GPUTexture* RenderPassGraph::ResolveTexture(md::GpuDeviceHandle dev, const c
     return e.live_tex;
 }
 
-SDL_GPUTexture* RenderPassGraph::GetTexture(const char* resource_name) const {
+md::GpuTextureHandle RenderPassGraph::GetTexture(const char* resource_name) const {
     if (!resource_name) return nullptr;
     int idx = FindResourceByHash(Hash(resource_name));
     return (idx >= 0) ? resources_[idx].live_tex : nullptr;

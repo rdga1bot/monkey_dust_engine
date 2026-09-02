@@ -111,7 +111,7 @@ void BillboardRenderer::Shutdown() {
         md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
         if (dev) {
             if (sdl_dummy_sampler_) GpuReleaseSampler(dev, (SDL_GPUSampler*)sdl_dummy_sampler_);
-            if (sdl_dummy_tex_)     GpuReleaseTexture(dev, (SDL_GPUTexture*)sdl_dummy_tex_);
+            if (sdl_dummy_tex_)     GpuReleaseTexture(dev, (md::GpuTextureHandle)sdl_dummy_tex_);
         }
         sdl_dummy_tex_ = sdl_dummy_sampler_ = nullptr;
         sdl_init_ = false;
@@ -249,7 +249,7 @@ void BillboardRenderer::RenderInPass(SDL_GPURenderPass* rp, md::GpuCommandBuffer
 
         bool has = (atlases_[ai].sdl_tex != nullptr);
         SDL_GPUTextureSamplerBinding sb = {
-            has ? (SDL_GPUTexture*)atlases_[ai].sdl_tex      : (SDL_GPUTexture*)sdl_dummy_tex_,
+            has ? (md::GpuTextureHandle)atlases_[ai].sdl_tex      : (md::GpuTextureHandle)sdl_dummy_tex_,
             has ? (SDL_GPUSampler*)atlases_[ai].sdl_sampler  : (SDL_GPUSampler*)sdl_dummy_sampler_
         };
         pv.BindFragmentSamplers(0, &sb, 1);

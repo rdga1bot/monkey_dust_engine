@@ -170,7 +170,7 @@ void TileMap2DRenderer::Shutdown() {
         md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
         if (dev) {
             if (sdl_dummy_sampler_) GpuReleaseSampler(dev, (SDL_GPUSampler*)sdl_dummy_sampler_);
-            if (sdl_dummy_tex_)     GpuReleaseTexture(dev, (SDL_GPUTexture*)sdl_dummy_tex_);
+            if (sdl_dummy_tex_)     GpuReleaseTexture(dev, (md::GpuTextureHandle)sdl_dummy_tex_);
         }
         sdl_dummy_tex_ = sdl_dummy_sampler_ = nullptr;
         sdl_init_ = false;
@@ -277,14 +277,14 @@ void TileMap2DRenderer::Render(const FlareMap& map, float now_s,
         md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
         if (!cmd) return;
         uint32_t sw = 0, sh = 0;
-        SDL_GPUTexture* swap = md::GpuDevice::Get().AcquireSwapchainTexture(cmd, &sw, &sh);
+        md::GpuTextureHandle swap = md::GpuDevice::Get().AcquireSwapchainTexture(cmd, &sw, &sh);
         if (!swap) { md::GpuDevice::Get().Submit(cmd); return; }
         RenderSDLGPU(map, now_s, origin_x, origin_y, scale, vp_w, vp_h, layer_mask, cmd, swap);
 #ifdef MD_SDL_GPU
         for (int oi = 0; oi < MAX_OVERLAY_BLITS; ++oi) {
             if (!overlay_blits_[oi].sdl_tex) continue;
             SDL_GPUBlitInfo bi {};
-            bi.source.texture  = (SDL_GPUTexture*)overlay_blits_[oi].sdl_tex;
+            bi.source.texture  = (md::GpuTextureHandle)overlay_blits_[oi].sdl_tex;
             bi.source.w        = (uint32_t)overlay_blits_[oi].w;
             bi.source.h        = (uint32_t)overlay_blits_[oi].h;
             bi.destination.texture = swap;
@@ -421,7 +421,7 @@ int TileMap2DRenderer::GetAtlasCount() const { return atlas_count_; }
 void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
                                       float origin_x, float origin_y, float scale,
                                       int vp_w, int vp_h, uint8_t layer_mask,
-                                      md::GpuCommandBufferHandle cmd, SDL_GPUTexture* swap_tex)
+                                      md::GpuCommandBufferHandle cmd, md::GpuTextureHandle swap_tex)
 {
     // Collect + sort tiles (SDL_GPU path owns its own scratch to avoid aliasing
     // with the static tiles[] in the GL path when both are compiled).
@@ -669,12 +669,12 @@ void TileMap2DRenderer::RenderSDLGPU(const FlareMap& map, float now_s,
         SDL_GPUTextureSamplerBinding bindings[4];
         for (int i = 0; i < 4; ++i) {
             if (i == npc_atlas_slot_ && npc_sprite_tex_.sdl_tex) {
-                bindings[i].texture = (SDL_GPUTexture*)npc_sprite_tex_.sdl_tex;
+                bindings[i].texture = (md::GpuTextureHandle)npc_sprite_tex_.sdl_tex;
                 bindings[i].sampler = (SDL_GPUSampler*)npc_sprite_tex_.sdl_sampler;
             } else {
                 bool has = (i < atlas_count_) && atlases_[i].sdl_tex;
-                bindings[i].texture = has ? (SDL_GPUTexture*)atlases_[i].sdl_tex
-                                          : (SDL_GPUTexture*)sdl_dummy_tex_;
+                bindings[i].texture = has ? (md::GpuTextureHandle)atlases_[i].sdl_tex
+                                          : (md::GpuTextureHandle)sdl_dummy_tex_;
                 bindings[i].sampler = has ? (SDL_GPUSampler*)atlases_[i].sdl_sampler
                                           : (SDL_GPUSampler*)sdl_dummy_sampler_;
             }
@@ -717,7 +717,7 @@ void TileMap2DRenderer::ClearOverlayBlit(int slot) {
 void TileMap2DRenderer::RenderToTarget(const FlareMap& map, float now_s,
                                         float origin_x, float origin_y, float scale,
                                         int vp_w, int vp_h, uint8_t layer_mask,
-                                        md::GpuCommandBufferHandle cmd, SDL_GPUTexture* target_tex)
+                                        md::GpuCommandBufferHandle cmd, md::GpuTextureHandle target_tex)
 {
     if (!init_ || !sdl_init_ || !cmd || !target_tex) return;
     if (atlas_count_ == 0) return;

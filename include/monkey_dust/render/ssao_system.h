@@ -36,7 +36,7 @@ public:
 
     // VBfA-R1 Prep0: linearize HW depth → linear_depth R32F (half-res).
     void PrepPass(md::GpuCommandBufferHandle cmd,
-                  SDL_GPUTexture*       hw_depth,
+                  md::GpuTextureHandle       hw_depth,
                   SDL_GPUSampler*       hw_sampler);
 
     // VBfA 6-pass Prep1: Sobel 3×3 normals from linear_depth → view_normals_ RGBA8.
@@ -52,13 +52,13 @@ public:
     void MainPass(md::GpuCommandBufferHandle cmd,
                   float inv_proj_x = 1.f, float inv_proj_y = 1.f);
     void BlurPass(md::GpuCommandBufferHandle cmd);
-    void ApplyPass(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* swapchain_tex,
+    void ApplyPass(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle swapchain_tex,
                    int sw, int sh);
 
     // Textures
-    SDL_GPUTexture* LinearDepthTex()  const { return linear_depth_; }
-    SDL_GPUTexture* SSAORawTex()      const { return ssao_raw_;     }
-    SDL_GPUTexture* SSAOBlurredTex()  const { return ssao_blurred_; }
+    md::GpuTextureHandle LinearDepthTex()  const { return linear_depth_; }
+    md::GpuTextureHandle SSAORawTex()      const { return ssao_raw_;     }
+    md::GpuTextureHandle SSAOBlurredTex()  const { return ssao_blurred_; }
 
     // Samplers
     SDL_GPUSampler* LinearSampler()   const { return linear_sampler_; }
@@ -79,22 +79,22 @@ private:
 
     // VBfA-R1: linear depth prep
     GpuPipeline       prep_pipeline_;            // fragment-shader depth linearize
-    SDL_GPUTexture*   linear_depth_  = nullptr;  // R32F half-res
+    md::GpuTextureHandle   linear_depth_  = nullptr;  // R32F half-res
     SDL_GPUSampler*   linear_sampler_= nullptr;  // BILINEAR for final reads
     SDL_GPUSampler*   point_sampler_ = nullptr;  // NEAREST for bilateral blur
 
     // VBfA 6-pass: Prep1 — Sobel normals
     GpuPipeline       prep1_pipeline_;           // linear_depth→view_normals (ssao_prep1.frag)
-    SDL_GPUTexture*   view_normals_  = nullptr;  // RGBA8 half-res (xyz=view normals packed)
+    md::GpuTextureHandle   view_normals_  = nullptr;  // RGBA8 half-res (xyz=view normals packed)
 
     // VBfA-R2: AO textures + pipelines
     GpuPipeline       main_pipeline_;            // (depth+normals)→AO (ssao_main.frag)
     GpuPipeline       blur_h_pipeline_;          // bilateral H (ssao_blur_h.frag)
     GpuPipeline       blur_v_pipeline_;          // bilateral V (ssao_blur_v.frag)
     GpuPipeline       apply_pipeline_;           // multiply onto swapchain (ssao_apply.frag)
-    SDL_GPUTexture*   ssao_raw_      = nullptr;  // RGBA8 half-res (R=AO, GB=packed edges)
-    SDL_GPUTexture*   blur_temp_     = nullptr;  // R8   half-res (H blur intermediate)
-    SDL_GPUTexture*   ssao_blurred_  = nullptr;  // R8   half-res (final AO)
+    md::GpuTextureHandle   ssao_raw_      = nullptr;  // RGBA8 half-res (R=AO, GB=packed edges)
+    md::GpuTextureHandle   blur_temp_     = nullptr;  // R8   half-res (H blur intermediate)
+    md::GpuTextureHandle   ssao_blurred_  = nullptr;  // R8   half-res (final AO)
 
     int half_w_ = 0, half_h_ = 0;
     int full_w_ = 0, full_h_ = 0;

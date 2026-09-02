@@ -121,7 +121,7 @@ SDL_GPUColorTargetInfo BloomSystem::SceneColorTargetInfo() const {
 
 // Internal: begin + draw + end a fullscreen pass on a quarter-res target
 static void QtrPass(md::GpuCommandBufferHandle cmd, GpuPipeline* pipe,
-                    SDL_GPUTexture* target, int tw, int th,
+                    md::GpuTextureHandle target, int tw, int th,
                     const SDL_GPUTextureSamplerBinding* sbs, int nsbs,
                     const void* ubo, uint32_t ubo_sz) {
     GpuCommandBuffer cb;
@@ -178,7 +178,7 @@ void BloomSystem::ComputePass(md::GpuCommandBufferHandle cmd) {
 // ── CompositePass ─────────────────────────────────────────────────────────────
 
 void BloomSystem::CompositePass(md::GpuCommandBufferHandle cmd,
-                                 SDL_GPUTexture* swapchain_tex, int sw, int sh) {
+                                 md::GpuTextureHandle swapchain_tex, int sw, int sh) {
     if (!enabled_ || !swapchain_tex) return;
 
     // Open CLEAR pass on swapchain

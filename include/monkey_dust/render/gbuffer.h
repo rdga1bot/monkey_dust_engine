@@ -31,9 +31,9 @@ public:
     SDL_GPURenderPass* Begin(md::GpuCommandBufferHandle cmd);
     void               End();
 
-    SDL_GPUTexture* RT0()    const { return rt0_;    }  // albedo + roughness
-    SDL_GPUTexture* RT1()    const { return rt1_;    }  // oct-normal + metallic
-    SDL_GPUTexture* Depth()  const { return depth_;  }
+    md::GpuTextureHandle RT0()    const { return rt0_;    }  // albedo + roughness
+    md::GpuTextureHandle RT1()    const { return rt1_;    }  // oct-normal + metallic
+    md::GpuTextureHandle Depth()  const { return depth_;  }
     SDL_GPUSampler* Sampler()const { return sampler_;}
     int Width()  const { return w_; }
     int Height() const { return h_; }
@@ -41,9 +41,9 @@ public:
 
 private:
     md::GpuDeviceHandle     dev_     = nullptr;
-    SDL_GPUTexture*    rt0_     = nullptr;
-    SDL_GPUTexture*    rt1_     = nullptr;
-    SDL_GPUTexture*    depth_   = nullptr;
+    md::GpuTextureHandle    rt0_     = nullptr;
+    md::GpuTextureHandle    rt1_     = nullptr;
+    md::GpuTextureHandle    depth_   = nullptr;
     SDL_GPUSampler*    sampler_ = nullptr;
     GpuCommandBuffer   cb_; // owns the pass across the Begin()/draw/End() span
     int w_ = 0, h_ = 0;

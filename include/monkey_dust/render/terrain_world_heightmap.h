@@ -41,7 +41,7 @@ public:
     void Shutdown(md::GpuDeviceHandle dev);
     bool IsReady() const { return tex_.SDLTexture() != nullptr; }
 
-    SDL_GPUTexture* Texture() const { return tex_.SDLTexture(); }
+    md::GpuTextureHandle Texture() const { return tex_.SDLTexture(); }
     SDL_GPUSampler* Sampler() const { return tex_.SDLSampler(); }
 
     // Full-variant Phase 3 (serene-pondering-teapot.md): world-wide baked
@@ -52,7 +52,7 @@ public:
     // scale (RenderDoc: normal delta 0.0000 at every boundary), applied
     // here so any two patches sampling this texture at a shared world
     // position agree exactly, regardless of each patch's own tier.
-    SDL_GPUTexture* NormalTexture() const { return normal_tex_.SDLTexture(); }
+    md::GpuTextureHandle NormalTexture() const { return normal_tex_.SDLTexture(); }
     SDL_GPUSampler* NormalSampler() const { return normal_tex_.SDLSampler(); }
 
     // Height decode: worldY = HeightMin() + SampledFrac * (HeightMax()-HeightMin())

@@ -131,7 +131,7 @@ private:
     bool ready_ = false;
     bool forward_ready_ = false;
     bool batched_ready_ = false;
-    SDL_GPUTexture* node_data_tex_     = nullptr;
+    md::GpuTextureHandle node_data_tex_     = nullptr;
     SDL_GPUSampler* node_data_sampler_ = nullptr;
 };
 #endif

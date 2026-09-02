@@ -34,7 +34,7 @@ public:
     // prev_vp16: previous frame view*proj,         column-major float[16]
     // cmd must NOT be inside an active render pass.
     void PrepPass(md::GpuCommandBufferHandle cmd,
-                  SDL_GPUTexture*       hw_depth,
+                  md::GpuTextureHandle       hw_depth,
                   SDL_GPUSampler*       hw_sampler,
                   const float*          inv_vp16,
                   const float*          prev_vp16);
@@ -43,16 +43,16 @@ public:
     // Writes result directly to swapchain_tex (or any RGBA target).
     // cmd must NOT be inside an active render pass.
     void ApplyPass(md::GpuCommandBufferHandle cmd,
-                   SDL_GPUTexture*       hdr_color_tex,
+                   md::GpuTextureHandle       hdr_color_tex,
                    SDL_GPUSampler*       linear_sampler,
-                   SDL_GPUTexture*       swapchain_tex,
+                   md::GpuTextureHandle       swapchain_tex,
                    int sw, int sh);
 
-    SDL_GPUTexture* MotionTex()     const { return motion_rt_.SDLTexture(); }
+    md::GpuTextureHandle MotionTex()     const { return motion_rt_.SDLTexture(); }
     // Owned scene color RT (RGBA16F full-res).
     // Non-null only when motion blur is enabled — use as render target for the
     // scene pass when BloomSystem is disabled, then pass to ApplyPass.
-    SDL_GPUTexture* SceneColorTex() const { return scene_color_.SDLTexture(); }
+    md::GpuTextureHandle SceneColorTex() const { return scene_color_.SDLTexture(); }
     bool IsEnabled()                const { return enabled_; }
 
     // Movement scale passed to the blur shader (default = {0.5,0.5}).

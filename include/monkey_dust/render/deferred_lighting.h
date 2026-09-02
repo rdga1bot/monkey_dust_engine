@@ -34,9 +34,9 @@ public:
     //   Pass nullptr to skip shadow sampling (shadows render unshadowed).
     // cmd must not be inside an active render pass.
     void DrawAmbientPass(md::GpuCommandBufferHandle cmd, const GBuffer& gbuf,
-                         SDL_GPUTexture* depth_tex = nullptr);
+                         md::GpuTextureHandle depth_tex = nullptr);
 
-    SDL_GPUTexture* HdrColorTex() const { return hdr_color_.SDLTexture(); }
+    md::GpuTextureHandle HdrColorTex() const { return hdr_color_.SDLTexture(); }
     bool IsReady() const { return hdr_color_.SDLTexture() != nullptr; }
 
     // ── Lighting parameters (set before DrawAmbientPass each frame) ────────────

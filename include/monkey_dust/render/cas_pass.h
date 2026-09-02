@@ -29,9 +29,9 @@ public:
 
     // The intermediate texture to render the scene into.
     // Usage: render into SceneTex(), then call Apply().
-    SDL_GPUTexture* SceneTex() const { return scene_tex_; }
+    md::GpuTextureHandle SceneTex() const { return scene_tex_; }
     // Optional depth texture for the scene render pass.
-    SDL_GPUTexture* DepthTex() const { return depth_tex_; }
+    md::GpuTextureHandle DepthTex() const { return depth_tex_; }
 
     bool IsReady() const { return ready_; }
     float Sharpness() const { return sharpness_; }
@@ -40,7 +40,7 @@ public:
     // Apply CAS: reads SceneTex(), writes sharpened result to output_tex.
     // cmd: the current frame command buffer (before Submit).
     // output_tex: typically the swapchain texture.
-    void Apply(md::GpuCommandBufferHandle cmd, SDL_GPUTexture* output_tex,
+    void Apply(md::GpuCommandBufferHandle cmd, md::GpuTextureHandle output_tex,
                int vp_w, int vp_h);
 
 private:
@@ -48,9 +48,9 @@ private:
     void DestroyTextures();
 
     GpuPipeline     pipeline_;
-    SDL_GPUTexture* scene_tex_  = nullptr;
+    md::GpuTextureHandle scene_tex_  = nullptr;
     SDL_GPUSampler* sampler_    = nullptr;
-    SDL_GPUTexture* depth_tex_  = nullptr;
+    md::GpuTextureHandle depth_tex_  = nullptr;
 
     float sharpness_ = 0.5f;
     int   tex_w_     = 0;

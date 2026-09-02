@@ -100,7 +100,7 @@ public:
     // surface -- see docs/analysis/FILAMENT_MIGRATION_ANALYSIS.md). A plain
     // sampler is the one thing every rendering API (including Filament
     // materials) supports; a global read-only SSBO indexed per-pixel is not.
-    SDL_GPUTexture* ZoneGroundLayersTexture() const { return zone_layers_tex_; }
+    md::GpuTextureHandle ZoneGroundLayersTexture() const { return zone_layers_tex_; }
     SDL_GPUSampler* ZoneGroundLayersSampler() const { return zone_layers_sampler_; }
 
     // Upload the per-zone (64x64=4096) ground-layer lookup table: 9 uint32
@@ -133,15 +133,15 @@ private:
     bool        overlay_mask_ready_ = false;
 
     // Per-zone ground-layer lookup texture (see UploadZoneGroundLayers).
-    SDL_GPUTexture* zone_layers_tex_     = nullptr;
+    md::GpuTextureHandle zone_layers_tex_     = nullptr;
     SDL_GPUSampler* zone_layers_sampler_ = nullptr;
 
 #ifdef MD_SDL_GPU
-    SDL_GPUTexture* fallback_tex_            = nullptr;
+    md::GpuTextureHandle fallback_tex_            = nullptr;
     SDL_GPUSampler* fallback_sampler_        = nullptr;
-    SDL_GPUTexture* fallback_mask_tex_       = nullptr;
+    md::GpuTextureHandle fallback_mask_tex_       = nullptr;
     SDL_GPUSampler* fallback_mask_sampler_   = nullptr;
-    SDL_GPUTexture* fallback_blend_tex_      = nullptr;
+    md::GpuTextureHandle fallback_blend_tex_      = nullptr;
     SDL_GPUSampler* fallback_blend_sampler_  = nullptr;
     void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const;
 #endif

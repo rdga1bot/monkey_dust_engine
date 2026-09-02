@@ -6,6 +6,7 @@
 //          (Intel ANV HD 520 returns (0,1,0,1) sentinel with LINEAR on single-mip).
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
+#include <monkey_dust/render/gpu_device.h>
 #include <cstdint>
 
 namespace md {
@@ -26,7 +27,7 @@ public:
     // Load from file via stb_image, then Upload(). Flip V for GL convention.
     bool LoadFile(const char* path, bool gen_mipmaps = true, bool flip_v = false);
 
-    SDL_GPUTexture*              Tex()     const { return tex_; }
+    md::GpuTextureHandle              Tex()     const { return tex_; }
     SDL_GPUSampler*              Samp()    const { return samp_; }
     SDL_GPUTextureSamplerBinding Binding() const { return {tex_, samp_}; }
     bool                         Valid()   const { return tex_ != nullptr; }
@@ -35,7 +36,7 @@ public:
     void Release();
 
 private:
-    SDL_GPUTexture* tex_        = nullptr;
+    md::GpuTextureHandle tex_        = nullptr;
     SDL_GPUSampler* samp_       = nullptr;
     uint32_t        mip_levels_ = 1;
 };

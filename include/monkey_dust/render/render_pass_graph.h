@@ -74,7 +74,7 @@ struct RenderPassEntry {
 struct RGResourceEntry {
     uint32_t        hash    = 0;
     RGTextureDesc   desc    = {};
-    SDL_GPUTexture* live_tex = nullptr;
+    md::GpuTextureHandle live_tex = nullptr;
 };
 
 // ── Singleton registry ────────────────────────────────────────────────────────
@@ -130,11 +130,11 @@ public:
     // same name (returns the same cached handle) — only the first call in
     // a frame actually hits the pool. Returns nullptr if no desc was
     // declared for this name, or the pool is exhausted.
-    SDL_GPUTexture* ResolveTexture(md::GpuDeviceHandle dev, const char* resource_name);
+    md::GpuTextureHandle ResolveTexture(md::GpuDeviceHandle dev, const char* resource_name);
 
     // Returns the currently-resolved texture for a resource, or nullptr if
     // ResolveTexture hasn't been called for it yet this frame.
-    SDL_GPUTexture* GetTexture(const char* resource_name) const;
+    md::GpuTextureHandle GetTexture(const char* resource_name) const;
 
     // Releases every resolved texture back to GpuTexturePool and clears the
     // cached handles. Call once per frame, after all passes have run.

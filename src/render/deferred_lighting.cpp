@@ -109,7 +109,7 @@ void DeferredLightingSystem::Init(md::GpuDeviceHandle dev, int w, int h) {
 
 void DeferredLightingSystem::DrawAmbientPass(md::GpuCommandBufferHandle cmd,
                                               const GBuffer& gbuf,
-                                              SDL_GPUTexture* depth_tex) {
+                                              md::GpuTextureHandle depth_tex) {
     if (!hdr_color_.SDLTexture()) return;
 
     GpuCommandBuffer cb;
@@ -143,7 +143,7 @@ void DeferredLightingSystem::DrawAmbientPass(md::GpuCommandBufferHandle cmd,
     const md::EvsmShadow& evsm = md::EvsmShadow::Get();
     const bool evsm_ready = evsm.IsReady() && depth_tex;
     {
-        SDL_GPUTexture* fallback = gbuf.RT0();  // safe dummy (never sampled if !evsm_ready)
+        md::GpuTextureHandle fallback = gbuf.RT0();  // safe dummy (never sampled if !evsm_ready)
         SDL_GPUTextureSamplerBinding b[4] = {};
         b[0] = { evsm_ready ? evsm.MomentTex(0) : fallback, sampler_linear_.SDLSampler() };
         b[1] = { evsm_ready ? evsm.MomentTex(1) : fallback, sampler_linear_.SDLSampler() };

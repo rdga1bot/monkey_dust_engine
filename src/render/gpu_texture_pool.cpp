@@ -4,7 +4,7 @@
 
 namespace md {
 
-SDL_GPUTexture* GpuTexturePool::Acquire(md::GpuDeviceHandle dev, const RGTextureDesc& desc) {
+md::GpuTextureHandle GpuTexturePool::Acquire(md::GpuDeviceHandle dev, const RGTextureDesc& desc) {
     dev_ = dev;  // cached for Shutdown(); all callers share the one GpuDevice
     // Reuse a released entry with an identical desc first.
     for (int i = 0; i < count_; ++i) {
@@ -31,7 +31,7 @@ SDL_GPUTexture* GpuTexturePool::Acquire(md::GpuDeviceHandle dev, const RGTexture
     ti.format               = desc.format;
     ti.usage                = desc.usage;
 
-    SDL_GPUTexture* tex = GpuCreateTexture(dev, &ti);
+    md::GpuTextureHandle tex = GpuCreateTexture(dev, &ti);
     if (!tex) {
         MD_LOG(MD_LOG_WARNING, "[GpuTexturePool] SDL_CreateGPUTexture failed for '%s' (%dx%d)",
                desc.debug_name, desc.width, desc.height);
@@ -45,7 +45,7 @@ SDL_GPUTexture* GpuTexturePool::Acquire(md::GpuDeviceHandle dev, const RGTexture
     return tex;
 }
 
-void GpuTexturePool::Release(SDL_GPUTexture* tex) {
+void GpuTexturePool::Release(md::GpuTextureHandle tex) {
     if (!tex) return;
     for (int i = 0; i < count_; ++i) {
         if (entries_[i].tex == tex) {

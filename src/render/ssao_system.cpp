@@ -100,7 +100,7 @@ void SSAOSystem::Init(md::GpuDeviceHandle dev, int full_w, int full_h,
     }
 
     // ── VBfA-R2: AO textures ─────────────────────────────────────────────────
-    auto make_rt = [&](SDL_GPUTextureFormat fmt, SDL_GPUTexture*& out) {
+    auto make_rt = [&](SDL_GPUTextureFormat fmt, md::GpuTextureHandle& out) {
         SDL_GPUTextureCreateInfo ti = {};
         ti.type                 = SDL_GPU_TEXTURETYPE_2D;
         ti.width                = (Uint32)half_w_;
@@ -186,7 +186,7 @@ void SSAOSystem::Init(md::GpuDeviceHandle dev, int full_w, int full_h,
 }
 
 void SSAOSystem::PrepPass(md::GpuCommandBufferHandle cmd,
-                          SDL_GPUTexture*       hw_depth,
+                          md::GpuTextureHandle       hw_depth,
                           SDL_GPUSampler*       hw_sampler) {
     if (!enabled_ || !linear_depth_ || !prep_pipeline_.SDLPipeline()) return;
 
@@ -224,7 +224,7 @@ void SSAOSystem::PrepPass(md::GpuCommandBufferHandle cmd,
 
 // ── Helper: begin a fullscreen render pass on an RT, draw 3 verts, end ────────
 static void FullscreenPass(md::GpuCommandBufferHandle cmd, GpuPipeline* pipeline,
-                            SDL_GPUTexture* target, int tw, int th,
+                            md::GpuTextureHandle target, int tw, int th,
                             const SDL_GPUTextureSamplerBinding* sbs, int nsbs,
                             const void* frag_ubo, uint32_t frag_ubo_sz) {
     GpuCommandBuffer cb;
@@ -326,7 +326,7 @@ void SSAOSystem::BlurPass(md::GpuCommandBufferHandle cmd) {
 }
 
 void SSAOSystem::ApplyPass(md::GpuCommandBufferHandle cmd,
-                            SDL_GPUTexture* swapchain_tex, int sw, int sh) {
+                            md::GpuTextureHandle swapchain_tex, int sw, int sh) {
     if (!enabled_ || !ssao_blurred_ || !apply_pipeline_.SDLPipeline()) return;
     if (!swapchain_tex) return;
 
@@ -359,7 +359,7 @@ void SSAOSystem::Shutdown() {
     blur_h_pipeline_.Destroy();
     blur_v_pipeline_.Destroy();
     apply_pipeline_.Destroy();
-    auto rel_tex = [&](SDL_GPUTexture*& t){
+    auto rel_tex = [&](md::GpuTextureHandle& t){
         if (t) { GpuReleaseTexture(dev_, t); t = nullptr; }
     };
     auto rel_sam = [&](SDL_GPUSampler*& s){

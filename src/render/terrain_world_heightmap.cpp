@@ -251,7 +251,7 @@ bool TerrainWorldHeightmap::Init(md::GpuDeviceHandle dev) {
         } else {
             fprintf(stderr, "[TerrainWorldHeightmap] normal bake SDL_BeginGPUComputePass failed: %s\n", SDL_GetError());
         }
-        SDL_GPUFence* fence = md::GpuDevice::Get().SubmitAndAcquireFence(bcmd);
+        md::GpuFenceHandle fence = md::GpuDevice::Get().SubmitAndAcquireFence(bcmd);
         if (fence) {
             md::GpuDevice::Get().WaitForFence(fence);
             md::GpuDevice::Get().ReleaseFence(fence);

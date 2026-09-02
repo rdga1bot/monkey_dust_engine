@@ -641,7 +641,7 @@ bool TerrainVtPageCache::DebugDumpAtlas(md::GpuDeviceHandle dev, const char* out
     cp.DownloadTexture(src, dst);
     cp.End();
 
-    SDL_GPUFence* fence = md::GpuDevice::Get().SubmitAndAcquireFence(cmd);
+    md::GpuFenceHandle fence = md::GpuDevice::Get().SubmitAndAcquireFence(cmd);
     if (!fence) {
         MD_LOG(MD_LOG_WARNING, "[TerrainVtPageCache] DebugDumpAtlas: submit failed: %s", SDL_GetError());
         GpuReleaseTransferBuffer(dev, tb);

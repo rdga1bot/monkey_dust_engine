@@ -19,6 +19,20 @@
 
 namespace md {
 
+// Opaque GPU handle type aliases (Granite migration M2 Крок 2 --
+// docs/GRANITE_MIGRATION_PLAN_M0_M6.md, docs/GRANITE_M2_OPAQUE_HANDLE_INVENTORY.md).
+// Additive only: introduced parallel to the existing raw-SDL-typed API below.
+// Zero caller changes in this step -- the 94 files that spell these types in
+// their own signatures still use SDL_GPU* directly today. M2 Крок 3 migrates
+// them incrementally to these names, group by group (per the inventory doc).
+// Currently a zero-cost alias to the raw SDL_GPU pointer since only the
+// SDL_GPU backend exists; when a Granite backend lands this block is the
+// only place that changes -- already-migrated call sites do not.
+using GpuDeviceHandle        = SDL_GPUDevice*;
+using GpuCommandBufferHandle = SDL_GPUCommandBuffer*;
+using GpuTextureHandle       = SDL_GPUTexture*;
+using GpuFenceHandle         = SDL_GPUFence*;
+
 class GpuDevice {
 public:
     static GpuDevice& Get();

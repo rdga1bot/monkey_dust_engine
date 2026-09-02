@@ -43,6 +43,12 @@ public:
     void       Shutdown();
 
     bool           IsReady()    const { return device_ != nullptr; }
+    // TEMPORARY raw-SDL bridge (M2 opaque-handle plan, docs/GRANITE_M2_OPAQUE_HANDLE_INVENTORY.md
+    // "вимога наперед"): 95 call sites still call this directly instead of
+    // holding a GpuDeviceHandle end-to-end. Must disappear from the public
+    // API (or gain a real expiry) once M2 Крок 3's caller migration reaches
+    // these sites -- same idiom as GpuPassView::FromRaw. Do not add new
+    // call sites; route through GpuDeviceHandle-typed parameters instead.
     SDL_GPUDevice* SDLDevice()  const { return device_; }
     SDL_Window*    Window()     const { return window_; }
     const char*    DriverName() const;

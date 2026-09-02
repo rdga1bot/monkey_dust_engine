@@ -546,6 +546,8 @@ public:
     int Width()  const { return w_; }
     int Height() const { return h_; }
 #ifdef MD_SDL_GPU
+    // TEMPORARY raw-SDL bridge, same idiom as GpuDevice::SDLDevice() --
+    // see its comment. Do not add new call sites.
     SDL_GPUTexture*  SDLTexture() const { return sdl_tex_; }
     SDL_GPUSampler*  SDLSampler() const { return sdl_sampler_; }
 #endif
@@ -593,6 +595,8 @@ public:
     bool Init(int w, int h, SDL_GPUTextureFormat format, SDL_GPUTextureUsageFlags usage,
               uint32_t num_levels = 1);
     void Shutdown();
+    // TEMPORARY raw-SDL bridge, same idiom as GpuDevice::SDLDevice() --
+    // see its comment. Do not add new call sites.
     SDL_GPUTexture* SDLTexture() const { return sdl_tex_; }
     int Width()  const { return w_; }
     int Height() const { return h_; }
@@ -1151,6 +1155,8 @@ public:
 #endif
     }
 #ifdef MD_SDL_GPU
+    // TEMPORARY raw-SDL bridge, same idiom as GpuDevice::SDLDevice() --
+    // see its comment. Do not add new call sites.
     SDL_GPUTexture* SDLTexture() const { return sdl_tex_; }
     SDL_GPUSampler* SDLSampler() const { return sdl_sampler_; }
     // Transfer SDL_GPU ownership out of this object (caller is responsible for release).

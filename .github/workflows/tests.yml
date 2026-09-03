@@ -107,8 +107,8 @@ jobs:
       - name: Configure
         run: |
           EXTRA="-DMD_STATIC_DEPS=OFF"
-          if [ "${{ matrix.sanitizer }}" = "asan"  ]; then EXTRA="$EXTRA -DMD_SANITIZE=ON"; fi
-          if [ "${{ matrix.sanitizer }}" = "ubsan" ]; then EXTRA="$EXTRA -DMD_UBSAN=ON";   fi
+          if [ "${{ matrix.sanitizer }}" = "asan"  ]; then EXTRA="$EXTRA -DMD_SANITIZE=asan"; fi
+          if [ "${{ matrix.sanitizer }}" = "ubsan" ]; then EXTRA="$EXTRA -DMD_SANITIZE=ubsan"; fi
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \

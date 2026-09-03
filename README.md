@@ -3,7 +3,7 @@ id: kb-engine-readme
 type: reference
 status: active
 date: 2026-05-14
-updated: 2026-08-23
+updated: 2026-09-03
 repo: engine
 tags: [engine, readme, sdl-gpu, rendering, ecs, public-repo]
 summary: "Public engine/ README: feature list (rendering/AI/ECS/physics/terrain/nav/audio/scripting), build, repo layout"
@@ -17,7 +17,7 @@ Built around **[SDL3](https://github.com/libsdl-org/SDL) + SDL\_GPU (Vulkan)**,
 **Behavior Tree VM**, **[ozz-animation](https://github.com/guillaumeblanc/ozz-animation)**,
 and **[Jolt Physics](https://github.com/jrouwe/JoltPhysics)**.
 
-> **Render backend: SDL3/SDL_GPU, permanently.** An embedded LibGodot RenderingServer replacement was explored (GO decision 2026-08-19, Phases A–F, godot-cpp/GDExtension integration layer, then further growth-then-flip prototyping) but **rejected 2026-08-23** after a measured ~50% GPU perf regression on target hardware (Godot's built-in Forward+ renderer vs our own hand-tuned SDL_GPU HAL renderer on Intel HD 520/Gen9), with no viable fix found. All engine-side LibGodot code (bridge, RenderingServer ImGui backend, `MD_USE_LIBGODOT` branches) was fully removed 2026-09-03; nothing in this repo depends on it anymore.
+> **Render backend: SDL3/SDL_GPU, permanently.**
 
 > **Full documentation →** [rdga1bot.github.io/monkey\_dust\_engine/monkey\_dust\_docs.html](https://rdga1bot.github.io/monkey_dust_engine/monkey_dust_docs.html)
 

@@ -226,26 +226,13 @@ target_include_directories(monkey_dust_engine
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/src/vendor
 )
 
-# ── LibGodot migration Фаза B.1 (engine/src/render/libgodot_bridge.cpp) ──────
-# LIBGODOT_ROOT/LIBGODOT_SO вирішені в root CMakeLists.txt ПЕРЕД цим
-# add_subdirectory(engine) виконанням. Файл сам по собі — порожня TU коли
-# MD_USE_LIBGODOT не визначено (Фаза A CONSTRAINT: engine/ компілюється й
-# лінкується для звичайного USE_SDL3-шляху без жодної залежності від
-# libgodot, коли USE_LIBGODOT=OFF).
-if(USE_LIBGODOT AND LIBGODOT_SO)
-    target_include_directories(monkey_dust_engine PRIVATE
-        "${LIBGODOT_ROOT}" "${LIBGODOT_ROOT}/platform/linuxbsd")
-    target_compile_definitions(monkey_dust_engine PUBLIC MD_USE_LIBGODOT)
-    target_link_libraries(monkey_dust_engine PUBLIC "${LIBGODOT_SO}")
-endif()
-
 # ── Granite migration M2 (engine/src/render/granite_backend.cpp) ────────────
 # GRANITE_ROOT resolved + granite-vulkan target built in root CMakeLists.txt
-# BEFORE this add_subdirectory(engine) call. Same Фаза A constraint as
-# libgodot_bridge.cpp above: granite_backend.cpp is an empty TU (no Granite
-# symbols referenced) when MD_USE_GRANITE is undefined, so engine/ compiles
-# and links for the default USE_SDL3 path with zero Granite dependency when
-# USE_GRANITE=OFF (docs/GRANITE_MIGRATION_PLAN_M0_M6.md M2's own constraint).
+# BEFORE this add_subdirectory(engine) call. granite_backend.cpp is an empty
+# TU (no Granite symbols referenced) when MD_USE_GRANITE is undefined, so
+# engine/ compiles and links for the default USE_SDL3 path with zero Granite
+# dependency when USE_GRANITE=OFF (docs/GRANITE_MIGRATION_PLAN_M0_M6.md M2's
+# own constraint).
 if(USE_GRANITE AND TARGET granite-vulkan)
     target_include_directories(monkey_dust_engine PRIVATE
         "${GRANITE_ROOT}/vulkan"

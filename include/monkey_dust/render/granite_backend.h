@@ -3,7 +3,7 @@
 // Granite Vulkan device, dual-run alongside GpuDevice's SDL_GPU path.
 // Empty no-op API when MD_USE_GRANITE is undefined (USE_GRANITE=OFF) --
 // engine/ compiles and links with zero Granite dependency in that
-// configuration (same Фаза A constraint as libgodot_bridge.h/.cpp).
+// configuration.
 struct SDL_Window;
 
 namespace md {

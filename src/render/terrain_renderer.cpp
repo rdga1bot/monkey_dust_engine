@@ -52,22 +52,27 @@ bool TerrainRenderer::Init() {
     }
 
     // Per-zone (64x64=4096) ground-layer lookup texture -- see
-    // UploadZoneGroundLayers. 9 uint32 per zone: [0..5] base,slope,cliff,
+    // UploadZoneGroundLayers. 17 uint32 per zone: [0..5] base,slope,cliff,
     // grass,dirt,road GroundTexLayer indices; [6..7] real per-biome cliff UV
     // tiling scale (FCS "tiling X/Y 2", confirmed against terrainfp4.hlsl),
     // bit-cast float (uintBitsToFloat in the shader); [8] real per-biome
     // brightness_fix (FCS "brightness fix", terrainfp4.hlsl:212), also
-    // bit-cast float. R32G32B32A32_UINT, 192x64 (3 texels/zone x 4 channels
-    // = 12 slots, 9 used) -- a texture, not an SSBO, as of 2026-08-09 (see
-    // ZoneGroundLayersTexture's header doc comment for why). Allocated
-    // empty here; populated once by the caller (World3D editor's
-    // synthesis-mesh init, and SceneRender's game-side equivalent).
+    // bit-cast float; [9..16] task #12 (2026-09-03) real per-layer UV
+    // tiling for base/grass/dirt/road (bit-cast float pairs, matches
+    // BiomeDef::tile_base_x etc) -- was previously one shared
+    // DETAIL_TILING=90 constant for every layer in every biome, ignoring
+    // biome_table.txt's own real per-layer values. R32G32B32A32_UINT,
+    // 320x64 (5 texels/zone x 4 channels = 20 slots, 17 used) -- a texture,
+    // not an SSBO, as of 2026-08-09 (see ZoneGroundLayersTexture's header
+    // doc comment for why). Allocated empty here; populated once by the
+    // caller (World3D editor's synthesis-mesh init, and SceneRender's
+    // game-side equivalent).
     {
         md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
         SDL_GPUTextureCreateInfo ti{};
         ti.type                 = SDL_GPU_TEXTURETYPE_2D;
         ti.format               = SDL_GPU_TEXTUREFORMAT_R32G32B32A32_UINT;
-        ti.width                = 64 * 3;
+        ti.width                = 64 * 5;
         ti.height                = 64;
         ti.layer_count_or_depth = 1;
         ti.num_levels           = 1;
@@ -312,7 +317,7 @@ bool TerrainRenderer::InitKenshiOverlay(const char* path)
 
 
 #ifdef MD_SDL_GPU
-void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const
+void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const
 {
     bool valid = tex_loaded_ && tex_colour_.Valid()
                  && tex_colour_.SDLTexture() && tex_colour_.SDLSampler();
@@ -347,41 +352,51 @@ void TerrainRenderer::FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) c
               && tex_overlay_mask_.SDLTexture() && tex_overlay_mask_.SDLSampler();
     out[4].texture = om ? tex_overlay_mask_.SDLTexture() : fallback_mask_tex_;
     out[4].sampler = om ? tex_overlay_mask_.SDLSampler() : fallback_mask_sampler_;
+    // b5: per-biome ground NORMAL DDS array, paired 1:1 with tex_ground_
+    // array's diffuse layers (InitGroundTextureArray loads both from the
+    // same biome_table.txt index list). task #12 (2026-09-03) -- loaded
+    // since the array's introduction but never exposed here before, so no
+    // shading pass ever sampled it.
+    bool na = ground_array_ready_ && tex_ground_nml_array_.Valid()
+              && tex_ground_nml_array_.SDLTexture() && tex_ground_nml_array_.SDLSampler();
+    out[5].texture = na ? tex_ground_nml_array_.SDLTexture() : nullptr;
+    out[5].sampler = na ? tex_ground_nml_array_.SDLSampler() : nullptr;
 }
 
-void TerrainRenderer::GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[4]) const {
-    SDL_GPUTextureSamplerBinding all[5];
+void TerrainRenderer::GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[5]) const {
+    SDL_GPUTextureSamplerBinding all[6];
     FillSamplerBindings(all);
     out[0] = all[0];  // tex_colour
     out[1] = all[1];  // tex_ground_array
     out[2] = all[2];  // tex_ground_baked
     out[3] = all[4];  // tex_overlay_mask
+    out[4] = all[5];  // tex_ground_nml_array
 }
 #endif
 
 void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uints) {
 #ifdef MD_SDL_GPU
-    if (count_uints != 64 * 64 * 9) {
+    if (count_uints != 64 * 64 * 17) {
         fprintf(stderr, "[TerrainRenderer] UploadZoneGroundLayers: expected %d uints, got %d — skipped\n",
-                64 * 64 * 9, count_uints);
+                64 * 64 * 17, count_uints);
         return;
     }
     if (!zone_layers_tex_) return;
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (!dev) return;
 
-    // Repack the caller's flat zone_idx*9+slot layout into the texture's
-    // 3-texels-per-zone x 4-channels layout (12 slots available, 9 used --
+    // Repack the caller's flat zone_idx*17+slot layout into the texture's
+    // 5-texels-per-zone x 4-channels layout (20 slots available, 17 used --
     // see ZoneGroundLayersTexture's header doc comment).
-    const int W = 64 * 3, H = 64;
+    const int W = 64 * 5, H = 64;
     std::vector<uint32_t> packed((size_t)W * H * 4, 0u);
     for (int zy = 0; zy < 64; ++zy) {
         for (int zx = 0; zx < 64; ++zx) {
             int zone_idx = zy * 64 + zx;
-            for (int slot = 0; slot < 9; ++slot) {
+            for (int slot = 0; slot < 17; ++slot) {
                 int t = slot / 4, c = slot % 4;
-                size_t texel_idx = (size_t)zy * W + (size_t)(zx * 3 + t);
-                packed[texel_idx * 4 + (size_t)c] = data[(size_t)zone_idx * 9 + (size_t)slot];
+                size_t texel_idx = (size_t)zy * W + (size_t)(zx * 5 + t);
+                packed[texel_idx * 4 + (size_t)c] = data[(size_t)zone_idx * 17 + (size_t)slot];
             }
         }
     }

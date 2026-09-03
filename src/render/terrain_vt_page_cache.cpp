@@ -204,7 +204,7 @@ bool TerrainVtPageCache::Init(md::GpuDeviceHandle dev, float patch_size, const T
     {
         GpuComputePipeline::Desc cd;
         cd.glsl_path                     = "shaders/terrain_page_fill.comp";
-        cd.num_samplers                  = 6;  // heightTex, tex_colour, tex_ground, tex_ground_baked, tex_overlay_mask, zoneGroundLayersTex (texture not SSBO since 2026-08-09)
+        cd.num_samplers                  = 7;  // heightTex, tex_colour, tex_ground, tex_ground_baked, tex_overlay_mask, tex_ground_nml (task #12), zoneGroundLayersTex (texture not SSBO since 2026-08-09)
         cd.num_readonly_storage_buffers  = 0;
         cd.num_readwrite_storage_textures = 1; // pageAtlas
         cd.num_uniform_buffers           = 1;  // PageFillUBO
@@ -568,17 +568,22 @@ void TerrainVtPageCache::FlushFillQueue(md::GpuDeviceHandle dev, md::GpuCommandB
             continue;
         }
 
-        // set=0: 6 samplers -- heightTex (0), the 4 shared ground samplers
-        // (1..4), zoneGroundLayersTex (5, texture not SSBO since
-        // 2026-08-09) -- matching terrain_page_fill.comp's declared binding
-        // order exactly. No storage buffers left in this set.
-        SDL_GPUTextureSamplerBinding samplers[6];
+        // set=0: 7 samplers -- heightTex (0), the 5 shared ground samplers
+        // (1..5, task #12 added tex_ground_nml), zoneGroundLayersTex (6,
+        // texture not SSBO since 2026-08-09) -- matching terrain_page_fill.
+        // comp's declared binding order exactly. No storage buffers left in
+        // this set. NOTE: this whole dispatch is unreachable while VT stays
+        // disabled (TerrainVtPageCache::Init()'s doc comment) -- fixed here
+        // anyway since GetSharedGroundSamplers now writes 5 elements and the
+        // old 4-wide ground_bindings array would have been a stack overflow
+        // the moment this path is ever re-enabled.
+        SDL_GPUTextureSamplerBinding samplers[7];
         samplers[0] = { hmap.Texture(), hmap.Sampler() };
-        SDL_GPUTextureSamplerBinding ground_bindings[4];
+        SDL_GPUTextureSamplerBinding ground_bindings[5];
         ground.GetSharedGroundSamplers(ground_bindings);
-        for (int gi = 0; gi < 4; ++gi) samplers[1 + gi] = ground_bindings[gi];
-        samplers[5] = { ground.ZoneGroundLayersTexture(), ground.ZoneGroundLayersSampler() };
-        pass.BindSamplers(0, samplers, 6);
+        for (int gi = 0; gi < 5; ++gi) samplers[1 + gi] = ground_bindings[gi];
+        samplers[6] = { ground.ZoneGroundLayersTexture(), ground.ZoneGroundLayersSampler() };
+        pass.BindSamplers(0, samplers, 7);
 
         PageFillUBO ubo{};
         ubo.world_params[0] = world_origin; ubo.world_params[1] = world_origin;

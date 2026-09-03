@@ -82,11 +82,13 @@ bool BiomeRegistry::LoadFromFile(const char* path) {
                 e.legend_rgb[2] = (uint8_t)lb;
                 // Trailing per-layer tiling + slope-band fields (see this
                 // file's format comment): tile_base_x/y tile_slope_x/y
-                // tile_cliff_x/y ... -- only cliff tiling (fields 5,6 of
-                // that 12-number block) is needed live; the rest is
-                // consumed by tools/md_bake_ground_layers.py offline.
-                // Missing (older biome_table.txt) -> BiomeDef's in-class
-                // defaults (1.0, 1.0) stand, matching "no scale change".
+                // tile_cliff_x/y tile_dirt_x/y tile_grass_x/y tile_road_x/y.
+                // task #12 (2026-09-03): base/dirt/grass/road tiling now
+                // also kept (was previously discarded except cliff, fields
+                // 5,6) -- slope tiling (fields 3,4) still unused, no slope
+                // layer in the live formula yet. Missing (older
+                // biome_table.txt) -> BiomeDef's in-class defaults (1.0,
+                // 1.0) stand, matching "no scale change".
                 float tiling[12];
                 int consumed2 = 0;
                 int got = sscanf(p + 6 + consumed, "%f %f %f %f %f %f %f %f %f %f %f %f%n",
@@ -94,8 +96,16 @@ bool BiomeRegistry::LoadFromFile(const char* path) {
                     &tiling[6], &tiling[7], &tiling[8], &tiling[9], &tiling[10], &tiling[11],
                     &consumed2);
                 if (got == 12) {
+                    d.tile_base_x  = tiling[0];
+                    d.tile_base_y  = tiling[1];
                     d.cliff_tiling_x = tiling[4];
                     d.cliff_tiling_y = tiling[5];
+                    d.tile_dirt_x  = tiling[6];
+                    d.tile_dirt_y  = tiling[7];
+                    d.tile_grass_x = tiling[8];
+                    d.tile_grass_y = tiling[9];
+                    d.tile_road_x  = tiling[10];
+                    d.tile_road_y  = tiling[11];
                     // Trailing slope-band block (6 floats, unused live —
                     // see comment above) then brightness_fix (1 float,
                     // 19th trailing field overall). Missing (older

@@ -85,17 +85,21 @@ public:
 
     bool IsReady() const;
 
-    // Exposes 4 of the already-loaded ground-shading textures (colour
+    // Exposes 5 of the already-loaded ground-shading textures (colour
     // overlay, per-biome ground DDS array, offline-baked flat-ground colour,
-    // grass/dirt/road paint mask, in that order) — TerrainPatchRenderer/
-    // Granite's DrawBatch is the sole consumer now, avoiding a second,
-    // wasteful ~1GB+ reload of the same data. tex_biome_blend deliberately
-    // excluded: no caller of this needs it.
-    void GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[4]) const;
+    // grass/dirt/road paint mask, per-biome ground NORMAL DDS array, in that
+    // order) — TerrainPatchRenderer/Granite's DrawBatch is the sole consumer
+    // now, avoiding a second, wasteful ~1GB+ reload of the same data.
+    // tex_biome_blend deliberately excluded: no caller of this needs it.
+    // out[4] (normal array) added task #12 (2026-09-03, "ground-texture
+    // realism") -- was loaded (InitGroundTextureArray) but never exposed to
+    // any shading pass, so ground detail was always lit from the flat
+    // geometry normal only, never the real per-pixel normal map.
+    void GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[5]) const;
     // Per-zone (64x64=4096) ground-layer lookup — same data
     // UploadZoneGroundLayers populates, exposed for the same reuse reason.
-    // A texture (R32G32B32A32_UINT, 192x64 -- 3 texels per zone, 4 uint32
-    // channels each = 12 slots/zone, 9 used), NOT a storage buffer as of
+    // A texture (R32G32B32A32_UINT, 320x64 -- 5 texels per zone, 4 uint32
+    // channels each = 20 slots/zone, 17 used), NOT a storage buffer as of
     // 2026-08-09 (user directive to shrink Filament-blocking compute/SSBO
     // surface -- see docs/analysis/FILAMENT_MIGRATION_ANALYSIS.md). A plain
     // sampler is the one thing every rendering API (including Filament
@@ -103,19 +107,19 @@ public:
     md::GpuTextureHandle ZoneGroundLayersTexture() const { return zone_layers_tex_; }
     SDL_GPUSampler* ZoneGroundLayersSampler() const { return zone_layers_sampler_; }
 
-    // Upload the per-zone (64x64=4096) ground-layer lookup table: 9 uint32
+    // Upload the per-zone (64x64=4096) ground-layer lookup table: 17 uint32
     // per zone -- [0..5] base,slope,cliff,grass,dirt,road GroundTexLayer
     // indices, [6..7] real per-biome cliff UV tiling scale (bit-cast float,
     // BiomeDef::cliff_tiling_x/y), [8] cross-zone blend weight (bit-cast
-    // float) -- flat layout index = zone_idx*9 + slot, zone_idx = zy*64+zx
-    // (matches the EDITOR_TNKN=64 bitmask convention used elsewhere). Built
-    // once by the caller (World3D editor's synthesis-mesh init, and
-    // SceneRender's game-side equivalent) via TerrainGen_ResolveBiome() per
-    // zone. count_uints must be exactly 64*64*9 = 36864 (doc'd as *8 before
-    // this pass -- stale, real code always used 9 slots, see slot 8's
-    // cross-zone blend weight read in terrain_shading_common.glsl). Repacks
-    // the flat zone_idx*9+slot layout into the texture's 3-texels/zone
-    // layout internally -- callers keep building the same flat array.
+    // float), [9..16] task #12 real per-layer UV tiling for base/grass/
+    // dirt/road (bit-cast float pairs, BiomeDef::tile_base_x etc) -- flat
+    // layout index = zone_idx*17 + slot, zone_idx = zy*64+zx (matches the
+    // EDITOR_TNKN=64 bitmask convention used elsewhere). Built once by the
+    // caller (World3D editor's synthesis-mesh init, and SceneRender's
+    // game-side equivalent) via TerrainGen_ResolveBiome() per zone.
+    // count_uints must be exactly 64*64*17 = 69632. Repacks the flat
+    // zone_idx*17+slot layout into the texture's 5-texels/zone layout
+    // internally -- callers keep building the same flat array.
     void UploadZoneGroundLayers(const uint32_t* data, int count_uints);
 
 private:
@@ -143,6 +147,6 @@ private:
     SDL_GPUSampler* fallback_mask_sampler_   = nullptr;
     md::GpuTextureHandle fallback_blend_tex_      = nullptr;
     SDL_GPUSampler* fallback_blend_sampler_  = nullptr;
-    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[5]) const;
+    void FillSamplerBindings(SDL_GPUTextureSamplerBinding out[6]) const;
 #endif
 };

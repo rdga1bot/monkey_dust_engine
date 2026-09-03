@@ -59,8 +59,8 @@ bool TerrainShadingProjected::Init(md::GpuDeviceHandle dev, int w, int h) {
     rd.vert_uniform_bufs  = 0;
     rd.vert_samplers      = 0;
     rd.frag_uniform_bufs  = 2;  // set=3 binding=0 ProjFragUBO, binding=1 ProjCamUBO
-    rd.frag_samplers      = 9;  // set=2: tex_colour,tex_ground,tex_ground_baked,tex_overlay_mask; set=1: gbufPacked,gbufDepth; terrain-vt Phase 4: vtIndirection,vtAtlas; zoneGroundLayersTex (texture, not SSBO, since 2026-08-09)
-    rd.frag_storage_bufs  = 1;  // set=2 binding=9: vtPageMeta (terrain-vt clipmap fix)
+    rd.frag_samplers      = 10;  // set=2: tex_colour,tex_ground,tex_ground_baked,tex_overlay_mask,tex_ground_nml (task #12); gbufPacked,gbufDepth; terrain-vt Phase 4: vtIndirection,vtAtlas; zoneGroundLayersTex (texture, not SSBO, since 2026-08-09)
+    rd.frag_storage_bufs  = 1;  // set=2 binding=10: vtPageMeta (terrain-vt clipmap fix)
     if (!resolve_pipeline_.Create(rd)) {
         MD_LOG(MD_LOG_WARNING, "[TerrainShadingProjected] resolve pipeline create failed");
         return false;
@@ -178,21 +178,23 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, md::GpuC
     cubo.cam_pos_ws[2] = cam_z; cubo.cam_pos_ws[3] = 0.f;
     GpuPushFragmentUniforms(cmd, 1, &cubo, sizeof(cubo));
 
-    // set=2: same 4 shared ground samplers the normal forward terrain draw
-    // binds (TerrainPatchRenderer::DrawBatch).
-    SDL_GPUTextureSamplerBinding ground_bindings[4];
+    // set=2: same 5 shared ground samplers the normal forward terrain draw
+    // binds (TerrainPatchRenderer::DrawBatch) -- index 4 (tex_ground_nml)
+    // added task #12 (2026-09-03).
+    SDL_GPUTextureSamplerBinding ground_bindings[5];
     ground.GetSharedGroundSamplers(ground_bindings);
-    // All 4 must be checked, not just index 0 -- unlike slots 0/2/3 (plain
+    // All 5 must be checked, not just index 0 -- unlike slots 0/2/3 (plain
     // sampler2D, always backed by a same-typed 1x1 fallback texture even
-    // when their real asset fails to load), slot 1 (tex_ground_array,
-    // sampler2DArray in the shader) has no fallback of a matching image
-    // type in FillSamplerBindings and falls back to nullptr/nullptr.
-    for (int i = 0; i < 4; ++i) {
+    // when their real asset fails to load), slots 1/4 (tex_ground_array,
+    // tex_ground_nml_array, both sampler2DArray in the shader) have no
+    // fallback of a matching image type in FillSamplerBindings and fall
+    // back to nullptr/nullptr.
+    for (int i = 0; i < 5; ++i) {
         if (!ground_bindings[i].texture || !ground_bindings[i].sampler) return;
     }
-    pv.BindFragmentSamplers(0, ground_bindings, 4);
+    pv.BindFragmentSamplers(0, ground_bindings, 5);
     // Single remaining SSBO (vtPageMeta) -- zoneGroundLayers moved to a
-    // texture (binding=8, bound below with the other samplers) since
+    // texture (binding=9, bound below with the other samplers) since
     // 2026-08-09, see ZoneGroundLayersTexture's header doc comment.
     SDL_GPUBuffer* storage_bufs[1] = { vt.PageMetaSSBO() };
     pv.BindFragmentStorageBuffers(0, storage_bufs, 1);
@@ -202,9 +204,9 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, md::GpuC
         { gbuf_color_.SDLTexture(), gbuf_color_.SDLSampler() },
         { gbuf_depth_.SDLTexture(), gbuf_depth_.SDLSampler() },
     };
-    pv.BindFragmentSamplers(4, gbuf_bindings, 2);
+    pv.BindFragmentSamplers(5, gbuf_bindings, 2);
 
-    // terrain-vt Phase 4: indirection + physical atlas -- bindings 6/7,
+    // terrain-vt Phase 4: indirection + physical atlas -- bindings 7/8,
     // continuing the same contiguous sampler run (see terrain_shading_
     // screenspace.frag's own doc comment on why the SSBO above must stay
     // numbered AFTER every sampler in this set).
@@ -212,15 +214,15 @@ void TerrainShadingProjected::DrawShadingResolve(SDL_GPURenderPass* rp, md::GpuC
         { vt.IndirectionTexture(), vt.IndirectionSampler() },
         { vt.AtlasTexture(),       vt.AtlasSampler() },
     };
-    pv.BindFragmentSamplers(6, vt_bindings, 2);
+    pv.BindFragmentSamplers(7, vt_bindings, 2);
 
-    // Zone ground-layer lookup -- binding=8, texture not SSBO since
+    // Zone ground-layer lookup -- binding=9, texture not SSBO since
     // 2026-08-09 (Filament-blocker reduction, see ZoneGroundLayersTexture's
     // header doc comment). Continues the same contiguous sampler run.
     SDL_GPUTextureSamplerBinding zone_binding[1] = {
         { ground.ZoneGroundLayersTexture(), ground.ZoneGroundLayersSampler() },
     };
-    pv.BindFragmentSamplers(8, zone_binding, 1);
+    pv.BindFragmentSamplers(9, zone_binding, 1);
 
     pv.Draw(3, 1, 0, 0);
 }

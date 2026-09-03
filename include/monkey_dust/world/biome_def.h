@@ -24,6 +24,20 @@ struct BiomeDef {
     // brightnessFix.x). Defaults to 1.0 (no-op) for any biome_table.txt
     // predating this field.
     float brightness_fix = 1.0f;
+    // Real per-layer UV tiling scale (Kenshi FCS "tiling X/Y", confirmed
+    // against terrainfp4.hlsl's computeBiome() -- texCoords.xy * scales1.xy
+    // for base, scales1.zw for grass, scales2.xy for dirt, scales2.zw for
+    // road). biome_table.txt already carried these columns (tile_base_x/y
+    // etc, task-terrain-brightness header) but BiomeRegistry::LoadFromFile
+    // only ever kept cliff_tiling_x/y out of the 12-field tiling block --
+    // task #12 (2026-09-03, "ground-texture realism") wires up the other 4
+    // pairs so each layer tiles at its OWN real scale instead of one shared
+    // DETAIL_TILING=90 constant for everything. Defaults to 1.0 (no-op) for
+    // any biome_table.txt predating this field.
+    float tile_base_x = 1.0f, tile_base_y = 1.0f;
+    float tile_grass_x = 1.0f, tile_grass_y = 1.0f;
+    float tile_dirt_x = 1.0f, tile_dirt_y = 1.0f;
+    float tile_road_x = 1.0f, tile_road_y = 1.0f;
 };
 
 class BiomeRegistry {

@@ -2,6 +2,13 @@
 #ifdef MD_SDL_GPU
 #include <SDL3/SDL_gpu.h>
 #include <cstdint>
+// render-pass-graph-2026-09-03: was relying on a transitive include from
+// gpu_texture_pool.h (removed as dead code, 0 call sites -- see
+// render_pass_graph.h's own header comment) for md::GpuDeviceHandle below --
+// pure luck of Unity-build batch ordering, not a real dependency edge.
+// Broke the instant that transitive path was cut; this header genuinely
+// uses the type, so it should include it directly.
+#include <monkey_dust/render/gpu_device.h>
 
 // ── RenderTier ────────────────────────────────────────────────────────────────
 // Gates M27-M32 deferred pipeline features.

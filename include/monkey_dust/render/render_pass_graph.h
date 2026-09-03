@@ -1,12 +1,15 @@
 #pragma once
-// RenderPassGraph — declarative render pass registry with resource dependency tracking.
+// RenderPassGraph — declarative render pass registry with resource dependency
+// tracking. Intentionally a decl-and-toggle layer, not a full render graph —
+// see docs/GRANITE_CONTINUATION_DECISION.md §3 for the scope decision.
 //
-// Two layers:
-//   1. Enable/disable per pass (existing) — JSON override, runtime toggle.
-//   2. Resource declarations — each pass declares reads/writes of named resources.
-//      Used to validate ordering and document data-flow between passes.
-//      SDL_GPU handles actual VkImageLayout barriers internally; this layer
-//      provides organisation, validation, and future automatic reordering.
+// What this provides:
+//   1. Enable/disable per pass — JSON override, runtime toggle, IsEnabled()
+//      queried by every registered game pass (npc_render_*.cpp).
+//   2. Resource declarations — each pass declares reads/writes of named
+//      resources (name-hash tokens only, no live GPU handle). Used to
+//      validate ordering and document data-flow between passes. SDL_GPU
+//      handles actual VkImageLayout barriers internally.
 //
 // Resource access model:
 //   DeclareRead(pass, resource)  — pass samples this texture as input
@@ -17,25 +20,25 @@
 //   is registered BEFORE P. Logs warnings for violations (soft — SDL_GPU
 //   still handles barriers; violations are ordering intent mismatches).
 //
-// Execution order (GetExecutionOrder()):
-//   Returns pass hashes in dependency-respecting order (topological sort).
-//   Currently based on registration order + dependency constraints.
-//
-// JSON format (unchanged):
+// JSON format:
 //   { "passes": { "shadow": true, "ssao": false } }
 //
 // MAX_PASSES = 16, MAX_RESOURCE_BINDINGS = 4 per pass.
 //
-// Render graph step 3.2: resource declarations above were pure name-hash
-// tokens with no live GPU handle (render-graph audit finding — see
-// docs/FULL_AUDIT.md). DeclareTextureDesc/ResolveTexture/GetTexture add a
-// companion table (RGResourceEntry, keyed by the SAME resource_hash) that
-// actually owns a texture via GpuTexturePool — so a pass can ask this graph
-// for its input/output texture instead of each system managing its own
-// SDL_GPUTexture* independently.
+// NOT implemented, by decision not oversight (docs/GRANITE_CONTINUATION_DECISION.md
+// §3, 2026-08-30): automatic execution-order scheduling (RenderFrame's pass
+// sequence stays hand-written) and a graph-owned live-texture pool replacing
+// each *System's own SDL_GPUTexture* ownership. A GpuTexturePool-backed
+// version of the latter was built and then removed 2026-09-03 (0 call sites
+// anywhere) — this game's real per-frame barrier count is 1-2 (Forward) to
+// 6-8 (Deferred_High), and transient-target memory is ~88MB against a ~4GB+
+// UMA budget on the target hardware (Intel HD 520). Both are hand-tractable
+// at this scale; the automation these two layers would buy is the same
+// class of win Granite's real render_graph.cpp offers and was declined for
+// the same reason. Revisit only if the "what could change this" conditions
+// in that doc's §8 hold.
 
 #include <cstdint>
-#include <monkey_dust/render/gpu_texture_pool.h>
 
 namespace md {
 
@@ -64,17 +67,6 @@ struct RenderPassEntry {
     RGResourceBinding writes[MAX_RESOURCE_BINDINGS] = {};
     int               read_count  = 0;
     int               write_count = 0;
-};
-
-// ── Resource entry (step 3.2: live texture handle) ────────────────────────────
-// Companion table to RGResourceBinding, keyed by the same FNV-1a hash — the
-// binding struct above stays hash-only (unchanged, still just validates
-// ordering); this struct is where an actual GpuTexturePool-backed texture
-// lives once a pass calls ResolveTexture() for that resource name.
-struct RGResourceEntry {
-    uint32_t        hash    = 0;
-    RGTextureDesc   desc    = {};
-    md::GpuTextureHandle live_tex = nullptr;
 };
 
 // ── Singleton registry ────────────────────────────────────────────────────────
@@ -117,40 +109,13 @@ public:
     // Reset to registered defaults.
     void Reset();
 
-    // ── Step 3.2: live resource handles ──────────────────────────────────────
-    static constexpr int MAX_RESOURCES = 32;
-
-    // Register (or update) a resource's texture description. Call once per
-    // resource name before the first ResolveTexture() for it — typically
-    // right after the DeclareRead/DeclareWrite calls that reference it.
-    void DeclareTextureDesc(const char* resource_name, const RGTextureDesc& desc);
-
-    // Acquires (from GpuTexturePool) and caches the live texture for a
-    // resource this frame. Safe to call multiple times per frame for the
-    // same name (returns the same cached handle) — only the first call in
-    // a frame actually hits the pool. Returns nullptr if no desc was
-    // declared for this name, or the pool is exhausted.
-    md::GpuTextureHandle ResolveTexture(md::GpuDeviceHandle dev, const char* resource_name);
-
-    // Returns the currently-resolved texture for a resource, or nullptr if
-    // ResolveTexture hasn't been called for it yet this frame.
-    md::GpuTextureHandle GetTexture(const char* resource_name) const;
-
-    // Releases every resolved texture back to GpuTexturePool and clears the
-    // cached handles. Call once per frame, after all passes have run.
-    void ReleaseFrame();
-
 private:
     static uint32_t Hash(const char* s);
     int FindByHash(uint32_t h) const;
-    int FindResourceByHash(uint32_t h) const;
 
     RenderPassEntry passes_ [MAX_PASSES] = {};
     bool            defaults_[MAX_PASSES] = {};
     int             count_ = 0;
-
-    RGResourceEntry resources_[MAX_RESOURCES] = {};
-    int             resource_count_ = 0;
 };
 
 } // namespace md

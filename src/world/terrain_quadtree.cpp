@@ -32,8 +32,12 @@ bool QuadtreeAabbInFrustum(float ox, float oz, float size, float ymin, float yma
 constexpr int kQuadtreeReliefSampleGrid = 5;
 constexpr float kQuadtreeSkirtMarginM = 5.0f; // pad on top of measured relief
 
-float QuadtreeSampleHeightRange(TerrainQuadtree::HeightSampleFn sampler, float ox, float oz, float size) {
-    if (!sampler) return kQuadtreeSkirtMarginM;
+float QuadtreeSampleHeightRange(TerrainQuadtree::HeightSampleFn sampler, float ox, float oz, float size,
+                                 float* out_center_y = nullptr) {
+    if (!sampler) {
+        if (out_center_y) *out_center_y = 0.f;
+        return kQuadtreeSkirtMarginM;
+    }
     float hmin = 1e30f, hmax = -1e30f;
     for (int sz = 0; sz < kQuadtreeReliefSampleGrid; ++sz) {
         float wz = oz + (float)sz / (float)(kQuadtreeReliefSampleGrid - 1) * size;
@@ -44,6 +48,7 @@ float QuadtreeSampleHeightRange(TerrainQuadtree::HeightSampleFn sampler, float o
             if (h > hmax) hmax = h;
         }
     }
+    if (out_center_y) *out_center_y = (hmin + hmax) * 0.5f;
     return (hmax - hmin) + kQuadtreeSkirtMarginM;
 }
 
@@ -84,12 +89,32 @@ void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
                   float detail_multiplier, const float cam_pos[3], const float frustum_planes[16],
                   TerrainQuadtree::HeightSampleFn sampler,
                   TerrainQuadtree::VisibleNode* out, int max_out, int& count,
-                  int lod_mode, float min_node_size) {
+                  int lod_mode, float min_node_size, float error_to_range_scale) {
     if (count >= max_out) return;
 
     float cx = ox + size * 0.5f, cz = oz + size * 0.5f;
-    float dx = cam_pos[0] - cx, dz = cam_pos[2] - cz;
-    float dist = std::sqrt(dx * dx + dz * dz);
+
+    // RENDER_VS_ULRICH_CHUNKLOD_DEEPSEEK_RESEARCH.md, section 1 ("LOD
+    // selection criteria") + terrain_structure verdict 2026-09-04: this
+    // node's own relief was already computed for skirt_depth, but only
+    // AFTER the subdivide decision (leaves only) -- moved earlier so the
+    // split decision itself can use it as a cheap per-node error bound
+    // (the report's own fallback recommendation when no offline per-level
+    // error table exists). Reused below for skirt_depth on leaves -- no
+    // second sample.
+    float center_y = 0.f;
+    float height_range = QuadtreeSampleHeightRange(sampler, ox, oz, size, &center_y);
+
+    // Real bug fix (RENDER_VS_ULRICH_CHUNKLOD_DEEPSEEK_RESEARCH.md,
+    // "our dist is explicitly 2D... cam_pos[1] is not used"): a camera
+    // hovering above a node and a camera at ground level at the same
+    // horizontal distance got identical LOD even though the projected
+    // screen-space error is very different -- most visible looking down
+    // at a steep slope from above. center_y (from the same height sample
+    // above) is a cheap per-node Y proxy; true per-vertex Y isn't
+    // available at traversal time without a second full sampler pass.
+    float dx = cam_pos[0] - cx, dy = cam_pos[1] - center_y, dz = cam_pos[2] - cz;
+    float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
 
     // Real bug fix (30-40 FPS regression investigation): QuadtreeAabbInFrustum
     // below only tests 4 planes (left/right/top/bottom -- see its own doc
@@ -112,7 +137,28 @@ void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
     // camera is within range of THIS node; if not (or max depth reached),
     // draw this node with a morph blending toward its own parent shape as
     // dist approaches range.
-    float range = size * detail_multiplier;
+    //
+    // RENDER_VS_ULRICH_CHUNKLOD_DEEPSEEK_RESEARCH.md section 1 + terrain
+    // structure verdict 2026-09-04: size*detail_multiplier alone has no
+    // terrain-error input at all -- flat ground and a cliff of the same
+    // node size got the identical range, which is why steep real Kenshi
+    // slopes rendered at the same coarse density as flat ground nearby
+    // (the faceted/low-poly look on steep walls, math-confirmed:
+    // uniform 3.6m XZ spacing on an 80deg slope is a ~20m vertical rise
+    // per triangle). error_to_range_scale converts this node's measured
+    // relief (height_range, already sampled above) into a pixel-error-
+    // budget-derived range, the same screen-space-error principle
+    // Ulrich's real chunked-LOD threshold uses (its own doc comment has
+    // the full derivation) -- computed once in SelectVisible from
+    // screen_width_px_/fovy_degrees_/kMaxPixelError, not re-derived here.
+    // take the max against the existing size-based range so this can
+    // only ever ADD subdivision on high-relief nodes, never regress
+    // already-tuned flat-terrain behaviour (flat nodes keep height_range
+    // near the kQuadtreeSkirtMarginM floor, so range_error stays small
+    // and size*detail_multiplier keeps winning there, unchanged).
+    float range_size  = size * detail_multiplier;
+    float range_error = height_range * error_to_range_scale;
+    float range = (range_error > range_size) ? range_error : range_size;
 
     // lod_mode==1: OpenMW-style discrete comparison (docs/OPENMW_TERRAIN_
     // BORROWED_TECHNIQUES.md Phase 1) -- subdivide when this node's native
@@ -136,20 +182,18 @@ void RecurseNode(float ox, float oz, float size, int depth, int max_depth,
     } else {
         shouldSubdivide = dist < range;
     }
-
     if (depth < max_depth && shouldSubdivide) {
         float half = size * 0.5f;
-        RecurseNode(ox,        oz,        half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size);
-        RecurseNode(ox + half, oz,        half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size);
-        RecurseNode(ox,        oz + half, half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size);
-        RecurseNode(ox + half, oz + half, half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size);
+        RecurseNode(ox,        oz,        half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size, error_to_range_scale);
+        RecurseNode(ox + half, oz,        half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size, error_to_range_scale);
+        RecurseNode(ox,        oz + half, half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size, error_to_range_scale);
+        RecurseNode(ox + half, oz + half, half, depth + 1, max_depth, detail_multiplier, cam_pos, frustum_planes, sampler, out, max_out, count, lod_mode, min_node_size, error_to_range_scale);
         return;
     }
 
-    // height_range doubles as this node's skirt depth (below) and a
-    // tighter Y bound for the frustum test than the old fixed fallback --
-    // this sampler call was already unavoidable, no added cost from reusing it.
-    float height_range = QuadtreeSampleHeightRange(sampler, ox, oz, size);
+    // height_range/center_y already sampled above (needed for the split
+    // decision itself now) -- reused here for skirt depth and the frustum
+    // Y bound, no second sampler pass.
     constexpr float kFallbackYMin = -500.f, kFallbackYMax = 4000.f;
     if (!QuadtreeAabbInFrustum(ox, oz, size, kFallbackYMin, kFallbackYMax, frustum_planes)) return;
 
@@ -357,6 +401,34 @@ int TerrainQuadtree::SelectVisible(const float cam_pos[3], const float frustum_p
     float effective_multiplier = detail_multiplier_
         * (screen_width_px_ / kReferenceScreenWidthPx)
         * (ref_tan / cur_tan);
+
+    // RENDER_VS_ULRICH_CHUNKLOD_DEEPSEEK_RESEARCH.md section 1's fallback
+    // (no offline per-level error table -> use measured node relief as a
+    // conservative per-node error bound). Ulrich's real screen-space-error
+    // formula (threshold = error * screen_width / (2*max_pixel_error*
+    // tan(fovy/2))) assumes `error` is a SMALL per-vertex simplification
+    // residual (his own base_max_error is 1-5m, see docs/
+    // TERRAIN_CHUNKLOD_PORT_PLAN.md's spike results) -- plugging our
+    // `height_range` directly into that formula in literally applied it
+    // and measured live: TerrainPrepCPU/Cull jumped from a typical ~2-3ms
+    // to ~17ms at a real steep test spot, because height_range is a WHOLE-
+    // NODE relief span (tens to hundreds of metres on real Kenshi cliffs),
+    // orders of magnitude bigger than a per-vertex error -- with any
+    // physically-sane max_pixel_error (1-5px) the resulting range_error
+    // dwarfed camera render distance everywhere, forcing near-universal
+    // max-depth subdivision even on gentle terrain, not just real cliffs.
+    // kReliefToRangeScale is instead solved directly from the two
+    // quantities that matter: at the finest tier (size~57.6m,
+    // size*detail_multiplier~172.8m), "typical" gentle-terrain relief
+    // (~10m) should give range_error roughly comparable to the existing
+    // size-based range (so ordinary terrain is left close to unchanged),
+    // while real cliff-scale relief (100-400m, port-plan's own South Hive
+    // measurement) drives range_error far past it. 172.8/10 ~= 17.3.
+    // Empirically-tuned starting point, not a literal pixel-error budget
+    // -- re-measure node_count/Cull-time before trusting a different value.
+    constexpr float kReliefToRangeScale = 17.3f;
+    float error_to_range_scale = kReliefToRangeScale;
+
     int num_zones = (int)(world_extent_ / chunk_size_ + 0.5f);
     float min_node_size = chunk_size_ / (float)(1 << max_depth_);
     for (int zz = 0; zz < num_zones && count < max_out; ++zz) {
@@ -365,7 +437,7 @@ int TerrainQuadtree::SelectVisible(const float cam_pos[3], const float frustum_p
             float oz = world_origin_z_ + (float)zz * chunk_size_;
             RecurseNode(ox, oz, chunk_size_, 0, max_depth_, effective_multiplier,
                         cam_pos, frustum_planes, height_sampler_, out, max_out, count,
-                        lod_mode_, min_node_size);
+                        lod_mode_, min_node_size, error_to_range_scale);
         }
     }
     QuadtreeBalanceNeighbors(world_origin_x_, world_origin_z_, chunk_size_, out, count, lod_mode_);

@@ -2,9 +2,12 @@
 // FeatureScatter — loads and draws real Kenshi hand-authored scatter-object
 // placement (features.dat, via private/md_features_parse.py --export ->
 // game/data/features_scatter.txt), replacing the disabled noise-based
-// PropGen_Build/ClutterGen_Build (see their own definitions for why they
-// were turned off — this is the real replacement content pipeline those
-// comments point at).
+// PropGen_Build (see its own definition for why it was turned off — this
+// is the real replacement content pipeline that comment points at).
+// ClutterGen (a second, dense noise-driven ground-clutter placement system)
+// was deleted entirely 2026-09-05 — its draw call had been disabled since
+// 2026-08-02 (visual quality) while its CPU bake + GPU upload kept running
+// every chunk load for nothing.
 //
 // Small enough (757 placements, 113 unique meshes) to load entirely once
 // at startup and filter by camera distance every frame — no per-chunk

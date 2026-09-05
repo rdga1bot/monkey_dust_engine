@@ -6,27 +6,26 @@
 #include <monkey_dust/render/terrain_renderer.h>
 #include <monkey_dust/world/terrain_quadtree.h>
 
-// Final terrain architecture (2026-08-18, "Ogre-quadtree (geomorph+skirts)",
-// serene-pondering-teapot.md) -- draws ONE TerrainQuadtree::VisibleNode per
-// DrawNode call. Vertex-buffer-less (layout.count=0, matches the
-// already-proven Phase 1 spike technique) but INDEXED: ONE shared index
-// buffer pair (filled 16x16 grid + 4 skirt strips, terrain_quadtree_mesh.h)
-// built once at Init(), reused for EVERY node at EVERY depth everywhere in
-// the world -- only the per-node UBO (origin, texelSize, morph, skirtDepth)
-// differs per draw. Output contract identical to every prior terrain
-// renderer this project has had -- same shaders/terrain_gbuffer_mini.frag,
-// unmodified, same packed-normal RGBA32F target.
+// 2026-09-05 (docs/TERRAIN_FLAT_LOD_PLAN.md): fixed-depth tiling -- draws
+// ONE TerrainQuadtree::VisibleNode per DrawNode call. Vertex-buffer-less
+// (layout.count=0) but INDEXED: ONE shared index buffer (filled 16x16 grid,
+// terrain_quadtree_mesh.h) built once at Init(), reused for EVERY tile
+// everywhere in the world -- only the per-tile UBO (origin, texelSize)
+// differs per draw. No skirts/stitched variants: every tile is the same
+// depth, so neighbors always share identical vertex density at their
+// border. Output contract identical to every prior terrain renderer this
+// project has had -- same shaders/terrain_gbuffer_mini.frag, unmodified,
+// same packed-normal RGBA32F target.
 class TerrainQuadtreeRenderer {
 public:
     bool Init(md::GpuDeviceHandle dev);
     void Shutdown(md::GpuDeviceHandle dev);
     bool IsReady() const { return ready_; }
 
-    // Draws ONE node (filled grid + 4 border skirts) inside an already-open
-    // G-buffer render pass. node.morph/skirt_depth come straight from
-    // TerrainQuadtree::SelectVisible; hmap supplies the world-wide
-    // height+normal textures directly (2026-08-24: #398's TerrainHeightClipmap
-    // reverted -- see terrain_quadtree.vert's own doc comment for why).
+    // Draws ONE tile (filled grid) inside an already-open G-buffer render
+    // pass. hmap supplies the world-wide height+normal textures directly
+    // (2026-08-24: #398's TerrainHeightClipmap reverted -- see
+    // terrain_quadtree.vert's own doc comment for why).
     void DrawNode(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                   const TerrainWorldHeightmap& hmap, const float* vp16,
                   const TerrainQuadtree::VisibleNode& node,
@@ -54,10 +53,10 @@ public:
                       float fog_far, const float fog_color[3], float fog_near,
                       const TerrainRenderer& ground);
 
-    // Draws ONE node -- pipeline/fragment resources already bound by
-    // BeginForward; this only pushes the per-node vertex UBO, binds the
-    // (world-wide, same for every node) height/normal vertex samplers, and
-    // issues the filled+skirt index draws -- same shape as DrawNode.
+    // Draws ONE tile -- pipeline/fragment resources already bound by
+    // BeginForward; this only pushes the per-tile vertex UBO, binds the
+    // (world-wide, same for every tile) height/normal vertex samplers, and
+    // issues the filled-grid index draw -- same shape as DrawNode.
     void DrawNodeForward(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
                          const TerrainWorldHeightmap& hmap, const float* vp16,
                          const TerrainQuadtree::VisibleNode& node,
@@ -65,12 +64,11 @@ public:
 
     // B3 (Granite terrain finding, RENDER_VS_GRANITE_DEEPSEEK_RESEARCH.md):
     // Granite instances up to 512 patches in one draw_indexed; our DrawNode
-    // loop issues 2 draws + 1 UBO push PER node instead. This is the
+    // loop issues 1 draw + 1 UBO push PER node instead. This is the
     // instanced replacement for the G-buffer path specifically (DrawNode
     // stays as-is, still used by the forward path and any other caller).
     //
-    // Per-node data (origin, texelSize, morph, skirtDepth) is read from a
-    // TEXTURE (nodeDataTex, 2 texels/node, gl_InstanceIndex-indexed) in a
+    // Per-node data (origin, texelSize) is read from a
     // SEPARATE vertex shader (terrain_quadtree_batched.vert), not an SSBO:
     // no shader anywhere in this codebase combines vert_samplers>0 with
     // vert_storage_bufs>0, and this exact combination sits in the same
@@ -101,36 +99,41 @@ public:
                       const TerrainWorldHeightmap& hmap, const float* vp16,
                       float cam_x, float cam_y, float cam_z);
 
-    // Issues ONE instanced draw_indexed for the filled grid + ONE for the
-    // skirt strips, covering the `count` nodes uploaded via UploadNodeData
-    // this frame (count must match the UploadNodeData call this frame).
+    // Issues ONE instanced draw_indexed for the filled grid, covering the
+    // `count` nodes uploaded via UploadNodeData this frame (count must
+    // match the UploadNodeData call this frame).
     void DrawBatched(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd, int count);
 
     static constexpr int kMaxBatchedNodes = 8192; // half of kMaxNodesPublic -- generous vs typical per-frame visible counts
     static constexpr int kNodeDataTexWidth = 256;
 
+    // TEMP DEBUG TOOL (2026-09-04, CLAUDE_CONSTITUTION.md sec 7.7): real
+    // mesh wireframe overlay -- shares terrain_quadtree.vert with DrawNode/
+    // DrawNodeForward (same vertex transform, so lines land exactly on the
+    // live geometry), swaps in shaders/terrain_wireframe.frag (solid colour)
+    // + GpuRasterState::wireframe=true (SDL_GPU_FILLMODE_LINE). Draws into
+    // the caller's already-open MAIN colour+depth pass (same contract as
+    // DrawNodeForward), depth_write=false so it never corrupts the real
+    // depth buffer. See DrawNodeForward's own doc comment for the pass this
+    // must be called from.
+    bool InitWireframe(md::GpuDeviceHandle dev);
+    bool IsWireframeReady() const { return wireframe_ready_; }
+    void DrawNodeWireframe(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
+                            const TerrainWorldHeightmap& hmap, const float* vp16,
+                            const TerrainQuadtree::VisibleNode& node,
+                            float cam_x, float cam_y, float cam_z);
+
 private:
     GpuPipeline gbuffer_pipeline_;
     GpuPipeline forward_pipeline_;
+    GpuPipeline wireframe_pipeline_;
     GpuPipeline batched_pipeline_;
     GpuStaticBuffer filled_ibo_;
-    GpuStaticBuffer skirt_ibo_;
     uint32_t filled_index_count_ = 0;
-    uint32_t skirt_index_count_  = 0;
-
-    // docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 2: all 16
-    // BuildTerrainQuadtreeStitchedIndices(edgeMask) variants concatenated
-    // into ONE GPU buffer at Init() -- stitched_offsets_[mask] is the byte
-    // offset into stitched_ibo_ for that mask's slice (SDL_GPUBufferBinding
-    // supports a nonzero offset into a shared buffer), stitched_counts_[mask]
-    // is its index count. Only consulted in DrawNode when
-    // node.use_stitched_mesh && !node.needs_skirt_fallback.
-    GpuStaticBuffer stitched_ibo_;
-    uint32_t stitched_offsets_[16] = {};
-    uint32_t stitched_counts_[16]  = {};
     bool ready_ = false;
     bool forward_ready_ = false;
     bool batched_ready_ = false;
+    bool wireframe_ready_ = false;
     md::GpuTextureHandle node_data_tex_     = nullptr;
     SDL_GPUSampler* node_data_sampler_ = nullptr;
 };

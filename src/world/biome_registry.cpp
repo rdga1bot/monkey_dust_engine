@@ -120,8 +120,21 @@ bool BiomeRegistry::LoadFromFile(const char* path) {
                         &consumed3);
                     if (got2 == 6) {
                         float bf = 1.0f;
-                        if (sscanf(p + 6 + consumed + consumed2 + consumed3, "%f", &bf) == 1) {
+                        int consumed4 = 0;
+                        if (sscanf(p + 6 + consumed + consumed2 + consumed3, "%f%n",
+                                   &bf, &consumed4) == 1) {
                             d.brightness_fix = bf;
+                            // Trailing distort_amplitude/distort_wavelength
+                            // (2 floats, 21st/22nd fields overall -- "wavy
+                            // cliff lines", see BiomeDef's field comment).
+                            // Missing (older biome_table.txt) -> BiomeDef's
+                            // in-class default (0.0, no-op) stands.
+                            float da = 0.0f, dw = 0.0f;
+                            if (sscanf(p + 6 + consumed + consumed2 + consumed3 + consumed4,
+                                       "%f %f", &da, &dw) == 2) {
+                                d.distort_amplitude = da;
+                                d.distort_wavelength = dw;
+                            }
                         }
                     }
                 }

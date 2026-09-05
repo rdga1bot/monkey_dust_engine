@@ -323,14 +323,6 @@ struct TerrainChunk {
     // 4096 chunks is not viable).
     bool             heightmap_ready = false;
 
-    // KEN-CLUTTER Tier 2: dense ground clutter (pebbles/small rocks/small plants)
-    // baked into ONE static mesh per chunk by ClutterGen_Build/Upload — one draw
-    // call regardless of instance count (mirrors Kenshi's Forests::BatchedGeometry).
-    GpuStaticBuffer  clutter_vbo;
-    GpuStaticBuffer  clutter_ibo;
-    int              clutter_index_count = 0;
-    bool             clutter_loaded = false;
-
     // Sample height at local chunk coords (0..CHUNK_SIZE).
     // Bilinear interpolation between grid cells.
     float SampleHeight(float lx, float lz) const;

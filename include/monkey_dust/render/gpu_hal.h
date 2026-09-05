@@ -80,6 +80,10 @@ struct GpuRasterState {
     bool  depth_write          = true;
     bool  cull_back            = true;
     bool  point_size           = false; // GL_PROGRAM_POINT_SIZE
+    // SDL_GPU_FILLMODE_LINE instead of FILL -- debug wireframe overlay.
+    // Requires the driver's fillModeNonSolid feature; confirmed present on
+    // this project's target hardware (Intel Gen9 ANV).
+    bool  wireframe            = false;
 #ifdef MD_SDL_GPU
     // Depth compare function. Default LESS_OR_EQUAL matches the prepass write.
     // Set to EQUAL for main pass after an Early-Z prepass (depth_write=false).

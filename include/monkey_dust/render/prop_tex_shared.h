@@ -1,7 +1,7 @@
 #pragma once
 // PropTexShared — the two real Kenshi diffuse textures used by every prop
 // and clutter mesh (rocks + vegetation). Loaded ONCE and shared across all
-// PropRenderer/ClutterRenderer instances — the vegetation atlas alone is
+// PropRenderer instances — the vegetation atlas alone is
 // 4096x4096 BC3 with 13 mips (~11MB); loading it per-PropRenderer (there are
 // 6+ instances: props, rock_b, rock_c, veg_yucca, veg_shrub, veg_dtree) would
 // waste tens of MB of VRAM for identical data.
@@ -21,7 +21,7 @@ class PropTexShared {
 public:
     static PropTexShared& Get();
 
-    // Idempotent — safe to call from every PropRenderer/ClutterRenderer::Init().
+    // Idempotent — safe to call from every PropRenderer::Init().
     bool Init();
 
     GpuTexture* tex_rock = nullptr;

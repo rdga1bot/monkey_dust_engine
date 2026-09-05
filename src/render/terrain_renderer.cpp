@@ -52,7 +52,7 @@ bool TerrainRenderer::Init() {
     }
 
     // Per-zone (64x64=4096) ground-layer lookup texture -- see
-    // UploadZoneGroundLayers. 17 uint32 per zone: [0..5] base,slope,cliff,
+    // UploadZoneGroundLayers. 19 uint32 per zone: [0..5] base,slope,cliff,
     // grass,dirt,road GroundTexLayer indices; [6..7] real per-biome cliff UV
     // tiling scale (FCS "tiling X/Y 2", confirmed against terrainfp4.hlsl),
     // bit-cast float (uintBitsToFloat in the shader); [8] real per-biome
@@ -61,8 +61,11 @@ bool TerrainRenderer::Init() {
     // tiling for base/grass/dirt/road (bit-cast float pairs, matches
     // BiomeDef::tile_base_x etc) -- was previously one shared
     // DETAIL_TILING=90 constant for every layer in every biome, ignoring
-    // biome_table.txt's own real per-layer values. R32G32B32A32_UINT,
-    // 320x64 (5 texels/zone x 4 channels = 20 slots, 17 used) -- a texture,
+    // biome_table.txt's own real per-layer values; [17..18] real per-biome
+    // "wavy cliff lines" distortion amplitude/wavelength (2026-09-04,
+    // Ghidra-verified against kenshi_x64.exe's ZoneMap::getTerrainMaterial_DX11
+    // and terrain.hlsl's main_vs), also bit-cast float. R32G32B32A32_UINT,
+    // 320x64 (5 texels/zone x 4 channels = 20 slots, 19 used) -- a texture,
     // not an SSBO, as of 2026-08-09 (see ZoneGroundLayersTexture's header
     // doc comment for why). Allocated empty here; populated once by the
     // caller (World3D editor's synthesis-mesh init, and SceneRender's
@@ -376,27 +379,27 @@ void TerrainRenderer::GetSharedGroundSamplers(SDL_GPUTextureSamplerBinding out[5
 
 void TerrainRenderer::UploadZoneGroundLayers(const uint32_t* data, int count_uints) {
 #ifdef MD_SDL_GPU
-    if (count_uints != 64 * 64 * 17) {
+    if (count_uints != 64 * 64 * 19) {
         fprintf(stderr, "[TerrainRenderer] UploadZoneGroundLayers: expected %d uints, got %d — skipped\n",
-                64 * 64 * 17, count_uints);
+                64 * 64 * 19, count_uints);
         return;
     }
     if (!zone_layers_tex_) return;
     md::GpuDeviceHandle dev = md::GpuDevice::Get().SDLDevice();
     if (!dev) return;
 
-    // Repack the caller's flat zone_idx*17+slot layout into the texture's
-    // 5-texels-per-zone x 4-channels layout (20 slots available, 17 used --
+    // Repack the caller's flat zone_idx*19+slot layout into the texture's
+    // 5-texels-per-zone x 4-channels layout (20 slots available, 19 used --
     // see ZoneGroundLayersTexture's header doc comment).
     const int W = 64 * 5, H = 64;
     std::vector<uint32_t> packed((size_t)W * H * 4, 0u);
     for (int zy = 0; zy < 64; ++zy) {
         for (int zx = 0; zx < 64; ++zx) {
             int zone_idx = zy * 64 + zx;
-            for (int slot = 0; slot < 17; ++slot) {
+            for (int slot = 0; slot < 19; ++slot) {
                 int t = slot / 4, c = slot % 4;
                 size_t texel_idx = (size_t)zy * W + (size_t)(zx * 5 + t);
-                packed[texel_idx * 4 + (size_t)c] = data[(size_t)zone_idx * 17 + (size_t)slot];
+                packed[texel_idx * 4 + (size_t)c] = data[(size_t)zone_idx * 19 + (size_t)slot];
             }
         }
     }

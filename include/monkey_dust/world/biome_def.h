@@ -38,6 +38,15 @@ struct BiomeDef {
     float tile_grass_x = 1.0f, tile_grass_y = 1.0f;
     float tile_dirt_x = 1.0f, tile_dirt_y = 1.0f;
     float tile_road_x = 1.0f, tile_road_y = 1.0f;
+    // Real "wavy cliff lines" vertical-UV distortion (Kenshi FCS "distort
+    // amplitude"/"distort wavelength", confirmed 2026-09-04 via live Ghidra
+    // decompile of kenshi_x64.exe's ZoneMap::getTerrainMaterial_DX11, and
+    // against tmp_/kenshi_re/materials/deferred/terrain.hlsl's main_vs).
+    // freq = wavelength>0 ? 1/wavelength : 0; amp = distort_amplitude*0.01;
+    // offset = (cos(worldX*freq)+cos(worldZ*freq))*amp, added to the cliff
+    // layer's vertical mapping coordinate. Defaults to 0.0 (no-op) for any
+    // biome_table.txt predating this field.
+    float distort_amplitude = 0.0f, distort_wavelength = 0.0f;
 };
 
 class BiomeRegistry {

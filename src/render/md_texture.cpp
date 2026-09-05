@@ -128,6 +128,44 @@ MdTexture MdLoadTextureFromMemory(const uint8_t* data, int w, int h) {
     return FromGpuTexture(gt);
 }
 
+#ifdef MD_SDL_GPU
+bool MdUploadSquareRGBA8ToGpuColorTexture(md::GpuDeviceHandle dev, const uint8_t* pixels,
+                                            int size, GpuColorTexture& out) {
+    if (!out.Init(size, size, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                  SDL_GPU_TEXTUREUSAGE_SAMPLER)) return false;
+    md::GpuTextureHandle tex = out.SDLTexture();
+    SDL_GPUTransferBufferCreateInfo tbi{};
+    tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbi.size  = (uint32_t)(size * size * 4);
+    SDL_GPUTransferBuffer* tb = GpuCreateTransferBuffer(dev, &tbi);
+    if (!tb) { out.Shutdown(); return false; }
+    void* ptr = GpuMapTransfer(tb, false);
+    if (ptr) memcpy(ptr, pixels, (size_t)(size * size * 4));
+    GpuUnmapTransfer(tb);
+    md::GpuCommandBufferHandle cmd = md::GpuDevice::Get().AcquireCommandBuffer();
+    if (!cmd) { GpuReleaseTransferBuffer(dev, tb); out.Shutdown(); return false; }
+    GpuCopyPass cp;
+    cp.Begin(cmd);
+    if (!cp.SDLPass()) {
+        md::GpuDevice::Get().Submit(cmd);
+        GpuReleaseTransferBuffer(dev, tb);
+        out.Shutdown();
+        return false;
+    }
+    SDL_GPUTextureTransferInfo src{};
+    src.transfer_buffer = tb;
+    src.pixels_per_row = (uint32_t)size;
+    src.rows_per_layer = (uint32_t)size;
+    SDL_GPUTextureRegion dst{};
+    dst.texture = tex; dst.w = (uint32_t)size; dst.h = (uint32_t)size; dst.d = 1;
+    cp.UploadTexture(src, dst, false);
+    cp.End();
+    md::GpuDevice::Get().Submit(cmd);
+    GpuReleaseTransferBuffer(dev, tb);
+    return true;
+}
+#endif // MD_SDL_GPU
+
 void MdUnloadTexture(MdTexture& t) {
     // If cache owns this texture, only zero the caller's copy.
     // GPU resources stay alive until MdTextureCache_Shutdown().

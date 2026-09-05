@@ -24,7 +24,7 @@ bool PropRenderer::Init(const char* glb_path, float layer) {
         return false;
     }
 
-    PropTexShared::Get().Init();  // idempotent; shared across all PropRenderer/ClutterRenderer instances
+    PropTexShared::Get().Init();  // idempotent; shared across all PropRenderer instances
 
     // task propmesh-materials (2026-08-02): upload the mesh's own embedded
     // texture (if any) as a dedicated per-instance GPU texture. Always

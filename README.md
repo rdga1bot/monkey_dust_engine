@@ -3,7 +3,7 @@ id: kb-engine-readme
 type: reference
 status: active
 date: 2026-05-14
-updated: 2026-09-03
+updated: 2026-09-05
 repo: engine
 tags: [engine, readme, sdl-gpu, rendering, ecs, public-repo]
 summary: "Public engine/ README: feature list (rendering/AI/ECS/physics/terrain/nav/audio/scripting), build, repo layout"
@@ -38,7 +38,7 @@ and **[Jolt Physics](https://github.com/jrouwe/JoltPhysics)**.
 | GPU skinning | AnimationSoA; SSBO skeletal bones (MAX\_BONES=64, Kenshi uses 30 of 64); compute dispatch |
 | Particles | ParticleSoA CPU-sim; SMOKE/SPARK/BLOOD types |
 | Material system | O3DE-inspired: JSON → `GpuPipeline::Desc`; **parent inheritance** (`"parent": "base_pbr"`); `shader_features` bitmask; `MaterialTypeRegistry` (MAX=32) |
-| Terrain geometry + shading | Ogre-quadtree (`terrain_quadtree.vert/.frag`, plain GLSL — Slang removed 2026-07-26): one shared vertex-buffer-less indexed mesh (17×17 grid + 4 skirt strips) per quadtree node depth; continuous geomorph blend between fine/coarse VTF height samples (no discrete LOD popping); `TerrainQuadtree::SelectVisible` walks the tree per-frame (no persistent tree); ground shading matches original Kenshi (same material at all tiers, no POM/normal-mapping split), per-pixel dominant-weight selection (base/slope/cliff/grass/dirt/road) |
+| Terrain geometry + shading | Flat fixed-depth tiling (`terrain_quadtree.vert/.frag`, plain GLSL — Slang removed 2026-07-26; geometry simplified 2026-09-04): `TerrainQuadtree::SelectVisible` walks a fixed depth (`kFlatLodDepth=3`) out to `kFlatMaxRenderDistance=3000 m` — no adaptive subdivision, no geomorph blend, no skirts, no stitched-IBO seam handling (removed after RMSE-verified pixel-identical output at 2.3–3.6× lower render cost than the old adaptive quadtree); one shared filled index buffer per node depth; ground shading matches original Kenshi (same material at all tiers, no POM/normal-mapping split), per-pixel dominant-weight selection (base/slope/cliff/grass/dirt/road) |
 
 ### AI — Behavior Tree VM
 - Stackless BT VM (`behavior_tree.h`, 373 lines core VM) + `bt_types.h` (987 lines — all enums/structs: BTNodeType, BTNode, BTState, etc.) + `bt_factories.cpp` (868 lines — Batch 2–35 factory methods) — 30+ node types, zero heap allocations
@@ -79,11 +79,10 @@ flecs directly. `AllianceMatrix` and `NpcRelationshipComponent` use real flecs r
 - `TerrainAtlas` — real Kenshi elevation data (`world_hmap.r16`, raw uint16, 8256×8256 tiled, 64×64 zones × 129×129 verts/zone — matches Kenshi's own in-engine resolution); O(1) RAM lookup; dirty-zone partial save (editor brush) via a sparse `_edits.r32` overlay on top of the read-only base
 - **No procedural terrain generation** — removed entirely (2026-07-19): real Kenshi zone data covers every in-bounds chunk, so the old noise-fallback chain (missing-zone → neighbor-clone → `SimplexNoise2`/`FBM2` synthesis, plus the `TerrainMaster`/`md_master_hmap` macro-geography guide layer it depended on) was provably unreachable in real gameplay. `SimplexNoise2`/`FBM2` remain as generic noise primitives (test fixtures, `force_noise` mode) but no longer back any real-terrain code path.
 - **`TerrainAtlas_SmoothBoundaries()`** — N=15 kernel blends zone boundary heights (eliminates Kenshi fullmap 22m+ height-jump seams → NdotL cliffs)
-- **`BuildLodIboStitched()`** (2026-07-19) — every chunk's boundary is always triangulated at full resolution regardless of interior LOD decimation, so any two adjacent chunks' shared edge matches exactly for any LOD-tier combination (geomorphic seam-stitch: core interior + border zipper strips + corner fan patches, all reusing the one shared per-chunk VBO/normals). Fixes a confirmed T-junction gap of up to 19.4 m between differently-LOD'd neighbors that a same-LOD-only skirt couldn't cover.
+- **Flat fixed-depth LOD** (2026-09-04, replaces the earlier adaptive quadtree + `BuildLodIboStitched()` seam-stitch) — every visible node renders at the same fixed depth (`kFlatLodDepth=3`), so the T-junction/seam problem the old stitched-IBO approach solved no longer arises by construction; validated pixel-identical (RMSE=0.0) against the old adaptive output across 4 diverse locations before the ~300-line adaptive-subdivision/geomorph/skirt code path was deleted
 - Cross-chunk normal stitching via atlas (no file I/O, no seam artefacts)
-- **`ndl_min=0.57`** in `terrain_forward.slang` — floor = flat-terrain NdotL; zone-boundary faces match flat ground (no warm/cool split)
 - `TerrainGen_Build` / `TerrainGen_Upload` — worker-thread mesh gen + GPU upload
-- **Mesh LOD** — 4 levels (128/64/32/16 quads) via separate IBOs per chunk, selected by `RenderQualityConfig::mesh_lod0/1/2_cr_m` (default 500/1500/3000 m horizontal chunk-centre distance); `TERRAIN_LOD_IDX[3]`
+- **Clutter** — dense procedural ground-clutter placement (`ClutterGen`) removed entirely 2026-09-05; `FeatureScatterSystem` (757 real `features.dat` placements) is the sole scatter-object source
 - **`PoissonScatter`** — Bridson O(n) Poisson Disk Sampling for prop placement; min-distance guarantee; slope + embed constraints; deterministic seed; used for mixed rock+vegetation scatter
 
 ### Navigation

@@ -6,7 +6,11 @@
 
 namespace {
 // Field order matches shaders/terrain_quadtree.vert's TerrainQuadtreeUBO
-// exactly (std140).
+// exactly (std140). morph/skirt fields are unused (always 0) since
+// 2026-09-05 (docs/TERRAIN_FLAT_LOD_PLAN.md, fixed-depth tiling) but kept
+// in the UBO layout -- the shader itself wasn't touched (see that doc:
+// leaving morph=0/skirt_depth=0 as harmless no-ops in the existing shader
+// was lower-risk than also editing shared vertex-shader math this pass).
 struct TerrainQuadtreeUBO {
     float vp[16];
     float origin_size_texel_morph[4];
@@ -41,21 +45,7 @@ bool TerrainQuadtreeRenderer::Init(md::GpuDeviceHandle /*dev*/) {
 
     filled_ibo_.Init(0x8893u /*GL_ELEMENT_ARRAY_BUFFER*/, mesh.filled_indices.data(),
                       mesh.filled_indices.size() * sizeof(uint32_t));
-    skirt_ibo_.Init(0x8893u, mesh.skirt_indices.data(),
-                     mesh.skirt_indices.size() * sizeof(uint32_t));
     filled_index_count_ = (uint32_t)mesh.filled_indices.size();
-    skirt_index_count_  = (uint32_t)mesh.skirt_indices.size();
-
-    // docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 2: concatenate all
-    // 16 stitched-IBO variants into one buffer.
-    std::vector<uint32_t> stitched_all;
-    for (int mask = 0; mask < 16; ++mask) {
-        std::vector<uint32_t> variant = md::BuildTerrainQuadtreeStitchedIndices((uint8_t)mask);
-        stitched_offsets_[mask] = (uint32_t)(stitched_all.size() * sizeof(uint32_t));
-        stitched_counts_[mask]  = (uint32_t)variant.size();
-        stitched_all.insert(stitched_all.end(), variant.begin(), variant.end());
-    }
-    stitched_ibo_.Init(0x8893u, stitched_all.data(), stitched_all.size() * sizeof(uint32_t));
 
     GpuPipeline::Desc pd;
     pd.layout.count       = 0; // vertex-buffer-less -- gl_VertexIndex comes from the bound IBO alone
@@ -173,8 +163,8 @@ void TerrainQuadtreeRenderer::UploadNodeData(md::GpuDeviceHandle dev, SDL_GPUCop
         a[0] = nodes[i].origin_x;
         a[1] = nodes[i].origin_z;
         a[2] = texelSize;
-        a[3] = nodes[i].morph;
-        b[0] = nodes[i].skirt_depth;
+        a[3] = 0.f; // morph, unused (see TerrainQuadtreeUBO doc comment)
+        b[0] = 0.f; // skirt_depth, unused
         b[1] = 0.f; b[2] = 0.f; b[3] = 0.f;
     }
 
@@ -253,9 +243,6 @@ void TerrainQuadtreeRenderer::DrawBatched(SDL_GPURenderPass* rp, md::GpuCommandB
 
     pv.BindIndexBuffer(&filled_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
     pv.DrawIndexed(filled_index_count_, (uint32_t)count, 0, 0, 0);
-
-    pv.BindIndexBuffer(&skirt_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    pv.DrawIndexed(skirt_index_count_, (uint32_t)count, 0, 0, 0);
 }
 
 void TerrainQuadtreeRenderer::Shutdown(md::GpuDeviceHandle dev) {
@@ -269,8 +256,6 @@ void TerrainQuadtreeRenderer::Shutdown(md::GpuDeviceHandle dev) {
         node_data_sampler_ = nullptr;
     }
     filled_ibo_.Shutdown();
-    skirt_ibo_.Shutdown();
-    stitched_ibo_.Shutdown();
     ready_ = false;
     forward_ready_ = false;
     batched_ready_ = false;
@@ -295,7 +280,7 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, md::GpuCommandBuff
     ubo.origin_size_texel_morph[0] = node.origin_x;
     ubo.origin_size_texel_morph[1] = node.origin_z;
     ubo.origin_size_texel_morph[2] = texelSize;
-    ubo.origin_size_texel_morph[3] = node.morph;
+    ubo.origin_size_texel_morph[3] = 0.f; // morph, unused (see UBO struct doc comment)
     ubo.height_range[0] = hmap.HeightMin();
     ubo.height_range[1] = hmap.HeightMax();
     ubo.height_range[2] = hmap.WorldExtent();
@@ -303,7 +288,7 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, md::GpuCommandBuff
     ubo.cam_pos_skirt[0] = cam_x;
     ubo.cam_pos_skirt[1] = cam_y;
     ubo.cam_pos_skirt[2] = cam_z;
-    ubo.cam_pos_skirt[3] = node.skirt_depth;
+    ubo.cam_pos_skirt[3] = 0.f; // skirt_depth, unused
     pv.PushVertexUniforms(0, &ubo, sizeof(ubo));
 
     SDL_GPUTextureSamplerBinding samp[2] = {
@@ -312,29 +297,8 @@ void TerrainQuadtreeRenderer::DrawNode(SDL_GPURenderPass* rp, md::GpuCommandBuff
     };
     pv.BindVertexSamplers(0, samp, 2);
 
-    // docs/OPENMW_TERRAIN_BORROWED_TECHNIQUES.md Phase 2: a node built with
-    // LodMode()==1 and no >=2-level neighbor gap draws its precomputed
-    // zippered variant instead of filled+skirt -- no vertical skirt
-    // geometry at all. Any other node (LodMode()==0 default, or a rare
-    // >=2-level gap the stitched IBO can't represent) uses the original,
-    // unconditionally-correct filled+skirt path unchanged.
-    if (node.use_stitched_mesh && !node.needs_skirt_fallback) {
-        pv.BindIndexBuffer(&stitched_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-        // BindIndexBuffer's offset param is fixed at 0 (see gpu_hal.h) --
-        // this call needs a non-zero per-mask offset, so bind the raw SDL
-        // buffer with the real offset directly rather than force a signature
-        // change onto every other (offset==0) caller of this HAL method.
-        SDL_GPUBufferBinding stitched_ib{ stitched_ibo_.SDLBuffer(), stitched_offsets_[node.stitch_edge_mask] };
-        SDL_BindGPUIndexBuffer(rp, &stitched_ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-        pv.DrawIndexed(stitched_counts_[node.stitch_edge_mask], 1, 0, 0, 0);
-        return;
-    }
-
     pv.BindIndexBuffer(&filled_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
     pv.DrawIndexed(filled_index_count_, 1, 0, 0, 0);
-
-    pv.BindIndexBuffer(&skirt_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    pv.DrawIndexed(skirt_index_count_, 1, 0, 0, 0);
 }
 
 void TerrainQuadtreeRenderer::BeginForward(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
@@ -397,7 +361,7 @@ void TerrainQuadtreeRenderer::DrawNodeForward(SDL_GPURenderPass* rp, md::GpuComm
     ubo.origin_size_texel_morph[0] = node.origin_x;
     ubo.origin_size_texel_morph[1] = node.origin_z;
     ubo.origin_size_texel_morph[2] = texelSize;
-    ubo.origin_size_texel_morph[3] = node.morph;
+    ubo.origin_size_texel_morph[3] = 0.f; // morph, unused
     ubo.height_range[0] = hmap.HeightMin();
     ubo.height_range[1] = hmap.HeightMax();
     ubo.height_range[2] = hmap.WorldExtent();
@@ -405,7 +369,7 @@ void TerrainQuadtreeRenderer::DrawNodeForward(SDL_GPURenderPass* rp, md::GpuComm
     ubo.cam_pos_skirt[0] = cam_x;
     ubo.cam_pos_skirt[1] = cam_y;
     ubo.cam_pos_skirt[2] = cam_z;
-    ubo.cam_pos_skirt[3] = node.skirt_depth;
+    ubo.cam_pos_skirt[3] = 0.f; // skirt_depth, unused
     GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
     pv.PushVertexUniforms(0, &ubo, sizeof(ubo));
 
@@ -417,8 +381,68 @@ void TerrainQuadtreeRenderer::DrawNodeForward(SDL_GPURenderPass* rp, md::GpuComm
 
     pv.BindIndexBuffer(&filled_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
     pv.DrawIndexed(filled_index_count_, 1, 0, 0, 0);
+}
 
-    pv.BindIndexBuffer(&skirt_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    pv.DrawIndexed(skirt_index_count_, 1, 0, 0, 0);
+bool TerrainQuadtreeRenderer::InitWireframe(md::GpuDeviceHandle /*dev*/) {
+    GpuPipeline::Desc pd;
+    pd.layout.count       = 0; // vertex-buffer-less, same IBO-only technique as gbuffer_pipeline_
+    pd.raster.depth_test  = true;
+    pd.raster.depth_write = false; // overlay only -- never corrupts the real depth buffer
+    pd.raster.cull_back   = false; // see edges from both sides
+    pd.raster.wireframe   = true;  // SDL_GPU_FILLMODE_LINE
+    pd.has_depth_target   = true;
+    pd.vert_uniform_bufs  = 1;
+    pd.vert_samplers      = 2; // heightTex + normalTex (world-wide), same as gbuffer_pipeline_
+    pd.vert_path = "shaders/terrain_quadtree.vert"; // shared, unmodified -- real geometry transform
+    pd.frag_path = "shaders/terrain_wireframe.frag";
+    pd.frag_uniform_bufs = 0;
+    pd.frag_samplers     = 0;
+    pd.frag_storage_bufs = 0;
+    // color_format left INVALID -- draws into the caller's real swapchain-
+    // format main colour target, same contract as forward_pipeline_.
+    if (!wireframe_pipeline_.Create(pd)) {
+        MD_LOG(MD_LOG_WARNING, "[TerrainQuadtreeRenderer] wireframe pipeline create failed");
+        return false;
+    }
+    wireframe_ready_ = true;
+    return true;
+}
+
+void TerrainQuadtreeRenderer::DrawNodeWireframe(SDL_GPURenderPass* rp, md::GpuCommandBufferHandle cmd,
+                                                 const TerrainWorldHeightmap& hmap, const float* vp16,
+                                                 const TerrainQuadtree::VisibleNode& node,
+                                                 float cam_x, float cam_y, float cam_z) {
+    if (!wireframe_ready_) return;
+
+    constexpr float kPatchQuads = 16.0f;
+    float texelSize = node.size / kPatchQuads;
+
+    GpuPassView pv = GpuPassView::FromRaw(rp, cmd);
+    pv.BindPipeline(&wireframe_pipeline_);
+
+    TerrainQuadtreeUBO ubo{};
+    std::memcpy(ubo.vp, vp16, 64);
+    ubo.origin_size_texel_morph[0] = node.origin_x;
+    ubo.origin_size_texel_morph[1] = node.origin_z;
+    ubo.origin_size_texel_morph[2] = texelSize;
+    ubo.origin_size_texel_morph[3] = 0.f; // morph, unused
+    ubo.height_range[0] = hmap.HeightMin();
+    ubo.height_range[1] = hmap.HeightMax();
+    ubo.height_range[2] = hmap.WorldExtent();
+    ubo.height_range[3] = (float)hmap.Resolution();
+    ubo.cam_pos_skirt[0] = cam_x;
+    ubo.cam_pos_skirt[1] = cam_y;
+    ubo.cam_pos_skirt[2] = cam_z;
+    ubo.cam_pos_skirt[3] = 0.f; // skirt_depth, unused
+    pv.PushVertexUniforms(0, &ubo, sizeof(ubo));
+
+    SDL_GPUTextureSamplerBinding samp[2] = {
+        { hmap.Texture(), hmap.Sampler() },
+        { hmap.NormalTexture(), hmap.NormalSampler() },
+    };
+    pv.BindVertexSamplers(0, samp, 2);
+
+    pv.BindIndexBuffer(&filled_ibo_, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+    pv.DrawIndexed(filled_index_count_, 1, 0, 0, 0);
 }
 #endif // MD_SDL_GPU

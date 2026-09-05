@@ -5,7 +5,6 @@
 #include <cstring>
 #include <monkey_dust/world/terrain_chunk.h>
 #include <monkey_dust/world/terrain_gen.h>
-#include <monkey_dust/world/clutter_gen.h>
 #include <monkey_dust/world/world_registry.h>
 #include <monkey_dust/physics/jolt_world.h>
 #include <monkey_dust/platform/frame_stats.h>
@@ -22,8 +21,7 @@
 // Granite renders from its own world-wide heightmap texture, not per-chunk
 // meshes), so there is nothing left to stage/copy for the main thread's
 // upload step. TerrainGen_Upload(chunk) now just flips loaded=true.
-// CAPACITY=14 (2×TNKN) — clutter staging below is the only remaining
-// meaningful per-slot payload.
+// CAPACITY=14 (2×TNKN).
 
 struct TerrainBuildSlot {
     // Request fields — written by main thread before enqueue
@@ -33,13 +31,6 @@ struct TerrainBuildSlot {
     JPH::BodyID*     jolt_id    = nullptr;  // pointer into terrain_jolt_ids[phsz][phsx]
     int              atlas_ex   = 0;        // zone_origin_x + chunk coord.x for PropGen biome
     int              atlas_ez   = 0;        // zone_origin_z + chunk coord.z
-
-    // KEN-CLUTTER Tier 2: per-slot clutter staging (variable count, unlike the
-    // fixed-size terrain grid above — see clutter_vc/clutter_ic).
-    PropVertex clutter_v[CLUTTER_MAX_VERTS];
-    uint16_t   clutter_i[CLUTTER_MAX_IDX];
-    int        clutter_vc = 0;
-    int        clutter_ic = 0;
 
     std::atomic<bool> ready    {false};
     std::atomic<bool> consumed {true};   // true = slot is free
@@ -117,10 +108,6 @@ public:
                 FS_BEGIN("TerrainGenUpload");
                 TerrainGen_Upload(*s.chunk);
                 FS_END("TerrainGenUpload");
-                FS_BEGIN("ClutterUpload");
-                ClutterGen_UploadFrom(*s.chunk, s.clutter_v, s.clutter_vc,
-                                      s.clutter_i, s.clutter_ic);
-                FS_END("ClutterUpload");
                 fn(s);
             }
             s.consumed.store(true, std::memory_order_release);
@@ -170,16 +157,6 @@ private:
                     std::lock_guard<std::mutex> tg_lock(TerrainGen_StagingMutex());
                     TerrainGen_Build(*s.chunk, s.coord, s.params);
                 }
-
-                // KEN-CLUTTER Tier 2: bake dense clutter on this same worker thread
-                // (heavy enough now — thousands of merged verts — that it must NOT
-                // run on the main thread like the cheap PropGen_Build still does).
-                ClutterGen_Build(*s.chunk, WorldRegistry::Get().GetBiomeAt(s.atlas_ex, s.atlas_ez));
-                int cvc = ClutterGen_StagedVertCount(), cic = ClutterGen_StagedIndexCount();
-                memcpy(s.clutter_v, ClutterGen_StagedVerts(),   sizeof(PropVertex) * (size_t)cvc);
-                memcpy(s.clutter_i, ClutterGen_StagedIndices(), sizeof(uint16_t)   * (size_t)cic);
-                s.clutter_vc = cvc;
-                s.clutter_ic = cic;
 
                 s.ready.store(true, std::memory_order_release);
                 pending_.fetch_sub(1, std::memory_order_release);
